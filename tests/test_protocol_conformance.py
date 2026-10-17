@@ -13,10 +13,13 @@ from module_crew import protocol
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "session-protocol" / "v1.1"
 
 # Types this plugin parses / generates (spec 假设 2、3). Everything else is skipped and listed.
-PARSED = set()
+PARSED = {"wait-session", "resumed", "withdraw", "user-reply", "unknown"}
 GENERATED = set()
 # Fixtures whose expectation the contract itself must fix; skipped with a reason, never silently.
-CONTRACT_DEFECTS: dict[str, str] = {}
+CONTRACT_DEFECTS: dict[str, str] = {
+    # v1.0 used 【交审】 as its example of an unknown tag; v1.1 made it a real type (review-request).
+    "unknown/unknown-kind": "v1.1 defines 【交审】, so this v1.0 sample is no longer unknown",
+}
 
 
 def verify_sums(root: Path) -> list[str]:

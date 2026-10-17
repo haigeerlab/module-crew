@@ -7,7 +7,7 @@
   - 验证：`python3 -m unittest discover -s tests -p test_protocol_conformance.py -v`
   - 文件：`tests/fixtures/session-protocol/v1.1/**`、`tests/test_protocol_conformance.py`、`module_crew/protocol.py`（空壳）
 
-- [ ] Task 2：通用切分与简单类型
+- [x] Task 2：通用切分与简单类型
   - 验收：wait-session 2、resumed 3、withdraw 1、user-reply 4、unknown 1 份解析样例逐键一致
   - 验证：同上
   - 文件：`module_crew/protocol.py`、`tests/test_protocol_conformance.py`
@@ -40,3 +40,7 @@
   - 文件：`~/Documents/haigeerlab/session-protocol/conformance/README.md`
 
 - [ ] Checkpoint 2（gate）：模块最终验收——全部测试全绿、10 条验收标准逐条对应测试、列出实际改动文件与 session-protocol 差异；停下等用户确认
+
+## 待你决定
+
+- 契约缺陷：v1.0 样例 `unknown/unknown-kind.txt` 用【交审】当「认不出的标签」，v1.1 把【交审】定成了正式类型，这份样例在 v1.1 下期望结果不成立。一致性测试暂把它列为「契约缺陷」跳过，待你决定怎么修契约（发现于 Task 2，2026-10-18）。
