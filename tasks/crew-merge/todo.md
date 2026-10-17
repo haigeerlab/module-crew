@@ -2,7 +2,7 @@
 
 测试命令：`python3 -m unittest discover -s tests -v`
 
-- [ ] Task 1：`merge approve` 与 `merge queue`
+- [x] Task 1：`merge approve` 与 `merge queue`
   - 验收：Spec 验收 1、2
   - 验证：`python3 -m unittest discover -s tests -p test_merge_run.py -v`
   - 文件：`module_crew/merge.py`、`tests/helpers.py`、`tests/test_merge_run.py`

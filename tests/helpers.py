@@ -273,3 +273,35 @@ class ReviewCase(StartCase):
 
     def plan_review(self, m: str, **kw) -> str:
         return review_text(m, "Plan", [(f"tasks/{m}/plan.md", self.wt[m] / "tasks" / m / "plan.md")], **kw)
+
+
+class MergeCase(ReviewCase):
+    """ReviewCase plus helpers to finish a module and get its final acceptance approved."""
+
+    def finish(self, m: str, content: str | None = None, path: str | None = None) -> str:
+        """Write and commit a code file in module m's worktree; return the final-acceptance 【交审】 text."""
+        rel = path or f"src/{m}.py"
+        f = self.wt[m] / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(content if content is not None else f"VALUE = '{m}'\n", encoding="utf-8")
+        git(self.wt[m], "add", "-A")
+        git(self.wt[m], "commit", "-q", "-m", f"{m}: code")
+        head = review_text(m, "最终验收", [(rel, f)])
+        return head + "改动统计：1 file changed\n越界检查：无越界\n"
+
+    def approve_final(self, m: str, rid: int, **kw) -> int:
+        from module_crew import merge, review, store
+        db = store.open_store(self.repo)
+        out = review.add(db, self.finish(m, **kw), f"shop-{m}", rid)
+        assert out.code == 0, out.lines
+        res = merge.approve(db, out.number, f"{m} 验收通过")
+        return res.approval
+
+    def check_script(self, fail_if: str | None = None, sleep: float = 0) -> str:
+        """A full-check command: fails when file `fail_if` exists in the checkout, or sleeps."""
+        script = self.tmp / "check.py"
+        script.write_text(
+            "import os, sys, time\n"
+            f"time.sleep({sleep})\n"
+            f"sys.exit(1 if {fail_if!r} and os.path.exists({fail_if!r}) else 0)\n", encoding="utf-8")
+        return f"python3 {script}"
