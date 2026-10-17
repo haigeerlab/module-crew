@@ -68,6 +68,9 @@ def allocate_worker(cwd: str, count: int) -> list[int]:
 
 FAKE_MAP = '''import json, os, sys, time
 mode = os.environ.get("FAKE_MAP_MODE", "plain")
+if os.environ.get("FAKE_MAP_FILE"):
+    print(open(os.environ["FAKE_MAP_FILE"], encoding="utf-8").read())
+    sys.exit(0)
 if mode == "slow":
     time.sleep(5)
 if mode == "exit3":
@@ -138,6 +141,7 @@ class ProbeCase(RepoCase):
         self.addCleanup(lambda: os.environ.__setitem__("MODULE_CREW_PLUGINS_FILE", old) if old
                         else os.environ.pop("MODULE_CREW_PLUGINS_FILE", None))
         self.addCleanup(lambda: os.environ.pop("FAKE_MAP_MODE", None))
+        self.addCleanup(lambda: os.environ.pop("FAKE_MAP_FILE", None))
 
 
 def seed_sessions(db) -> None:
@@ -175,3 +179,32 @@ def wait_user(decide="先做哪个", end="无", sender="a", marker="", scope="")
     if scope:
         text = text.replace("是否完全停住：是\n", f"是否完全停住：是\n{scope}")
     return text
+
+
+START_MAP = {
+    "schemaVersion": 1, "activeModule": None, "moduleConcurrency": "on",
+    "buildOrderGroups": [["a"], ["b", "c", "d"], ["e"]],
+    "modules": [
+        {"id": "a", "responsibility": "地基", "dependsOn": [], "status": "done"},
+        {"id": "b", "responsibility": "支付页", "dependsOn": ["a"], "status": "ready"},
+        {"id": "c", "responsibility": "订单页", "dependsOn": ["a"], "status": "ready"},
+        {"id": "d", "responsibility": "帮助页", "dependsOn": [], "status": "ready"},
+        {"id": "e", "responsibility": "汇总", "dependsOn": ["b", "c"], "status": "not_ready"},
+    ],
+    "startable": {"modules": ["b", "c", "d"], "conflicts": []},
+}
+
+
+class StartCase(ProbeCase):
+    """Relay 2.0 + spec-guard 1.1 whose /map --json is START_MAP (or whatever set_map writes)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.plugins.install("agent-relay", {"interface": "2.0"})
+        self.plugins.install("spec-guard", spec_guard_interface("1.1"), map_script=True)
+        self.map_file = self.tmp / "map.json"
+        self.set_map(START_MAP)
+        os.environ["FAKE_MAP_FILE"] = str(self.map_file)
+
+    def set_map(self, doc: dict) -> None:
+        self.map_file.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")

@@ -2,7 +2,7 @@
 
 测试命令：`python3 -m unittest discover -s tests -v`
 
-- [ ] Task 1：`start plan`
+- [x] Task 1：`start plan`
   - 验收：Spec 验收 1；验收 2 的 plan 部分
   - 验证：`python3 -m unittest discover -s tests -p test_start_plan.py -v`
   - 文件：`module_crew/start.py`、`tests/helpers.py`、`tests/test_start_plan.py`
