@@ -103,3 +103,80 @@ class TextTest(MergeCase):
             for words in ("先跑 `module-crew status`", "以状态库为准", "不按压缩前的记忆重做"):
                 self.assertIn(words, text)
         self.assertNotIn("压缩", hooks.session_start(self.repo, "startup"))
+
+
+import ast
+import json
+import subprocess
+import time
+
+from helpers import PLUGIN_ROOT
+
+
+def run_hook(event, cwd, payload=None):
+    data = json.dumps(payload if payload is not None else {"cwd": str(cwd)})
+    start = time.perf_counter()
+    r = subprocess.run([str(PLUGIN_ROOT / "bin" / "module-crew"), "hook", event], cwd=cwd, input=data,
+                       capture_output=True, text=True)
+    return r, time.perf_counter() - start
+
+
+class HookCommandTest(MergeCase):
+    def test_outputs_and_timing(self):
+        r, secs = run_hook("session-start", self.wt["b"], {"cwd": str(self.wt["b"]), "source": "compact"})
+        self.assertEqual(r.returncode, 0)
+        doc = json.loads(r.stdout)
+        self.assertEqual(doc["hookSpecificOutput"]["hookEventName"], "SessionStart")
+        self.assertIn("以状态库为准", doc["hookSpecificOutput"]["additionalContext"])
+        self.assertLess(secs, 1.0)
+        print(f"\n  hook session-start: {secs * 1000:.0f} ms", file=__import__("sys").stderr)
+        r, secs = run_hook("prompt", self.repo)
+        self.assertEqual(json.loads(r.stdout)["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
+        self.assertLess(secs, 1.0)
+        print(f"  hook prompt: {secs * 1000:.0f} ms", file=__import__("sys").stderr)
+
+    def test_silent_outside_and_on_errors(self):
+        outside = self.tmp / "plain"
+        outside.mkdir()
+        for cwd, payload in ((outside, None), (self.wt["b"], "not json at all")):
+            data = payload if isinstance(payload, str) else json.dumps({"cwd": str(cwd)})
+            r = subprocess.run([str(PLUGIN_ROOT / "bin" / "module-crew"), "hook", "session-start"], cwd=cwd,
+                               input=data, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0)
+            if cwd == outside:
+                self.assertEqual(r.stdout, "")
+        (store.open_store(self.repo).path / "meta.json").write_text("{broken")
+        r, _ = run_hook("session-start", self.wt["b"])
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
+
+    def test_hooks_json_and_imports(self):
+        doc = json.loads((PLUGIN_ROOT / "hooks" / "hooks.json").read_text())
+        for event, arg in (("SessionStart", "hook session-start"), ("UserPromptSubmit", "hook prompt")):
+            cmd = doc["hooks"][event][0]["hooks"][0]["command"]
+            self.assertIn(f"bin/module-crew", cmd)
+            self.assertIn(arg, cmd)
+            self.assertIn("|| true", cmd)
+            self.assertTrue(cmd.rstrip().endswith("exit 0"))
+        tree = ast.parse((PLUGIN_ROOT / "module_crew" / "hooks.py").read_text())
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported |= {a.name for a in node.names}
+            elif isinstance(node, ast.ImportFrom):
+                imported |= {node.module or ""} | {f"{node.module}.{a.name}" for a in node.names}
+        for banned in ("subprocess", "module_crew.probe", "module_crew.start", "module_crew.review", "module_crew.merge"):
+            self.assertNotIn(banned, imported)
+
+
+class TakeoverTest(MergeCase):
+    def test_takeover(self):
+        db = store.open_store(self.repo)
+        before = store.get(db, "session", "shop-b")
+        r = self.run_cli("takeover", "shop-b", "--original", "让新会话接管 b")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("bridge_register", r.stdout)
+        self.assertEqual(store.get(db, "session", "shop-b"), before)
+        ev = store.events(db, key="shop-b", kind="session")[-1]
+        self.assertEqual((ev["type"], ev["data"]["original"]), ("session.taken-over", "让新会话接管 b"))
+        self.assertEqual(self.run_cli("takeover", "shop-x", "--original", "x").returncode, 3)
+        self.assertEqual(self.run_cli("takeover", "shop-b", "--original", "  ").returncode, 3)

@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from module_crew import changes, inbox, merge, probe, protocol, review, start, store
+from module_crew import changes, hooks, inbox, merge, probe, protocol, review, start, store
 
 
 def _store_init() -> int:
@@ -399,7 +399,35 @@ def main(argv: list[str] | None = None) -> int:
         g = c.add_mutually_exclusive_group(required=True)
         g.add_argument("--original")
         g.add_argument("--original-file")
+    hk = sub.add_parser("hook", help="插件钩子入口（只读，永远退出码 0）")
+    hk.add_argument("event", choices=("session-start", "prompt"))
+    tk = sub.add_parser("takeover", help="记录用户同意新会话接管邮箱名")
+    tk.add_argument("name")
+    tg = tk.add_mutually_exclusive_group(required=True)
+    tg.add_argument("--original")
+    tg.add_argument("--original-file")
     args = parser.parse_args(argv)
+    if args.group == "hook":
+        try:
+            out = hooks.run_hook(args.event, sys.stdin.read() if not sys.stdin.isatty() else "")
+        except BaseException:
+            out = ""
+        if out:
+            print(out)
+        return 0
+    if args.group == "takeover":
+        original = _original(args.original, args.original_file)
+        if original is None:
+            return 2
+        try:
+            print(hooks.takeover(store.open_store(), args.name, original))
+        except hooks.TakeoverRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
+        return 0
     if args.group == "merge":
         try:
             return _merge(args)

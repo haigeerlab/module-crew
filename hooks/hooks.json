@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ROOT=\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}\"; BIN=\"$ROOT/bin/module-crew\"; if [ -n \"$ROOT\" ] && [ -x \"$BIN\" ]; then \"$BIN\" hook session-start || true; fi; exit 0"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ROOT=\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}\"; BIN=\"$ROOT/bin/module-crew\"; if [ -n \"$ROOT\" ] && [ -x \"$BIN\" ]; then \"$BIN\" hook prompt || true; fi; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

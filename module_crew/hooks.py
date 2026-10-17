@@ -146,3 +146,46 @@ def prompt_line(cwd: str | os.PathLike) -> str | None:
         stage = _stage(store.records(role.db, "item"), role.module).split("，")[0].split("（")[0]
         return f"module-crew：你是 {role.module} 的模块会话（{role.name}），当前：{stage}"
     return f"module-crew：协调会话；{_count_text(_counts(role.db))}"
+
+
+EVENT_NAMES = {"session-start": "SessionStart", "prompt": "UserPromptSubmit"}
+
+
+def run_hook(event: str, stdin_text: str) -> str:
+    """Hook entry: the JSON to print, or "" to stay silent. Never raises."""
+    try:
+        import json
+        try:
+            payload = json.loads(stdin_text) if stdin_text.strip() else {}
+        except ValueError:
+            payload = {}
+        cwd = payload.get("cwd") or os.getcwd()
+        if event == "session-start":
+            text = session_start(cwd, payload.get("source") or "startup")
+        elif event == "prompt":
+            text = prompt_line(cwd)
+        else:
+            return ""
+        if not text:
+            return ""
+        return json.dumps({"hookSpecificOutput": {"hookEventName": EVENT_NAMES[event], "additionalContext": text}},
+                          ensure_ascii=False)
+    except BaseException:  # a hook must never get in the way of the conversation
+        return ""
+
+
+class TakeoverRefused(Exception):
+    """The takeover cannot be recorded; nothing was written."""
+
+
+def takeover(db: store.Store, name: str, original: str) -> str:
+    """Record the user's consent that a new conversation takes over relay name `name`."""
+    if not original or not original.strip():
+        raise TakeoverRefused("用户原话不能为空：接管要用户明确同意")
+    with db.transaction(actor="coordinator") as tx:
+        rec = tx.get("session", name)
+        if rec is None or rec.get("status") != "active":
+            raise TakeoverRefused(f"{name} 不是状态库里在用的会话")
+        tx.put("session", name, rec, action="taken-over", data={"original": original, "at": store.now()})
+    return (f"已记下：新会话接管 {name}。请在新会话里用同一个名字调用 agent-relay 的 bridge_register"
+            f"（name: \"{name}\"，wake: \"auto\"；若提示该名字已被占用或已退役，按提示传接管／恢复参数），然后先跑 module-crew status。")

@@ -15,12 +15,12 @@
 - [x] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
   - 记录：`python3 -m unittest discover -s tests -v` → Ran 190 tests in 84.806s OK（2026-10-18）
 
-- [ ] Task 3：`hook` 子命令、`hooks.json`、异常静默与耗时
+- [x] Task 3：`hook` 子命令、`hooks.json`、异常静默与耗时
   - 验收：Spec 验收 6、7
   - 验证：同上
   - 文件：`hooks/hooks.json`、`module_crew/__main__.py`、`module_crew/hooks.py`、`tests/test_hooks.py`
 
-- [ ] Task 4：`takeover`
+- [x] Task 4：`takeover`
   - 验收：Spec 验收 8
   - 验证：同上
   - 文件：`module_crew/hooks.py`、`module_crew/__main__.py`、`tests/test_hooks.py`
