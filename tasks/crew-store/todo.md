@@ -25,12 +25,13 @@
   - 验证：`python3 -m unittest discover -s tests -p test_store_rebuild.py -v`
   - 文件：`module_crew/store.py`、`tests/test_store_rebuild.py`
 
-- [ ] Task 5：多进程并发，跨主 checkout 与 worktree
+- [x] Task 5：多进程并发，跨主 checkout 与 worktree
   - 验收：Spec 验收 4；记录 1000 条时单事务耗时
   - 验证：`python3 -m unittest discover -s tests -p test_store_concurrency.py -v` 连续跑 5 次
   - 文件：`module_crew/store.py`、`tests/test_store_concurrency.py`
 
-- [ ] Checkpoint 2（report）：全部测试全绿，并发测试连续 5 次通过，记下命令与结果后继续
+- [x] Checkpoint 2（report）：全部测试全绿，并发测试连续 5 次通过，记下命令与结果后继续
+  - 记录：`python3 -m unittest discover -s tests -v` → Ran 24 tests, OK；`test_store_concurrency.py` 连跑 5 次均 OK，日志 1000 条时单事务 5.3～7.1 ms（2026-10-18）
 
 - [ ] Task 6：正文文件
   - 验收：Spec 验收 12 的 `write_body`／`read_body` 部分；回滚时不留正文；目标已存在时旧文件改名 `.orphan-<时间>`

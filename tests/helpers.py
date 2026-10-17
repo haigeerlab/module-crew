@@ -49,3 +49,17 @@ class RepoCase(unittest.TestCase):
         env = dict(os.environ)
         return subprocess.run([str(PLUGIN_ROOT / "bin" / "module-crew"), *args], cwd=cwd or self.repo,
                               capture_output=True, text=True, env=env)
+
+
+def allocate_worker(cwd: str, count: int) -> list[int]:
+    """Run in a child process: allocate `count` numbers, one transaction and one item each."""
+    from module_crew import store
+
+    db = store.open_store(cwd)
+    got = []
+    for _ in range(count):
+        with db.transaction(actor=f"p{os.getpid()}") as tx:
+            n = tx.allocate_number()
+            tx.put("item", str(n), {"pid": os.getpid()}, action="created")
+        got.append(n)
+    return got
