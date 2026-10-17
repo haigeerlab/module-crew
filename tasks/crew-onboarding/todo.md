@@ -25,7 +25,7 @@
   - 验证：`python3 -m unittest discover -s tests -p test_answer.py -v`
   - 文件：`module_crew/inbox.py`、`module_crew/__main__.py`、`tests/test_answer.py`
 
-- [ ] Task 5：两份 skill
+- [x] Task 5：两份 skill
   - 验收：Spec 验收 11
   - 验证：`python3 -m unittest discover -s tests -p test_skills.py -v`
   - 文件：`skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`tests/test_skills.py`
