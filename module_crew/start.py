@@ -40,13 +40,18 @@ def _active_devs(db: store.Store | None) -> dict[str, dict]:
             if v.get("role") == "dev" and v.get("status") == "active"}
 
 
+def _counted_devs(db: store.Store | None) -> dict[str, dict]:
+    """Module sessions that take a slot: suspended ones (waiting on an outside condition) do not."""
+    return {k: v for k, v in _active_devs(db).items() if not v.get("suspended")}
+
+
 def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal:
     """Read-only: free slots and the first startable modules in Build order."""
     project = Path(project)
     report = probe.run(project)
     db = _open_store(project)
     limit = _config(db).get("maxModules") or max_modules or DEFAULT_MAX
-    slots = max(limit - len(_active_devs(db)), 0)
+    slots = max(limit - len(_counted_devs(db)), 0)
     blockers = [f"{c.id}：{c.reason}" for c in report.checks.values() if c.state == "blocker"]
     if blockers:
         return Proposal(slots, blockers=blockers)
@@ -132,7 +137,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
     reasons, cfg, proposal = validate(project, modules, original, short, max_modules)
     if reasons:
         return PrepareResult(3, ["没有执行，原因："] + reasons)
-    info = {m["id"]: m for m in plan(project, len(modules) + len(_active_devs(_open_store(project)))).modules}
+    info = {m["id"]: m for m in plan(project, len(modules) + len(_counted_devs(_open_store(project)))).modules}
     db = _open_store(project) or store.init_store(project)[0]
     short = cfg["projectShort"]
     coord = f"{short}-coord"

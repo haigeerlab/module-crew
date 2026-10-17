@@ -2,7 +2,7 @@
 
 测试命令：`python3 -m unittest discover -s tests -v`
 
-- [ ] Task 1：`suspend`／`resume` 与 crew-start 空位修订
+- [x] Task 1：`suspend`／`resume` 与 crew-start 空位修订
   - 验收：Spec 验收 1、2、3；验收 9 的空位部分
   - 验证：`python3 -m unittest discover -s tests -p "test_failure.py" -v`，再跑 `test_start_*.py`
   - 文件：`module_crew/failure.py`、`module_crew/start.py`、`tests/test_failure.py`
