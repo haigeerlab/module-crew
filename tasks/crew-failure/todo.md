@@ -12,7 +12,7 @@
   - 验证：同上
   - 文件：`module_crew/failure.py`、`tests/test_failure.py`
 
-- [ ] Task 3：`resume-kit`
+- [x] Task 3：`resume-kit`
   - 验收：Spec 验收 5
   - 验证：同上
   - 文件：`module_crew/failure.py`、`tests/test_failure.py`

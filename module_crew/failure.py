@@ -4,6 +4,7 @@ fall back to serial (see spec/crew-failure.md). Nothing here judges whether a se
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 
 from module_crew import store
@@ -105,3 +106,31 @@ def render_sessions(rows: list[dict]) -> list[str]:
                      + "；未关事项：" + ("、".join(f"#{n}" for n in r["openItems"]) or "无"))
         lines.append(f"  当前：{r['stage']}")
     return lines
+
+
+RECOVERY_NOTE = ("这是换会话后的恢复：上一个会话已经不在了，你在原 worktree 里接着做。"
+                 "先请用户在协调会话里同意接管（协调会话运行 `module-crew takeover {name}`），"
+                 "再用 agent-relay 的 bridge_register 以同一个名字 {name} 重新注册（wake: \"auto\"；提示名字被占用或已退役时按提示传接管／恢复参数），"
+                 "然后跑 `module-crew status`、读自己未关的等待单，以状态库为准，不按记忆重做。")
+
+
+@dataclass(frozen=True)
+class Kit:
+    name: str
+    module: str
+    worktree: str
+    body: int
+    path: str
+
+
+def resume_kit(db: store.Store, module: str) -> Kit:
+    """Store the first message for a new conversation that takes over `module` in its original worktree."""
+    from module_crew import hooks
+    name, rec = _dev_of(store.records(db, "session"), module)
+    context = hooks.session_start(rec["worktree"], "compact") or ""
+    text = "\n".join([f"模块：{module}　邮箱名：{name}　worktree：{rec['worktree']}", "", context, "",
+                      RECOVERY_NOTE.format(name=name)]) + "\n"
+    with db.transaction(actor="coordinator") as tx:
+        n = tx.allocate_number()
+        tx.write_body(n, text)
+    return Kit(name, module, rec["worktree"], n, str(db.path / "bodies" / f"{n}.txt"))

@@ -99,5 +99,20 @@ class SessionsTest(FailureCase):
             self.assertEqual(failure._ago((now - delta).isoformat(timespec="seconds"), now), want)
 
 
+class ResumeKitTest(FailureCase):
+    def test_kit_body(self):
+        kit = failure.resume_kit(self.db, "b")
+        self.assertEqual((kit.name, kit.module, kit.worktree), ("shop-b", "b", str(self.wt["b"])))
+        text = store.read_body(self.db, kit.body)
+        for want in ("模块：b", "shop-b", str(self.wt["b"]), hooks.STAGE_WRITE, "以状态库为准",
+                     "module-crew takeover shop-b", "bridge_register"):
+            self.assertIn(want, text)
+        self.assertTrue(kit.path.endswith(f"bodies/{kit.body}.txt"))
+
+    def test_kit_refused_without_session(self):
+        with self.assertRaises(failure.FailureRefused):
+            failure.resume_kit(self.db, "d")
+
+
 if __name__ == "__main__":
     unittest.main()
