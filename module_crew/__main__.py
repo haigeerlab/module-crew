@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from module_crew import changes, inbox, probe, protocol, review, start, store
+from module_crew import changes, inbox, merge, probe, protocol, review, start, store
 
 
 def _store_init() -> int:
@@ -267,6 +267,60 @@ def _change(args) -> int:
     return res.code
 
 
+def _merge(args) -> int:
+    if args.action == "queue":
+        rows = merge.queue(".")
+        if args.json:
+            print(json.dumps([{"approval": n, "module": r["module"], "review": r["review"]} for n, r in rows],
+                             ensure_ascii=False, indent=2))
+        else:
+            for n, r in rows:
+                print(f"#{n} {r['module']}（最终验收交审 #{r['review']}）")
+            if not rows:
+                print("合并队列是空的")
+        return 0 if rows else 3
+    if args.action == "push-plan":
+        plan = merge.push_plan(".")
+        if args.json:
+            print(json.dumps({"code": plan.code, "remote": plan.remote, "branch": plan.branch, "base": plan.base,
+                              "commits": plan.commits, "title": plan.title, "body": plan.body}, ensure_ascii=False, indent=2))
+        else:
+            for line in plan.lines:
+                print(line)
+            if plan.code == 0:
+                print(f"PR 标题：{plan.title}")
+                print(plan.body)
+        return plan.code
+    if args.action == "run":
+        res = merge.run(".", args.check_command, args.replace_check)
+        for line in res.lines:
+            print(line)
+        for x in res.sends:
+            print(f"发送 【协调通知】（{x['kind']}）→ {x['to']}，正文文件：{x['path']}")
+        return res.code
+    original = _original(args.original, args.original_file)
+    if original is None:
+        return 2
+    if args.action == "approve":
+        try:
+            res = merge.approve(store.open_store(), args.number, original)
+        except merge.AnswerRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        print(f"合并批准事项 #{res.approval}，已排入本地合并队列")
+        print(f"收件人：{res.reply.to}")
+        print(f"replyTo：{res.reply.reply_to}")
+        print(f"正文文件：{res.reply.path}")
+        return 0
+    if args.action == "cleanup":
+        res = merge.cleanup(".", args.module, original)
+    else:
+        res = merge.push(".", original)
+    for line in res.lines:
+        print(line)
+    return res.code
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="module-crew", description="module-crew 状态库")
     sub = parser.add_subparsers(dest="group")
@@ -331,7 +385,27 @@ def main(argv: list[str] | None = None) -> int:
         g = c.add_mutually_exclusive_group(required=(name == "answer"))
         g.add_argument("--original")
         g.add_argument("--original-file")
+    mg = sub.add_parser("merge", help="本地合并、收尾与远端 PR")
+    mgs = mg.add_subparsers(dest="action", required=True)
+    for name in ("queue", "push-plan"):
+        mgs.add_parser(name).add_argument("--json", action="store_true")
+    mr = mgs.add_parser("run")
+    mr.add_argument("--check-command")
+    mr.add_argument("--replace-check", action="store_true")
+    for name, positional in (("approve", ("number", int)), ("cleanup", ("module", str)), ("push", None)):
+        c = mgs.add_parser(name)
+        if positional:
+            c.add_argument(positional[0], type=positional[1])
+        g = c.add_mutually_exclusive_group(required=True)
+        g.add_argument("--original")
+        g.add_argument("--original-file")
     args = parser.parse_args(argv)
+    if args.group == "merge":
+        try:
+            return _merge(args)
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
     if args.group == "change":
         try:
             return _change(args)

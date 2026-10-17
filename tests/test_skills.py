@@ -54,6 +54,13 @@ class SkillsTest(unittest.TestCase):
                       "变更记录"):
             self.assertIn(words, section)
 
+    def test_coordinator_merge_section(self):
+        _, text = read("crew-coordinator")
+        section = text.split("## 合并与收尾", 1)[1].split("\n## ", 1)[0]
+        for words in ("review add", "merge approve", "merge run", "一次只合", "退回", "merge cleanup", "agent-relay",
+                      "merge push-plan", "merge push", "用户在远端合并", "不开自动合并"):
+            self.assertIn(words, section)
+
     def test_dev_rules(self):
         _, text = read("crew-dev")
         for words in ("protocol check", "【等待其他会话】", "【交审】", "最终验收", "收到用户对 #N 的答复：『原话』",

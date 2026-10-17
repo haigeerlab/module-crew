@@ -35,7 +35,7 @@
   - 验证：同上
   - 文件：`module_crew/merge.py`、`tests/test_merge_finish.py`
 
-- [ ] Task 7：命令行与协调会话 skill
+- [x] Task 7：命令行与协调会话 skill
   - 验收：Spec 验收 11
   - 验证：`python3 -m unittest discover -s tests -p "test_[ms]*.py" -v`
   - 文件：`module_crew/__main__.py`、`skills/crew-coordinator/SKILL.md`、`tests/test_skills.py`、`tests/test_merge_finish.py`

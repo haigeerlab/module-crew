@@ -86,3 +86,19 @@ class PushTest(MergeCase):
         git(self.repo, "remote", "remove", "origin")
         self.assertEqual(merge.push_plan(self.repo).code, 3)
         self.assertEqual(merge.push(self.repo, "推").code, 3)
+
+
+class CliTest(MergeCase):
+    def test_approve_queue_run(self):
+        from module_crew import review
+        db = store.open_store(self.repo)
+        n = review.add(db, self.finish("b"), "shop-b", 1).number
+        r = self.run_cli("merge", "approve", str(n), "--original", "b 通过")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("b（最终验收交审", self.run_cli("merge", "queue").stdout)
+        self.assertEqual(self.run_cli("merge", "run").returncode, 2)
+        r = self.run_cli("merge", "run", "--check-command", "python3 -c pass")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("wrap-up", r.stdout)
+        self.assertEqual(self.run_cli("merge", "queue").returncode, 3)
+        self.assertEqual(self.run_cli("merge", "push-plan").returncode, 3)   # no remote
