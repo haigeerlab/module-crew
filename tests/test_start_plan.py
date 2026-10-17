@@ -46,3 +46,20 @@ class PlanTest(StartCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlanCliTest(StartCase):
+    def test_human_and_json(self):
+        r = self.run_cli("start", "plan")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("空位：3", r.stdout)
+        self.assertIn("b（支付页）", r.stdout)
+        import json
+        doc = json.loads(self.run_cli("start", "plan", "--json").stdout)
+        self.assertEqual([m["id"] for m in doc["modules"]], ["b", "c", "d"])
+
+    def test_blocked_exit_3(self):
+        (self.repo / "dirty.txt").write_text("x")
+        r = self.run_cli("start", "plan")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("集成基线不干净", r.stdout)

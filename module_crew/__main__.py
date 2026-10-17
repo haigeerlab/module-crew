@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import sys
-
 import json
+import sys
+from pathlib import Path
 
-from module_crew import inbox, probe, protocol, store
+from module_crew import inbox, probe, protocol, start, store
 
 
 def _store_init() -> int:
@@ -129,6 +129,43 @@ def _answer(number: int, original: str | None, original_file: str | None, option
     return 0
 
 
+def _start_plan(as_json: bool) -> int:
+    p = start.plan(".")
+    if as_json:
+        print(json.dumps({"slots": p.slots, "modules": p.modules, "conflicts": p.conflicts, "blockers": p.blockers},
+                         ensure_ascii=False, indent=2))
+    else:
+        print(f"空位：{p.slots}")
+        for b in p.blockers:
+            print(f"❌ {b}")
+        for m in p.modules:
+            print(f"  {m['id']}（{m['responsibility']}）")
+        for c in p.conflicts:
+            print(f"⚠️ 冲突：{'、'.join(c.get('modules', []))} 在 {'、'.join(c.get('paths', []))}")
+        if p.modules and not p.blockers:
+            print(f"提议：开这 {len(p.modules)} 个吗？（问用户一次，答应后运行 start prepare）")
+    return 0 if p.modules and not p.blockers else 3
+
+
+def _start_prepare(modules: list[str], original: str | None, original_file: str | None, short: str | None,
+                   max_modules: int | None, as_json: bool) -> int:
+    if original_file is not None:
+        original = _read(original_file)
+        if original is None:
+            return 2
+    res = start.prepare(".", modules, original, short, max_modules)
+    if as_json:
+        print(json.dumps({"code": res.code, "approval": res.approval, "lines": res.lines,
+                          "prepared": [{k: str(v) if isinstance(v, Path) else v for k, v in p.items()}
+                                       for p in res.prepared]}, ensure_ascii=False, indent=2))
+        return res.code
+    for line in res.lines:
+        print(line)
+    for p in res.prepared:
+        print(f"{p['id']}：worktree {p['worktree']}（分支 {p['branch']}），邮箱名 {p['relayName']}，开工说明 {p['kickoffPath']}")
+    return res.code
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="module-crew", description="module-crew 状态库")
     sub = parser.add_subparsers(dest="group")
@@ -150,7 +187,27 @@ def main(argv: list[str] | None = None) -> int:
     src.add_argument("--original")
     src.add_argument("--original-file")
     an.add_argument("--option")
+    sp = sub.add_parser("start", help="扩张点开工")
+    sps = sp.add_subparsers(dest="action", required=True)
+    spp = sps.add_parser("plan")
+    spp.add_argument("--json", action="store_true")
+    spr = sps.add_parser("prepare")
+    spr.add_argument("modules", nargs="+")
+    orig = spr.add_mutually_exclusive_group(required=True)
+    orig.add_argument("--original")
+    orig.add_argument("--original-file")
+    spr.add_argument("--project-short")
+    spr.add_argument("--max", type=int)
+    spr.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
+    if args.group == "start":
+        try:
+            if args.action == "plan":
+                return _start_plan(args.json)
+            return _start_prepare(args.modules, args.original, args.original_file, args.project_short, args.max, args.json)
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
     if args.group == "answer":
         try:
             return _answer(args.number, args.original, args.original_file, args.option)

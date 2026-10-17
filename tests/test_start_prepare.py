@@ -140,3 +140,18 @@ class PartialTest(StartCase):
         self.assertEqual(again.code, 0, again.lines)
         self.assertEqual(len(store.events(db, key="shop-b", kind="session")), 1)
         self.assertEqual(start.prepare(self.repo, ["b"], "再开 b").code, 3)
+
+
+class PrepareCliTest(StartCase):
+    def test_cli(self):
+        f = self.tmp / "orig.txt"
+        f.write_text("开 b\n就这样", encoding="utf-8")
+        r = self.run_cli("start", "prepare", "b", "--original-file", str(f), "--project-short", "shop")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for words in ("b：worktree", "邮箱名 shop-b", "开工说明", "角色标记待"):
+            self.assertIn(words, r.stdout)
+        approval = [x for x in store.records(store.open_store(self.repo), "item").values() if x["kind"] == "start"][0]
+        self.assertEqual(approval["answer"]["original"], "开 b\n就这样")
+        r = self.run_cli("start", "prepare", "e", "--original", "开 e")
+        self.assertEqual(r.returncode, 3)
+        self.assertEqual(self.run_cli("start", "prepare", "b").returncode, 2)
