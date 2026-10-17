@@ -59,3 +59,38 @@ class AddTest(ReviewCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BatchTest(ReviewCase):
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+
+    def map_with(self, **status):
+        from helpers import START_MAP
+        mods = [dict(m, status=status.get(m["id"], m["status"])) for m in START_MAP["modules"]]
+        self.set_map(dict(START_MAP, modules=mods))
+
+    def test_lists_open_reviews(self):
+        review.add(self.db, self.spec_review("b"), "shop-b", 1)
+        review.add(self.db, self.plan_review("b"), "shop-b", 2)
+        b = review.batch(self.repo)
+        self.assertEqual([(i["module"], i["node"]) for i in b["items"]], [("b", "spec"), ("b", "plan")])
+        self.assertIn("- 做：页面与接口", b["items"][0]["points"])
+
+    def test_dependency_check(self):
+        self.map_with(a="in_progress")
+        review.add(self.db, self.spec_review("b"), "shop-b", 1)
+        self.assertEqual(review.batch(self.repo)["dependencyIssues"], [{"module": "b", "missing": ["a"]}])
+        self.map_with(a="done")
+        self.assertEqual(review.batch(self.repo)["dependencyIssues"], [])
+
+    def test_conflicts_for_batch_modules_only(self):
+        from helpers import START_MAP
+        self.set_map(dict(START_MAP, startable={"modules": [], "conflicts": [
+            {"modules": ["b", "c"], "paths": ["apps/x/"]}, {"modules": ["d", "e"], "paths": ["apps/y/"]}]}))
+        review.add(self.db, self.spec_review("b"), "shop-b", 1)
+        self.assertEqual(review.batch(self.repo)["conflicts"], [{"modules": ["b", "c"], "paths": ["apps/x/"]}])
+
+    def test_empty(self):
+        self.assertEqual(review.batch(self.repo)["items"], [])

@@ -76,3 +76,44 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         if out.closed:
             out.lines.append("取代了 " + "、".join(f"#{k}" for k in out.closed))
         return out
+
+
+def _points(text: str) -> str:
+    return protocol.parse(text).fields.get("要点", "")
+
+
+def _approved_nodes(db: store.Store) -> dict[str, set[str]]:
+    """Modules -> nodes already approved through a review-approval."""
+    items = store.records(db, "item")
+    approved: dict[str, set[str]] = {}
+    for rec in items.values():
+        if rec.get("kind") == "review-approval":
+            for n in rec.get("reviews", []):
+                r = items.get(str(n)) or {}
+                approved.setdefault(r.get("module"), set()).add(r.get("node"))
+    return approved
+
+
+def batch(project: str | os.PathLike) -> dict:
+    """Read-only view of the open reviews, their dependency check and relevant conflicts."""
+    project = Path(project)
+    db = store.open_store(project)
+    open_items = sorted(((int(k), v) for k, v in store.records(db, "item").items()
+                         if v.get("kind") == "review" and v.get("state") == "open"), key=lambda kv: kv[0])
+    report = probe.run(project)
+    modules = {m.get("id"): m for m in (report.map or {}).get("modules") or [] if isinstance(m, dict)}
+    approved = _approved_nodes(db)
+    in_batch = {v["module"] for _, v in open_items if v["node"] in ("spec", "interface")}
+    issues = []
+    for mod in dict.fromkeys(v["module"] for _, v in open_items):
+        missing = [d for d in modules.get(mod, {}).get("dependsOn") or []
+                   if modules.get(d, {}).get("status") != "done" and d not in in_batch
+                   and not ({"spec", "interface"} & approved.get(d, set()))]
+        if missing:
+            issues.append({"module": mod, "missing": missing})
+    batch_mods = {v["module"] for _, v in open_items}
+    conflicts = [c for c in (report.map or {}).get("startable", {}).get("conflicts", [])
+                 if batch_mods & set(c.get("modules", []))]
+    return {"items": [{"number": n, "module": v["module"], "node": v["node"], "from": v["from"],
+                       "files": v["files"], "points": _points(v["text"])} for n, v in open_items],
+            "dependencyIssues": issues, "conflicts": conflicts}
