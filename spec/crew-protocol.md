@@ -1,0 +1,159 @@
+<!-- spec-guard: review approved cb67cf42a743 -->
+# Spec: crew-protocol
+
+> 能力图模块 `crew-protocol`。需求来源：`docs/requirements-record.md` B4（消息）、第 8 节（共用契约）；契约 session-protocol v1.1（提交 78da46f）。
+> 假设见下文，用户 2026-10-18 已确认。
+
+## 目标
+
+让 module-crew 的协调会话与模块会话说同一种话：按 session-protocol v1.1 严格解析收到的消息、生成协调会话发出的消息，
+并用契约自带的样例证明两边与契约一致。后面的 crew-onboarding、crew-start、crew-review-batch、crew-shared-changes 都只通过本模块读写消息正文。
+
+使用者是本插件的其他模块（Python 调用），以及在发送前自检的会话（`module-crew protocol check`）。
+
+## 范围
+
+**范围内**
+
+- `module_crew/protocol.py`：`parse`、`render_user_reply`、`render_coordination_notice`，纯函数，无 I/O。
+- 钉住契约 v1.1：样例复制到 `tests/fixtures/session-protocol/v1.1/`，一致性测试。
+- 只读命令 `module-crew protocol check <文件>`。
+- 把本插件的接入情况写进 session-protocol 的 `conformance/README.md`「各插件现状」表（该仓库唯一改动，验收时一并交审）。
+
+**范围外**
+
+- 发消息、收消息、等待单、事项编号（crew-onboarding 及之后的模块；本模块不碰状态库与 agent-relay）。
+- 生成多线【用户答复】、【答复告知】，解析【审查结论】【答复告知】（第一版用不到，见关键决策 2）。
+- 判断答复是否有效（原消息号是不是收到方自己发的）：需要状态库，归 crew-onboarding。
+
+## 假设（用户 2026-10-18 已确认）
+
+1. 钉住 v1.1：复制 `fixtures/` 到 `tests/fixtures/session-protocol/v1.1/`，记来源提交 78da46f；先核对 `SHA256SUMS`，再逐份对照期望结果，只比期望结果里出现的键。
+2. 解析：【等待用户】【等待其他会话】【已恢复】【撤回】【交审】【公共变更请求】（协调会话收）、【用户答复】【协调通知】（模块会话收）、认不出的消息；【审查结论】【答复告知】跳过并在一致性说明里写明。
+3. 生成：只生成协调会话发出的单线【用户答复】与【协调通知】；【协调通知】用「生成后再解析与输入一致」测；模块会话的消息由会话自己写、发送前用解析器自检。
+4. 独立实现，不复制、不依赖 decision-inbox 的代码；契约第 2 节的切分规则照契约写。
+5. 纯函数无 I/O；只读命令 `module-crew protocol check <文件>`，退出码 0 合格、3 不合格、2 参数错。
+
+## 关键决策与取舍（请重点审）
+
+1. **一个通用的「契约视图」作为测试与调用方的共同语言。** `Message.contract()` 返回契约第 12 节定义的那个字典
+   （`type`、`valid`、`replyTo`、`end`、`markers`、`item`、`fields`……以及 v1.1 的 `submission`、`changeRequest`、`notice`）。
+   一致性测试直接拿它和期望结果比；其他模块也用它的字段，不另设一套属性名。代价是字段名是契约里的 camelCase，与 Python 习惯不一致，换来的是「契约怎么写、代码就怎么读」。
+2. **认得全部 10 种标签，但只对支持的 8 种做校验。** 【审查结论】【答复告知】解析为对应类型代码、`supported` 为假、只做通用字段切分、
+   不给问题代码；调用方见到 `supported` 为假就当「第一版不处理」。这样不会把它们误判成 `unknown-kind`，也不用自造契约外的问题代码。
+3. **生成函数在输入不合法时直接抛 `ValueError`，不生成带问题的消息。** 例如开工类【协调通知】的依据里没有 `#N`、类型不是四种之一、
+   用户原话为空、选项原文不以字母开头。生成结果出门前再用 `parse` 自检一次，不合格也抛错——协调会话发出的消息永远合格。
+4. **用户原话一字不改。** `render_user_reply` 不去首尾空白、不合并空行；原话含换行时按契约续行规则原样保留（续行不加缩进）。
+5. **样例的指纹核对放在测试里，不放在运行时。** 运行时不读样例文件；升级契约 = 换一份目录、改 `SOURCE`、跑通测试。
+
+## 接口约定
+
+```python
+from module_crew import protocol
+
+msg = protocol.parse(text)
+msg.kind          # "review-request"；认不出为 "unknown"
+msg.supported     # 本插件是否校验这种类型（review-conclusion、answer-notice 为 False）
+msg.ok            # 没有问题代码
+msg.problems      # ("missing-end", "missing-field:要点", ...) 问题代码，按契约顺序
+msg.hints         # ("brief-thin", ...)
+msg.contract()    # 契约第 12 节的 parse 字典
+
+protocol.render_user_reply(item=12, original="12 A 先接微信支付", answered_at="2026-10-17T10:10:00+08:00",
+                           option_text="A：先接微信支付", source_relay_id=4540)
+# 【用户答复】\n事项：#12（你的原消息 #4540）\n用户原话：12 A 先接微信支付\n选项 A 原文：A：先接微信支付\n答复时间：...\n
+
+protocol.render_coordination_notice(kind="start", basis="用户批准事项 #7（crew-store 的 Spec 与 Plan）",
+                                    todo="在本 worktree 按 tasks/crew-store/plan.md 开始构建")
+# 【协调通知】\n类型：开工\n依据：...\n要你做什么：...\n
+```
+
+- `kind` 取契约代码 `start`／`sync-baseline`／`interface-change`／`wrap-up`，输出写中文标签。
+- 所有生成结果以单个换行结尾；字段值里的换行原样保留。
+
+### 命令行
+
+```bash
+bin/module-crew protocol check <文件>   # 打印类型、问题代码与提示代码；0 合格，3 不合格，2 文件读不到或参数错
+```
+
+`unknown` 与不支持的类型都按不合格（退出码 3）处理，并写明原因。
+
+### 样例目录
+
+```text
+tests/fixtures/session-protocol/v1.1/
+├── SOURCE          来源：仓库路径、提交号 78da46f、复制日期
+├── SHA256SUMS      原样复制
+└── <类型>/*.txt|*.json   原样复制（43 份样例、86 个文件，含本模块跳过的类型）
+```
+
+## 项目结构
+
+```text
+module_crew/protocol.py              本模块
+module_crew/__main__.py              加 protocol check 子命令
+tests/fixtures/session-protocol/v1.1/  契约样例（只读）
+tests/test_protocol_conformance.py   指纹核对 + 逐份对照
+tests/test_protocol_render.py        生成与往返
+tests/test_protocol_cli.py           protocol check
+```
+
+## 命令
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+## 代码风格
+
+沿用 crew-store：代码、标识符、注释英文，给人看的输出中文；只用标准库；类型标注写全。
+
+```python
+@dataclass(frozen=True)
+class Message:
+    kind: str
+    supported: bool
+    problems: tuple[str, ...]
+    hints: tuple[str, ...]
+    ...
+
+    @property
+    def ok(self) -> bool:
+        return not self.problems
+```
+
+## 测试策略
+
+- 一致性：遍历样例目录，对每份 `.json` 按「类型是否支持 × 有无 `parse`／`generate`」决定比较或跳过，跳过的写进测试输出；
+  任一样例对不上就失败，并打印期望与实际的差异。
+- 生成：契约里的 `user-reply` 生成样例逐字比较；【协调通知】四种类型各一个往返测试，外加非法输入抛错。
+- 不追求覆盖率数字；下面每条验收标准至少对应一个测试。
+
+## 边界
+
+- **始终**：先改契约再改实现；契约样例只复制不修改。
+- **先问**：在契约之外新增问题代码或字段；改钉住的契约版本。
+- **绝不**：就地修改样例文件或 `SHA256SUMS`；在 `protocol.py` 里读写文件、调用 git 或 agent-relay；修改用户原话。
+
+## 验收标准
+
+1. `tests/fixtures/session-protocol/v1.1/` 与 session-protocol 78da46f 的 `fixtures/` 逐字节相同；`SHA256SUMS` 全部核对通过；改动任一样例一个字节，一致性测试失败。
+2. 支持的 8 种类型及 `unknown` 的全部 `parse` 期望结果（v1.0 的 wait-user 12 份、user-reply 4 份、wait-session 2 份、resumed 3 份、withdraw 1 份、unknown 1 份，v1.1 的 15 份，共 38 份）逐键一致。
+3. `user-reply` 的 2 份单线生成样例（`single`、`free-text`）逐字相同；`multiline-user-reply`、`answer-notice` 的生成样例与 `review-conclusion` 的解析样例被跳过，测试输出列出跳过项。
+4. 【协调通知】四种类型 `render` 后再 `parse`：合格，`notice.kind` 与入参一致，三个字段的值与入参相同。
+5. `render_coordination_notice` 在类型不认识、开工类依据无 `#N`、任一字段为空时抛 `ValueError`；`render_user_reply` 在原话为空、编号不是正整数、选项原文不以字母开头时抛 `ValueError`。
+6. 含换行与首尾空格的用户原话经 `render_user_reply` 再 `parse`，`fields["用户原话"]` 与原话逐字相同（首行首部空格按契约规则去掉的情况在测试里写明）。
+7. 【审查结论】【答复告知】解析得到对应类型代码、`supported` 为假、没有问题代码。
+8. `protocol check`：合格样例退出码 0；`review-request/bad-file-line.txt` 退出码 3 并打印 `bad-file-line`；`unknown-kind.txt` 退出码 3；文件不存在退出码 2。
+9. `protocol.py` 不 import `module_crew.store`、`subprocess`，不调用 `open`（测试扫描断言）。
+10. session-protocol `conformance/README.md` 的 module-crew 一行写明钉住 v1.1、解析与生成的类型及跳过项（该仓库的提交另经用户确认）。
+
+## 未决问题
+
+- 用户原话首行若以空格开头：契约第 2 节规定字段首行的值去掉冒号后的空白，会丢掉这些空格。按契约现状实现并在验收 6 里写明；
+  是否需要契约补一条「用户原话首行原样保留」，留给你决定（不阻塞本模块）。
+
+## 文档建议
+
+无单独文档；`protocol check` 的用法写进 crew-onboarding 的模块会话 skill。
