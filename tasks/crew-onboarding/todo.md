@@ -30,4 +30,5 @@
   - 验证：`python3 -m unittest discover -s tests -p test_skills.py -v`
   - 文件：`skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`tests/test_skills.py`
 
-- [ ] Checkpoint 2（gate）：模块最终验收——全部测试全绿、11 条验收标准逐条对应测试、列出实际改动文件并贴出两份 skill 全文；停下等用户确认
+- [x] Checkpoint 2（gate）：模块最终验收——全部测试全绿、11 条验收标准逐条对应测试、列出实际改动文件并贴出两份 skill 全文；停下等用户确认
+  - 记录：111 个测试全绿（连跑 3 次）；9 个文件 +677/−7；两份 skill 全文已交审；用户 2026-10-18 验收通过。「等待审批」在线状态未实地核对，留第 7 关
