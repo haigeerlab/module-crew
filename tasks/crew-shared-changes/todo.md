@@ -15,7 +15,7 @@
 - [x] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
   - 记录：`python3 -m unittest discover -s tests -v` → Ran 154 tests in 51.698s OK（2026-10-18）；任务 1、2 测试在同一文件，一并提交
 
-- [ ] Task 3：`change land`
+- [x] Task 3：`change land`
   - 验收：Spec 验收 5、6、7
   - 验证：同上
   - 文件：`module_crew/changes.py`、`tests/test_changes.py`
