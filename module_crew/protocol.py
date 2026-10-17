@@ -1,4 +1,4 @@
-"""Parse and render session-protocol v1.2 messages (see spec/crew-protocol.md).
+"""Parse and render session-protocol v1.3 messages (see spec/crew-protocol.md).
 
 Pure functions only: no file, git or agent-relay access. Field names, tags and
 problem codes follow the contract text in session-protocol PROTOCOL.md.
@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-CONTRACT_VERSION = "1.2"
+CONTRACT_VERSION = "1.3"
 
 KIND_TAGS = {
     "等待用户": "wait-user",

@@ -62,6 +62,12 @@ f7150ca2600e14dc7f502a221f8f50b94c670c60ec2b4c7bdca947837483ac3e  ./wait-session
 cf531aeb7dc1cf5117e88d7ddc953bfb7c78e9120b32e15c627205624b692ba5  ./wait-user/bad-stop-flag.txt
 82162a9f50f0c74017437bf99da40026c11bb7e705a986289a626b922138c663  ./wait-user/basic.json
 c957c888b766465a14171352029dee187d89cbf566667650ac947305a3ed26eb  ./wait-user/basic.txt
+1606967d847907fd6ab7592c4995a27c32092609a8e7071e5b568a489cc0e2d3  ./wait-user/brief-thin-already-clear.json
+3895e2b98809648963e3965928de43ef70573314a3b56601221f1c9e835cb0e2  ./wait-user/brief-thin-already-clear.txt
+e74fd405cab0738b18a15875664857415750c1c2c84091c0f8011c1661045631  ./wait-user/brief-thin-ditto.json
+271667ed9df9148b7db6e9e84c3242442e43041fc43e25a9ec06f88aa2cd322c  ./wait-user/brief-thin-ditto.txt
+00fb476038279b7f6dfa208ab55ae456b225ee2655d984b1c1494a628737c62e  ./wait-user/brief-thin-see-detail.json
+6f056859cb77130daa643d4ee657f7343031ebbfadb5faa9d9bf84327fe9d5ad  ./wait-user/brief-thin-see-detail.txt
 00c153b62c33b263e03dbbae4c2d74cb40d03ba46a29107d577d70788c8ccbff  ./wait-user/brief-thin.json
 c279fe07d910160cb84e73cbc816518c7a799eab3141339b6f82d00892f17102  ./wait-user/brief-thin.txt
 04b5c9e7b79936789a45db1379d8eeafdc451a72d99bb65252a5c3a1c14406b4  ./wait-user/missing-end.json
