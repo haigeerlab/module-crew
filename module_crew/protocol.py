@@ -54,6 +54,9 @@ _RECOMMEND_RE = re.compile(rf"^推荐\s*{_COLON}?\s*([A-Z])\s*$")
 _CONSEQUENCE_RE = re.compile(rf"^选了会怎样\s*{_COLON}\s*(.*)$")
 _SCOPE_RE = re.compile(rf"^[-*•·]?\s*([^\s：:]+)\s*{_COLON}\s*(.*)$")
 _SESSION_SEP = re.compile(r"[、,，+＋\s]+")
+_FILE_LINE_RE = re.compile(r"^(?:-\s+)?(\S.*?)\s+(sha256:[0-9a-f]{12,64})$")
+REVIEW_NODES = {"Spec": "spec", "Plan": "plan", "接口提案": "interface", "最终验收": "final"}
+NOTICE_KINDS = {"开工": "start", "同步基线": "sync-baseline", "接口变更": "interface-change", "收尾": "wrap-up"}
 _THIN_WORDS = ("详见", "已明确", "同上")
 # 架构审查 wordings (decision-inbox 0.0.7 behaviour carried into v1.0); anything else is "unrecognized".
 _REVIEW_REF_RE = re.compile(r"（\s*(#?[A-Za-z]*-?\d+)\s*）$")
@@ -261,6 +264,18 @@ def _stop_flag(fields: dict, problems: list[str]) -> bool | None:
     return flag == "是"
 
 
+def _lines(block: str | None) -> list[str]:
+    """Non-blank lines of a list field, stripped, with an optional leading 「- 」 removed."""
+    out = []
+    for raw in (block or "").split("\n"):
+        line = raw.strip()
+        if line.startswith("- "):
+            line = line[2:].strip()
+        if line:
+            out.append(line)
+    return out
+
+
 def _require(fields: dict, names, problems: list[str]) -> None:
     for name in names:
         if not fields.get(name, "").strip():
@@ -320,6 +335,42 @@ def parse(text: str) -> Message:
         extra = {"options": options, "recommended": recommended, "suggestedReply": fields.get("你该回") or None,
                  "fullyStopped": stopped, "linesInScope": in_scope, "scopes": scopes,
                  "reviewLine": _review_line(fields.get("架构审查"))}
+    elif kind == "review-request":
+        if not end.present:
+            problems.append("missing-end")
+        node = REVIEW_NODES.get(fields.get("节点", "").strip())
+        required = ("模块", "节点", "文件", "要点") + (("改动统计", "越界检查") if node == "final" else ())
+        _require(fields, required, problems)
+        if fields.get("节点", "").strip() and node is None:
+            problems.append("bad-node")
+        files, bad_line = [], False
+        for line in _lines(fields.get("文件")):
+            m = _FILE_LINE_RE.match(line)
+            if m:
+                files.append({"path": m.group(1), "fingerprint": m.group(2)})
+            else:
+                bad_line = True
+        if bad_line:
+            problems.append("bad-file-line")
+        if fields.get("要点", "").strip() and _brief_thin(fields["要点"]):
+            hints.append("brief-thin")
+        extra = {"submission": {"module": fields.get("模块", "").strip() or None, "node": node, "files": files}}
+    elif kind == "shared-change-request":
+        if not end.present:
+            problems.append("missing-end")
+        _require(fields, ("来自", "文件", "改什么", "为什么"), problems)
+        stopped = _stop_flag(fields, problems)
+        extra = {"fullyStopped": stopped, "changeRequest": {"files": _lines(fields.get("文件"))}}
+    elif kind == "coordination-notice":
+        _require(fields, ("类型", "依据", "要你做什么"), problems)
+        raw_kind = fields.get("类型", "").strip()
+        notice_kind = NOTICE_KINDS.get(raw_kind)
+        if raw_kind and notice_kind is None:
+            problems.append("bad-notice-kind")
+        refs = [int(x) for x in _NUM_RE.findall(fields.get("依据", ""))]
+        if notice_kind == "start" and not refs:
+            problems.append("missing-approval-ref")
+        extra = {"notice": {"kind": notice_kind, "refs": refs}}
     elif kind == "wait-session":
         if not end.present:
             problems.append("missing-end")

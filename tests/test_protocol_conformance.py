@@ -13,7 +13,7 @@ from module_crew import protocol
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "session-protocol" / "v1.1"
 
 # Types this plugin parses / generates (spec 假设 2、3). Everything else is skipped and listed.
-PARSED = {"wait-user", "wait-session", "resumed", "withdraw", "user-reply", "unknown"}
+PARSED = {"review-request", "shared-change-request", "coordination-notice", "wait-user", "wait-session", "resumed", "withdraw", "user-reply", "unknown"}
 GENERATED = set()
 # Fixtures whose expectation the contract itself must fix; skipped with a reason, never silently.
 CONTRACT_DEFECTS: dict[str, str] = {
@@ -74,7 +74,7 @@ class FingerprintTest(unittest.TestCase):
 
 class ConformanceTest(unittest.TestCase):
     def test_parse_fixtures(self):
-        skipped = []
+        skipped, checked = [], 0
         for name, txt, doc in cases():
             if "parse" not in doc:
                 continue
@@ -85,11 +85,23 @@ class ConformanceTest(unittest.TestCase):
             if kind not in PARSED:
                 skipped.append(name)
                 continue
+            checked += 1
             with self.subTest(fixture=name):
                 actual = protocol.parse(txt.read_text(encoding="utf-8")).contract()
                 problems = diff(doc["parse"], actual)
                 self.assertEqual(problems, [], "\n".join(problems))
-        print(f"\n  parse skipped: {', '.join(skipped) or 'none'}", file=sys.stderr)
+        print(f"\n  parse checked: {checked}; skipped: {', '.join(skipped) or 'none'}", file=sys.stderr)
+        self.assertEqual(checked, 37)  # 38 supported samples minus the contract defect
+
+
+class UnsupportedKindsTest(unittest.TestCase):
+    def test_review_conclusion_and_answer_notice_are_recognised_not_judged(self):
+        for name in ("review-conclusion/bad-node", "review-conclusion/basic", "answer-notice/basic"):
+            with self.subTest(name):
+                msg = protocol.parse((FIXTURES / f"{name}.txt").read_text(encoding="utf-8"))
+                self.assertEqual(msg.kind, name.split("/")[0])
+                self.assertFalse(msg.supported)
+                self.assertEqual(msg.problems, ())
 
 
 if __name__ == "__main__":

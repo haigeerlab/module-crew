@@ -17,12 +17,13 @@
   - 验证：同上
   - 文件：`module_crew/protocol.py`、`tests/test_protocol_conformance.py`
 
-- [ ] Task 4：v1.1 三种与不支持的两种
+- [x] Task 4：v1.1 三种与不支持的两种
   - 验收：review-request 6、shared-change-request 4、coordination-notice 5 份逐键一致；Spec 验收 7
   - 验证：同上
   - 文件：`module_crew/protocol.py`、`tests/test_protocol_conformance.py`
 
-- [ ] Checkpoint 1（report）：全部测试全绿，38 份解析样例通过、跳过项列出，记下命令与结果后继续
+- [x] Checkpoint 1（report）：全部测试全绿，38 份解析样例通过、跳过项列出，记下命令与结果后继续
+  - 记录：`python3 -m unittest discover -s tests -v` → Ran 43 tests, OK；解析样例对照 37 份通过，跳过 review-conclusion 4 份与契约缺陷 unknown/unknown-kind 1 份（2026-10-18）
 
 - [ ] Task 5：生成函数
   - 验收：Spec 验收 3、4、5、6
