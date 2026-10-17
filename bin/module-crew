@@ -1,0 +1,4 @@
+#!/bin/sh
+# Thin wrapper: run the module_crew package from this plugin checkout.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m module_crew "$@"
