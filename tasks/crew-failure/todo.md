@@ -7,7 +7,7 @@
   - 验证：`python3 -m unittest discover -s tests -p "test_failure.py" -v`，再跑 `test_start_*.py`
   - 文件：`module_crew/failure.py`、`module_crew/start.py`、`tests/test_failure.py`
 
-- [ ] Task 2：`sessions`
+- [x] Task 2：`sessions`
   - 验收：Spec 验收 4
   - 验证：同上
   - 文件：`module_crew/failure.py`、`tests/test_failure.py`

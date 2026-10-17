@@ -58,5 +58,46 @@ class SuspendTest(FailureCase):
         self.assertEqual(reasons, [])
 
 
+class SessionsTest(FailureCase):
+    def open_ticket(self, sender):
+        with self.db.transaction(actor="test") as tx:
+            n = tx.allocate_number()
+            tx.put("ticket", str(n), {"state": "open", "from": sender, "relayId": 1, "text": "等", "waitingFor": "x",
+                                      "what": "接口", "closedReason": None, "closedBy": None}, action="opened")
+        return n
+
+    def test_lists_facts_without_verdicts(self):
+        failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        t = self.open_ticket("shop-c")
+        item = inbox.add(self.db, wait_user(sender="shop-c"), "shop-c", 901).number
+        rows = {r["module"]: r for r in failure.sessions(self.db)}
+        self.assertEqual(set(rows), {"b", "c"})
+        self.assertEqual(rows["b"]["suspended"], "等设计稿")
+        self.assertIsNone(rows["c"]["suspended"])
+        self.assertEqual(rows["c"]["openTickets"], [t])
+        self.assertIn(item, rows["c"]["openItems"])
+        self.assertEqual(rows["b"]["openTickets"], [])
+        self.assertEqual(rows["b"]["stage"], hooks.STAGE_WRITE)
+        self.assertTrue(rows["b"]["lastActivity"] and rows["c"]["ago"].endswith("前"))
+        text = "\n".join(failure.render_sessions(failure.sessions(self.db)))
+        for word in ("停下", "卡住", "超时", "异常"):
+            self.assertNotIn(word, text)
+        self.assertIn("等设计稿", text)
+
+    def test_last_activity_is_per_session(self):
+        before = {r["module"]: r["lastActivity"] for r in failure.sessions(self.db)}
+        import time; time.sleep(1.1)
+        inbox.add(self.db, wait_user(sender="shop-c"), "shop-c", 902)
+        after = {r["module"]: r["lastActivity"] for r in failure.sessions(self.db)}
+        self.assertEqual(after["b"], before["b"])
+        self.assertNotEqual(after["c"], before["c"])
+
+    def test_ago_text(self):
+        from datetime import datetime, timedelta
+        now = datetime.now().astimezone()
+        for delta, want in ((timedelta(minutes=5), "5 分钟前"), (timedelta(hours=3), "3 小时前"), (timedelta(days=2), "2 天前")):
+            self.assertEqual(failure._ago((now - delta).isoformat(timespec="seconds"), now), want)
+
+
 if __name__ == "__main__":
     unittest.main()
