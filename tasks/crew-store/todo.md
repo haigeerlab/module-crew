@@ -43,7 +43,7 @@
   - 验证：`python3 -m unittest discover -s tests -p test_store_session.py -v`
   - 文件：`module_crew/store.py`、`tests/test_store_session.py`
 
-- [ ] Task 8：`store check`
+- [x] Task 8：`store check`
   - 验收：Spec 验收 3、7、9、12 中 `check` 的输出与退出码；孤立正文报告为警告
   - 验证：`python3 -m unittest discover -s tests -p test_store_check.py -v`
   - 文件：`module_crew/store.py`、`module_crew/__main__.py`、`tests/test_store_check.py`
