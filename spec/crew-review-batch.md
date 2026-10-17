@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved b422964cdea5 -->
+<!-- spec-guard: review approved 33f6839e547c -->
 # Spec: crew-review-batch
 
 > 能力图模块 `crew-review-batch`。需求来源：`docs/requirements-record.md` B2（批量审批、提交到基线后才开工构建）、A3（扩张点前批量前置审，批准后 Spec 与 Plan 提交到集成基线、同批互相读得到）、
@@ -130,3 +130,7 @@ python3 -m unittest discover -s tests -v
 ## 文档建议
 
 README「一次完整流程」接着写：交审 → `review batch` → 用户批准 → `review approve` → 发答复与开工通知。
+
+## 变更记录
+
+- 2026-10-18：开工类【协调通知】的「要你做什么」补一句「`spec/<id>.md`、`tasks/<id>/` 冲突时取集成分支的版本（它带评审标记）」，crew-dev skill 增加「同步集成基线」一节，并加回归测试。原因：`review approve` 在集成分支提交带评审标记的副本，模块分支上是同名不带标记的文件，模块同步集成分支时出现 add/add 冲突（crew-recovery-hooks 构建中发现，临时目录已复现）；来源：用户 2026-10-18 选 A。
