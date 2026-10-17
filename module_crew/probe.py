@@ -12,10 +12,14 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from module_crew import store
+from module_crew.store import NotInRepo
+
 RELAY_MAJOR = 2
 SPEC_GUARD_MAJOR = 1
 PLANNING_MINOR = 1  # spec-guard interface 1.1 brings the planning layer
 MAP_TIMEOUT = 10
+MIN_GIT = (2, 31)
 
 
 @dataclass(frozen=True)
@@ -190,3 +194,63 @@ def _planning(doc: dict, result: dict) -> Check:
         return Check("spec-guard-planning", "blocker", "/map --json 没有 startable",
                      "升级 spec-guard 到带可开工列表的版本")
     return Check("spec-guard-planning", "ok", "规划层可用")
+
+
+# ---------------------------------------------------------------- repository
+
+def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, timeout=30)
+
+
+def check_git(project: str | os.PathLike) -> Check:
+    """Raises NotInRepo outside a git repository; a bare repository or an old git is a blocker."""
+    project = Path(project)
+    inside = _git(project, "rev-parse", "--git-dir")
+    if inside.returncode != 0:
+        raise NotInRepo(f"{project} 不在 git 仓库里")
+    version = subprocess.run(["git", "--version"], capture_output=True, text=True).stdout
+    nums = tuple(int(x) for x in (version.split()[2].split(".")[:2] if len(version.split()) > 2 else []) if x.isdigit())
+    if len(nums) < 2 or nums < MIN_GIT:
+        return Check("git", "blocker", f"git 版本太旧：{version.strip()}，需要 2.31 以上", "升级 git")
+    if _git(project, "rev-parse", "--is-bare-repository").stdout.strip() == "true":
+        return Check("git", "blocker", "这是裸仓库，不能建 worktree 开发", "在有工作区的 checkout 里运行")
+    return Check("git", "ok", version.strip())
+
+
+def _integration_branch(project: Path) -> str | None:
+    try:
+        cfg = store.get(store.open_store(project), "config", "main") or {}
+    except store.StoreError:
+        cfg = {}
+    branch = cfg.get("integrationBranch")
+    if isinstance(branch, str) and branch:
+        return branch
+    head = _git(project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    return None if head in ("", "HEAD") else head
+
+
+def _checkout_of(project: Path, branch: str) -> Path | None:
+    listing = _git(project, "worktree", "list", "--porcelain").stdout
+    path = None
+    for line in listing.splitlines():
+        if line.startswith("worktree "):
+            path = Path(line[len("worktree "):])
+        elif line == f"branch refs/heads/{branch}" and path is not None:
+            return path
+    return None
+
+
+def check_baseline(project: str | os.PathLike) -> Check:
+    project = Path(project)
+    branch = _integration_branch(project)
+    if branch is None:
+        return Check("baseline", "blocker", "当前不在任何分支上，也没有设定集成分支", "切到集成分支，或在状态库 config 里设 integrationBranch")
+    checkout = _checkout_of(project, branch)
+    if checkout is None:
+        return Check("baseline", "blocker", f"集成分支 {branch} 没有被任何 checkout 检出",
+                     f"在某个 checkout 里 git switch {branch}")
+    changed = [x for x in _git(checkout, "status", "--porcelain").stdout.splitlines() if x.strip()]
+    if changed:
+        return Check("baseline", "blocker", f"集成基线不干净：{checkout}（{branch}）有 {len(changed)} 个文件未提交或未跟踪",
+                     "提交或清理这些改动后再开工")
+    return Check("baseline", "ok", f"集成分支 {branch}，在 {checkout}，工作区干净")

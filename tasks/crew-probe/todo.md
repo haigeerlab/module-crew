@@ -12,12 +12,13 @@
   - 验证：`python3 -m unittest discover -s tests -p test_probe_map.py -v`
   - 文件：`module_crew/probe.py`、`tests/fixtures/plugins/**`、`tests/test_probe_map.py`
 
-- [ ] Task 3：git 与集成基线
+- [x] Task 3：git 与集成基线
   - 验收：Spec 验收 5、6
   - 验证：`python3 -m unittest discover -s tests -p test_probe_repo.py -v`
   - 文件：`module_crew/probe.py`、`tests/test_probe_repo.py`
 
-- [ ] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
+- [x] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
+  - 记录：`python3 -m unittest discover -s tests -v` → Ran 78 tests in 12.089s OK（2026-10-18）
 
 - [ ] Task 4：状态库汇总与 `run()` 报告
   - 验收：Spec 验收 7、9
