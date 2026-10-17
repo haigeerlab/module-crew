@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 from module_crew import probe, protocol, store
-from module_crew.inbox import Outcome
+from module_crew.inbox import AnswerRefused, Outcome, Reply
 
 
 def _session(db: store.Store, sender: str) -> dict | None:
@@ -117,3 +117,29 @@ def batch(project: str | os.PathLike) -> dict:
     return {"items": [{"number": n, "module": v["module"], "node": v["node"], "from": v["from"],
                        "files": v["files"], "points": _points(v["text"])} for n, v in open_items],
             "dependencyIssues": issues, "conflicts": conflicts}
+
+
+def _reply_text(item_no: int, rec: dict, original: str, answered_at: str) -> str:
+    try:
+        return protocol.render_user_reply(item=item_no, original=original, answered_at=answered_at,
+                                          source_relay_id=rec["relayId"])
+    except ValueError as exc:
+        raise AnswerRefused(str(exc)) from exc
+
+
+def answer(db: store.Store, number: int, original: str) -> Reply:
+    """【用户答复】 for one open review (e.g. changes required); the baseline is not touched."""
+    with db.transaction(actor="coordinator") as tx:
+        rec = tx.get("item", str(number))
+        if rec is None or rec.get("kind") != "review":
+            raise AnswerRefused(f"没有交审事项 #{number}")
+        if rec.get("state") != "open":
+            raise AnswerRefused(f"交审事项 #{number} 已关闭（{rec.get('closedReason')}）")
+        answered_at = store.now()
+        text = _reply_text(number, rec, original, answered_at)
+        body = tx.allocate_number()
+        meta = tx.write_body(body, text)
+        tx.put("item", str(number), dict(rec, state="closed", closedReason="answered",
+                                         answer={"original": original, "answeredAt": answered_at, "body": body}),
+               action="answered", data={"body": body})
+    return Reply(rec["from"], rec["relayId"], body, db.path / meta["path"])

@@ -15,7 +15,7 @@
 - [x] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
   - 记录：`python3 -m unittest discover -s tests -v` → Ran 139 tests in 34.189s OK（2026-10-18）
 
-- [ ] Task 3：`review answer`
+- [x] Task 3：`review answer`
   - 验收：Spec 验收 9
   - 验证：`python3 -m unittest discover -s tests -p test_review_approve.py -v`
   - 文件：`module_crew/review.py`、`tests/test_review_approve.py`
