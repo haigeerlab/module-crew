@@ -25,12 +25,12 @@
 - [x] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
   - 记录：`python3 -m unittest discover -s tests -v` → Ran 171 tests in 66.379s OK（2026-10-18）；任务 2～4 测试在同一文件，一并提交；发现检查命令在清单不过时已写入配置，改为清单通过后再写
 
-- [ ] Task 5：`merge cleanup`
+- [x] Task 5：`merge cleanup`
   - 验收：Spec 验收 8
   - 验证：`python3 -m unittest discover -s tests -p test_merge_finish.py -v`
   - 文件：`module_crew/merge.py`、`tests/test_merge_finish.py`
 
-- [ ] Task 6：`merge push-plan` 与 `merge push`
+- [x] Task 6：`merge push-plan` 与 `merge push`
   - 验收：Spec 验收 9、10
   - 验证：同上
   - 文件：`module_crew/merge.py`、`tests/test_merge_finish.py`

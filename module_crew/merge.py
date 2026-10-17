@@ -208,3 +208,149 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
                             todo="把集成分支合进你的模块分支，跑完整检查后继续")
             result.lines.append(f"#{n}（{m}）已合入集成分支 {short}")
     return result
+
+
+@dataclass
+class Simple:
+    code: int
+    lines: list[str] = field(default_factory=list)
+
+
+def cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
+    """With the user's words: remove a merged module's worktree (no --force) and retire its session."""
+    project = Path(project)
+    db = store.open_store(project)
+    if not original or not original.strip():
+        return Simple(3, ["用户原话不能为空：收回 worktree 要用户明确同意"])
+    merged = [v for v in store.records(db, "item").values()
+              if v.get("kind") == "merge-approval" and v.get("module") == module and v.get("closedReason") == "merged"]
+    if not merged:
+        return Simple(3, [f"模块 {module} 还没有合入集成分支，不能收回"])
+    name, session = next(((k, v) for k, v in store.records(db, "session").items()
+                          if v.get("role") == "dev" and v.get("module") == module and v.get("status") == "active"),
+                         (None, None))
+    if session is None:
+        return Simple(3, [f"模块 {module} 没有在用的会话登记"])
+    worktree = Path(session["worktree"])
+    if not worktree.is_dir() or not _clean(worktree):
+        return Simple(3, [f"{worktree} 不存在或不干净，没有收回"])
+    removed = _git(project, "worktree", "remove", str(worktree))
+    if removed.returncode != 0:
+        return Simple(3, [f"git worktree remove 失败：{removed.stderr.strip()[:200]}"])
+    with db.transaction(actor="coordinator") as tx:
+        tx.put("session", name, dict(session, status="retired"), action="retired",
+               data={"original": original, "reason": "merged"})
+    return Simple(0, [f"已收回 {worktree}（分支 {module} 保留），会话 {name} 改为退役；请用 agent-relay 退役邮箱名 {name}"])
+
+
+@dataclass
+class PushPlan:
+    code: int
+    lines: list[str] = field(default_factory=list)
+    remote: str | None = None
+    branch: str | None = None
+    base: str | None = None
+    commits: list[str] = field(default_factory=list)
+    title: str = ""
+    body: str = ""
+    modules: list[dict] = field(default_factory=list)
+
+
+def _next_number(db: store.Store) -> int:
+    return max((int(e["key"]) for e in store.events(db)
+                if e["type"].split(".")[0] in store.NUMBERED and e["key"].isdigit()), default=0) + 1
+
+
+def push_plan(project: str | os.PathLike) -> PushPlan:
+    """Read-only preview of the push: remote, new branch, PR base, commits and PR text."""
+    project = Path(project)
+    db = store.open_store(project)
+    cfg = store.get(db, "config", "main") or {}
+    remote = cfg.get("remote") or "origin"
+    integration = cfg.get("integrationBranch")
+    if not integration:
+        return PushPlan(3, ["还没有运行配置（先 start prepare）"])
+    if _git(project, "remote", "get-url", remote).returncode != 0:
+        return PushPlan(3, [f"没有远端 {remote}：推送与开 PR 交用户自己处理"])
+    base = cfg.get("prBase") or integration
+    tracking = f"refs/remotes/{remote}/{base}"
+    if _git(project, "rev-parse", "--verify", "--quiet", tracking).returncode == 0:
+        span, note = [integration, f"^{tracking}"], None
+    else:
+        span, note = [integration], f"本地没有 {remote}/{base} 的跟踪分支，列出的是集成分支的全部提交"
+    commits = _git(project, "log", "--format=%h %s", *span).stdout.strip().splitlines()
+    if not commits:
+        return PushPlan(3, ["没有要推送的提交"], remote=remote, base=base)
+    pushed = {c for v in store.records(db, "item").values() if v.get("kind") == "push" for c in v.get("mergeCommits", [])}
+    modules = [{"module": v["module"], "approval": int(k), "mergeCommit": v["mergeCommit"]}
+               for k, v in sorted(store.records(db, "item").items(), key=lambda kv: int(kv[0]))
+               if v.get("kind") == "merge-approval" and v.get("closedReason") == "merged" and v["mergeCommit"] not in pushed]
+    number = _next_number(db)
+    branch = f"crew/batch-{number}"
+    names = "、".join(m["module"] for m in modules) or "集成分支改动"
+    title = f"module-crew：合入 {names}"
+    module_lines = [f"- {m['module']}：合并批准事项 #{m['approval']}，合并提交 {m['mergeCommit'][:7]}"
+                    for m in modules] or ["- （无）"]
+    body = "\n".join(["本批由 module-crew 协调会话在本地集成分支合入，远端合并请由你决定。", "",
+                      "## 合入的模块", *module_lines, "", "## 提交", *[f"- {c}" for c in commits]]) + "\n"
+    lines = [f"远端 {remote}，新分支 {branch} → PR 开向 {base}", f"{len(commits)} 个提交"] + ([note] if note else [])
+    return PushPlan(0, lines, remote, branch, base, commits, title, body, modules)
+
+
+@dataclass
+class PushResult:
+    code: int
+    lines: list[str] = field(default_factory=list)
+    branch: str | None = None
+    record: int | None = None
+    pr: str | None = None
+
+
+def _gh() -> str | None:
+    override = os.environ.get("MODULE_CREW_GH")
+    if override is not None:
+        return override or None
+    return shutil.which("gh")
+
+
+def push(project: str | os.PathLike, original: str) -> PushResult:
+    """With the user's explicit words: push the integration branch to a new remote branch and open one PR."""
+    project = Path(project)
+    if not original or not original.strip():
+        return PushResult(3, ["用户原话不能为空：推送要用户明确授权"])
+    plan = push_plan(project)
+    if plan.code != 0:
+        return PushResult(plan.code, plan.lines)
+    db = store.open_store(project)
+    cfg = store.get(db, "config", "main")
+    pushed = _git(project, "push", plan.remote, f"{cfg['integrationBranch']}:refs/heads/{plan.branch}")
+    if pushed.returncode != 0:
+        return PushResult(4, [f"推送失败：{pushed.stderr.strip()[:300]}"])
+    result = PushResult(0, [f"已推送到 {plan.remote}/{plan.branch}"], branch=plan.branch)
+    gh = _gh()
+    with db.transaction(actor="coordinator") as tx:
+        number = tx.allocate_number()
+        body_no = tx.allocate_number()
+        meta = tx.write_body(body_no, plan.body)
+        body_path = db.path / meta["path"]
+        pr = None
+        if gh:
+            made = subprocess.run([gh, "pr", "create", "--base", plan.base, "--head", plan.branch, "--title", plan.title,
+                                   "--body-file", str(body_path)], cwd=project, capture_output=True, text=True, timeout=120)
+            if made.returncode == 0:
+                pr = made.stdout.strip().splitlines()[-1] if made.stdout.strip() else None
+                result.lines.append(f"已开 PR：{pr}（请你在远端合并；没有开自动合并）")
+            else:
+                result.code = 4
+                result.lines.append(f"推送成功，但开 PR 失败：{made.stderr.strip()[:300]}；PR 正文在 {body_path}")
+        else:
+            result.lines.append(f"没有 gh：请你在远端从 {plan.branch} 向 {plan.base} 开 PR。PR 标题：{plan.title}；PR 正文：")
+            result.lines.append(plan.body)
+        tx.put("item", str(number), {
+            "state": "closed", "kind": "push", "closedReason": "pushed", "remoteBranch": plan.branch, "base": plan.base,
+            "commits": plan.commits, "mergeCommits": [m["mergeCommit"] for m in plan.modules], "pr": pr, "body": body_no,
+            "answer": {"original": original, "answeredAt": store.now()}}, action="pushed")
+    result.record, result.pr = number, pr
+    if f"batch-{number}" not in plan.branch:
+        result.lines.append(f"注意：分支名用的是 {plan.branch}，推送记录编号是 #{number}（期间有其他写入）")
+    return result
