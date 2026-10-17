@@ -28,6 +28,16 @@ class SkillsTest(unittest.TestCase):
                       "不要抄进 worktree 的 CLAUDE.md"):
             self.assertIn(words, text)
 
+    def test_coordinator_start_section(self):
+        _, text = read("crew-coordinator")
+        self.assertIn("## 开工", text)
+        section = text.split("## 开工", 1)[1].split("\n## ", 1)[0]
+        for words in ("start plan", "只问用户一次", "start prepare", "开会话工具", "worktree", "开工说明", "做完一轮叫醒我",
+                      "不能比本会话更宽"):
+            self.assertIn(words, section)
+        self.assertLess(section.index("start plan"), section.index("只问用户一次"))
+        self.assertLess(section.index("只问用户一次"), section.index("start prepare"))
+
     def test_dev_rules(self):
         _, text = read("crew-dev")
         for words in ("protocol check", "【等待其他会话】", "【交审】", "最终验收", "收到用户对 #N 的答复：『原话』",

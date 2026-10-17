@@ -30,7 +30,7 @@
   - 验证：`python3 -m unittest discover -s tests -p "test_start_*.py" -v`
   - 文件：`module_crew/__main__.py`、`tests/test_start_plan.py`、`tests/test_start_prepare.py`
 
-- [ ] Task 6：协调会话 skill「开工」一节
+- [x] Task 6：协调会话 skill「开工」一节
   - 验收：Spec 验收 8
   - 验证：`python3 -m unittest discover -s tests -p test_skills.py -v`
   - 文件：`skills/crew-coordinator/SKILL.md`、`tests/test_skills.py`
