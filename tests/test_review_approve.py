@@ -131,3 +131,28 @@ class ApproveTest(ReviewCase):
         _, stored_after, head_after = snapshot(self)
         self.assertEqual((stored_after, head_after), (stored, head))
         self.assertIn("spec/", git(self.repo, "status", "--porcelain"))
+
+
+class CliTest(ReviewCase):
+    def test_add_batch_approve(self):
+        f = self.tmp / "r.txt"
+        f.write_text(self.spec_review("b"), encoding="utf-8")
+        r = self.run_cli("review", "add", str(f), "--from", "shop-b", "--relay-id", "4600")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        f.write_text(self.plan_review("b"), encoding="utf-8")
+        self.run_cli("review", "add", str(f), "--from", "shop-b", "--relay-id", "4601")
+        r = self.run_cli("review", "batch")
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("b 的 Spec", r.stdout)
+        nums = [i["number"] for i in __import__("json").loads(self.run_cli("review", "batch", "--json").stdout)["items"]]
+        r = self.run_cli("review", "approve", *map(str, nums), "--original", "都批准")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(r.stdout.count("发送 【用户答复】"), 2)
+        self.assertEqual(r.stdout.count("发送 【协调通知】"), 1)
+        self.assertEqual(self.run_cli("review", "batch").returncode, 3)
+
+    def test_inbox_still_returns_4(self):
+        f = self.tmp / "r.txt"
+        f.write_text(self.spec_review("b"), encoding="utf-8")
+        r = self.run_cli("inbox", "add", str(f), "--from", "shop-b", "--relay-id", "1")
+        self.assertEqual(r.returncode, 4)

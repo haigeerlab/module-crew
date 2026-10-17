@@ -38,6 +38,14 @@ class SkillsTest(unittest.TestCase):
         self.assertLess(section.index("start plan"), section.index("只问用户一次"))
         self.assertLess(section.index("只问用户一次"), section.index("start prepare"))
 
+    def test_coordinator_review_section(self):
+        _, text = read("crew-coordinator")
+        self.assertIn("review add", text.split("## 收到模块会话的消息", 1)[1].split("\n## ", 1)[0])
+        section = text.split("## 交审与批准", 1)[1].split("\n## ", 1)[0]
+        for words in ("review add", "review batch", "要点写在给用户的正文里", "review approve", "review answer",
+                      "bridge_send", "bodyFile", "不要自己清理"):
+            self.assertIn(words, section)
+
     def test_dev_rules(self):
         _, text = read("crew-dev")
         for words in ("protocol check", "【等待其他会话】", "【交审】", "最终验收", "收到用户对 #N 的答复：『原话』",

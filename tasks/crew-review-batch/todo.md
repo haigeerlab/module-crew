@@ -30,7 +30,7 @@
   - 验证：`python3 -m unittest discover -s tests -p test_review_approve.py -v`
   - 文件：`module_crew/review.py`、`tests/test_review_approve.py`
 
-- [ ] Task 6：命令行与协调会话 skill
+- [x] Task 6：命令行与协调会话 skill
   - 验收：Spec 验收 10
   - 验证：`python3 -m unittest discover -s tests -p "test_[rs]*.py" -v`
   - 文件：`module_crew/__main__.py`、`skills/crew-coordinator/SKILL.md`、`tests/test_skills.py`、`tests/test_review_approve.py`

@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from module_crew import inbox, probe, protocol, start, store
+from module_crew import inbox, probe, protocol, review, start, store
 
 
 def _store_init() -> int:
@@ -166,6 +166,61 @@ def _start_prepare(modules: list[str], original: str | None, original_file: str 
     return res.code
 
 
+def _original(original: str | None, original_file: str | None) -> str | None:
+    return _read(original_file) if original_file is not None else original
+
+
+def _review(args) -> int:
+    db = store.open_store()
+    if args.action == "add":
+        text = _read(args.file)
+        if text is None:
+            return 2
+        out = review.add(db, text, args.sender, args.relay_id)
+        print(f"类型：{out.kind}")
+        for line in out.lines:
+            print(line)
+        return out.code
+    if args.action == "batch":
+        b = review.batch(".")
+        if args.json:
+            print(json.dumps(b, ensure_ascii=False, indent=2))
+            return 0 if b["items"] else 3
+        if not b["items"]:
+            print("没有未答的交审")
+            return 3
+        for i in b["items"]:
+            print(f"#{i['number']} {i['module']} 的 {review.NODE_NAME.get(i['node'], i['node'])}（{i['from']}）："
+                  + "、".join(f["path"] for f in i["files"]))
+            print("  要点：" + i["points"].replace("\n", "\n        "))
+        for d in b["dependencyIssues"]:
+            print(f"⚠️ 依赖未就绪：{d['module']} 依赖的 {'、'.join(d['missing'])} 既未完成、也没有 Spec 在本批或已批准")
+        for c in b["conflicts"]:
+            print(f"⚠️ 并行边界重叠：{'、'.join(c.get('modules', []))} 在 {'、'.join(c.get('paths', []))}")
+        return 0
+    original = _original(args.original, args.original_file)
+    if original is None:
+        return 2
+    if args.action == "answer":
+        try:
+            reply = review.answer(db, args.number, original)
+        except review.AnswerRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        print(f"收件人：{reply.to}")
+        print(f"replyTo：{reply.reply_to}")
+        print(f"正文文件：{reply.path}")
+        return 0
+    res = review.approve(".", args.numbers, original)
+    for line in res.lines:
+        print(line)
+    for x in res.sends:
+        kind = "【用户答复】" if x["kind"] == "user-reply" else "【协调通知】"
+        reply_to = f"，replyTo：{x['replyTo']}" if x["replyTo"] is not None else ""
+        print(f"发送 {kind} → {x['to']}{reply_to}，正文文件：{x['path']}")
+    return res.code
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="module-crew", description="module-crew 状态库")
     sub = parser.add_subparsers(dest="group")
@@ -199,7 +254,30 @@ def main(argv: list[str] | None = None) -> int:
     spr.add_argument("--project-short")
     spr.add_argument("--max", type=int)
     spr.add_argument("--json", action="store_true")
+    rv = sub.add_parser("review", help="交审与批量批准")
+    rvs = rv.add_subparsers(dest="action", required=True)
+    ra = rvs.add_parser("add")
+    ra.add_argument("file")
+    ra.add_argument("--from", dest="sender", required=True)
+    ra.add_argument("--relay-id", type=int, required=True)
+    rb = rvs.add_parser("batch")
+    rb.add_argument("--json", action="store_true")
+    for name in ("approve", "answer"):
+        r = rvs.add_parser(name)
+        if name == "approve":
+            r.add_argument("numbers", type=int, nargs="+")
+        else:
+            r.add_argument("number", type=int)
+        g = r.add_mutually_exclusive_group(required=True)
+        g.add_argument("--original")
+        g.add_argument("--original-file")
     args = parser.parse_args(argv)
+    if args.group == "review":
+        try:
+            return _review(args)
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
     if args.group == "start":
         try:
             if args.action == "plan":
