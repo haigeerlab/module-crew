@@ -25,7 +25,7 @@
   - 验证：同上
   - 文件：`module_crew/failure.py`、`module_crew/start.py`、`tests/test_failure.py`
 
-- [ ] Task 5：跨模块互不拖累
+- [x] Task 5：跨模块互不拖累
   - 验收：Spec 验收 7
   - 验证：同上
   - 文件：`tests/test_failure.py`

@@ -2,7 +2,7 @@ import unittest
 
 from helpers import MergeCase
 
-from module_crew import failure, hooks, inbox, merge, review, start, store
+from module_crew import failure, hooks, inbox, merge, protocol, review, start, store
 
 from helpers import wait_user
 
@@ -142,6 +142,38 @@ class SerialTest(FailureCase):
         failure.set_mode(self.db, True, "先不并行了")
         with self.assertRaises(failure.FailureRefused):
             failure.set_mode(self.db, True, "再来")
+
+
+class IsolationTest(FailureCase):
+    def test_suspended_merged_and_returned_do_not_interfere(self):
+        res = start.prepare(self.repo, ["d"], "开 d")
+        self.assertEqual(res.code, 0, res.lines)
+        self.wt["d"] = res.prepared[0]["worktree"]
+        failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        b_before = self.session("shop-b")
+        c_ok = self.approve_final("c", 60)
+        d_bad = self.approve_final("d", 61, path="fail.flag")
+        check = self.check_script(fail_if="fail.flag")
+
+        first = merge.run(self.repo, check)
+        self.assertEqual((first.code, first.approval), (0, c_ok))
+        kinds = {(x["to"], x["kind"]) for x in first.sends}
+        self.assertIn(("shop-c", "wrap-up"), kinds)
+        self.assertIn(("shop-d", "sync-baseline"), kinds)
+        for x in first.sends:
+            self.assertTrue(protocol.parse(store.read_body(self.db, x["body"])).ok)
+
+        second = merge.run(self.repo, check)
+        self.assertEqual((second.code, second.approval), (5, d_bad))
+        self.assertEqual([(x["to"], x["kind"]) for x in second.sends], [("shop-d", "returned")])
+        self.assertEqual(store.get(self.db, "item", str(c_ok))["closedReason"], "merged")
+        self.assertEqual(store.get(self.db, "item", str(d_bad))["closedReason"], "returned")
+
+        self.assertEqual(self.session("shop-b"), b_before)
+        self.assertEqual(self.session("shop-d")["status"], "active")
+        rows = {r["module"]: r for r in failure.sessions(self.db)}
+        self.assertEqual(rows["b"]["suspended"], "等设计稿")
+        self.assertEqual(rows["c"]["stage"], hooks.STAGE_MERGED)
 
 
 if __name__ == "__main__":
