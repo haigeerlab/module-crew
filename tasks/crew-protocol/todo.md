@@ -2,7 +2,7 @@
 
 测试命令：`python3 -m unittest discover -s tests -v`
 
-- [ ] Task 1：复制样例、`SOURCE`、指纹核对与一致性测试框架
+- [x] Task 1：复制样例、`SOURCE`、指纹核对与一致性测试框架
   - 验收：Spec 验收 1；样例目录与 session-protocol 78da46f 逐字节相同；改一个字节测试失败（用临时副本验证）
   - 验证：`python3 -m unittest discover -s tests -p test_protocol_conformance.py -v`
   - 文件：`tests/fixtures/session-protocol/v1.1/**`、`tests/test_protocol_conformance.py`、`module_crew/protocol.py`（空壳）
