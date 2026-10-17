@@ -392,3 +392,60 @@ def parse(text: str) -> Message:
 
     return Message(kind=kind, supported=kind not in UNSUPPORTED, problems=tuple(problems), hints=tuple(hints),
                    fields=fields, end=end, reply_to=reply_to, markers=tuple(markers), item=item, extra=extra)
+
+
+# ---------------------------------------------------------------- rendering
+
+def _as_parsed(value: str) -> str:
+    """What a field value reads back as: first line trimmed, trailing blank lines dropped (contract section 2)."""
+    lines = value.split("\n")
+    lines[0] = lines[0].strip()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
+
+
+def _self_check(text: str, kind: str, expected: dict[str, str]) -> str:
+    msg = parse(text)
+    if msg.kind != kind or not msg.ok:
+        raise ValueError(f"生成的消息不合格：{', '.join(msg.problems) or msg.kind}")
+    for name, value in expected.items():
+        if msg.fields.get(name) != _as_parsed(value):
+            raise ValueError(f"「{name}」里有会被读成其他字段的行，不能原样发出")
+    return text
+
+
+def render_user_reply(item: int, original: str, answered_at: str, option_text: str | None = None,
+                      source_relay_id: int | None = None) -> str:
+    """【用户答复】 from the coordinator; the user's words are copied unchanged."""
+    if not isinstance(item, int) or isinstance(item, bool) or item < 1:
+        raise ValueError(f"事项编号必须是正整数：{item!r}")
+    if not isinstance(original, str) or not original.strip():
+        raise ValueError("用户原话不能为空")
+    if not answered_at or not answered_at.strip():
+        raise ValueError("答复时间不能为空")
+    ref = f"#{item}" if source_relay_id is None else f"#{item}（你的原消息 #{int(source_relay_id)}）"
+    lines = ["【用户答复】", f"事项：{ref}", f"用户原话：{original}"]
+    expected = {"用户原话": original, "答复时间": answered_at}
+    if option_text is not None:
+        m = _OPTION_RE.match(option_text.strip())
+        if not m:
+            raise ValueError(f"选项原文必须以选项字母开头：{option_text!r}")
+        lines.append(f"选项 {m.group(2)} 原文：{option_text}")
+        expected["选项原文"] = option_text
+    lines.append(f"答复时间：{answered_at}")
+    return _self_check("\n".join(lines) + "\n", "user-reply", expected)
+
+
+def render_coordination_notice(kind: str, basis: str, todo: str) -> str:
+    """【协调通知】 from the coordinator; not an approval, never asks for a reply."""
+    labels = {code: label for label, code in NOTICE_KINDS.items()}
+    if kind not in labels:
+        raise ValueError(f"通知类型只能是 {'／'.join(labels)}：{kind!r}")
+    for name, value in (("依据", basis), ("要你做什么", todo)):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"「{name}」不能为空")
+    if kind == "start" and not _NUM_RE.search(basis):
+        raise ValueError("开工类通知的「依据」必须写明用户批准事项编号（#N）")
+    text = "\n".join(["【协调通知】", f"类型：{labels[kind]}", f"依据：{basis}", f"要你做什么：{todo}"]) + "\n"
+    return _self_check(text, "coordination-notice", {"依据": basis, "要你做什么": todo})

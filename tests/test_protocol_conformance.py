@@ -14,7 +14,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures" / "session-protocol" / "
 
 # Types this plugin parses / generates (spec 假设 2、3). Everything else is skipped and listed.
 PARSED = {"review-request", "shared-change-request", "coordination-notice", "wait-user", "wait-session", "resumed", "withdraw", "user-reply", "unknown"}
-GENERATED = set()
+GENERATED = {"user-reply"}
 # Fixtures whose expectation the contract itself must fix; skipped with a reason, never silently.
 CONTRACT_DEFECTS: dict[str, str] = {
     # v1.0 used 【交审】 as its example of an unknown tag; v1.1 made it a real type (review-request).
@@ -92,6 +92,26 @@ class ConformanceTest(unittest.TestCase):
                 self.assertEqual(problems, [], "\n".join(problems))
         print(f"\n  parse checked: {checked}; skipped: {', '.join(skipped) or 'none'}", file=sys.stderr)
         self.assertEqual(checked, 37)  # 38 supported samples minus the contract defect
+
+
+class GenerateConformanceTest(unittest.TestCase):
+    def test_generate_fixtures(self):
+        skipped, checked = [], 0
+        for name, txt, doc in cases():
+            gen = doc.get("generate")
+            if gen is None:
+                continue
+            if gen["kind"] not in GENERATED:
+                skipped.append(name)
+                continue
+            checked += 1
+            i = gen["inputs"]
+            with self.subTest(fixture=name):
+                out = protocol.render_user_reply(item=i["item"], original=i["original"], answered_at=i["answeredAt"],
+                                                 option_text=i["optionText"], source_relay_id=i["sourceRelayId"])
+                self.assertEqual(out, txt.read_text(encoding="utf-8"))
+        print(f"\n  generate checked: {checked}; skipped: {', '.join(skipped)}", file=sys.stderr)
+        self.assertEqual(checked, 2)
 
 
 class UnsupportedKindsTest(unittest.TestCase):

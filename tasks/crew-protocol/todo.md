@@ -25,7 +25,7 @@
 - [x] Checkpoint 1（report）：全部测试全绿，38 份解析样例通过、跳过项列出，记下命令与结果后继续
   - 记录：`python3 -m unittest discover -s tests -v` → Ran 43 tests, OK；解析样例对照 37 份通过，跳过 review-conclusion 4 份与契约缺陷 unknown/unknown-kind 1 份（2026-10-18）
 
-- [ ] Task 5：生成函数
+- [x] Task 5：生成函数
   - 验收：Spec 验收 3、4、5、6
   - 验证：`python3 -m unittest discover -s tests -p "test_protocol_*.py" -v`
   - 文件：`module_crew/protocol.py`、`tests/test_protocol_conformance.py`、`tests/test_protocol_render.py`
