@@ -10,16 +10,13 @@ from pathlib import Path
 
 from module_crew import protocol
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "session-protocol" / "v1.1"
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "session-protocol" / "v1.2"
 
 # Types this plugin parses / generates (spec 假设 2、3). Everything else is skipped and listed.
 PARSED = {"review-request", "shared-change-request", "coordination-notice", "wait-user", "wait-session", "resumed", "withdraw", "user-reply", "unknown"}
 GENERATED = {"user-reply"}
 # Fixtures whose expectation the contract itself must fix; skipped with a reason, never silently.
-CONTRACT_DEFECTS: dict[str, str] = {
-    # v1.0 used 【交审】 as its example of an unknown tag; v1.1 made it a real type (review-request).
-    "unknown/unknown-kind": "v1.1 defines 【交审】, so this v1.0 sample is no longer unknown",
-}
+CONTRACT_DEFECTS: dict[str, str] = {}
 
 
 def verify_sums(root: Path) -> list[str]:
@@ -59,11 +56,11 @@ def diff(expected, actual, path="parse"):
 class FingerprintTest(unittest.TestCase):
     def test_pinned_fixtures_match_sums(self):
         self.assertEqual(verify_sums(FIXTURES), [])
-        self.assertIn("commit: 78da46f", (FIXTURES / "SOURCE").read_text())
+        self.assertIn("commit: 1bc5ce7", (FIXTURES / "SOURCE").read_text())
 
     def test_one_changed_byte_is_caught(self):
         with tempfile.TemporaryDirectory() as tmp:
-            copy = Path(tmp) / "v1.1"
+            copy = Path(tmp) / "v1.2"
             shutil.copytree(FIXTURES, copy)
             target = copy / "withdraw" / "basic.txt"
             data = bytearray(target.read_bytes())
@@ -91,7 +88,7 @@ class ConformanceTest(unittest.TestCase):
                 problems = diff(doc["parse"], actual)
                 self.assertEqual(problems, [], "\n".join(problems))
         print(f"\n  parse checked: {checked}; skipped: {', '.join(skipped) or 'none'}", file=sys.stderr)
-        self.assertEqual(checked, 37)  # 38 supported samples minus the contract defect
+        self.assertEqual(checked, 38)
 
 
 class GenerateConformanceTest(unittest.TestCase):
