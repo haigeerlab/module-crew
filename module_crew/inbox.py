@@ -7,6 +7,7 @@ record it in the store, and say what to send back.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from module_crew import protocol, store
 
@@ -137,3 +138,44 @@ def _wait_user(tx, msg: protocol.Message, text: str, sender: str, relay_id: int,
     }, action="created", data={"relayId": relay_id})
     out.number = n
     out.lines.append(f"已记为事项 #{n}")
+
+
+class AnswerRefused(Exception):
+    """The answer cannot be recorded; nothing was written."""
+
+
+@dataclass(frozen=True)
+class Reply:
+    to: str
+    reply_to: int
+    body: int
+    path: Path
+
+
+def answer(db: store.Store, number: int, original: str, option: str | None = None) -> Reply:
+    """Render 【用户答复】 for an open item, store the body and close the item in one transaction."""
+    with db.transaction(actor="coordinator") as tx:
+        item = tx.get("item", str(number))
+        if item is None:
+            raise AnswerRefused(f"没有事项 #{number}")
+        if item.get("state") != "open":
+            raise AnswerRefused(f"事项 #{number} 已关闭（{item.get('closedReason')}），不能再答")
+        option_text = None
+        if option is not None:
+            match = [o for o in item.get("options", []) if o["letter"] == option.strip().upper()]
+            if not match:
+                raise AnswerRefused(f"事项 #{number} 没有选项 {option}")
+            option_text = f"{match[0]['letter']}：{match[0]['text']}"
+        answered_at = store.now()
+        try:
+            text = protocol.render_user_reply(item=number, original=original, answered_at=answered_at,
+                                              option_text=option_text, source_relay_id=item["relayId"])
+        except ValueError as exc:
+            raise AnswerRefused(str(exc)) from exc
+        body = tx.allocate_number()
+        meta = tx.write_body(body, text)
+        closed = dict(item, state="closed", closedReason="answered",
+                      answer={"original": original, "option": option_text[0] if option_text else None,
+                              "answeredAt": answered_at, "body": body})
+        tx.put("item", str(number), closed, action="answered", data={"body": body})
+    return Reply(item["from"], item["relayId"], body, db.path / meta["path"])

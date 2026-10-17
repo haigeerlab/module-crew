@@ -20,7 +20,7 @@
 - [x] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
   - 记录：`python3 -m unittest discover -s tests -v` → Ran 104 tests, OK（2026-10-18）；注：【已恢复】结束行全部没对上时什么都不写，重复提交也就无从判为「已记过」，会再报一次「没对上」
 
-- [ ] Task 4：`answer`
+- [x] Task 4：`answer`
   - 验收：Spec 验收 8、9、10
   - 验证：`python3 -m unittest discover -s tests -p test_answer.py -v`
   - 文件：`module_crew/inbox.py`、`module_crew/__main__.py`、`tests/test_answer.py`

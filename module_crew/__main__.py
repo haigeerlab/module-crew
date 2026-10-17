@@ -113,6 +113,22 @@ def _inbox_add(path: str, sender: str, relay_id: int) -> int:
     return out.code
 
 
+def _answer(number: int, original: str | None, original_file: str | None, option: str | None) -> int:
+    if original_file is not None:
+        original = _read(original_file)
+        if original is None:
+            return 2
+    try:
+        reply = inbox.answer(store.open_store(), number, original, option)
+    except inbox.AnswerRefused as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 3
+    print(f"收件人：{reply.to}")
+    print(f"replyTo：{reply.reply_to}")
+    print(f"正文文件：{reply.path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="module-crew", description="module-crew 状态库")
     sub = parser.add_subparsers(dest="group")
@@ -128,7 +144,19 @@ def main(argv: list[str] | None = None) -> int:
     ib.add_argument("file")
     ib.add_argument("--from", dest="sender", required=True)
     ib.add_argument("--relay-id", type=int, required=True)
+    an = sub.add_parser("answer", help="转达用户答复")
+    an.add_argument("number", type=int)
+    src = an.add_mutually_exclusive_group(required=True)
+    src.add_argument("--original")
+    src.add_argument("--original-file")
+    an.add_argument("--option")
     args = parser.parse_args(argv)
+    if args.group == "answer":
+        try:
+            return _answer(args.number, args.original, args.original_file, args.option)
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
     if args.group == "inbox":
         try:
             return _inbox_add(args.file, args.sender, args.relay_id)
