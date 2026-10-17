@@ -2,7 +2,7 @@
 
 测试命令：`python3 -m unittest discover -s tests -v`
 
-- [ ] Task 1：角色判断与静默
+- [x] Task 1：角色判断与静默
   - 验收：Spec 验收 1；验收 2、4 的识别部分（含子目录）
   - 验证：`python3 -m unittest discover -s tests -p test_hooks.py -v`
   - 文件：`module_crew/hooks.py`、`tests/test_hooks.py`
