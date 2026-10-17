@@ -35,13 +35,14 @@
   - 验证：`python3 -m unittest discover -s tests -p "test_p*.py" -v`
   - 文件：`module_crew/__main__.py`、`tests/test_protocol_cli.py`、`tests/test_package.py`
 
-- [ ] Task 7：session-protocol 一致性说明登记
+- [x] Task 7：session-protocol 一致性说明登记
   - 验收：Spec 验收 10；只改 `conformance/README.md` 的 module-crew 一行，工作区改动，提交等最终验收
   - 验证：`git -C ~/Documents/haigeerlab/session-protocol diff`
   - 文件：`~/Documents/haigeerlab/session-protocol/conformance/README.md`
 
-- [ ] Checkpoint 2（gate）：模块最终验收——全部测试全绿、10 条验收标准逐条对应测试、列出实际改动文件与 session-protocol 差异；停下等用户确认
+- [x] Checkpoint 2（gate）：模块最终验收——全部测试全绿、10 条验收标准逐条对应测试、列出实际改动文件与 session-protocol 差异；停下等用户确认
+  - 记录：57 个测试全绿（连跑 3 次），解析样例 37 份、生成样例 2 份对照通过；用户 2026-10-18 验收通过，选 A：契约缺陷与 conformance/README 那一行交 session-protocol 契约负责人落地，新版本发布后改钉
 
 ## 待你决定
 
-- 契约缺陷：v1.0 样例 `unknown/unknown-kind.txt` 用【交审】当「认不出的标签」，v1.1 把【交审】定成了正式类型，这份样例在 v1.1 下期望结果不成立。一致性测试暂把它列为「契约缺陷」跳过，待你决定怎么修契约（发现于 Task 2，2026-10-18）。
+- 【已决定，2026-10-18 选 A，交契约负责人】契约缺陷：v1.0 样例 `unknown/unknown-kind.txt` 用【交审】当「认不出的标签」，v1.1 把【交审】定成了正式类型，这份样例在 v1.1 下期望结果不成立。一致性测试暂把它列为「契约缺陷」跳过，待你决定怎么修契约（发现于 Task 2，2026-10-18）。
