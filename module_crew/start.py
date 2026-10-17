@@ -129,7 +129,63 @@ def validate(project: Path, modules: list[str], original: str, short: str | None
 def prepare(project: str | os.PathLike, modules: list[str], original: str, short: str | None = None,
             max_modules: int | None = None) -> PrepareResult:
     project = Path(project)
-    reasons, cfg, _ = validate(project, modules, original, short, max_modules)
+    reasons, cfg, proposal = validate(project, modules, original, short, max_modules)
     if reasons:
         return PrepareResult(3, ["没有执行，原因："] + reasons)
-    return PrepareResult(0)
+    info = {m["id"]: m for m in plan(project, len(modules) + len(_active_devs(_open_store(project)))).modules}
+    db = _open_store(project) or store.init_store(project)[0]
+    short = cfg["projectShort"]
+    coord = f"{short}-coord"
+    with db.transaction(actor=coord) as tx:
+        if not tx.get("config", "main"):
+            tx.put("config", "main", cfg, action="set")
+        if not any(v.get("role") == "coordinator" and v.get("status") == "active" for v in tx.records("session").values()):
+            tx.put("session", coord, {"role": "coordinator", "host": "claude-desktop", "status": "active"},
+                   action="registered")
+        approval = tx.allocate_number()
+        tx.put("item", str(approval), {
+            "state": "closed", "kind": "start", "from": coord, "relayId": None, "modules": list(modules),
+            "closedReason": "answered", "answer": {"original": original, "answeredAt": store.now()},
+        }, action="start-approved")
+    result = PrepareResult(0, approval=approval)
+    result.lines.append(f"开工批准事项 #{approval}：{'、'.join(modules)}")
+    for m in modules:
+        path = Path(cfg["crewDir"]) / m
+        added = _git(project, "worktree", "add", "-b", m, str(path), cfg["integrationBranch"])
+        if added.returncode != 0:
+            result.code = 4
+            result.lines.append(f"{m}：建 worktree 失败，已停下（{added.stderr.strip()[:200]}）")
+            break
+        relay = f"{short}-{m}"
+        text = render_kickoff(m, info.get(m, {}), path, cfg, relay, coord, approval)
+        with db.transaction(actor=coord) as tx:
+            tx.put("session", relay, {"role": "dev", "host": "claude-desktop", "status": "active",
+                                      "module": m, "worktree": str(path)}, action="registered")
+            body = tx.allocate_number()
+            tx.write_body(body, text)
+        result.prepared.append({"id": m, "worktree": path, "branch": m, "relayName": relay, "kickoff": body,
+                                "kickoffPath": db.path / "bodies" / f"{body}.txt"})
+    done = [p["id"] for p in result.prepared]
+    if result.code == 4:
+        result.lines.append(f"已完成：{'、'.join(done) or '无'}；未完成的模块请处理原因后单独重跑")
+    result.lines.append("角色标记待 spec-guard 0.68.0（checkoutRole 定稿后补）")
+    return result
+
+
+def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: str, coord: str, approval: int) -> str:
+    deps = "\n".join(f"spec/{d}.md" for d in info.get("dependsOn") or []) or "无"
+    return "\n".join([
+        f"你是 module-crew 的模块会话，负责模块 {module}：{info.get('responsibility', '')}。",
+        "先加载 crew-dev skill，照它的规则做；规则不要抄进这个 worktree 的 CLAUDE.md。",
+        "",
+        f"工作目录：{worktree}（分支 {module}，从集成分支 {cfg['integrationBranch']} 切出）",
+        f"邮箱名：{relay}，用 agent-relay bridge_register 注册，wake: \"auto\"",
+        f"协调会话：{coord}（你只和它说话）",
+        f"开会话依据：用户批准事项 #{approval}",
+        "",
+        f"这一步只做：用 /spec 写 spec/{module}.md 与 tasks/{module}/plan.md、todo.md，写好后给协调会话发【交审】（节点 Spec、Plan 各一条，或接口提案）。",
+        "收到开工类【协调通知】之前不要开始构建。",
+        "",
+        f"接口：\n{deps}",
+        "全局约束：不改公共文件（要改发【公共变更请求】）；被挡住发【等待其他会话】；发出前 module-crew protocol check。",
+    ]) + "\n"

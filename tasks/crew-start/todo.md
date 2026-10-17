@@ -12,7 +12,7 @@
   - 验证：`python3 -m unittest discover -s tests -p test_start_prepare.py -v`
   - 文件：`module_crew/start.py`、`tests/test_start_prepare.py`
 
-- [ ] Task 3：逐模块落地
+- [x] Task 3：逐模块落地
   - 验收：Spec 验收 3、6
   - 验证：同上
   - 文件：`module_crew/start.py`、`tests/test_start_prepare.py`
