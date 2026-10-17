@@ -32,3 +32,4 @@
 
 - 2026-10-18 发现 crew-review-batch 的缺陷：`review approve` 在集成分支提交带评审标记的 Spec／Plan，模块分支上是同名不带标记的文件，模块同步集成分支或最终合并时出现 add/add 冲突（临时目录复现：`CONFLICT (add/add): Merge conflict in spec/b.md`）。本模块测试按「同步时取集成分支版本」模拟，修法交用户决定。
 - 2026-10-18 spec-guard 负责人通知 checkout-role 定稿（0.68.0）：`hooks/checkout_role.py show|set --module <id>|set --coordinator|clear [--confirm] --project <checkout 根>`，标记在各 checkout 自己的 git 目录、worktree 间不共享；`/map --json` 模块 `worktree` 字段定稿；interface 1.1 入口键名待 crew-interface。影响 crew-start（开 worktree 后设角色）与本模块的角色判断（未决问题）。
+- 2026-10-18 spec-guard 负责人通知 interface.json 1.1 定稿（0.68.0，未发版）：`reviewMark.command` 的占位符写作 `<spec|plan|both>`、`<pending|approved>`（module-crew 现按 `<target>`、`<state>` 填，需对照修改）；新增 `checkoutRole.commands`（show／setModule／setCoordinator／clear）、`scopeCheck`、`moduleConcurrency`、`mapView.concurrency`。待办：crew-review-batch 改占位符、crew-start 开 worktree 后设角色、crew-recovery-hooks 改以角色标记判断——三处一起做一次修订交用户复审。
