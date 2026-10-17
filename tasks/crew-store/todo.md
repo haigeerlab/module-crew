@@ -15,7 +15,7 @@
   - 验证：`python3 -m unittest discover -s tests -p test_store_init.py -v`
   - 文件：`module_crew/store.py`、`module_crew/__main__.py`、`tests/test_store_init.py`
 
-- [ ] Task 3：事务、编号、事件日志与回滚
+- [x] Task 3：事务、编号、事件日志与回滚
   - 验收：Spec 验收 5、10；编号与 `seq` 从日志算出；同一事务内多次 `put` 各一条事件；`events(key=, kind=)` 按 seq 排序
   - 验证：`python3 -m unittest discover -s tests -p test_store_tx.py -v`
   - 文件：`module_crew/store.py`、`tests/test_store_tx.py`
