@@ -156,3 +156,24 @@ class CliTest(ReviewCase):
         f.write_text(self.spec_review("b"), encoding="utf-8")
         r = self.run_cli("inbox", "add", str(f), "--from", "shop-b", "--relay-id", "1")
         self.assertEqual(r.returncode, 4)
+
+
+class SyncAfterApprovalTest(ReviewCase):
+    """Regression: the approved copies carry a review marker, so syncing the baseline conflicts (add/add)
+    unless the module takes the integration branch's version, as the start notice now says."""
+
+    def test_notice_says_take_theirs_and_that_works(self):
+        db = store.open_store(self.repo)
+        s = review.add(db, self.spec_review("b"), "shop-b", 1).number
+        p = review.add(db, self.plan_review("b"), "shop-b", 2).number
+        res = review.approve(self.repo, [s, p], "批")
+        notice = [x for x in res.sends if x["kind"] == "coordination-notice"][0]
+        todo = protocol.parse(store.read_body(db, notice["body"])).fields["要你做什么"]
+        self.assertIn("冲突时取集成分支的版本", todo)
+        plain = __import__("subprocess").run(["git", "-C", str(self.wt["b"]), "merge", "--no-edit", "main"],
+                                             capture_output=True, text=True)
+        self.assertNotEqual(plain.returncode, 0)                       # the add/add conflict is real
+        git(self.wt["b"], "checkout", "--theirs", "--", "spec/b.md", "tasks/b/plan.md")
+        git(self.wt["b"], "add", "-A")
+        git(self.wt["b"], "commit", "-q", "--no-edit")
+        self.assertEqual((self.wt["b"] / "spec" / "b.md").read_text(), (self.repo / "spec" / "b.md").read_text())

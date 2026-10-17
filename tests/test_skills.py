@@ -61,6 +61,12 @@ class SkillsTest(unittest.TestCase):
                       "merge push-plan", "merge push", "用户在远端合并", "不开自动合并"):
             self.assertIn(words, section)
 
+    def test_dev_sync_section(self):
+        _, text = read("crew-dev")
+        section = text.split("## 同步集成基线", 1)[1].split("\n## ", 1)[0]
+        for words in ("git merge", "取集成分支的版本", "--theirs", "评审标记"):
+            self.assertIn(words, section)
+
     def test_dev_rules(self):
         _, text = read("crew-dev")
         for words in ("protocol check", "【等待其他会话】", "【交审】", "最终验收", "收到用户对 #N 的答复：『原话』",
