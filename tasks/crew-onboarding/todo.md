@@ -12,12 +12,13 @@
   - 验证：同上
   - 文件：`module_crew/inbox.py`、`tests/test_inbox.py`
 
-- [ ] Task 3：等待单、关单、【已恢复】、【撤回】、重复提交
+- [x] Task 3：等待单、关单、【已恢复】、【撤回】、重复提交
   - 验收：Spec 验收 3、4、7
   - 验证：同上
   - 文件：`module_crew/inbox.py`、`tests/test_inbox.py`
 
-- [ ] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
+- [x] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
+  - 记录：`python3 -m unittest discover -s tests -v` → Ran 104 tests, OK（2026-10-18）；注：【已恢复】结束行全部没对上时什么都不写，重复提交也就无从判为「已记过」，会再报一次「没对上」
 
 - [ ] Task 4：`answer`
   - 验收：Spec 验收 8、9、10

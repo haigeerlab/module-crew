@@ -115,3 +115,73 @@ class WaitUserTest(InboxCase):
         self.assertEqual(out.code, 0, out.lines)
         self.assertEqual(out.closed, [])
         self.assertTrue(self.item(2)["multiline"])
+
+
+def wait_session(end="无", who="API", what="Mock 数据"):
+    return f"【等待其他会话】\n结束：{end}\n在等谁：{who}\n等什么：{what}\n"
+
+
+class TicketTest(InboxCase):
+    def ticket(self, n):
+        return store.get(self.db, "ticket", str(n))
+
+    def test_wait_session_opens_ticket(self):
+        out = self.add(wait_session(), relay_id=50)
+        self.assertEqual(out.code, 0)
+        rec = self.ticket(out.number)
+        self.assertEqual((rec["state"], rec["waitingFor"], rec["what"], rec["relayId"]), ("open", "API", "Mock 数据", 50))
+
+    def test_new_wait_replaces_old_reason_2(self):
+        first = self.add(wait_session(), relay_id=50).number
+        out = self.add(wait_session(end=f"#{first}", who="设计"), relay_id=51)
+        self.assertEqual(out.closed, [first])
+        self.assertEqual((self.ticket(first)["state"], self.ticket(first)["closedReason"]), ("closed", 2))
+        self.assertEqual(self.ticket(first)["closedBy"], 51)
+
+    def test_resumed_closes_by_number_and_relay_id_reason_1(self):
+        a = self.add(wait_session(), relay_id=60).number
+        b = self.add(wait_session(who="设计", end=f"无"), relay_id=61).number
+        out = self.add(f"【已恢复】\n结束：#{a}、#61、#999\n继续\n", relay_id=62)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertEqual(sorted(out.closed), sorted([a, b]))
+        self.assertEqual(out.unmatched, [999])
+        self.assertEqual(self.ticket(a)["closedReason"], 1)
+        self.assertEqual(self.ticket(b)["closedReason"], 1)
+
+    def test_other_senders_tickets_untouched(self):
+        mine = self.add(wait_session(), relay_id=70).number
+        theirs = self.add(wait_session(), sender="shop-b", relay_id=71).number
+        out = self.add(f"【已恢复】\n结束：#{theirs}\n", relay_id=72)
+        self.assertEqual(out.unmatched, [theirs])
+        self.assertEqual(self.ticket(theirs)["state"], "open")
+        self.assertEqual(self.ticket(mine)["state"], "open")
+
+    def test_number_and_relay_id_collide_store_number_wins(self):
+        first = self.add(wait_session(), relay_id=2).number      # ticket #1, relay id 2
+        second = self.add(wait_session(who="设计"), relay_id=1).number  # ticket #2, relay id 1
+        out = self.add("【已恢复】\n结束：#1\n", relay_id=3)
+        self.assertEqual(out.closed, [first])
+        self.assertEqual(self.ticket(second)["state"], "open")
+
+
+class WithdrawAndRepeatTest(InboxCase):
+    def test_withdraw_own_item_only(self):
+        mine = self.add(wait_user(decide="一"), relay_id=80).number
+        theirs = self.add(wait_user(decide="二", sender="b"), sender="shop-b", relay_id=81).number
+        out = self.add(f"【撤回】\n事项：#{mine}\n原因：不用了\n", relay_id=82)
+        self.assertEqual(out.closed, [mine])
+        self.assertEqual(store.get(self.db, "item", str(mine))["closedReason"], "withdrawn")
+        out = self.add(f"【撤回】\n事项：#{theirs}\n", relay_id=83)
+        self.assertEqual(out.unmatched, [theirs])
+        self.assertEqual(store.get(self.db, "item", str(theirs))["state"], "open")
+
+    def test_same_relay_id_twice_is_recorded_once(self):
+        cases = [wait_user(), wait_session(), "【已恢复】\n结束：#2\n", "【撤回】\n事项：#1\n"]  # #1 item, #2 ticket
+        for i, text in enumerate(cases):
+            with self.subTest(i=i):
+                self.add(text, relay_id=900 + i)
+                before = files(self.db)
+                out = self.add(text, relay_id=900 + i)
+                self.assertEqual(out.code, 0)
+                self.assertIn("已记过", " ".join(out.lines))
+                self.assertEqual(files(self.db), before)

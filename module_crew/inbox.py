@@ -44,9 +44,50 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         return Outcome(msg.kind, 3, lines=[f"{msg.kind} 不应由模块会话发来，拒收"])
     with db.transaction(actor=sender) as tx:
         out = Outcome(msg.kind, 0)
+        if any(e["actor"] == sender and e["data"].get("relayId") == relay_id for e in store.events(db)):
+            out.lines.append(f"已记过：{sender} 的邮箱消息 #{relay_id}，没有重复记账")
+            return out
+        if msg.kind in ("wait-user", "wait-session"):
+            _close_tickets(tx, sender, msg.end.items, 2, relay_id, out)
         if msg.kind == "wait-user":
             _wait_user(tx, msg, text, sender, relay_id, out)
+        elif msg.kind == "wait-session":
+            n = tx.allocate_number()
+            tx.put("ticket", str(n), {
+                "state": "open", "from": sender, "relayId": relay_id, "text": text,
+                "waitingFor": msg.fields.get("在等谁", "").strip(), "what": msg.fields.get("等什么", ""),
+                "closedReason": None, "closedBy": None,
+            }, action="opened", data={"relayId": relay_id})
+            out.number = n
+            out.lines.append(f"已记为等待单 #{n}")
+        elif msg.kind == "resumed":
+            _close_tickets(tx, sender, msg.end.items, 1, relay_id, out)
+            if msg.end.unnumbered_reason:
+                out.lines.append(f"对方没给编号：{msg.end.unnumbered_reason}；请核对是哪张等待单")
+        elif msg.kind == "withdraw":
+            items = tx.records("item")
+            key = _find(items, sender, msg.item)
+            if key and items[key]["state"] == "open":
+                _close_item(tx, key, "withdrawn", relay_id, out)
+            else:
+                out.unmatched.append(msg.item)
+        if out.closed:
+            out.lines.append("已关闭 " + "、".join(f"#{n}" for n in out.closed))
         return out
+
+
+def _close_tickets(tx, sender: str, refs, reason: int, by: int, out: Outcome) -> None:
+    """Close the sender's open tickets named in a 结束 line (contract section 11 reasons)."""
+    tickets = tx.records("ticket")
+    for n in refs:
+        key = _find(tickets, sender, n)
+        if key and tickets[key]["state"] == "open":
+            rec = dict(tickets[key], state="closed", closedReason=reason, closedBy=by)
+            tx.put("ticket", key, rec, action="closed", data={"relayId": by, "reason": reason})
+            tickets[key] = rec
+            out.closed.append(int(key))
+        else:
+            out.unmatched.append(n)
 
 
 def _find(records: dict, sender: str, n: int) -> str | None:
