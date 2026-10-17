@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 RELAY_MAJOR = 2
 SPEC_GUARD_MAJOR = 1
+PLANNING_MINOR = 1  # spec-guard interface 1.1 brings the planning layer
+MAP_TIMEOUT = 10
 
 
 @dataclass(frozen=True)
@@ -110,3 +113,80 @@ def check_relay(project: str | os.PathLike) -> Check:
     if isinstance(doc, str):
         return Check("agent-relay", "blocker", doc, "升级 agent-relay 到接口 2.x 的版本")
     return Check("agent-relay", "ok", f"agent-relay {found.version or '?'}，接口 {doc['interface']}")
+
+
+def _map_command(root: Path, doc: dict, project: Path) -> list[str] | str:
+    """mapView.command with <project-root> filled in; a str says why it is unsafe to run."""
+    command = (doc.get("mapView") or {}).get("command")
+    if not isinstance(command, list) or not command or not all(isinstance(x, str) for x in command):
+        return "interface.json 的 mapView.command 不是字符串数组，不安全，没有运行"
+    if command[0] != "python3":
+        return f"mapView.command 不是以 python3 开头（{command[0]}），不安全，没有运行"
+    scripts = [x for x in command[1:] if x.endswith(".py")]
+    if len(scripts) != 1:
+        return "mapView.command 里找不到唯一的脚本路径，不安全，没有运行"
+    base = root.resolve()
+    script = scripts[0]
+    if os.path.isabs(script) or not (base / script).resolve().is_relative_to(base):
+        return f"mapView.command 的脚本 {script} 不在 spec-guard 安装目录内，不安全，没有运行"
+    return [str(project) if x == "<project-root>" else x for x in command]
+
+
+def run_map(root: Path, doc: dict, project: Path, timeout: float = MAP_TIMEOUT) -> dict | str:
+    """Run spec-guard's declared /map --json; a str is the reason there is no usable result."""
+    command = _map_command(root, doc, project)
+    if isinstance(command, str):
+        return command
+    try:
+        out = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return f"/map --json 超时（{timeout:g} 秒）"
+    except OSError as exc:
+        return f"/map --json 运行不了：{exc}"
+    if out.returncode == 3:
+        return "/map --json 报告项目没有能力图"
+    if out.returncode != 0:
+        return f"/map --json 退出码 {out.returncode}：{out.stderr.strip()[:200]}"
+    try:
+        result = json.loads(out.stdout)
+    except ValueError:
+        return "/map --json 的输出不是 JSON"
+    if not isinstance(result, dict):
+        return "/map --json 的输出不是 JSON 对象"
+    return result
+
+
+def check_spec_guard(project: str | os.PathLike, timeout: float = MAP_TIMEOUT) -> tuple[Check, Check, dict | None]:
+    """(spec-guard, spec-guard-planning, map) for the project."""
+    project = Path(project)
+    fix_install = "安装并启用 spec-guard，在本仓库运行 /spec-guard:setup-convention"
+    found = find_plugin("spec-guard", project)
+    if isinstance(found, str):
+        return (Check("spec-guard", "blocker", found, fix_install),
+                Check("spec-guard-planning", "blocker", "spec-guard 不可用", fix_install), None)
+    doc = read_interface(found.root, SPEC_GUARD_MAJOR)
+    if isinstance(doc, str):
+        return (Check("spec-guard", "blocker", doc, "安装接口 1.x 的 spec-guard"),
+                Check("spec-guard-planning", "blocker", "spec-guard 不可用", "安装接口 1.x 的 spec-guard"), None)
+    result = run_map(found.root, doc, project, timeout)
+    if isinstance(result, str):
+        fix = "按原因处理；没有能力图时先用 /spec 写能力图" if "能力图" in result else "检查 spec-guard 安装是否完整"
+        return (Check("spec-guard", "blocker", result, fix),
+                Check("spec-guard-planning", "blocker", "/map --json 不可用", fix), None)
+    sg = Check("spec-guard", "ok", f"spec-guard {found.version or '?'}，接口 {doc['interface']}")
+    return sg, _planning(doc, result), result
+
+
+def _planning(doc: dict, result: dict) -> Check:
+    """Planning layer usable = interface >= 1.1, switch on, and /map exposes startable."""
+    if _version_tuple(doc) < (SPEC_GUARD_MAJOR, PLANNING_MINOR):
+        return Check("spec-guard-planning", "blocker",
+                     f"规划层未发版：当前 interface {doc['interface']}，需要 interface 1.1",
+                     "等 spec-guard 发布规划层（预计 0.68.0）后升级")
+    if result.get("moduleConcurrency") != "on":
+        return Check("spec-guard-planning", "blocker", "moduleConcurrency 没有打开",
+                     "用 /spec-guard:config 把 moduleConcurrency 设为 on")
+    if not isinstance(result.get("startable"), dict):
+        return Check("spec-guard-planning", "blocker", "/map --json 没有 startable",
+                     "升级 spec-guard 到带可开工列表的版本")
+    return Check("spec-guard-planning", "ok", "规划层可用")
