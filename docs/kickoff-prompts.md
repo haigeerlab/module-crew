@@ -32,7 +32,7 @@
   （PROTOCOL.md、fixtures/ 下的样例与期望结果、conformance 说明）；
 - decision-inbox 改为钉住 v1.0、在自己测试里跑契约样例；行为不变。
 
-另：module-crew 会提出 v1.1（新增【交审】【公共变更请求】【通知】），由用户批准后再加，请你也看一眼是否与 decision-inbox 冲突。
+另：module-crew 会提出 v1.1（新增【交审】【公共变更请求】【协调通知】），由用户批准后再加，请你也看一眼是否与 decision-inbox 冲突。
 契约改动一律经用户批准。有不同意见直接提出，交用户决定。
 ```
 

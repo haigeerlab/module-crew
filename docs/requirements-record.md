@@ -92,7 +92,7 @@ spec-guard 按能力图一个模块接一个模块推进（Spec → Plan → 任
   新增依赖、改 CI、改数据结构、互相冲突的请求交用户决定（上游 Boundaries 的 Ask first）；已批准 Spec 范围内的直接办。按到达顺序；
   完全停住时记等待单。影响已批准 Spec 时追加变更记录。
 - **B4 消息**：一律 agent-relay 邮箱；请求标 `expectsReply`，回复填 `replyTo` 并首行写「回复：#N」；协调会话发出的正文由命令生成、
-  走 `bodyFile`。消息类型见 session-protocol（复用 5 种，新增【交审】【公共变更请求】【通知】）。身份 `<项目简称>-coord`、
+  走 `bodyFile`。消息类型见 session-protocol（复用 5 种，新增【交审】【公共变更请求】【协调通知】）。身份 `<项目简称>-coord`、
   `<项目简称>-<模块 id>`，`wake: "auto"`。只认协调会话转来的、带编号和原话的用户决定。被挡住必须发【等待其他会话】。
   规则放 module-crew 的 skill，不写进模块 worktree 的 CLAUDE.md。
 - **B5 合并**：两层。本地层——用户批准某模块最终验收即同时授权把它合入本地集成分支，协调会话按 Build order 一次合一个，
