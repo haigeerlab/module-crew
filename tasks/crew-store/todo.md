@@ -38,7 +38,7 @@
   - 验证：`python3 -m unittest discover -s tests -p test_store_body.py -v`
   - 文件：`module_crew/store.py`、`tests/test_store_body.py`
 
-- [ ] Task 7：会话登记校验
+- [x] Task 7：会话登记校验
   - 验收：Spec 验收 11
   - 验证：`python3 -m unittest discover -s tests -p test_store_session.py -v`
   - 文件：`module_crew/store.py`、`tests/test_store_session.py`
