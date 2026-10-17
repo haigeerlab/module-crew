@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from module_crew import store
@@ -249,8 +249,72 @@ def check_baseline(project: str | os.PathLike) -> Check:
     if checkout is None:
         return Check("baseline", "blocker", f"集成分支 {branch} 没有被任何 checkout 检出",
                      f"在某个 checkout 里 git switch {branch}")
-    changed = [x for x in _git(checkout, "status", "--porcelain").stdout.splitlines() if x.strip()]
+    changed = [x for x in _git(checkout, "--no-optional-locks", "status", "--porcelain").stdout.splitlines() if x.strip()]
     if changed:
         return Check("baseline", "blocker", f"集成基线不干净：{checkout}（{branch}）有 {len(changed)} 个文件未提交或未跟踪",
                      "提交或清理这些改动后再开工")
     return Check("baseline", "ok", f"集成分支 {branch}，在 {checkout}，工作区干净")
+
+
+# ---------------------------------------------------------------- summary
+
+OPEN_KINDS = ("item", "request", "ticket")
+
+
+def summarize_store(project: Path) -> tuple[Check, dict | None]:
+    try:
+        db = store.open_store(project)
+    except store.StoreNotFound:
+        return Check("store", "warning", "未建库", "crew-start 开工时会建；也可以先运行 module-crew store init"), None
+    except store.StoreError as exc:
+        return Check("store", "warning", f"状态库读不出：{exc}", "运行 module-crew store check 排查"), None
+    try:
+        sessions = store.records(db, "session")
+        open_counts = {k: sum(1 for r in store.records(db, k).values() if r.get("state") != "closed")
+                       for k in OPEN_KINDS}
+    except store.StoreError as exc:
+        return Check("store", "warning", f"状态库读不出：{exc}", "运行 module-crew store check 排查"), None
+    active = [{"name": name, **{k: rec.get(k) for k in ("role", "module", "worktree")}}
+              for name, rec in sorted(sessions.items()) if rec.get("status") == "active"]
+    return Check("store", "ok", str(db.path)), {"sessions": active, "open": open_counts}
+
+
+def summarize_map(doc: dict | None) -> dict | None:
+    if doc is None:
+        return None
+    modules = [m for m in doc.get("modules") or [] if isinstance(m, dict)]
+    return {"done": sum(1 for m in modules if m.get("status") == "done"), "total": len(modules),
+            "activeModule": doc.get("activeModule"),
+            "inProgress": [m.get("id") for m in modules if m.get("status") == "in_progress"]}
+
+
+@dataclass(frozen=True)
+class Report:
+    checks: dict[str, Check]
+    store: dict | None
+    map: dict | None = None
+    startable: dict | None = field(default=None)
+
+    @property
+    def blocked(self) -> bool:
+        return any(c.state == "blocker" for c in self.checks.values())
+
+    def to_json(self) -> dict:
+        return {"schemaVersion": 1, "blocked": self.blocked,
+                "checks": [{"id": c.id, "state": c.state, "reason": c.reason, "fix": c.fix} for c in self.checks.values()],
+                "store": self.store, "map": summarize_map(self.map), "startable": self.startable,
+                "host": "第一版只支持 Claude 桌面版"}
+
+
+def run(project: str | os.PathLike | None = None, timeout: float = MAP_TIMEOUT) -> Report:
+    """All checks plus the summaries; raises NotInRepo outside a git repository. Never writes."""
+    project = Path(project) if project is not None else Path.cwd()
+    git_check = check_git(project)
+    root = Path(_git(project, "rev-parse", "--show-toplevel").stdout.strip() or project)
+    relay = check_relay(root)
+    sg, planning, map_doc = check_spec_guard(root, timeout)
+    baseline = check_baseline(root) if git_check.state == "ok" else Check("baseline", "blocker", "git 不可用")
+    store_check, summary = summarize_store(root)
+    checks = {c.id: c for c in (git_check, relay, sg, planning, baseline, store_check)}
+    startable = map_doc.get("startable") if map_doc and planning.state == "ok" else None
+    return Report(checks, summary, map_doc, startable)

@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import sys
 
-from module_crew import protocol, store
+import json
+
+from module_crew import probe, protocol, store
 
 
 def _store_init() -> int:
@@ -52,6 +54,39 @@ def _protocol_check(path: str) -> int:
     return 0
 
 
+_STATE_ICON = {"ok": "✅", "warning": "⚠️", "blocker": "❌"}
+_KIND_NAME = {"item": "事项", "request": "请求", "ticket": "等待单"}
+
+
+def _status(as_json: bool) -> int:
+    report = probe.run()
+    if as_json:
+        print(json.dumps(report.to_json(), ensure_ascii=False, indent=2))
+        return 3 if report.blocked else 0
+    print("体检")
+    for c in report.checks.values():
+        line = f"  {_STATE_ICON[c.state]} {c.id}：{c.reason}"
+        if c.state != "ok" and c.fix:
+            line += f"；怎么办：{c.fix}"
+        print(line)
+    print("会话与待办")
+    if report.store is None:
+        print("  未建库")
+    else:
+        for s in report.store["sessions"] or [{"name": "（没有在用的会话）"}]:
+            extra = f"（{s.get('role')}{'，' + s['module'] if s.get('module') else ''}）" if s.get("role") else ""
+            print(f"  {s['name']}{extra}")
+        print("  未关：" + "、".join(f"{_KIND_NAME[k]} {n}" for k, n in report.store["open"].items()))
+    m = probe.summarize_map(report.map)
+    print("模块进度")
+    if m is None:
+        print("  读不出（见体检 spec-guard 一项）")
+    else:
+        print(f"  模块 {m['done']}/{m['total']} 完成；当前：{m['activeModule'] or '无'}；进行中：{'、'.join(m['inProgress']) or '无'}")
+    print("第一版只支持 Claude 桌面版")
+    return 3 if report.blocked else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="module-crew", description="module-crew 状态库")
     sub = parser.add_subparsers(dest="group")
@@ -60,7 +95,15 @@ def main(argv: list[str] | None = None) -> int:
     pr = sub.add_parser("protocol", help="消息自检")
     pr.add_argument("action", choices=("check",))
     pr.add_argument("file")
+    stp = sub.add_parser("status", help="体检与全貌（只读）")
+    stp.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
+    if args.group == "status":
+        try:
+            return _status(args.json)
+        except store.NotInRepo as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
     if args.group == "protocol":
         return _protocol_check(args.file)
     if args.group != "store":

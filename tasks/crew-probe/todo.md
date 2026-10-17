@@ -20,12 +20,12 @@
 - [x] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
   - 记录：`python3 -m unittest discover -s tests -v` → Ran 78 tests in 12.089s OK（2026-10-18）
 
-- [ ] Task 4：状态库汇总与 `run()` 报告
+- [x] Task 4：状态库汇总与 `run()` 报告
   - 验收：Spec 验收 7、9
   - 验证：`python3 -m unittest discover -s tests -p test_probe_status.py -v`
   - 文件：`module_crew/probe.py`、`tests/test_probe_status.py`
 
-- [ ] Task 5：`status` 命令与 `--json`
+- [x] Task 5：`status` 命令与 `--json`
   - 验收：Spec 验收 8、9
   - 验证：同上
   - 文件：`module_crew/__main__.py`、`tests/test_probe_status.py`
