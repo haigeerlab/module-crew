@@ -1,0 +1,126 @@
+<!-- spec-guard: review approved b35e681ab821 -->
+# Spec: crew-recovery-hooks
+
+> 能力图模块 `crew-recovery-hooks`。需求来源：`docs/requirements-record.md` 第 7 节（恢复五原则；钩子在启动／恢复／压缩及每轮按角色注入；换会话需用户同意 `takeover` 邮箱名一次）、
+> B7（宿主：挂起与叫醒、插件更新需新会话、钩子信任）。假设见下文，用户 2026-10-18 已确认。
+
+## 目标
+
+会话被压缩、恢复或换成新会话后，不靠对话记忆也知道「我是谁、该做什么、先核对什么」：插件钩子按角色从状态库生成简短提示，
+压缩后要求先核对再动手；换会话时由用户同意一次接管同一个邮箱名，状态库记下这次接管。
+
+## 范围
+
+**范围内**
+
+- `hooks/hooks.json`（SessionStart：startup／resume／compact；UserPromptSubmit）与 `module_crew/hooks.py`、命令 `module-crew hook <事件>`。
+- 角色判断、提示文字、压缩后的核对提示。
+- 命令 `module-crew takeover <邮箱名> --original-file`。
+
+**范围外**
+
+- 真正向 agent-relay 注册（新会话自己调用）；钩子信任（README 安装说明）。
+- 停止钩子、定时巡视（第一版不做）；spec-guard 角色标记（发版后再改为以它为准）。
+
+## 假设（用户 2026-10-18 已确认）
+
+1. `hooks/hooks.json` 注册 SessionStart（启动、恢复、压缩）与 UserPromptSubmit，统一调 `bin/module-crew hook <事件>` 输出 `additionalContext`；不属于 module-crew 的会话静默（无输出、退出码 0）。
+2. 角色：当前目录是在用模块会话登记的 worktree → 模块会话；是集成分支所在 checkout 且有在用协调会话 → 协调会话；角色标记发版后改以它为准。
+3. 模块会话注入：模块、邮箱名、协调会话名、当前该做什么（从状态库推出）、自己未关的等待单、crew-dev 规则提醒；协调会话注入：事项／请求／等待单／合并队列计数、先跑 `status`、看「等待审批」。
+4. 压缩事件另加：先跑 `module-crew status`、读未完成事项，以状态库为准，不按压缩前记忆重做。
+5. 完整提示只在 SessionStart；UserPromptSubmit 每轮一行；钩子只读状态库，不跑 probe 与 `/map`，目标 0.2 秒内；出错静默退出码 0。
+6. `takeover <邮箱名> --original-file` 经用户同意：记同意，输出新会话重新注册同一名字的做法；会话登记不变，只追加接管事件。
+7. 钩子信任写进 README，本模块不管。
+
+## 关键决策与取舍（请重点审）
+
+1. **模块会话「当前该做什么」只有四档，按状态库推出**：
+   - 该模块有 `answered` 的 Spec 与 Plan 交审且都属于某个 `review-approval` → 「已批准，可以构建；做完发最终验收【交审】」；
+   - 有 `open` 的 `merge-approval` → 「最终验收已批准，等协调会话合并」；
+   - 有 `closedReason: "merged"` 的 `merge-approval` → 「已合入集成分支，停止开发，等收回」；
+   - 以上都不是 → 「写 Spec 与 Plan、发【交审】，收到开工通知之前不要构建」。
+   最近一次 `merge-approval` 是 `returned` 时，第一档后面加「上次最终验收被退回：<原因首行>」。
+2. **路径比较用真实路径**：当前目录与登记的 worktree、集成 checkout 都先 `os.path.realpath` 再比，子目录也算（在 worktree 的子目录里开会话照样识别）。
+   集成 checkout 用 `git worktree list --porcelain` 找（读 git 元数据，不跑 probe）。
+3. **钩子永不挡对话**：`hook` 子命令捕获一切异常；任何错误都只输出空、退出码 0；`hooks.json` 里的 shell 外壳也 `|| true; exit 0`。
+4. **每轮一行的内容**：模块会话 `module-crew：你是 <模块> 的模块会话（<邮箱名>），当前：<档位短语>`；协调会话 `module-crew：协调会话；未关 事项 N／请求 N／等待单 N／待合并 N`。
+5. **接管只记同意、不改登记**：`takeover` 要求邮箱名是状态库里在用的会话；记一条该会话的事件（`session.taken-over`，带原话与时间），记录内容不变；
+   输出写明新会话应「用同一个名字 `bridge_register`，按 agent-relay 的提示传接管／恢复参数，`wake: "auto"`」。
+
+## 接口约定
+
+### hooks.json（要点）
+
+```json
+{"hooks": {
+  "SessionStart": [{"hooks": [{"type": "command", "command": "ROOT=\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}\"; BIN=\"$ROOT/bin/module-crew\"; if [ -n \"$ROOT\" ] && [ -x \"$BIN\" ]; then \"$BIN\" hook session-start || true; fi; exit 0"}]}],
+  "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "…\"$BIN\" hook prompt…"}]}]
+}}
+```
+
+SessionStart 的事件来源（startup／resume／compact）从钩子标准输入的 JSON `source` 字段读；读不到按 startup。
+
+### 输出
+
+```json
+{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "<中文提示>"}}
+```
+
+不属于 module-crew 时什么都不输出。
+
+### 命令
+
+```bash
+bin/module-crew hook session-start|prompt      # 读标准输入的钩子 JSON；只读；永远退出码 0
+bin/module-crew takeover <邮箱名> (--original <原话> | --original-file <文件>)   # 0 成功；3 不是在用会话或原话为空
+```
+
+## 项目结构
+
+```text
+hooks/hooks.json
+module_crew/hooks.py
+module_crew/__main__.py       加 hook、takeover
+tests/test_hooks.py
+```
+
+## 命令
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+## 代码风格
+
+沿用前几个模块；`hooks.py` 只 import `store`（和标准库），不 import `probe`、`start` 等会跑子进程的模块（测试扫描断言）。
+
+## 测试策略
+
+- 复用 crew-merge 的测试基类，在不同目录（模块 worktree 及其子目录、集成 checkout、无关目录、没建库的仓库）以子进程方式运行 `bin/module-crew hook ...`，喂入钩子 JSON，检查输出。
+- 四档状态各构造一次；压缩事件检查核对提示；耗时断言在 1 秒内（宽松，防 CI 抖动），并记录实测值。
+- 人为弄坏状态库（非法 `meta.json`）时仍退出码 0 且无输出。
+
+## 边界
+
+- **始终**：只读；静默失败；提示简短。
+- **先问**：给不属于 module-crew 的会话注入任何内容；在钩子里写文件或跑子进程（git 元数据读取除外）。
+- **绝不**：挡住对话（非零退出或报错输出）；替会话注册邮箱。
+
+## 验收标准
+
+1. 无关目录、没建库的仓库、未登记的 checkout：`hook session-start` 与 `hook prompt` 都无输出、退出码 0。
+2. 模块 worktree（及其子目录）：SessionStart 输出含模块 id、邮箱名、协调会话名、当前档位、自己未关的等待单编号、「crew-dev」；UserPromptSubmit 只输出一行。
+3. 四档状态分别构造：写 Spec 等批准／已批准可以构建／等合并／已合入，各输出对应短语；上次被退回时附原因首行。
+4. 集成 checkout：SessionStart 输出协调会话提示，含四类计数、`module-crew status`、「等待审批」；UserPromptSubmit 一行。
+5. 事件来源为 compact 时，额外含「先跑 `module-crew status`」「以状态库为准」「不按压缩前的记忆重做」。
+6. `meta.json` 损坏或任意异常：无输出、退出码 0；单次运行耗时 1 秒以内（记录实测值）。
+7. `hooks.json` 合法，两个事件都调用 `bin/module-crew hook`，外壳带 `|| true` 与 `exit 0`；`hooks.py` 不 import `probe`／`start`／`review`／`merge`／`subprocess`。
+8. `takeover shop-b --original "让新会话接管"`：记一条 `session.taken-over` 事件（原话、时间），会话记录不变，输出重新注册的做法；不在用的名字或原话为空时退出码 3。
+
+## 未决问题
+
+- spec-guard 角色标记发版后，角色判断改为以它为准（按变更记录复审）。
+
+## 文档建议
+
+README 的安装说明写「首次使用需在 Claude Code 里信任 module-crew 的钩子；插件更新后要开新会话才生效」。
