@@ -45,7 +45,7 @@ module-crew inbox add <文件> --from <发件人邮箱名> --relay-id <邮箱消
 |---|---|---|
 | 0 | 已记账（或「已记过」） | 输出里有「转告发件人」就原样回给发件人；【等待用户】转述给用户，带事项编号、选项与推荐 |
 | 3 | 不合格或发件人未登记 | 把输出的退回原因原样发回发件人，不记账、不转述 |
-| 4 | 合格，但不归本命令记账 | 【交审】改用 `module-crew review add`（参数相同）；【公共变更请求】交给 crew-shared-changes 的命令 |
+| 4 | 合格，但不归本命令记账 | 【交审】改用 `module-crew review add`（参数相同）；【公共变更请求】改用 `module-crew change add`（参数相同） |
 | 2 | 参数错或未建库 | 自己修正后重跑 |
 
 ## 交审与批准
@@ -61,6 +61,23 @@ module-crew review answer <交审事项编号> --original-file <原话文件>   
 
 4. 按输出逐条 `bridge_send`：【用户答复】带 `replyTo`，【协调通知】不带；正文都用 `bodyFile`，不改一字。
 5. `review approve` 退出码 3：什么都没变，把原因告诉用户；4：中途停下，输出列出集成 checkout 里已改未提交的文件，交用户决定，不要自己清理。
+
+## 公共变更请求
+
+公共文件（全局配置、锁文件、迁移、测试资源）只有你改，模块会话不改。
+
+1. 收到【公共变更请求】：`module-crew change add <文件> --from <发件人> --relay-id <号>`；`change list` 按到达顺序看未处理的。
+2. 输出「要问用户」（新增依赖、改 CI、迁移、和别的请求冲突），或改动超出已批准 Spec 的范围：先在本会话问用户；范围内的直接办。
+3. 在集成分支所在的 checkout 里只改请求列出的文件，然后：
+
+```bash
+module-crew change land <编号> [--original-file <用户原话文件>]     # 问过用户就带上原话
+module-crew change answer <编号> --original-file <用户原话文件>     # 用户不同意
+```
+
+4. 按输出逐条 `bridge_send`（`bodyFile`，不改一字）：请求方那条带 `replyTo`，其他在用模块收到同步基线通知。
+5. `change land` 退出码 3：清单外有改动或没有改动，什么都没提交——把多余的改动挪走，或让请求方补一条请求。
+6. 改动影响已批准的 Spec 时，按 spec-guard 规则在那份 Spec 末尾「变更记录」追加一行，复审时一并呈现。
 
 ## 转达用户的决定
 

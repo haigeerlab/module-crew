@@ -153,3 +153,21 @@ class LandTest(ReviewCase):
         (self.repo / "package.json").write_text('{"a": 1}\n')
         changes.land(self.repo, k, original="可以加")
         self.assertEqual(store.get(self.db, "request", str(k))["answer"]["original"], "可以加")
+
+
+class CliTest(ReviewCase):
+    def test_add_list_land(self):
+        f = self.tmp / "r.txt"
+        f.write_text(request(["package.json"]), encoding="utf-8")
+        self.assertEqual(self.run_cli("inbox", "add", str(f), "--from", "shop-b", "--relay-id", "1").returncode, 4)
+        r = self.run_cli("change", "add", str(f), "--from", "shop-b", "--relay-id", "1")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("要问用户", r.stdout)
+        r = self.run_cli("change", "list")
+        self.assertIn("package.json", r.stdout)
+        n = __import__("json").loads(self.run_cli("change", "list", "--json").stdout)[0]["number"]
+        (self.repo / "package.json").write_text("{}\n")
+        r = self.run_cli("change", "land", str(n), "--original", "可以加")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(r.stdout.count("发送 【协调通知】"), 2)
+        self.assertEqual(self.run_cli("change", "list").returncode, 3)

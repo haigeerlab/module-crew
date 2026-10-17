@@ -46,6 +46,14 @@ class SkillsTest(unittest.TestCase):
                       "bridge_send", "bodyFile", "不要自己清理"):
             self.assertIn(words, section)
 
+    def test_coordinator_change_section(self):
+        _, text = read("crew-coordinator")
+        self.assertIn("change add", text.split("## 收到模块会话的消息", 1)[1].split("\n## ", 1)[0])
+        section = text.split("## 公共变更请求", 1)[1].split("\n## ", 1)[0]
+        for words in ("change add", "change list", "要问用户", "change land", "change answer", "bodyFile", "同步基线",
+                      "变更记录"):
+            self.assertIn(words, section)
+
     def test_dev_rules(self):
         _, text = read("crew-dev")
         for words in ("protocol check", "【等待其他会话】", "【交审】", "最终验收", "收到用户对 #N 的答复：『原话』",

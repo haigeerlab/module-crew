@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from module_crew import inbox, probe, protocol, review, start, store
+from module_crew import changes, inbox, probe, protocol, review, start, store
 
 
 def _store_init() -> int:
@@ -221,6 +221,52 @@ def _review(args) -> int:
     return res.code
 
 
+def _change(args) -> int:
+    db = store.open_store()
+    if args.action == "add":
+        text = _read(args.file)
+        if text is None:
+            return 2
+        out = changes.add(db, text, args.sender, args.relay_id)
+        print(f"类型：{out.kind}")
+        for line in out.lines:
+            print(line)
+        return out.code
+    if args.action == "list":
+        rows = changes.pending(db)
+        if args.json:
+            print(json.dumps([{"number": n, **{k: r[k] for k in ("from", "files", "what", "why", "fullyStopped", "hints")}}
+                              for n, r in rows], ensure_ascii=False, indent=2))
+        for n, r in rows if not args.json else []:
+            hint = f"；提示：{'、'.join(r['hints'])}" if r["hints"] else ""
+            print(f"#{n} {r['from']}：{'、'.join(r['files'])}——{r['what']}{'（完全停住）' if r['fullyStopped'] else ''}{hint}")
+        if not rows and not args.json:
+            print("没有未处理的公共变更请求")
+        return 0 if rows else 3
+    original = _original(args.original, args.original_file)
+    if args.action == "answer":
+        if original is None:
+            return 2
+        try:
+            reply = changes.answer(db, args.number, original)
+        except changes.AnswerRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        print(f"收件人：{reply.to}")
+        print(f"replyTo：{reply.reply_to}")
+        print(f"正文文件：{reply.path}")
+        return 0
+    if args.original_file is not None and original is None:
+        return 2
+    res = changes.land(".", args.number, original)
+    for line in res.lines:
+        print(line)
+    for x in res.sends:
+        reply_to = f"，replyTo：{x['replyTo']}" if x["replyTo"] is not None else ""
+        print(f"发送 【协调通知】 → {x['to']}{reply_to}，正文文件：{x['path']}")
+    return res.code
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="module-crew", description="module-crew 状态库")
     sub = parser.add_subparsers(dest="group")
@@ -271,7 +317,27 @@ def main(argv: list[str] | None = None) -> int:
         g = r.add_mutually_exclusive_group(required=True)
         g.add_argument("--original")
         g.add_argument("--original-file")
+    ch = sub.add_parser("change", help="公共变更请求")
+    chs = ch.add_subparsers(dest="action", required=True)
+    ca = chs.add_parser("add")
+    ca.add_argument("file")
+    ca.add_argument("--from", dest="sender", required=True)
+    ca.add_argument("--relay-id", type=int, required=True)
+    cl = chs.add_parser("list")
+    cl.add_argument("--json", action="store_true")
+    for name in ("land", "answer"):
+        c = chs.add_parser(name)
+        c.add_argument("number", type=int)
+        g = c.add_mutually_exclusive_group(required=(name == "answer"))
+        g.add_argument("--original")
+        g.add_argument("--original-file")
     args = parser.parse_args(argv)
+    if args.group == "change":
+        try:
+            return _change(args)
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
     if args.group == "review":
         try:
             return _review(args)
