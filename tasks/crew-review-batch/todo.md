@@ -35,7 +35,8 @@
   - 验证：`python3 -m unittest discover -s tests -p "test_[rs]*.py" -v`
   - 文件：`module_crew/__main__.py`、`skills/crew-coordinator/SKILL.md`、`tests/test_skills.py`、`tests/test_review_approve.py`
 
-- [ ] Checkpoint 2（gate）：模块最终验收——全部测试全绿、10 条验收标准逐条对应测试、列出实际改动文件并贴出 skill 改动；停下等用户确认
+- [x] Checkpoint 2（gate）：模块最终验收——全部测试全绿、10 条验收标准逐条对应测试、列出实际改动文件并贴出 skill 改动；停下等用户确认
+  - 记录：148 个测试全绿（连跑 3 次）；9 个文件 +728/−19；用户 2026-10-18 验收通过
 
 ## 记录
 
