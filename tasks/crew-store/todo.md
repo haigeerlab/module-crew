@@ -20,7 +20,7 @@
   - 验证：`python3 -m unittest discover -s tests -p test_store_tx.py -v`
   - 文件：`module_crew/store.py`、`tests/test_store_tx.py`
 
-- [ ] Task 4：快照、从日志重建、落后与损坏处理
+- [x] Task 4：快照、从日志重建、落后与损坏处理
   - 验收：Spec 验收 6、7（读接口部分）、8、9（读接口与追加部分）
   - 验证：`python3 -m unittest discover -s tests -p test_store_rebuild.py -v`
   - 文件：`module_crew/store.py`、`tests/test_store_rebuild.py`
