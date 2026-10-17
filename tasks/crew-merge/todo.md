@@ -7,22 +7,23 @@
   - 验证：`python3 -m unittest discover -s tests -p test_merge_run.py -v`
   - 文件：`module_crew/merge.py`、`tests/helpers.py`、`tests/test_merge_run.py`
 
-- [ ] Task 2：合并前清单与检查命令配置
+- [x] Task 2：合并前清单与检查命令配置
   - 验收：Spec 验收 3、4
   - 验证：同上
   - 文件：`module_crew/merge.py`、`tests/test_merge_run.py`
 
-- [ ] Task 3：合并成功路径与通知
+- [x] Task 3：合并成功路径与通知
   - 验收：Spec 验收 5
   - 验证：同上
   - 文件：`module_crew/merge.py`、`tests/test_merge_run.py`
 
-- [ ] Task 4：检查失败撤销、超时、冲突中止与退回通知
+- [x] Task 4：检查失败撤销、超时、冲突中止与退回通知
   - 验收：Spec 验收 6、7（含退回类【协调通知】）
   - 验证：同上
   - 文件：`module_crew/merge.py`、`tests/test_merge_run.py`
 
-- [ ] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
+- [x] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
+  - 记录：`python3 -m unittest discover -s tests -v` → Ran 171 tests in 66.379s OK（2026-10-18）；任务 2～4 测试在同一文件，一并提交；发现检查命令在清单不过时已写入配置，改为清单通过后再写
 
 - [ ] Task 5：`merge cleanup`
   - 验收：Spec 验收 8
