@@ -52,6 +52,8 @@ a2b520f8a27b0ad38652012fb8f032c875c428390cf0a57bc91bb2ca5c797427  ./user-reply/f
 8f863561b1e584de62f315bd3f283daccc15607804b36a3a32010c7df0ad5ae1  ./user-reply/multiline-1.txt
 430600d97d0e3189104dea5252cd7533b6e36cce0afac59d81180aad96a8c883  ./user-reply/multiline-2.json
 8fc1d91fe3ea82ac1708ba082fb4535360e8f5a97c592b0b518f410c5246fa70  ./user-reply/multiline-2.txt
+670e423b3d274dce95da041ec45e1e3b8238a31ca2a4309d09b0ebe3abe9c7f7  ./user-reply/original-whitespace.json
+1cc9123c4d2fda532ca5d3d5dcdae96553d7f33f3fc8f9914266ca06d338cb7a  ./user-reply/original-whitespace.txt
 3a5528e17352b8e99d56bfa531420c60520d246e5deae1319d92582395cdf90d  ./user-reply/single.json
 2dc070bac9695d056181890dd09d0c30dc9783b4f34759880612dfebe80e5aae  ./user-reply/single.txt
 03a237a1f756804527b892259644b57c6cbf10db550f478add3911d3d4c00b54  ./wait-session/basic.json
@@ -82,6 +84,18 @@ bbcc2b9760b7c44d303e03ee0a07ffdaa0d26e5fead471110f2d2ecf38a17293  ./wait-user/mu
 2a45cd5ee2aff84f5cc8308b6058e1f431ef6aaf56e5b3c5ea0514e972a4dd93  ./wait-user/no-recommendation.txt
 d610e99318bb6111c3434a3da01266be14e66549cc75348ffc29707cf5bca71c  ./wait-user/parallel.json
 556de6697f90edf675d885400f9f9824d682d4b83d55d2553d8359fd6c02bb72  ./wait-user/parallel.txt
+f6d78d3ba20848f77e9dd0a3f2bfc01d15e2f462e9725e64e6d54f44f9aa6335  ./wait-user/review-advice-halfwidth.json
+5da0b8bacd97984166f22d72ea91ca20bc7dc2361b7210ab46617559f3c39677  ./wait-user/review-advice-halfwidth.txt
+924bcccc4a721485bfc8baa66aec5aaf30c2dd0597e87678f520bbd932e63a8e  ./wait-user/review-in-progress.json
+37b3498d79f629e9c2845fca67e533950409ca3510fe2a7cc7ad40966621a0c0  ./wait-user/review-in-progress.txt
+bd931705c4c576a8e70c758b186e90f002ede610b085e1809ed59b414526a67e  ./wait-user/review-not-applicable.json
+61d79b93a25bf9c9246d84364c587c7f591974eb169f84407fc913c9f08f3e37  ./wait-user/review-not-applicable.txt
+a387440e0404c31c3ca58c072eda6904c8abbf38521e12060736dfa131af5374  ./wait-user/review-passed-ref.json
+7f0adbc9b2b8b402333730d4f273af29ac01901c69e5e06905c79ee56e674dbf  ./wait-user/review-passed-ref.txt
+4840d21a9c1463b2e5a3d77c074acfcb2531e3a0f4b2896058e700abd141bb92  ./wait-user/review-unrecognized.json
+b6ba015d0a6a62780bdcbc01e2467a45976e3329ca0b86e2765e6cb517ba868f  ./wait-user/review-unrecognized.txt
+70087920bd687ecab9db56b1111864821520e6985f1d805a43e8d7d74fe1138e  ./wait-user/review-waived.json
+d2624849c862ca950d7381e2039262dcae970d829ba7703765afad83213d8627  ./wait-user/review-waived.txt
 8883a281b6aea3d1f542c6989d330c46768efba073313c161ceb5a69b37c9dc9  ./wait-user/scope-missing.json
 d0de8b744b8ff65c6fe6187331f903620eb2772dbe014bd4578d04e8b5820590  ./wait-user/scope-missing.txt
 4df0f53c0f407b4883d9a373ed3d442360c4a443b20cddf772f4d43f56931201  ./wait-user/scope-unknown.json

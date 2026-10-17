@@ -10,7 +10,7 @@ from pathlib import Path
 
 from module_crew import protocol
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "session-protocol" / "v1.3"
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "session-protocol" / "v1.4"
 
 # Types this plugin parses / generates (spec 假设 2、3). Everything else is skipped and listed.
 PARSED = {"review-request", "shared-change-request", "coordination-notice", "wait-user", "wait-session", "resumed", "withdraw", "user-reply", "unknown"}
@@ -56,11 +56,11 @@ def diff(expected, actual, path="parse"):
 class FingerprintTest(unittest.TestCase):
     def test_pinned_fixtures_match_sums(self):
         self.assertEqual(verify_sums(FIXTURES), [])
-        self.assertIn("commit: 42fe5f6", (FIXTURES / "SOURCE").read_text())
+        self.assertIn("commit: e33c077", (FIXTURES / "SOURCE").read_text())
 
     def test_one_changed_byte_is_caught(self):
         with tempfile.TemporaryDirectory() as tmp:
-            copy = Path(tmp) / "v1.3"
+            copy = Path(tmp) / "v1.4"
             shutil.copytree(FIXTURES, copy)
             target = copy / "withdraw" / "basic.txt"
             data = bytearray(target.read_bytes())
@@ -88,7 +88,7 @@ class ConformanceTest(unittest.TestCase):
                 problems = diff(doc["parse"], actual)
                 self.assertEqual(problems, [], "\n".join(problems))
         print(f"\n  parse checked: {checked}; skipped: {', '.join(skipped) or 'none'}", file=sys.stderr)
-        self.assertEqual(checked, 41)
+        self.assertEqual(checked, 48)
 
 
 class GenerateConformanceTest(unittest.TestCase):
@@ -108,7 +108,7 @@ class GenerateConformanceTest(unittest.TestCase):
                                                  option_text=i["optionText"], source_relay_id=i["sourceRelayId"])
                 self.assertEqual(out, txt.read_text(encoding="utf-8"))
         print(f"\n  generate checked: {checked}; skipped: {', '.join(skipped)}", file=sys.stderr)
-        self.assertEqual(checked, 2)
+        self.assertEqual(checked, 3)
 
 
 class UnsupportedKindsTest(unittest.TestCase):
