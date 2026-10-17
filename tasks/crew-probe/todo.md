@@ -2,7 +2,7 @@
 
 测试命令：`python3 -m unittest discover -s tests -v`
 
-- [ ] Task 1：依赖定位与接口版本
+- [x] Task 1：依赖定位与接口版本
   - 验收：Spec 验收 1、2（项目级优先；只装在别的项目；接口 2.0 ok，1.0／3.0／缺失／坏 JSON 各有原因）；目录 marketplace 读源码目录
   - 验证：`python3 -m unittest discover -s tests -p test_probe_deps.py -v`
   - 文件：`module_crew/probe.py`、`tests/helpers.py`、`tests/fixtures/plugins/**`、`tests/test_probe_deps.py`
