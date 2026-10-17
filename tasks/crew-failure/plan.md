@@ -1,4 +1,4 @@
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 # Implementation Plan: crew-failure
 
 > 依据：`spec/crew-failure.md`（已批准）。任务清单：`tasks/crew-failure/todo.md`。
