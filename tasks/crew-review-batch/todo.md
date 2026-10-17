@@ -20,12 +20,12 @@
   - 验证：`python3 -m unittest discover -s tests -p test_review_approve.py -v`
   - 文件：`module_crew/review.py`、`tests/test_review_approve.py`
 
-- [ ] Task 4：命令安全校验抽出 + `review approve` 成功路径
+- [x] Task 4：命令安全校验抽出 + `review approve` 成功路径
   - 验收：Spec 验收 5、6；crew-probe 测试原样通过
   - 验证：`python3 -m unittest discover -s tests -p "test_[pr]*.py" -v`
   - 文件：`module_crew/probe.py`、`module_crew/review.py`、`tests/helpers.py`、`tests/test_review_approve.py`
 
-- [ ] Task 5：`review approve` 的检查与中途失败
+- [x] Task 5：`review approve` 的检查与中途失败
   - 验收：Spec 验收 7、8
   - 验证：`python3 -m unittest discover -s tests -p test_review_approve.py -v`
   - 文件：`module_crew/review.py`、`tests/test_review_approve.py`

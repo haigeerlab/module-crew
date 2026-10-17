@@ -33,3 +33,101 @@ class AnswerTest(ReviewCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def snapshot(case):
+    files = {str(p): p.read_bytes() for p in case.repo.rglob("*") if p.is_file() and "/.git/" not in str(p)}
+    db = store.open_store(case.repo)
+    stored = {str(p): p.read_bytes() for p in db.path.rglob("*") if p.is_file() and p.name != ".lock"}
+    return files, stored, git(case.repo, "rev-parse", "HEAD")
+
+
+class ApproveTest(ReviewCase):
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+
+    def add(self, text, sender, rid):
+        out = review.add(self.db, text, sender, rid)
+        self.assertEqual(out.code, 0, out.lines)
+        return out.number
+
+    def test_approve_spec_and_plan(self):
+        s = self.add(self.spec_review("b"), "shop-b", 4600)
+        p = self.add(self.plan_review("b"), "shop-b", 4601)
+        before = git(self.repo, "rev-parse", "HEAD").strip()
+        res = review.approve(self.repo, [s, p], "b 的 Spec 和 Plan 都批准")
+        self.assertEqual(res.code, 0, res.lines)
+        log = git(self.repo, "log", "--format=%H %s", f"{before}..HEAD").strip().splitlines()
+        self.assertEqual(len(log), 1)
+        self.assertIn(f"#{res.approval}", log[0])
+        changed = git(self.repo, "diff", "--name-only", before, "HEAD").split()
+        self.assertEqual(sorted(changed), ["spec/b.md", "tasks/b/plan.md"])
+        spec = (self.repo / "spec" / "b.md").read_text()
+        self.assertTrue(spec.startswith("<!-- spec-guard: review approved fakedigest -->\n# Spec: b"))
+        self.assertEqual(git(self.repo, "status", "--porcelain"), "")
+        approval = store.get(self.db, "item", str(res.approval))
+        self.assertEqual((approval["kind"], approval["reviews"], approval["baselineCommit"]),
+                         ("review-approval", [s, p], res.commit))
+        for n in (s, p):
+            self.assertEqual(store.get(self.db, "item", str(n))["closedReason"], "answered")
+        replies = [x for x in res.sends if x["kind"] == "user-reply"]
+        notices = [x for x in res.sends if x["kind"] == "coordination-notice"]
+        self.assertEqual(sorted(r["replyTo"] for r in replies), [4600, 4601])
+        self.assertEqual(len(notices), 1)
+        notice = protocol.parse(store.read_body(self.db, notices[0]["body"]))
+        self.assertTrue(notice.ok, notice.problems)
+        self.assertEqual(notice.contract()["notice"], {"kind": "start", "refs": [res.approval]})
+        self.assertEqual(notices[0]["to"], "shop-b")
+        reply = protocol.parse(store.read_body(self.db, replies[0]["body"]))
+        self.assertEqual(reply.fields["用户原话"], "b 的 Spec 和 Plan 都批准")
+
+    def test_notice_only_when_both_approved(self):
+        s = self.add(self.spec_review("c"), "shop-c", 1)
+        res = review.approve(self.repo, [s], "c 的 Spec 批准")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual([x["kind"] for x in res.sends], ["user-reply"])
+        p = self.add(self.plan_review("c"), "shop-c", 2)
+        res = review.approve(self.repo, [p], "c 的 Plan 也批准")
+        self.assertEqual(sorted(x["kind"] for x in res.sends), ["coordination-notice", "user-reply"])
+
+    def assert_refused(self, numbers, words):
+        before = snapshot(self)
+        res = review.approve(self.repo, numbers, "批准")
+        self.assertEqual(res.code, 3, res.lines)
+        self.assertIn(words, " ".join(res.lines))
+        self.assertEqual(snapshot(self), before)
+
+    def test_refusals(self):
+        s = self.add(self.spec_review("b"), "shop-b", 10)
+        review.answer(self.db, s, "要改")
+        self.assert_refused([s], "已关闭")
+        final = ("【交审】\n结束：无\n模块：b\n节点：最终验收\n文件：\n"
+                 + self.spec_review("b").split("文件：\n")[1].split("要点：")[0]
+                 + "要点：\n- 一\n- 二\n改动统计：1 file\n越界检查：无越界\n")
+        f = self.add(final, "shop-b", 11)
+        self.assert_refused([f], "最终验收")
+        s2 = self.add(self.spec_review("b"), "shop-b", 12)
+        (self.repo / "dirty.txt").write_text("x")
+        self.assert_refused([s2], "集成基线不干净")
+        (self.repo / "dirty.txt").unlink()
+        from helpers import spec_guard_interface
+        self.plugins.entries.pop("spec-guard@m")
+        self.plugins.install("spec-guard", spec_guard_interface("1.1", review_mark=["sh", "-c", "true"]), map_script=True)
+        self.assert_refused([s2], "不安全")
+
+    def test_failure_part_way(self):
+        import os
+        b = self.add(self.spec_review("b"), "shop-b", 20)
+        c = self.add(self.spec_review("c"), "shop-c", 21)
+        _, stored, head = snapshot(self)
+        os.environ["FAKE_REVIEW_FAIL"] = "c"
+        try:
+            res = review.approve(self.repo, [b, c], "都批准")
+        finally:
+            os.environ.pop("FAKE_REVIEW_FAIL")
+        self.assertEqual(res.code, 4, res.lines)
+        self.assertIn("spec/c.md", " ".join(res.lines))
+        _, stored_after, head_after = snapshot(self)
+        self.assertEqual((stored_after, head_after), (stored, head))
+        self.assertIn("spec/", git(self.repo, "status", "--porcelain"))

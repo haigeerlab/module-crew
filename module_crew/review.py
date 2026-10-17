@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from module_crew import probe, protocol, store
@@ -143,3 +145,137 @@ def answer(db: store.Store, number: int, original: str) -> Reply:
                                          answer={"original": original, "answeredAt": answered_at, "body": body}),
                action="answered", data={"body": body})
     return Reply(rec["from"], rec["relayId"], body, db.path / meta["path"])
+
+
+APPROVABLE = ("spec", "plan", "interface")
+MARK_TARGET = {"spec": "spec", "interface": "spec", "plan": "plan"}
+NODE_NAME = {"spec": "Spec", "plan": "Plan", "interface": "接口提案"}
+
+
+@dataclass
+class ApproveResult:
+    code: int                                     # 0 done / 3 refused, nothing changed / 4 stopped part-way
+    lines: list[str] = field(default_factory=list)
+    approval: int | None = None
+    commit: str | None = None
+    sends: list[dict] = field(default_factory=list)   # {"kind", "to", "replyTo", "body", "path"}
+
+
+def _next_number(db: store.Store) -> int:
+    return max((int(e["key"]) for e in store.events(db)
+                if e["type"].split(".")[0] in store.NUMBERED and e["key"].isdigit()), default=0) + 1
+
+
+def _mark_command(project: Path) -> tuple[Path, dict] | str:
+    found = probe.find_plugin("spec-guard", project)
+    if isinstance(found, str):
+        return found
+    doc = probe.read_interface(found.root, probe.SPEC_GUARD_MAJOR)
+    if isinstance(doc, str):
+        return doc
+    if "reviewMark" not in doc:
+        return "spec-guard 的 interface.json 没有 reviewMark 入口（需要 interface 1.1）"
+    probe_cmd = probe.safe_command(found.root, doc, "reviewMark", {})
+    return probe_cmd if isinstance(probe_cmd, str) else (found.root, doc)
+
+
+def approve(project: str | os.PathLike, numbers: list[int], original: str) -> ApproveResult:
+    """Land the approved Spec/Plan files on the integration baseline and prepare all replies and notices."""
+    project = Path(project)
+    db = store.open_store(project)
+    items = store.records(db, "item")
+    reasons = []
+    if not original or not original.strip():
+        reasons.append("用户原话不能为空：只记用户在本会话亲手输入的话")
+    picked = []
+    for n in numbers:
+        rec = items.get(str(n))
+        if rec is None or rec.get("kind") != "review":
+            reasons.append(f"没有交审事项 #{n}")
+        elif rec.get("state") != "open":
+            reasons.append(f"交审事项 #{n} 已关闭（{rec.get('closedReason')}）")
+        elif rec.get("node") not in APPROVABLE:
+            reasons.append(f"交审事项 #{n} 是最终验收：用 review answer 答复，合并归 crew-merge")
+        else:
+            picked.append((n, rec))
+    baseline = probe.check_baseline(project)
+    if baseline.state != "ok":
+        reasons.append(baseline.reason)
+    mark = _mark_command(project)
+    if isinstance(mark, str):
+        reasons.append(mark)
+    cfg = store.get(db, "config", "main") or {}
+    checkout = probe._checkout_of(project, cfg.get("integrationBranch", "")) if cfg else None
+    if checkout is None:
+        reasons.append("找不到集成分支所在的 checkout（还没有 start prepare？）")
+    contents = []
+    for n, rec in picked:
+        wt = Path((store.get(db, "session", rec["from"]) or {}).get("worktree", "/nonexistent"))
+        for f in rec["files"]:
+            shown = subprocess.run(["git", "-C", str(wt), "show", f"{rec['commit']}:{f['path']}"], capture_output=True)
+            if shown.returncode != 0:
+                reasons.append(f"#{n} 的 {f['path']} 从提交 {rec['commit'][:7]} 里取不出")
+            else:
+                contents.append((f["path"], shown.stdout))
+    if reasons:
+        return ApproveResult(3, ["没有执行，原因："] + reasons)
+
+    root, doc = mark
+    written = []
+    for path, data in contents:
+        target = checkout / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        written.append(path)
+    for n, rec in picked:
+        cmd = probe.safe_command(root, doc, "reviewMark", {
+            "<project-root>": str(checkout), "<module-id>": rec["module"],
+            "<target>": MARK_TARGET[rec["node"]], "<state>": "approved"}) + ["--confirm"]
+        ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
+        if ran.returncode != 0:
+            return ApproveResult(4, [f"#{n}（{rec['module']}）写评审标记失败，已停下：{ran.stderr.strip()[:200]}",
+                                     "集成 checkout 里已改、未提交的文件：" + "、".join(written),
+                                     "状态库与集成分支都没有变化；这些文件留着，交用户决定"])
+    approval_no = _next_number(db)
+    modules = list(dict.fromkeys(rec["module"] for _, rec in picked))
+    nodes = "、".join(f"{rec['module']} 的 {NODE_NAME[rec['node']]}" for _, rec in picked)
+    _git(checkout, "add", "--", *written)
+    commit_run = _git(checkout, "commit", "-q", "-m", f"协调会话：批准 {nodes}（用户批准事项 #{approval_no}）")
+    if commit_run.returncode != 0:
+        return ApproveResult(4, [f"集成分支提交失败：{commit_run.stderr.strip()[:200]}",
+                                 "已改、已暂存的文件：" + "、".join(written)])
+    commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
+    result = ApproveResult(0, commit=commit)
+    answered_at = store.now()
+    approved_before = _approved_nodes(db)
+    with db.transaction(actor="coordinator") as tx:
+        approval = tx.allocate_number()
+        tx.put("item", str(approval), {
+            "state": "closed", "kind": "review-approval", "closedReason": "answered", "relayId": None,
+            "from": "coordinator", "reviews": [n for n, _ in picked], "baselineCommit": commit,
+            "answer": {"original": original, "answeredAt": answered_at}}, action="review-approved")
+        for n, rec in picked:
+            body = tx.allocate_number()
+            meta = tx.write_body(body, _reply_text(n, rec, original, answered_at))
+            tx.put("item", str(n), dict(rec, state="closed", closedReason="answered",
+                                        answer={"original": original, "answeredAt": answered_at, "body": body,
+                                                "approval": approval}), action="answered", data={"body": body})
+            result.sends.append({"kind": "user-reply", "to": rec["from"], "replyTo": rec["relayId"], "body": body,
+                                 "path": db.path / meta["path"]})
+        for m in modules:
+            nodes_now = approved_before.get(m, set()) | {rec["node"] for _, rec in picked if rec["module"] == m}
+            if not {"spec", "plan"} <= nodes_now:
+                continue
+            sender = next(rec["from"] for _, rec in picked if rec["module"] == m)
+            text = protocol.render_coordination_notice(
+                kind="start", basis=f"用户批准事项 #{approval}（{m} 的 Spec 与 Plan），已提交到集成基线 {commit[:7]}",
+                todo=f"把集成分支合进你的模块分支后，按 tasks/{m}/plan.md 开始构建；公共文件只能经【公共变更请求】改")
+            body = tx.allocate_number()
+            meta = tx.write_body(body, text)
+            result.sends.append({"kind": "coordination-notice", "to": sender, "replyTo": None, "body": body,
+                                 "path": db.path / meta["path"]})
+    result.approval = approval
+    result.lines.append(f"批准事项 #{approval}；集成基线提交 {commit[:7]}")
+    if approval != approval_no:
+        result.lines.append(f"注意：提交信息里写的是 #{approval_no}，实际批准事项是 #{approval}（期间有其他写入）")
+    return result

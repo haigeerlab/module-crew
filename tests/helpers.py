@@ -25,6 +25,8 @@ def make_repo(parent: Path) -> Path:
     repo = parent / "repo"
     repo.mkdir()
     git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.name", "t")
+    git(repo, "config", "user.email", "t@t")
     (repo / "README.md").write_text("x\n")
     git(repo, "add", "README.md")
     git(repo, "commit", "-q", "-m", "init")
