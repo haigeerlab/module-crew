@@ -2,7 +2,7 @@
 
 测试命令：`python3 -m unittest discover -s tests -v`
 
-- [ ] Task 1：`inbox add` 骨架
+- [x] Task 1：`inbox add` 骨架
   - 验收：Spec 验收 5、6
   - 验证：`python3 -m unittest discover -s tests -p test_inbox.py -v`
   - 文件：`module_crew/inbox.py`、`module_crew/__main__.py`、`tests/helpers.py`、`tests/test_inbox.py`

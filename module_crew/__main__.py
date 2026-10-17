@@ -7,7 +7,7 @@ import sys
 
 import json
 
-from module_crew import probe, protocol, store
+from module_crew import inbox, probe, protocol, store
 
 
 def _store_init() -> int:
@@ -87,6 +87,32 @@ def _status(as_json: bool) -> int:
     return 3 if report.blocked else 0
 
 
+def _read(path: str) -> str | None:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"❌ 读不到文件：{path}（{exc}）", file=sys.stderr)
+        return None
+
+
+def _inbox_add(path: str, sender: str, relay_id: int) -> int:
+    text = _read(path)
+    if text is None:
+        return 2
+    out = inbox.add(store.open_store(), text, sender, relay_id)
+    print(f"类型：{out.kind}")
+    for line in out.lines:
+        print(line)
+    if out.closed:
+        print("已关闭：" + "、".join(f"#{n}" for n in out.closed))
+    if out.unmatched:
+        print("没对上：" + "、".join(f"#{n}" for n in out.unmatched))
+    for line in out.tell_sender:
+        print(f"转告发件人：{line}")
+    return out.code
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="module-crew", description="module-crew 状态库")
     sub = parser.add_subparsers(dest="group")
@@ -97,7 +123,18 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("file")
     stp = sub.add_parser("status", help="体检与全貌（只读）")
     stp.add_argument("--json", action="store_true")
+    ib = sub.add_parser("inbox", help="协调会话收件记账")
+    ib.add_argument("action", choices=("add",))
+    ib.add_argument("file")
+    ib.add_argument("--from", dest="sender", required=True)
+    ib.add_argument("--relay-id", type=int, required=True)
     args = parser.parse_args(argv)
+    if args.group == "inbox":
+        try:
+            return _inbox_add(args.file, args.sender, args.relay_id)
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
     if args.group == "status":
         try:
             return _status(args.json)

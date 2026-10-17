@@ -138,3 +138,40 @@ class ProbeCase(RepoCase):
         self.addCleanup(lambda: os.environ.__setitem__("MODULE_CREW_PLUGINS_FILE", old) if old
                         else os.environ.pop("MODULE_CREW_PLUGINS_FILE", None))
         self.addCleanup(lambda: os.environ.pop("FAKE_MAP_MODE", None))
+
+
+def seed_sessions(db) -> None:
+    """One coordinator, two active module sessions and one retired one."""
+    rows = {
+        "shop-coord": {"role": "coordinator", "host": "claude-desktop", "status": "active"},
+        "shop-a": {"role": "dev", "host": "claude-desktop", "status": "active", "module": "a", "worktree": "/tmp/wa"},
+        "shop-b": {"role": "dev", "host": "claude-desktop", "status": "active", "module": "b", "worktree": "/tmp/wb"},
+        "shop-old": {"role": "dev", "host": "claude-desktop", "status": "retired", "module": "c", "worktree": "/tmp/wc"},
+    }
+    with db.transaction(actor="test") as tx:
+        for name, rec in rows.items():
+            tx.put("session", name, rec, action="registered")
+
+
+WAIT_USER = """{marker}【等待用户】
+结束：{end}
+来自：{sender}
+要你决定：{decide}
+要点：
+- 第一行要点
+- 第二行要点
+选项与我的建议：
+推荐 A：方案甲
+  选了会怎样：快
+B：方案乙
+  选了会怎样：稳
+你该回：A
+是否完全停住：是
+"""
+
+
+def wait_user(decide="先做哪个", end="无", sender="a", marker="", scope=""):
+    text = WAIT_USER.format(marker=marker, end=end, sender=sender, decide=decide)
+    if scope:
+        text = text.replace("是否完全停住：是\n", f"是否完全停住：是\n{scope}")
+    return text
