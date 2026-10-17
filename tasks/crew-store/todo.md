@@ -10,7 +10,7 @@
 - [x] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
   - 记录：`python3 -m unittest discover -s tests -v` → Ran 5 tests, OK（2026-10-18）
 
-- [ ] Task 2：定位与 `store init`
+- [x] Task 2：定位与 `store init`
   - 验收：Spec 验收 1、2、3、13（权限位；重复 init 不改内容与修改时间；worktree 里定位到同一路径且 `git status` 看不到；非 git 目录或未 init 退出码 2 且不建目录；`meta.json` 版本 2 时读写都拒绝）
   - 验证：`python3 -m unittest discover -s tests -p test_store_init.py -v`
   - 文件：`module_crew/store.py`、`module_crew/__main__.py`、`tests/test_store_init.py`
