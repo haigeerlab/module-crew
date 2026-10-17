@@ -7,7 +7,7 @@
   - 验证：`python3 -m unittest discover -s tests -p test_start_plan.py -v`
   - 文件：`module_crew/start.py`、`tests/helpers.py`、`tests/test_start_plan.py`
 
-- [ ] Task 2：`prepare` 校验
+- [x] Task 2：`prepare` 校验
   - 验收：Spec 验收 2 的 prepare 部分、4、7
   - 验证：`python3 -m unittest discover -s tests -p test_start_prepare.py -v`
   - 文件：`module_crew/start.py`、`tests/test_start_prepare.py`
