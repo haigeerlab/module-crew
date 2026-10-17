@@ -151,10 +151,16 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
     result.lines.append(f"开工批准事项 #{approval}：{'、'.join(modules)}")
     for m in modules:
         path = Path(cfg["crewDir"]) / m
+        if path.exists():  # checked again: git would create the branch before refusing a busy directory
+            result.code = 4
+            result.lines.append(f"{m}：worktree 目录在校验之后被占用（{path}），已停下")
+            break
         added = _git(project, "worktree", "add", "-b", m, str(path), cfg["integrationBranch"])
         if added.returncode != 0:
             result.code = 4
-            result.lines.append(f"{m}：建 worktree 失败，已停下（{added.stderr.strip()[:200]}）")
+            left = _git(project, "rev-parse", "--verify", "--quiet", f"refs/heads/{m}").returncode == 0
+            result.lines.append(f"{m}：建 worktree 失败，已停下（{added.stderr.strip()[:200]}）"
+                                + ("；git 已留下分支 " + m + "，请决定是否删除" if left else ""))
             break
         relay = f"{short}-{m}"
         text = render_kickoff(m, info.get(m, {}), path, cfg, relay, coord, approval)

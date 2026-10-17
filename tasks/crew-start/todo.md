@@ -17,12 +17,13 @@
   - 验证：同上
   - 文件：`module_crew/start.py`、`tests/test_start_prepare.py`
 
-- [ ] Task 4：中途失败与重跑
+- [x] Task 4：中途失败与重跑
   - 验收：Spec 验收 5
   - 验证：同上
   - 文件：`module_crew/start.py`、`tests/test_start_prepare.py`
 
-- [ ] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
+- [x] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
+  - 记录：`python3 -m unittest discover -s tests -v` → Ran 127 tests in 22.197s OK（2026-10-18）。发现：`git worktree add -b` 遇目录被占会先建分支再失败，故落地前再查一次目录；验收 5 的「预先占用」改为「校验之后才被占用」来测（预先占用由验收 4 拦住）
 
 - [ ] Task 5：命令行与 `--json`、退出码
   - 验收：Spec「接口约定·命令」的输出与退出码

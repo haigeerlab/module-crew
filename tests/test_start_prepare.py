@@ -107,3 +107,36 @@ class PrepareTest(StartCase):
         self.assertEqual(res.code, 0, res.lines)
         self.assertEqual(len([s for s in store.records(store.open_store(self.repo), "session").values()
                               if s["role"] == "coordinator"]), 1)
+
+
+class PartialTest(StartCase):
+    def test_stop_part_way_then_rerun(self):
+        real = start._git
+
+        def flaky(cwd, *args):
+            if args[:4] == ("worktree", "add", "-b", "b"):   # c's directory appears after validation passed
+                (self.tmp / "repo-crew" / "c").mkdir(parents=True)
+                (self.tmp / "repo-crew" / "c" / "x").write_text("x")
+            return real(cwd, *args)
+
+        start._git = flaky
+        try:
+            res = start.prepare(self.repo, ["b", "c"], "开这两个", short="shop")
+        finally:
+            start._git = real
+        self.assertEqual(res.code, 4, res.lines)
+        self.assertEqual([p["id"] for p in res.prepared], ["b"])
+        self.assertIn("已完成：b", " ".join(res.lines))
+        db = store.open_store(self.repo)
+        self.assertNotIn("shop-c", store.records(db, "session"))
+        self.assertNotIn("c", git(self.repo, "branch", "--list", "c"))
+        # the obstacle stays (nothing is deleted); after the user clears it, rerun only c
+        again = start.prepare(self.repo, ["c"], "开这两个")
+        self.assertEqual(again.code, 3)
+        self.assertIn("目录已存在", " ".join(again.lines))
+        (self.tmp / "repo-crew" / "c" / "x").unlink()
+        (self.tmp / "repo-crew" / "c").rmdir()
+        again = start.prepare(self.repo, ["c"], "开这两个")
+        self.assertEqual(again.code, 0, again.lines)
+        self.assertEqual(len(store.events(db, key="shop-b", kind="session")), 1)
+        self.assertEqual(start.prepare(self.repo, ["b"], "再开 b").code, 3)
