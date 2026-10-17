@@ -43,6 +43,22 @@ class StaticScanTest(unittest.TestCase):
                 self.assertNotIn(word, text, f"{path.name} uses {word}")
 
 
+class ProtocolPurityTest(unittest.TestCase):
+    def test_protocol_has_no_io(self):
+        tree = ast.parse((PKG / "protocol.py").read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = {a.name for a in node.names}
+            elif isinstance(node, ast.ImportFrom):
+                names = {node.module or ""} | {f"{node.module}.{a.name}" for a in node.names}
+            else:
+                names = set()
+            for banned in ("subprocess", "module_crew.store", "module_crew", "os", "pathlib", "shutil"):
+                self.assertNotIn(banned, names)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                self.assertNotEqual(node.func.id, "open")
+
+
 class HelpersTest(RepoCase):
     def test_repo_and_worktree(self):
         wt = make_worktree(self.repo, "wt1")

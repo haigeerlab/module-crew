@@ -30,7 +30,7 @@
   - 验证：`python3 -m unittest discover -s tests -p "test_protocol_*.py" -v`
   - 文件：`module_crew/protocol.py`、`tests/test_protocol_conformance.py`、`tests/test_protocol_render.py`
 
-- [ ] Task 6：`protocol check` 与无 I/O 扫描
+- [x] Task 6：`protocol check` 与无 I/O 扫描
   - 验收：Spec 验收 8、9
   - 验证：`python3 -m unittest discover -s tests -p "test_p*.py" -v`
   - 文件：`module_crew/__main__.py`、`tests/test_protocol_cli.py`、`tests/test_package.py`
