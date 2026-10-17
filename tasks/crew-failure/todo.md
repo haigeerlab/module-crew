@@ -17,9 +17,10 @@
   - 验证：同上
   - 文件：`module_crew/failure.py`、`tests/test_failure.py`
 
-- [ ] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
+- [x] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
+  - 记录：`python3 -m unittest discover -s tests -v` → Ran 206 tests in 95.563s OK（2026-10-18）
 
-- [ ] Task 4：`serial` 与 crew-start 拒绝开新模块
+- [x] Task 4：`serial` 与 crew-start 拒绝开新模块
   - 验收：Spec 验收 6；验收 9 的 serial 部分
   - 验证：同上
   - 文件：`module_crew/failure.py`、`module_crew/start.py`、`tests/test_failure.py`

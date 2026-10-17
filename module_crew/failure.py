@@ -134,3 +134,19 @@ def resume_kit(db: store.Store, module: str) -> Kit:
         n = tx.allocate_number()
         tx.write_body(n, text)
     return Kit(name, module, rec["worktree"], n, str(db.path / "bodies" / f"{n}.txt"))
+
+
+SERIAL_BLOCKER = "已退回串行：不再开新模块，已开的模块照常推进（用户说恢复并行后运行 serial --off）"
+
+
+def set_mode(db: store.Store, serial: bool, original: str) -> None:
+    """Fall back to serial (no new modules) or back to parallel; both need the user's own words."""
+    _need(original)
+    with db.transaction(actor="coordinator") as tx:
+        cfg = tx.get("config", "main")
+        if not cfg:
+            raise FailureRefused("还没有开过模块（没有运行配置），不需要切换")
+        if (cfg.get("mode") == "serial") == serial:
+            raise FailureRefused("已经是串行模式" if serial else "已经是并行模式")
+        tx.put("config", "main", {**cfg, "mode": "serial" if serial else None},
+               action="serial" if serial else "parallel", data={"original": original})

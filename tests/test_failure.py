@@ -2,7 +2,7 @@ import unittest
 
 from helpers import MergeCase
 
-from module_crew import failure, hooks, inbox, start, store
+from module_crew import failure, hooks, inbox, merge, review, start, store
 
 from helpers import wait_user
 
@@ -112,6 +112,36 @@ class ResumeKitTest(FailureCase):
     def test_kit_refused_without_session(self):
         with self.assertRaises(failure.FailureRefused):
             failure.resume_kit(self.db, "d")
+
+
+class SerialTest(FailureCase):
+    def test_serial_blocks_new_modules_only(self):
+        failure.set_mode(self.db, True, "先不并行了")
+        self.assertEqual(store.get(self.db, "config", "main")["mode"], "serial")
+        self.assertEqual(store.events(self.db, kind="config")[-1]["data"]["original"], "先不并行了")
+        self.assertIn(failure.SERIAL_BLOCKER, start.plan(self.repo).blockers)
+        before = store.events(self.db)
+        res = start.prepare(self.repo, ["d"], "开 d")
+        self.assertEqual(res.code, 3)
+        self.assertTrue(any("已退回串行" in line for line in res.lines))
+        self.assertEqual(store.events(self.db), before)
+        # modules already open keep going
+        self.assertEqual(review.add(self.db, self.spec_review("c"), "shop-c", 50).code, 0)
+        self.approve_final("b", 51)
+        self.assertEqual(merge.run(self.repo, self.check_script()).code, 0)
+        failure.set_mode(self.db, False, "恢复")
+        self.assertIsNone(store.get(self.db, "config", "main")["mode"])
+        self.assertNotIn(failure.SERIAL_BLOCKER, start.plan(self.repo).blockers)
+        self.assertEqual(start.prepare(self.repo, ["d"], "开 d").code, 0)
+
+    def test_serial_refusals(self):
+        with self.assertRaises(failure.FailureRefused):
+            failure.set_mode(self.db, False, "恢复")
+        with self.assertRaises(failure.FailureRefused):
+            failure.set_mode(self.db, True, " ")
+        failure.set_mode(self.db, True, "先不并行了")
+        with self.assertRaises(failure.FailureRefused):
+            failure.set_mode(self.db, True, "再来")
 
 
 if __name__ == "__main__":

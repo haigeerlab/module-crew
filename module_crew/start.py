@@ -53,6 +53,9 @@ def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal
     limit = _config(db).get("maxModules") or max_modules or DEFAULT_MAX
     slots = max(limit - len(_counted_devs(db)), 0)
     blockers = [f"{c.id}：{c.reason}" for c in report.checks.values() if c.state == "blocker"]
+    if _config(db).get("mode") == "serial":
+        from module_crew.failure import SERIAL_BLOCKER
+        blockers.append(SERIAL_BLOCKER)
     if blockers:
         return Proposal(slots, blockers=blockers)
     modules = {m.get("id"): m for m in report.map.get("modules") or [] if isinstance(m, dict)}
