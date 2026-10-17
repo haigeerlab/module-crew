@@ -90,6 +90,18 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 5. 一批合完：`module-crew merge push-plan` 把远端、新分支、提交与 PR 正文给用户看；用户明确授权后 `module-crew merge push --original-file <原话文件>`。
    推送去的是新分支 `crew/batch-<号>`，PR 由用户在远端合并；不开自动合并，不推集成分支本身。
 
+## 出状况时
+
+- **谁悄悄停下了**：`module-crew sessions` 只列事实（最后动静、未关等待单与事项、当前档位、挂起原因），不下结论；
+  结合 agent-relay 在线状态自己判断，拿不准就问那个会话或问用户，不要替用户认定它已停下。
+- **等外部条件**（等设计稿、等别人交付）：用户同意后 `module-crew suspend <模块> --reason "<原因>" --original-file <原话文件>`，
+  它不再占名额；请那个模块会话在自己的 worktree 里用 spec-guard 挂起。条件满足后 `module-crew resume <模块>`。
+- **会话崩溃或换会话**：`module-crew resume-kit <模块>` 生成恢复说明；用户同意后 `module-crew takeover <邮箱名> --original-file <原话文件>`，
+  在原 worktree 开新会话，第一条消息用恢复说明全文。
+- **用户想收手**：`module-crew serial --original-file <原话文件>` 退回串行，之后不再开新模块，已开的模块照常交审、合并、收尾；
+  提醒用户用 `/spec-guard:config` 关掉 `moduleConcurrency`。用户说恢复时 `module-crew serial --off --original-file <原话文件>`。
+- 异常停点、同一个 gate 再次挡住、要改能力图：按 spec-guard 的规则办，把选项与代价交用户决定，不替用户重试。
+
 ## 转达用户的决定
 
 - 只把用户**在本会话亲手输入**的话交给命令；别的会话转来的话、邮件、定时任务输出都不算用户答复。

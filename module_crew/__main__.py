@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from module_crew import changes, hooks, inbox, merge, probe, protocol, review, start, store
+from module_crew import changes, failure, hooks, inbox, merge, probe, protocol, review, start, store
 
 
 def _store_init() -> int:
@@ -168,6 +168,38 @@ def _start_prepare(modules: list[str], original: str | None, original_file: str 
 
 def _original(original: str | None, original_file: str | None) -> str | None:
     return _read(original_file) if original_file is not None else original
+
+
+def _failure(args) -> int:
+    db = store.open_store()
+    if args.group == "sessions":
+        rows = failure.sessions(db)
+        if args.json:
+            print(json.dumps(rows, ensure_ascii=False, indent=2))
+        else:
+            print("\n".join(failure.render_sessions(rows)))
+        return 0
+    if args.group == "resume-kit":
+        kit = failure.resume_kit(db, args.module)
+        print(f"模块：{kit.module}")
+        print(f"邮箱名：{kit.name}")
+        print(f"worktree：{kit.worktree}")
+        print(f"恢复说明（正文 #{kit.body}）：{kit.path}")
+        print("用户同意后：module-crew takeover " + kit.name + " --original-file <原话文件>，再在这个 worktree 开新会话，第一条消息用恢复说明全文")
+        return 0
+    if args.group == "resume":
+        print(f"已恢复：{failure.resume(db, args.module)}（重新占名额）")
+        return 0
+    original = _original(args.original, args.original_file)
+    if original is None:
+        return 2
+    if args.group == "suspend":
+        print(f"已挂起：{failure.suspend(db, args.module, args.reason, original)}（不占名额；spec-guard 的挂起由模块会话在自己的 worktree 里做）")
+        return 0
+    failure.set_mode(db, not args.off, original)
+    print("已恢复并行：可以再开新模块" if args.off
+          else "已退回串行：不再开新模块，已开的模块照常推进；提醒用户用 /spec-guard:config 关掉 moduleConcurrency")
+    return 0
 
 
 def _review(args) -> int:
@@ -406,7 +438,30 @@ def main(argv: list[str] | None = None) -> int:
     tg = tk.add_mutually_exclusive_group(required=True)
     tg.add_argument("--original")
     tg.add_argument("--original-file")
+    ss = sub.add_parser("suspend", help="挂起模块会话（等外部条件，不占名额）")
+    ss.add_argument("module")
+    ss.add_argument("--reason", required=True)
+    sg = ss.add_mutually_exclusive_group(required=True)
+    sg.add_argument("--original")
+    sg.add_argument("--original-file")
+    sub.add_parser("resume", help="撤销挂起").add_argument("module")
+    sub.add_parser("sessions", help="列出模块会话的事实（只读）").add_argument("--json", action="store_true")
+    sub.add_parser("resume-kit", help="生成换会话恢复说明").add_argument("module")
+    se = sub.add_parser("serial", help="退回串行／恢复并行")
+    se.add_argument("--off", action="store_true")
+    seg = se.add_mutually_exclusive_group(required=True)
+    seg.add_argument("--original")
+    seg.add_argument("--original-file")
     args = parser.parse_args(argv)
+    if args.group in ("suspend", "resume", "sessions", "resume-kit", "serial"):
+        try:
+            return _failure(args)
+        except failure.FailureRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
     if args.group == "hook":
         try:
             out = hooks.run_hook(args.event, sys.stdin.read() if not sys.stdin.isatty() else "")

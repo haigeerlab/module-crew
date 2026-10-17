@@ -76,3 +76,18 @@ class SkillsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FailureSectionsTest(unittest.TestCase):
+    def test_coordinator_failure_section(self):
+        _, text = read("crew-coordinator")
+        section = text.split("## 出状况时", 1)[1].split("\n## ", 1)[0]
+        for words in ("module-crew sessions", "agent-relay 在线状态", "suspend", "resume", "resume-kit", "takeover",
+                      "serial", "/spec-guard:config", "moduleConcurrency", "异常停点", "同一个 gate", "能力图"):
+            self.assertIn(words, section)
+
+    def test_dev_failure_section(self):
+        _, text = read("crew-dev")
+        section = text.split("## 挂起与异常", 1)[1].split("\n## ", 1)[0]
+        for words in ("【等待其他会话】", "挂起", "spec-guard", "同一个 gate", "停下"):
+            self.assertIn(words, section)

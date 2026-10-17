@@ -30,7 +30,7 @@
   - 验证：同上
   - 文件：`tests/test_failure.py`
 
-- [ ] Task 6：命令行、两份 skill、crew-start 变更记录
+- [x] Task 6：命令行、两份 skill、crew-start 变更记录
   - 验收：Spec 验收 8、9
   - 验证：`python3 -m unittest discover -s tests -v`
   - 文件：`module_crew/__main__.py`、`skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`tests/test_skills.py`、`tests/test_failure.py`、`spec/crew-start.md`

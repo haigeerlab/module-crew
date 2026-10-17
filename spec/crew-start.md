@@ -134,3 +134,7 @@ python3 -m unittest discover -s tests -v
 ## 文档建议
 
 README 的「一次完整流程」从这里开始写：`status` → `start plan` → 问用户 → `start prepare` → 开会话。crew-review-batch 完成后补全。
+
+## 变更记录
+
+- 2026-10-18：空位计算与名额检查不再数挂起的模块会话（会话登记 `suspended` 非空）；运行配置 `mode` 为 `serial` 时，`start plan` 把「已退回串行」列为阻塞、`start prepare` 退出码 3 拒绝开新模块（沿用原有退出码含义）。原因：crew-failure 要求挂起不占名额、用户可随时退回串行；来源：`spec/crew-failure.md`（用户 2026-10-18 批准），随 crew-failure 最终验收复审。

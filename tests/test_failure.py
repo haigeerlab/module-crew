@@ -176,5 +176,35 @@ class IsolationTest(FailureCase):
         self.assertEqual(rows["c"]["stage"], hooks.STAGE_MERGED)
 
 
+class CliTest(FailureCase):
+    def test_commands(self):
+        import json
+        run = lambda *a: self.run_cli(*a, cwd=self.repo)
+        out = run("suspend", "b", "--reason", "等设计稿", "--original", "先挂起 b")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(run("suspend", "b", "--reason", "再挂", "--original", "再挂").returncode, 3)
+        rows = json.loads(run("sessions", "--json").stdout)
+        self.assertEqual({r["module"]: r["suspended"] for r in rows}, {"b": "等设计稿", "c": None})
+        self.assertIn("挂起：等设计稿", run("sessions").stdout)
+        self.assertEqual(run("resume", "b").returncode, 0)
+        self.assertEqual(run("resume", "b").returncode, 3)
+        kit = run("resume-kit", "b")
+        self.assertEqual(kit.returncode, 0, kit.stderr)
+        self.assertIn("shop-b", kit.stdout)
+        self.assertEqual(run("resume-kit", "d").returncode, 3)
+        self.assertEqual(run("serial", "--original", "先不并行了").returncode, 0)
+        self.assertEqual(run("serial", "--original", "再来").returncode, 3)
+        self.assertEqual(run("start", "plan").returncode, 3)
+        self.assertEqual(run("serial", "--off", "--original", "恢复").returncode, 0)
+
+    def test_no_sessions(self):
+        with self.db.transaction(actor="test") as tx:
+            for name, rec in tx.records("session").items():
+                if rec.get("role") == "dev":
+                    tx.put("session", name, {**rec, "status": "retired"}, action="retired")
+        out = self.run_cli("sessions", cwd=self.repo)
+        self.assertEqual((out.returncode, out.stdout.strip()), (0, "没有在用的模块会话"))
+
+
 if __name__ == "__main__":
     unittest.main()
