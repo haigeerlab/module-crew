@@ -35,7 +35,7 @@ Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → cr
 ## 说明
 
 - 逗号组只表示「可以同时做」；本仓库自己串行开发（第 4 关不拿未完成的能力开发它自己）。
-- crew-protocol 依据 session-protocol v1.1（提交 78da46f，2026-10-18 批准）；现钉住 v1.4（e33c077；v1.2～v1.4 只修正样例、补写现行做法与新增样例）。
+- crew-protocol 依据 session-protocol v1.1（提交 78da46f，2026-10-18 批准）；现钉住 v1.5（246e138；v1.2～v1.5 只增不改：修正样例、补写现行做法、新增「退回」通知类型）。
 - crew-start 起依赖 spec-guard 规划层发版（`moduleConcurrency`、`/map --json` 新字段、`interface.json` 1.1）；发版前用夹具推进，
   第 7 关实地验证必须用真实版本。
 - 防线 L1–L5（需求记录第 9 节）：出现「要改 spec-guard 阶段判断核心」「要在 spec-guard 里管会话」就停下复盘。
@@ -58,3 +58,4 @@ Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → cr
 
 - 2026-10-18：「说明」里补记 crew-protocol 现钉住 session-protocol v1.3（42fe5f6）。原因：契约负责人修正 v1.1 的一份样例；来源：用户在 crew-protocol 最终验收时选 A。模块、依赖与顺序不变。
 - 2026-10-18：「说明」改为 crew-protocol 现钉住 session-protocol v1.4（e33c077）。来源：用户批准升级。模块、依赖与顺序不变。
+- 2026-10-18：「说明」改为 crew-protocol 现钉住 session-protocol v1.5（246e138）。来源：用户批准升级。模块、依赖与顺序不变。

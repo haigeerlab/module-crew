@@ -1,4 +1,4 @@
-"""Parse and render session-protocol v1.4 messages (see spec/crew-protocol.md).
+"""Parse and render session-protocol v1.5 messages (see spec/crew-protocol.md).
 
 Pure functions only: no file, git or agent-relay access. Field names, tags and
 problem codes follow the contract text in session-protocol PROTOCOL.md.
@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-CONTRACT_VERSION = "1.4"
+CONTRACT_VERSION = "1.5"
 
 KIND_TAGS = {
     "等待用户": "wait-user",
@@ -56,7 +56,7 @@ _SCOPE_RE = re.compile(rf"^[-*•·]?\s*([^\s：:]+)\s*{_COLON}\s*(.*)$")
 _SESSION_SEP = re.compile(r"[、,，+＋\s]+")
 _FILE_LINE_RE = re.compile(r"^(?:-\s+)?(\S.*?)\s+(sha256:[0-9a-f]{12,64})$")
 REVIEW_NODES = {"Spec": "spec", "Plan": "plan", "接口提案": "interface", "最终验收": "final"}
-NOTICE_KINDS = {"开工": "start", "同步基线": "sync-baseline", "接口变更": "interface-change", "收尾": "wrap-up"}
+NOTICE_KINDS = {"开工": "start", "同步基线": "sync-baseline", "接口变更": "interface-change", "收尾": "wrap-up", "退回": "returned"}
 _THIN_WORDS = ("详见", "已明确", "同上")
 # 架构审查 wordings (decision-inbox 0.0.7 behaviour carried into v1.0); anything else is "unrecognized".
 _REVIEW_REF_RE = re.compile(r"（\s*(#?[A-Za-z]*-?\d+)\s*）$")
@@ -368,7 +368,7 @@ def parse(text: str) -> Message:
         if raw_kind and notice_kind is None:
             problems.append("bad-notice-kind")
         refs = [int(x) for x in _NUM_RE.findall(fields.get("依据", ""))]
-        if notice_kind == "start" and not refs:
+        if notice_kind in ("start", "returned") and not refs:
             problems.append("missing-approval-ref")
         extra = {"notice": {"kind": notice_kind, "refs": refs}}
     elif kind == "wait-session":
@@ -445,7 +445,7 @@ def render_coordination_notice(kind: str, basis: str, todo: str) -> str:
     for name, value in (("依据", basis), ("要你做什么", todo)):
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"「{name}」不能为空")
-    if kind == "start" and not _NUM_RE.search(basis):
-        raise ValueError("开工类通知的「依据」必须写明用户批准事项编号（#N）")
+    if kind in ("start", "returned") and not _NUM_RE.search(basis):
+        raise ValueError("开工类与退回类通知的「依据」必须写明批准事项编号（#N）")
     text = "\n".join(["【协调通知】", f"类型：{labels[kind]}", f"依据：{basis}", f"要你做什么：{todo}"]) + "\n"
     return _self_check(text, "coordination-notice", {"依据": basis, "要你做什么": todo})

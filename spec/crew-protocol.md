@@ -1,12 +1,12 @@
-<!-- spec-guard: review approved 2ff77ebd1953 -->
+<!-- spec-guard: review approved 7a27312a5a8e -->
 # Spec: crew-protocol
 
-> 能力图模块 `crew-protocol`。需求来源：`docs/requirements-record.md` B4（消息）、第 8 节（共用契约）；契约 session-protocol v1.4（提交 e33c077）。
+> 能力图模块 `crew-protocol`。需求来源：`docs/requirements-record.md` B4（消息）、第 8 节（共用契约）；契约 session-protocol v1.5（提交 246e138）。
 > 假设见下文，用户 2026-10-18 已确认。
 
 ## 目标
 
-让 module-crew 的协调会话与模块会话说同一种话：按 session-protocol v1.4 严格解析收到的消息、生成协调会话发出的消息，
+让 module-crew 的协调会话与模块会话说同一种话：按 session-protocol v1.5 严格解析收到的消息、生成协调会话发出的消息，
 并用契约自带的样例证明两边与契约一致。后面的 crew-onboarding、crew-start、crew-review-batch、crew-shared-changes 都只通过本模块读写消息正文。
 
 使用者是本插件的其他模块（Python 调用），以及在发送前自检的会话（`module-crew protocol check`）。
@@ -16,7 +16,7 @@
 **范围内**
 
 - `module_crew/protocol.py`：`parse`、`render_user_reply`、`render_coordination_notice`，纯函数，无 I/O。
-- 钉住契约 v1.4：样例复制到 `tests/fixtures/session-protocol/v1.4/`，一致性测试。
+- 钉住契约 v1.5：样例复制到 `tests/fixtures/session-protocol/v1.5/`，一致性测试。
 - 只读命令 `module-crew protocol check <文件>`。
 - 把本插件的接入情况写进 session-protocol 的 `conformance/README.md`「各插件现状」表（该仓库唯一改动，验收时一并交审）。
 
@@ -28,7 +28,7 @@
 
 ## 假设（用户 2026-10-18 已确认）
 
-1. 钉住 v1.4：复制 `fixtures/` 到 `tests/fixtures/session-protocol/v1.4/`，记来源提交 e33c077；先核对 `SHA256SUMS`，再逐份对照期望结果，只比期望结果里出现的键。
+1. 钉住 v1.5：复制 `fixtures/` 到 `tests/fixtures/session-protocol/v1.5/`，记来源提交 246e138；先核对 `SHA256SUMS`，再逐份对照期望结果，只比期望结果里出现的键。
 2. 解析：【等待用户】【等待其他会话】【已恢复】【撤回】【交审】【公共变更请求】（协调会话收）、【用户答复】【协调通知】（模块会话收）、认不出的消息；【审查结论】【答复告知】跳过并在一致性说明里写明。
 3. 生成：只生成协调会话发出的单线【用户答复】与【协调通知】；【协调通知】用「生成后再解析与输入一致」测；模块会话的消息由会话自己写、发送前用解析器自检。
 4. 独立实现，不复制、不依赖 decision-inbox 的代码；契约第 2 节的切分规则照契约写。
@@ -68,7 +68,7 @@ protocol.render_coordination_notice(kind="start", basis="用户批准事项 #7�
 # 【协调通知】\n类型：开工\n依据：...\n要你做什么：...\n
 ```
 
-- `kind` 取契约代码 `start`／`sync-baseline`／`interface-change`／`wrap-up`，输出写中文标签。
+- `kind` 取契约代码 `start`／`sync-baseline`／`interface-change`／`wrap-up`／`returned`，输出写中文标签；开工类与退回类的「依据」必须有 `#N`。
 - 所有生成结果以单个换行结尾；字段值里的换行原样保留。
 
 ### 命令行
@@ -82,8 +82,8 @@ bin/module-crew protocol check <文件>   # 打印类型、问题代码与提示
 ### 样例目录
 
 ```text
-tests/fixtures/session-protocol/v1.4/
-├── SOURCE          来源：仓库路径、提交号 e33c077、复制日期
+tests/fixtures/session-protocol/v1.5/
+├── SOURCE          来源：仓库路径、提交号 246e138、复制日期
 ├── SHA256SUMS      原样复制
 └── <类型>/*.txt|*.json   原样复制（43 份样例、86 个文件，含本模块跳过的类型）
 ```
@@ -93,7 +93,7 @@ tests/fixtures/session-protocol/v1.4/
 ```text
 module_crew/protocol.py              本模块
 module_crew/__main__.py              加 protocol check 子命令
-tests/fixtures/session-protocol/v1.4/  契约样例（只读）
+tests/fixtures/session-protocol/v1.5/  契约样例（只读）
 tests/test_protocol_conformance.py   指纹核对 + 逐份对照
 tests/test_protocol_render.py        生成与往返
 tests/test_protocol_cli.py           protocol check
@@ -138,8 +138,8 @@ class Message:
 
 ## 验收标准
 
-1. `tests/fixtures/session-protocol/v1.4/` 与 session-protocol e33c077 的 `fixtures/` 逐字节相同；`SHA256SUMS` 全部核对通过；改动任一样例一个字节，一致性测试失败。
-2. 支持的 8 种类型及 `unknown` 的全部 `parse` 期望结果（v1.0 的 wait-user 12 份、user-reply 4 份、wait-session 2 份、resumed 3 份、withdraw 1 份、unknown 1 份，v1.1 的 15 份，v1.3 新增的 wait-user 3 份，v1.4 新增的 wait-user 6 份与 user-reply 1 份，共 48 份）逐键一致。
+1. `tests/fixtures/session-protocol/v1.5/` 与 session-protocol 246e138 的 `fixtures/` 逐字节相同；`SHA256SUMS` 全部核对通过；改动任一样例一个字节，一致性测试失败。
+2. 支持的 8 种类型及 `unknown` 的全部 `parse` 期望结果（v1.0 的 wait-user 12 份、user-reply 4 份、wait-session 2 份、resumed 3 份、withdraw 1 份、unknown 1 份，v1.1 的 15 份，v1.3 新增的 wait-user 3 份，v1.4 新增的 wait-user 6 份与 user-reply 1 份，v1.5 新增的 coordination-notice 3 份，共 51 份）逐键一致。
 3. `user-reply` 的 3 份单线生成样例（`single`、`free-text`、`original-whitespace`）逐字相同；`multiline-user-reply`、`answer-notice` 的生成样例与 `review-conclusion` 的解析样例被跳过，测试输出列出跳过项。
 4. 【协调通知】四种类型 `render` 后再 `parse`：合格，`notice.kind` 与入参一致，三个字段的值与入参相同。
 5. `render_coordination_notice` 在类型不认识、开工类依据无 `#N`、任一字段为空时抛 `ValueError`；`render_user_reply` 在原话为空、编号不是正整数、选项原文不以字母开头时抛 `ValueError`。
@@ -147,7 +147,7 @@ class Message:
 7. 【审查结论】【答复告知】解析得到对应类型代码、`supported` 为假、没有问题代码。
 8. `protocol check`：合格样例退出码 0；`review-request/bad-file-line.txt` 退出码 3 并打印 `bad-file-line`；`unknown-kind.txt` 退出码 3；文件不存在退出码 2。
 9. `protocol.py` 不 import `module_crew.store`、`subprocess`，不调用 `open`（测试扫描断言）。
-10. session-protocol `conformance/README.md` 的 module-crew 一行写明钉住 v1.4、解析与生成的类型及跳过项（交 session-protocol 契约负责人落地，用户 2026-10-18 选 A）。
+10. session-protocol `conformance/README.md` 的 module-crew 一行写明钉住 v1.5、解析与生成的类型及跳过项（交 session-protocol 契约负责人落地，用户 2026-10-18 选 A）。
 
 ## 未决问题
 
@@ -162,3 +162,4 @@ class Message:
 
 - 2026-10-18：钉住的契约由 v1.1（78da46f）改为 v1.3（42fe5f6），样例目录改为 `tests/fixtures/session-protocol/v1.3/`，解析样例由 38 份增至 41 份；验收 10 的契约仓库提交改由契约负责人落地。原因：v1.1 的 `unknown/unknown-kind` 样例用了已成为正式类型的【交审】，契约负责人在 v1.2 修正，v1.3 又只增了 3 份过简要点样例；来源：用户在 crew-protocol 最终验收时选 A（契约缺陷交契约负责人，新版本发布后改钉）。
 - 2026-10-18：钉住的契约由 v1.3（42fe5f6）改为 v1.4（e33c077），样例目录改为 `tests/fixtures/session-protocol/v1.4/`，解析样例 41→48 份、生成样例 2→3 份。原因：契约负责人把「架构审查」行取值与「用户原话」首行空白写进契约并补样例，只增不改、代码不用改；来源：用户 2026-10-18 批准升级。
+- 2026-10-18：钉住的契约由 v1.4（e33c077）改为 v1.5（246e138），解析样例 48→51 份；【协调通知】增加「退回」类型（`returned`），解析与生成都要求退回类「依据」带 #编号。原因：crew-merge 需要退回通知，契约负责人按 module-crew 的需求新增；来源：用户 2026-10-18 批准（选 A）。

@@ -4,6 +4,12 @@
 70df3a8dea6d71f0c5a88ef775b47ff71f91c4ec852efcacb1d07f5109eee628  ./coordination-notice/bad-kind.txt
 bb51786458ab47cb360a7667cb716ade7697cbd41411bf20569b82355d55acf8  ./coordination-notice/missing-field.json
 cf107b7cf693d6f8ab85514456f53a1dc232b1c4b61fee4dbab8609c41778444  ./coordination-notice/missing-field.txt
+3930a7c39deeb5a15aabcd8f2c80de40814d3b332b799f6167eec628fa30f1d6  ./coordination-notice/returned-check-failed.json
+3621cb69cd485f2b9fb8ffcb8222f81ee9438821bd06cd9cb5cdbc772daa5bd6  ./coordination-notice/returned-check-failed.txt
+1a98b3f168332c76f5c23317adbf9d826cd35eb4184c5affc3b9351643dd509d  ./coordination-notice/returned-conflict.json
+3deb76095cd08ba2430da5348697f013ba97faccb3550bbb06c219ca213b2298  ./coordination-notice/returned-conflict.txt
+350e8e802afa98fa9affbdb7d03f33863757bc3af78233b03077cba57cb9d9a4  ./coordination-notice/returned-no-ref.json
+33daa3a7a71ec3d323491098605dd4ac69fb79666475c9c6b3f090140f97ccf9  ./coordination-notice/returned-no-ref.txt
 91bdff4139fdbef1169571474c45102cf8698b22fb946ecbb08b261170ca99e0  ./coordination-notice/start-no-approval.json
 7fa20a5dc94ee85f0b6ca89a8e1cca9de8a1f30b97ce582f34d38184fd73c433  ./coordination-notice/start-no-approval.txt
 e013a8770bc9a68fde3d12ff4af7bbb5f6932972ae0c30654c1b71f46298cbe3  ./coordination-notice/start.json

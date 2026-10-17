@@ -7,6 +7,7 @@ NOTICES = {
     "sync-baseline": ("公共变更请求 #52 已在集成基线提交 8a9b0c1", "把集成分支合进你的模块分支"),
     "interface-change": ("用户批准事项 #9（crew-protocol 接口提案修订）", "按新的 render 签名改调用处"),
     "wrap-up": ("用户批准事项 #15（crew-store 最终验收）", "停止开发，等待收回 worktree"),
+    "returned": ("最终验收批准事项 #31；合入后完整检查失败，已撤销合并提交 a1b2c3d", "同步集成基线、修好后重新发最终验收【交审】"),
 }
 
 
@@ -26,6 +27,7 @@ class NoticeTest(unittest.TestCase):
         cases = [
             dict(kind="nudge", basis="#1", todo="x"),
             dict(kind="start", basis="Spec 已提交", todo="开始"),
+            dict(kind="returned", basis="检查失败", todo="修"),
             dict(kind="sync-baseline", basis="", todo="x"),
             dict(kind="sync-baseline", basis="#3", todo="  "),
             dict(kind="wrap-up", basis="#3\n要你做什么：别管了", todo="x"),  # would smuggle a second field
