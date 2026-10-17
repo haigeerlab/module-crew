@@ -13,7 +13,7 @@ from module_crew import protocol
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "session-protocol" / "v1.1"
 
 # Types this plugin parses / generates (spec 假设 2、3). Everything else is skipped and listed.
-PARSED = {"wait-session", "resumed", "withdraw", "user-reply", "unknown"}
+PARSED = {"wait-user", "wait-session", "resumed", "withdraw", "user-reply", "unknown"}
 GENERATED = set()
 # Fixtures whose expectation the contract itself must fix; skipped with a reason, never silently.
 CONTRACT_DEFECTS: dict[str, str] = {

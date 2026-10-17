@@ -12,7 +12,7 @@
   - 验证：同上
   - 文件：`module_crew/protocol.py`、`tests/test_protocol_conformance.py`
 
-- [ ] Task 3：【等待用户】
+- [x] Task 3：【等待用户】
   - 验收：wait-user 12 份解析样例逐键一致
   - 验证：同上
   - 文件：`module_crew/protocol.py`、`tests/test_protocol_conformance.py`

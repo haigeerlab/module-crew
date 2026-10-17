@@ -49,6 +49,21 @@ _COLON = "[：:]"
 _END_RE = re.compile(rf"^结束\s*{_COLON}\s*(.*)$")
 _REPLY_RE = re.compile(rf"^回复\s*{_COLON}\s*#\s*(\d+)\s*$")
 _NUM_RE = re.compile(r"#\s*(\d+)")
+_OPTION_RE = re.compile(r"^(推荐\s*)?([A-Z])\s*[：:.、)）]\s*(.*)$")
+_RECOMMEND_RE = re.compile(rf"^推荐\s*{_COLON}?\s*([A-Z])\s*$")
+_CONSEQUENCE_RE = re.compile(rf"^选了会怎样\s*{_COLON}\s*(.*)$")
+_SCOPE_RE = re.compile(rf"^[-*•·]?\s*([^\s：:]+)\s*{_COLON}\s*(.*)$")
+_SESSION_SEP = re.compile(r"[、,，+＋\s]+")
+_THIN_WORDS = ("详见", "已明确", "同上")
+# 架构审查 wordings (decision-inbox 0.0.7 behaviour carried into v1.0); anything else is "unrecognized".
+_REVIEW_REF_RE = re.compile(r"（\s*(#?[A-Za-z]*-?\d+)\s*）$")
+_REVIEW_FORMS = (
+    (re.compile(r"^通过$"), "passed"),
+    (re.compile(r"^通过，附建议(\d+)条(（.*）)?$"), "passed-with-advice"),
+    (re.compile(r"^进行中，请勿先批$"), "in-progress"),
+    (re.compile(r"^不适用（不属于审查节点）$"), "not-applicable"),
+    (re.compile(r"^用户豁免$"), "waived"),
+)
 
 
 @dataclass(frozen=True)
@@ -173,6 +188,79 @@ def _number(value: str | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _options(block: str) -> tuple[list[dict], str | None]:
+    """Split 选项与我的建议 into lettered options; never merge or complete them."""
+    options: list[dict] = []
+    recommended = None
+    for raw in block.split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        rec, opt, cons = _RECOMMEND_RE.match(line), _OPTION_RE.match(line), _CONSEQUENCE_RE.match(line)
+        if rec:
+            recommended = rec.group(1)
+        elif opt:
+            options.append({"letter": opt.group(2), "text": [opt.group(3)], "consequence": None})
+            if opt.group(1):
+                recommended = opt.group(2)
+        elif cons and options:
+            options[-1]["consequence"] = [cons.group(1)]
+        elif options:
+            (options[-1]["consequence"] or options[-1]["text"]).append(line)
+    return [{"letter": o["letter"], "text": "\n".join(o["text"]).strip(),
+             "consequence": "\n".join(o["consequence"]).strip() if o["consequence"] else None}
+            for o in options], recommended
+
+
+def _scopes(block: str) -> dict[str, str]:
+    """各线范围: one 「会话：范围」 entry per line; later lines continue it without their indent."""
+    scopes: dict[str, list[str]] = {}
+    last = None
+    for raw in block.split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        m = _SCOPE_RE.match(line)
+        if m:
+            last = m.group(1)
+            scopes.setdefault(last, []).append(m.group(2).strip())
+        elif last is not None:
+            scopes[last].append(line)
+    return {k: "\n".join(v) for k, v in scopes.items()}
+
+
+def _review_line(raw: str | None) -> dict:
+    if raw is None:
+        return {"status": "absent", "adviceCount": None, "ref": None}
+    value = raw.strip().replace(",", "，").replace("(", "（").replace(")", "）")
+    ref = None
+    m = _REVIEW_REF_RE.search(value)
+    if m:
+        ref, value = m.group(1), value[:m.start()].rstrip()
+    for pattern, status in _REVIEW_FORMS:
+        hit = pattern.match(value)
+        if hit:
+            advice = int(hit.group(1)) if status == "passed-with-advice" else None
+            return {"status": status, "adviceCount": advice, "ref": ref}
+    return {"status": "unrecognized", "adviceCount": None, "ref": None}
+
+
+def _brief_thin(value: str | None) -> bool:
+    lines = [x for x in (value or "").split("\n") if x.strip()]
+    return len(lines) < 2 or any(w in (value or "") for w in _THIN_WORDS)
+
+
+def _stop_flag(fields: dict, problems: list[str]) -> bool | None:
+    flag = fields.get("是否完全停住", "").strip()
+    if not flag:
+        problems.append("missing-field:是否完全停住")
+        return None
+    if flag not in ("是", "否"):
+        problems.append("bad-stop-flag")
+        return None
+    return flag == "是"
+
+
 def _require(fields: dict, names, problems: list[str]) -> None:
     for name in names:
         if not fields.get(name, "").strip():
@@ -206,6 +294,32 @@ def parse(text: str) -> Message:
 
     if kind == "unknown":
         problems.append("unknown-kind")
+    elif kind == "wait-user":
+        if not end.present:
+            problems.append("missing-end")
+        _require(fields, ("来自", "要你决定"), problems)
+        options, recommended = _options(fields.get("选项与我的建议", ""))
+        if not options:
+            problems.append("missing-options")
+        stopped = _stop_flag(fields, problems)
+        hints += [f"no-consequence:{o['letter']}" for o in options if o["consequence"] is None]
+        if options and recommended is None:
+            hints.append("no-recommendation")
+        if _brief_thin(fields.get("要点")):
+            hints.append("brief-thin")
+        in_scope: list[str] = []
+        scopes: dict[str, str] = {}
+        if fields.get("适用会话", "").strip():
+            in_scope = [x for x in _SESSION_SEP.split(fields["适用会话"].strip()) if x]
+            if not fields.get("各线范围", "").strip():
+                problems.append("missing-field:各线范围")
+            else:
+                scopes = _scopes(fields["各线范围"])
+                problems += [f"scope-missing:{n}" for n in in_scope if not scopes.get(n, "").strip()]
+                problems += [f"scope-unknown:{n}" for n in scopes if n not in in_scope]
+        extra = {"options": options, "recommended": recommended, "suggestedReply": fields.get("你该回") or None,
+                 "fullyStopped": stopped, "linesInScope": in_scope, "scopes": scopes,
+                 "reviewLine": _review_line(fields.get("架构审查"))}
     elif kind == "wait-session":
         if not end.present:
             problems.append("missing-end")
