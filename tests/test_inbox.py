@@ -62,3 +62,56 @@ class CliTest(InboxCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WaitUserTest(InboxCase):
+    def item(self, n):
+        return store.get(self.db, "item", str(n))
+
+    def test_recorded_with_details(self):
+        out = self.add(wait_user(decide="先做哪个"), relay_id=4540)
+        self.assertEqual((out.code, out.number), (0, 1))
+        rec = self.item(1)
+        self.assertEqual(rec["state"], "open")
+        self.assertEqual(rec["from"], "shop-a")
+        self.assertEqual(rec["relayId"], 4540)
+        self.assertEqual(rec["recommended"], "A")
+        self.assertTrue(rec["fullyStopped"])
+        self.assertEqual([o["letter"] for o in rec["options"]], ["A", "B"])
+        self.assertIn("要你决定：先做哪个", rec["text"])
+
+    def test_default_supersede_only_same_sender(self):
+        self.add(wait_user(decide="一"), relay_id=1)
+        self.add(wait_user(decide="别人的", sender="b"), sender="shop-b", relay_id=2)
+        out = self.add(wait_user(decide="二"), relay_id=3)
+        self.assertEqual(out.closed, [1])
+        self.assertEqual(self.item(1)["state"], "closed")
+        self.assertEqual(self.item(1)["closedReason"], "superseded")
+        self.assertEqual(self.item(2)["state"], "open")
+        self.assertIn("#1 已被新事项自动取代；确实要两项都答，请写【与 #1 并行】重发", out.tell_sender)
+
+    def test_parallel_marker_keeps_old(self):
+        self.add(wait_user(decide="一"), relay_id=1)
+        out = self.add(wait_user(decide="二", marker="【与 #1 并行】\n"), relay_id=2)
+        self.assertEqual(out.closed, [])
+        self.assertEqual(self.item(1)["state"], "open")
+
+    def test_explicit_supersede_only_that_one(self):
+        self.add(wait_user(decide="一"), relay_id=1)
+        self.add(wait_user(decide="二", marker="【与 #1 并行】\n"), relay_id=2)
+        out = self.add(wait_user(decide="三", marker="【取代 #2】\n"), relay_id=3)
+        self.assertEqual(out.closed, [2])
+        self.assertEqual(self.item(1)["state"], "open")
+
+    def test_supersede_by_relay_id(self):
+        self.add(wait_user(decide="一"), relay_id=4540)
+        out = self.add(wait_user(decide="二", marker="【取代 #4540】\n"), relay_id=4541)
+        self.assertEqual(out.closed, [1])
+
+    def test_multiline_and_single_do_not_supersede_each_other(self):
+        scope = "适用会话：a、b\n各线范围：\n- a：前端\n- b：后端\n"
+        self.add(wait_user(decide="单线"), relay_id=1)
+        out = self.add(wait_user(decide="多线", scope=scope), relay_id=2)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertEqual(out.closed, [])
+        self.assertTrue(self.item(2)["multiline"])

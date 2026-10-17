@@ -49,15 +49,50 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         return out
 
 
+def _find(records: dict, sender: str, n: int) -> str | None:
+    """Key of the sender's record #n: store number first, then the sender's own relay id."""
+    rec = records.get(str(n))
+    if rec is not None and rec.get("from") == sender:
+        return str(n)
+    for key, rec in records.items():
+        if rec.get("from") == sender and rec.get("relayId") == n:
+            return key
+    return None
+
+
+def _close_item(tx, key: str, reason: str, by: int, out: Outcome) -> None:
+    rec = dict(tx.get("item", key), state="closed", closedReason=reason)
+    tx.put("item", key, rec, action=reason, data={"relayId": by})
+    out.closed.append(int(key))
+
+
 def _wait_user(tx, msg: protocol.Message, text: str, sender: str, relay_id: int, out: Outcome) -> None:
     doc = msg.contract()
+    items = tx.records("item")
+    multiline = bool(doc["linesInScope"])
+    parallel = {n for kind, n in msg.markers if kind == "parallel"}
+    explicit = [n for kind, n in msg.markers if kind == "supersede"]
+    if explicit:
+        for n in explicit:
+            key = _find(items, sender, n)
+            if key and items[key]["state"] == "open":
+                _close_item(tx, key, "superseded", relay_id, out)
+            else:
+                out.unmatched.append(n)
+    else:
+        keep = {_find(items, sender, n) for n in parallel}
+        for key, rec in sorted(items.items(), key=lambda kv: int(kv[0])):
+            if (rec.get("from") == sender and rec.get("state") == "open" and rec.get("kind") == "wait-user"
+                    and rec.get("multiline") == multiline and key not in keep):
+                _close_item(tx, key, "superseded", relay_id, out)
+                out.tell_sender.append(f"#{key} 已被新事项自动取代；确实要两项都答，请写【与 #{key} 并行】重发")
     n = tx.allocate_number()
     tx.put("item", str(n), {
         "state": "open", "kind": "wait-user", "from": sender, "relayId": relay_id, "text": text,
         "decide": msg.fields.get("要你决定", ""),
         "options": [{"letter": o["letter"], "text": o["text"]} for o in doc["options"]],
         "recommended": doc["recommended"], "fullyStopped": doc["fullyStopped"],
-        "multiline": bool(doc["linesInScope"]), "closedReason": None, "answer": None,
+        "multiline": multiline, "closedReason": None, "answer": None,
     }, action="created", data={"relayId": relay_id})
     out.number = n
     out.lines.append(f"已记为事项 #{n}")

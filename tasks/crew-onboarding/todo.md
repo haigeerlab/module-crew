@@ -7,7 +7,7 @@
   - 验证：`python3 -m unittest discover -s tests -p test_inbox.py -v`
   - 文件：`module_crew/inbox.py`、`module_crew/__main__.py`、`tests/helpers.py`、`tests/test_inbox.py`
 
-- [ ] Task 2：【等待用户】记账与取代
+- [x] Task 2：【等待用户】记账与取代
   - 验收：Spec 验收 1、2
   - 验证：同上
   - 文件：`module_crew/inbox.py`、`tests/test_inbox.py`
