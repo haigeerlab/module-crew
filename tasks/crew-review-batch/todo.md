@@ -2,7 +2,7 @@
 
 测试命令：`python3 -m unittest discover -s tests -v`
 
-- [ ] Task 1：`review add`
+- [x] Task 1：`review add`
   - 验收：Spec 验收 1、2、3
   - 验证：`python3 -m unittest discover -s tests -p test_review_add.py -v`
   - 文件：`module_crew/review.py`、`tests/helpers.py`、`tests/test_review_add.py`

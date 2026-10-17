@@ -90,6 +90,29 @@ print(json.dumps(doc))
 '''
 
 
+FAKE_REVIEW_MARK = '''import argparse, os, sys
+from pathlib import Path
+p = argparse.ArgumentParser()
+for a in ("--project", "--module", "--target", "--state"):
+    p.add_argument(a, required=True)
+p.add_argument("--confirm", action="store_true")
+a = p.parse_args()
+if os.environ.get("FAKE_REVIEW_FAIL") == a.module or not a.confirm:
+    sys.exit(2)
+targets = {"spec": ["spec/%s.md"], "plan": ["tasks/%s/plan.md"], "both": ["spec/%s.md", "tasks/%s/plan.md"]}[a.target]
+for t in targets:
+    f = Path(a.project) / (t % a.module)
+    lines = f.read_text(encoding="utf-8").splitlines(keepends=True)
+    mark = "<!-- spec-guard: review approved %s -->\\n" % ("fakedigest" if t.startswith("spec") else "")
+    mark = mark.replace(" -->", " -->").replace("approved  -->", "approved -->")
+    if lines and lines[0].startswith("<!-- spec-guard: review"):
+        lines[0] = mark
+    else:
+        lines.insert(0, mark)
+    f.write_text("".join(lines), encoding="utf-8")
+'''
+
+
 class FakePlugins:
     """Fake Claude install records plus fake spec-guard / agent-relay install dirs under a temp dir."""
 
@@ -116,6 +139,7 @@ class FakePlugins:
         if map_script:
             (path / "hooks").mkdir()
             (path / "hooks" / "map_view.py").write_text(FAKE_MAP)
+            (path / "hooks" / "review_mark.py").write_text(FAKE_REVIEW_MARK)
         entry = {"scope": scope, "installPath": str(path), "version": "9.9.9"}
         if project is not None:
             entry["projectPath"] = str(project)
@@ -124,10 +148,17 @@ class FakePlugins:
         return path
 
 
-def spec_guard_interface(version: str = "1.0", command: list | None = None) -> dict:
-    return {"interface": version, "mapView": {
+REVIEW_MARK_COMMAND = ["python3", "-B", "hooks/review_mark.py", "--project", "<project-root>", "--module", "<module-id>",
+                       "--target", "<target>", "--state", "<state>"]
+
+
+def spec_guard_interface(version: str = "1.0", command: list | None = None, review_mark: list | None = None) -> dict:
+    doc = {"interface": version, "mapView": {
         "command": command or ["python3", "-B", "hooks/map_view.py", "--json", "--project", "<project-root>"],
         "schemaVersion": 1}}
+    if version >= "1.1":
+        doc["reviewMark"] = {"command": review_mark or REVIEW_MARK_COMMAND}
+    return doc
 
 
 class ProbeCase(RepoCase):
@@ -208,3 +239,35 @@ class StartCase(ProbeCase):
 
     def set_map(self, doc: dict) -> None:
         self.map_file.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+
+
+def review_text(module: str, node: str, files: list[tuple[str, Path]], end: str = "无") -> str:
+    """A 【交审】 whose file lines carry the real sha256 prefix of each file."""
+    import hashlib
+    lines = [f"{rel} sha256:{hashlib.sha256(path.read_bytes()).hexdigest()[:16]}" for rel, path in files]
+    return "\n".join(["【交审】", f"结束：{end}", f"模块：{module}", f"节点：{node}", "文件：", *lines,
+                      "要点：", "- 做：页面与接口", "- 不做：后台"]) + "\n"
+
+
+class ReviewCase(StartCase):
+    """Two module worktrees (b, c) opened by crew-start, each with a committed Spec and Plan."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from module_crew import start
+        res = start.prepare(self.repo, ["b", "c"], "开 b 和 c", short="shop")
+        assert res.code == 0, res.lines
+        self.wt = {p["id"]: Path(p["worktree"]) for p in res.prepared}
+        for m, wt in self.wt.items():
+            (wt / "spec").mkdir(exist_ok=True)
+            (wt / "tasks" / m).mkdir(parents=True, exist_ok=True)
+            (wt / "spec" / f"{m}.md").write_text(f"<!-- spec-guard: review pending -->\n# Spec: {m}\n", encoding="utf-8")
+            (wt / "tasks" / m / "plan.md").write_text(f"<!-- spec-guard: review pending -->\n# Plan: {m}\n", encoding="utf-8")
+            git(wt, "add", "-A")
+            git(wt, "commit", "-q", "-m", f"{m}: spec and plan")
+
+    def spec_review(self, m: str, **kw) -> str:
+        return review_text(m, "Spec", [(f"spec/{m}.md", self.wt[m] / "spec" / f"{m}.md")], **kw)
+
+    def plan_review(self, m: str, **kw) -> str:
+        return review_text(m, "Plan", [(f"tasks/{m}/plan.md", self.wt[m] / "tasks" / m / "plan.md")], **kw)
