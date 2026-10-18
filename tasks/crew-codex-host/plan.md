@@ -1,6 +1,6 @@
 # Implementation Plan: crew-codex-host
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-codex-host.md`（已批准）。任务清单：`tasks/crew-codex-host/todo.md`。
 
