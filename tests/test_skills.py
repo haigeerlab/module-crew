@@ -123,7 +123,7 @@ class HubBridgeSkillTest(unittest.TestCase):
     def test_coordinator_hub_section(self):
         _, text = read("crew-coordinator")
         section = text.split("## 接入收件枢纽", 1)[1].split("\n## ", 1)[0]
-        for words in ("source add", "--for-hub", "review note", "--source-item", "【已恢复】", "source map",
+        for words in ("source add", "--for-hub", "review note", "--source-item", "【已恢复】", "source map", "【取代 #N】",
                       "【答复告知】只记录", "直连 API 线", "后台方式", "module-crew status"):
             self.assertIn(words, section)
 
