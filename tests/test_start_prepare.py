@@ -114,7 +114,9 @@ class PrepareTest(StartCase):
         db = store.open_store(self.repo)
         cfg = store.get(db, "config", "main")
         crew = self.tmp / "repo-crew"
-        self.assertEqual(cfg, {"projectShort": "shop", "integrationBranch": "main", "maxModules": 3, "crewDir": str(crew)})
+        from module_crew.hostcheck import plugin_version
+        self.assertEqual(cfg, {"projectShort": "shop", "integrationBranch": "main", "maxModules": 3, "crewDir": str(crew),
+                               "pluginVersion": plugin_version()})   # recorded for host-check (crew-codex-host)
         for m in ("b", "c"):
             wt = crew / m
             self.assertTrue((wt / "README.md").exists())
