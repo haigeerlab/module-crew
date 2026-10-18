@@ -20,7 +20,7 @@
   - 验收：Spec 验收 1（skill 部分）、4、5
   - 文件：`skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`codex-skills/crew-dev/SKILL.md`、`tests/test_skills.py`
 
-- [ ] Task 5：README、命令帮助与版本 0.4.0
+- [x] Task 5：README、命令帮助与版本 0.4.0
   - 验收：Spec 验收 1、6
   - 文件：`README.md`、`module_crew/__main__.py`、`.claude-plugin/plugin.json`、`.codex-plugin/plugin.json`、`interface.json`
 

@@ -1,17 +1,23 @@
 # module-crew
 
-让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个协调会话统筹，每个模块会话在自己的 git worktree 里开发；
-所有批准都由用户在协调会话里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
+让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
+所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.3.0。已在试点项目上跑过两轮实地验证（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.4.0。已在试点项目上跑过两轮实地验证（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+
+## 0.4.0 的变化
+
+- **停滞事实出口**（R14）：`sessions --json` 每个模块加开工时间、最近一次产出提交、同一节点问过你几次（带每次的时间）、合并退回、模块报来的【等待用户】；只给事实，判断与提问归决策收件箱。见 [spec/crew-stall-signals.md](spec/crew-stall-signals.md)。
+- **权限预配与推送守门**（R16）：`module-crew permissions plan|apply|verify|remove`，把常规操作写进宿主认的放行规则，推送、删除等写成禁止，再用 pre-push 钩子守住推送；推送只经 `merge push`。见下文「权限预配」与 [spec/crew-host-permissions.md](spec/crew-host-permissions.md)。
+- **术语改名**：README、skill、命令说明与输出按术语表 v1.1；等待记录编号改写 `W<号>`（命令参数 `W25`、`C25`、`25` 都认）。契约标签、字段名、命令与选项名不变，状态库照旧可用。
 
 ## 前提
 
 | 依赖 | 要求 |
 |---|---|
-| 宿主 | 协调会话：Claude 桌面版（Code 标签）；模块会话：Claude 桌面版或 Codex 桌面版。都在同一台 Mac 上 |
+| 宿主 | 模块协调：Claude 桌面版（Code 标签）；模块会话：Claude 桌面版或 Codex 桌面版。都在同一台 Mac 上 |
 | agent-relay | **必需**，接口主版本 2。会话之间用它收发消息（`bridge_send` 的 `bodyFile`、`replyTo`、`expectsReply`） |
-| spec-guard | 项目已启用本地多 Spec 约定（`spec/CAPABILITY-MAP.md`）。开工、批量审批、合并依赖 spec-guard 0.68.0（`interface.json` 1.1、`/map --json` 的 `moduleConcurrency`、`startable`） |
+| spec-guard | 项目已启用本地多 Spec 约定（`spec/CAPABILITY-MAP.md`）。开工、批量批准、合并依赖 spec-guard 0.68.0（`interface.json` 1.1、`/map --json` 的 `moduleConcurrency`、`startable`） |
 | 项目 | git 仓库，能建 worktree；有一条能在本地跑完的完整检查命令，合并后用它判断集成是否通过 |
 | 运行环境 | Python 3（只用标准库） |
 
@@ -35,28 +41,28 @@
 bin/module-crew status
 ```
 
-它检查 git、agent-relay、spec-guard、spec-guard 规划层、集成基线与状态库六项，任何一项阻塞都会写明原因。
+它检查 git、agent-relay、spec-guard、spec-guard 规划层、集成分支与状态库六项，任何一项阻塞都会写明原因。
 
 ## 角色
 
-- **协调会话**（加载 `crew-coordinator` skill）：统筹、收件记账、转达用户的决定、管集成分支与公共文件、合并。不开发任何模块，不出审查结论。
-- **模块会话**（加载 `crew-dev` skill）：只在自己的 worktree 里开发一个模块，只和协调会话说话；被挡住必须发【等待其他会话】。
+- **模块协调**（加载 `crew-coordinator` skill）：统筹、收件记账、转达用户的决定、管集成分支与公共文件、合并。不开发任何模块，不出审查结论。
+- **模块会话**（加载 `crew-dev` skill）：只在自己的 worktree 里开发一个模块，只和模块协调说话；被挡住必须发【等待其他会话】。
 
 状态库放在仓库公共 git 目录下的 `module-crew/`（`events.jsonl` 是事实来源），所有 worktree 共用一份；不进版本库。
 
 ## 一次完整流程
 
-1. **开工**（协调会话）
+1. **开工**（模块协调）
    - `module-crew start plan`：按能力图的 Build order 提议可开的模块（不超过空位，默认上限 3）。
    - 只问用户一次「开这 N 个吗？」，用户答应后
      `module-crew start prepare <模块>… --original-file <原话文件> --project-short <简称>`：为每个模块建 worktree（`<仓库名>-crew/<模块>`）、登记会话、生成开工说明。
    - 用桌面版在每个 worktree 里开新会话，第一条消息用开工说明全文。
 2. **写 Spec 与 Plan**（模块会话）：写好后发【交审】；收到开工类【协调通知】之前不构建。
-3. **批量审批**（协调会话）
+3. **批量批准**（模块协调）
    - `module-crew review add` 记下每条【交审】，`module-crew review batch` 汇总，把要点写在正文里交用户审。
-   - 用户批准后 `module-crew review approve <编号>… --original-file <原话文件>`：在集成分支记评审标记，生成【用户答复】与开工通知。
+   - 用户批准后 `module-crew review approve <编号>… --original-file <原话文件>`：在集成分支记批准标记，生成【用户答复】与开工通知。
    - 模块会话把集成分支合进自己的分支（Spec／Plan 冲突取集成分支版本）后开始构建。
-4. **公共文件**：模块会话不改公共文件，发【公共变更请求】；协调会话 `change add` → 在集成 checkout 改 → `change land`，其他模块收到同步基线通知。
+4. **公共文件**：模块会话不改公共文件，发【公共变更请求】；模块协调 `change add` → 在集成 checkout 改 → `change land`，其他模块收到同步基线通知。
 5. **合并**
    - 模块做完发最终验收【交审】，用户批准后 `module-crew merge approve <交审编号> --original-file <原话文件>`。
    - `module-crew merge run`（第一次带 `--check-command "<完整检查命令>"`）：按 Build order 一次只合一个，`--no-ff` 合入本地集成分支后跑完整检查；
@@ -67,14 +73,14 @@ bin/module-crew status
    - `module-crew merge push-plan` 预告；用户明确授权后 `module-crew merge push --original-file <原话文件>`，推到远端新分支 `crew/batch-<号>` 并开一个 PR。
    - **远端合并始终由用户做**；不开自动合并，不推集成分支本身。
 
-每条要发的消息，命令都会生成正文文件；协调会话用 `bridge_send` 的 `bodyFile` 原样发出，不改一字。
+每条要发的消息，命令都会生成正文文件；模块协调用 `bridge_send` 的 `bodyFile` 原样发出，不改一字。
 
 ## Codex 模块会话
 
-模块会话可以开在 Codex 桌面版里，协调会话仍在 Claude 桌面版。
+模块会话可以开在 Codex 桌面版里，模块协调仍在 Claude 桌面版。
 
 1. 在 Codex 里装同一版本的 module-crew（`.codex-plugin/plugin.json`，只提供 Codex 版 `crew-dev` skill）；Codex 插件更新后要完全退出 ChatGPT 应用再打开。
-2. 协调会话用 `module-crew start prepare <模块>… --host codex --original-file <原话文件>` 开工；要混用就按宿主分两次。
+2. 模块协调用 `module-crew start prepare <模块>… --host codex --original-file <原话文件>` 开工；要混用就按宿主分两次。
 3. 用户在 Codex 里新建任务，工作目录选那个模块的 worktree，第一条消息贴开工说明全文。
 4. Codex 会话先跑 `module-crew host-check`（开工说明里有绝对路径）：检查登记、版本、能否写 git 目录、能否读状态库。
 5. Codex 默认沙箱不让写 `.git`：第一次提交会弹提权，用户在那个 Codex 会话里批准（有「本会话一直允许」就选）。
@@ -84,8 +90,8 @@ bin/module-crew status
 
 | 情况 | 做法 |
 |---|---|
-| 不知道哪个会话停下了 | `module-crew sessions` 列出每个模块会话的最后动静、未关的等待单与事项、当前档位、挂起原因；只列事实，结合 agent-relay 在线状态自己判断 |
-| 某个模块会话在「等待审批」 | 权限弹窗只能用户去那个会话亲手点；协调会话醒来时会提醒，并核对各模块会话的权限模式有没有变宽 |
+| 不知道哪个会话停下了 | `module-crew sessions` 列出每个模块会话的最后动静、未关的等待记录与事项、当前档位、挂起原因；只列事实，结合 agent-relay 在线状态自己判断 |
+| 某个模块会话在「等待审批」 | 权限弹窗只能用户去那个会话亲手点；模块协调醒来时会提醒，并核对各模块会话的权限模式有没有变宽 |
 | 消息发出去对方没反应 | 桌面版会停掉空闲会话，agent-relay 叫不醒（`pendingReason: offline`）；用桌面版跨会话消息发一句「去读 agent-relay 收件箱」 |
 | 模块在等外部条件（设计稿、别人交付） | 用户同意后 `module-crew suspend <模块> --reason "<原因>" --original-file <原话文件>`，不再占名额；按输出把挂起正文发给模块会话，它在自己的 worktree 里用 spec-guard 挂起。条件满足、用户同意后 `module-crew resume <模块> --original-file <原话文件>` |
 | 会话崩溃或要换新会话 | `module-crew resume-kit <模块>` 生成恢复说明；用户同意后 `module-crew takeover <邮箱名> --original-file <原话文件>`，在原 worktree 开新会话，第一条消息用恢复说明，新会话用同一个邮箱名重新注册 |
@@ -98,29 +104,28 @@ bin/module-crew status
 
 ## 审查就近与决策收件箱
 
-> 用词按 LIVE-SAAS 接入的术语表 v1.1（`livesaas-integration/GLOSSARY.md`）：模块协调＝原来的协调会话，提请批准＝原来的合批，决策收件箱＝原来的收件枢纽；
-> 全面改名放下一版，旧文字里两种叫法都会出现。
+> 用词按 LIVE-SAAS 接入的术语表 v1.1（`livesaas-integration/GLOSSARY.md`），旧称与新名称的对照见 [spec/crew-glossary-rename.md](spec/crew-glossary-rename.md) 关键决策 1。
 
 **审查就近**（登记了审查者时）：审查改在模块协调这一层就近来回，用户只看要拍板的事。
 
 1. 模块会话按项目的评审节奏交审（spec-guard 项目配置 `reviewCadence`：`separate` 默认先只交 Spec，`combined` 一起交）；最终验收的「要点」里要有「验收标准与证据」一节。
 2. `review add` 收下交审，输出把【交审】原样转给审查者的送审发送项。
 3. 审查者回【审查结论】，`review note [<C号>] … [--then-batch [--for-hub]]` 记下（一条消息几段也行）：
-   「有须修改项N条」时输出返工通知，模块改完重交、再送审，不问用户；返工满 3 次、模块写了「不同意」、或送审 15 分钟没结论，都变成待用户决定的问题。
-4. 只有审查通过（或带待用户决定的问题）的交审才提请批准：`review batch --for-hub` **一个模块一条**【等待用户】，
-   带交审要点全文、「批准会发生什么」、「产物」（路径 ＠ 提交，重交带上一版）、「交审原文」「审查原文」（`<状态库>/originals/` 下的原文文件）和「待用户决定」。
-5. 用户答复要答到每个 D（如「A；D1 B」）；没答全批准命令退出码 3、什么都不做。退回、等审查这类答案分别让交审退回或保持未答。
+   「有须修改项N条」时输出返工通知，模块改完重交、再送审，不问用户；返工满 3 次、模块写了「不同意」、或送审 15 分钟没结论，都变成「待你决定」的问题（D 编号）。
+4. 只有审查通过（或带「待你决定」问题）的交审才提请批准：`review batch --for-hub` **一个模块一条**【等待用户】，
+   带交审要点全文、「批准会发生什么」、「产物」（路径 ＠ 提交，重交带上一版）、「交审原文」「审查原文」（`<状态库>/originals/` 下的原文文件）和「待你决定」（字段名：待用户决定）。
+5. 「你的答复」要答到每个 D（如「A；D1 B」）；没答全批准命令退出码 3、什么都不做。退回、等审查这类答案分别让交审退回或保持未答。
 6. 最终验收批准后、合并前可以 `merge revoke <C号>` 撤回；`status` 与 `sessions --json` 显示返工轮次（`review` 字段）。
 
 **接入决策收件箱**：
 
-1. 在模块协调里由用户亲口登记来源：`module-crew source add <决策收件箱邮箱名> --kind hub --original-file <原话>`；审查者登记为 `--kind lead`。
+1. 在模块协调里由用户亲口登记可信批准来源：`module-crew source add <决策收件箱邮箱名> --kind hub --original-file <原话>`；审查者登记为 `--kind lead`。
 2. 提请批准的正文逐条用 bodyFile 原样发给决策收件箱；要用户决定的事只在那里问，会话里不放可以点的决定按钮。
 3. 决策收件箱转来【用户答复】后，批准命令带 `--source <决策收件箱> --source-item <H> --source-relay-id <消息号> --source-from <实际发件人> --original-file <那条消息>`，用户原话从消息里读出；实际发件人不是来源本身或是模块会话时拒收。
 4. `module-crew source map <H>` 查一个待决事项批准了哪些 C 编号。
 5. 外部插件读 `module-crew sessions --json`（`schemaVersion` 1：module、relayName、worktree、stage、stageText、suspended、lastActivity、review；0.4.0 起加停滞事实 startedAt、commits、asks、returns、waitUser，见 [spec/crew-stall-signals.md](spec/crew-stall-signals.md)，只给事实、不判断是否卡住），出口与契约版本登记在根目录 `interface.json`。
 
-**不配决策收件箱、不配审查者时**：一切照常在模块协调里由用户亲手批准；没有审查者就不送审、不返工，提请批准里写「未审查」；待用户决定的问题由模块协调直接问用户。
+**不配决策收件箱、不配审查者时**：一切照常在模块协调里由用户亲手批准；没有审查者就不送审、不返工，提请批准里写「未审查」；「待你决定」的问题由模块协调直接问用户。
 
 module-crew 自己的编号对外一律写 C 前缀（如 C15），`#数字` 只表示决策收件箱的待决事项号；命令参数写 `15` 或 `C15` 都行。
 审查者用【负责人转交】转来的批准只记账、不写批准标记（spec-guard 只认用户亲手与决策收件箱转来的批准）；带来源批准时，给模块的【用户答复】按契约带「转自」，命令同时给出发回决策收件箱的【已恢复】「结束：#H」。
@@ -132,21 +137,21 @@ module-crew status [--json]                      体检与全貌（只读）
 module-crew store init|check                     状态库
 module-crew protocol check <文件>                消息自检
 module-crew inbox add <文件> --from --relay-id   收件记账
-module-crew answer <编号> --original(-file)      转达用户答复
+module-crew answer <编号> --original(-file)      转达「你的答复」
 module-crew start plan|prepare                   开工
 module-crew review add|batch|approve|answer      交审与批量批准
 module-crew change add|list|land|answer          公共变更请求
 module-crew merge approve|revoke|queue|run|cleanup|push-plan|push
 module-crew suspend|resume|sessions|resume-kit|serial
 module-crew takeover <邮箱名> --original(-file)  换会话接管
-module-crew source add|remove|list|map           批准来源（收件枢纽、负责人）与对照
+module-crew source add|remove|list|map           可信批准来源（决策收件箱、审查者）与对照
 module-crew review note [--then-batch]|batch --for-hub   审查结论、返工、提请批准正文（一个模块一条）
-module-crew ticket close <编号> --reason …        协调会话关等待单
+module-crew ticket close <编号> --reason …        模块协调关等待记录
 module-crew permissions plan|apply|verify|remove  宿主权限预配与推送守门
 module-crew hook session-start|prompt            插件钩子入口（只读，永远退出码 0）
 ```
 
-需要用户批准的命令都要 `--original` 或 `--original-file`：只记用户在协调会话里亲手输入的话，别的会话转来的话不算批准。
+需要用户批准的命令都要 `--original` 或 `--original-file`：只记用户在模块协调里亲手输入的话，别的会话转来的话不算批准。
 
 ## 开发
 
@@ -171,8 +176,8 @@ spec-guard 的命令入口路径带版本号，暂不放进放行清单。细节
 
 ## 尚未验证
 
-两轮试点（第一轮 auto 权限、第二轮默认权限）已经实地验证：真实 spec-guard 0.68.0、会话间真实收发、开工、批量审批、合并与退回、
-挂起与恢复、换协调会话与换模块会话、退回串行、收尾与推送到本机远端。还没验证的：
+两轮试点（第一轮 auto 权限、第二轮默认权限）已经实地验证：真实 spec-guard 0.68.0、会话间真实收发、开工、批量批准、合并与退回、
+挂起与恢复、换模块协调与换模块会话、退回串行、收尾与推送到本机远端。还没验证的：
 
 - 用 `gh` 真正开 PR（试点远端是本机裸仓库，只打印 PR 正文）。
 - 权限预配在真实宿主里的效果（代开的模块会话里放行不弹窗、禁止规则拦得住）：要按 `permissions verify` 实地跑一遍。

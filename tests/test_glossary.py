@@ -73,7 +73,6 @@ def hits(names: list[str] | None = None) -> list[str]:
 
 
 class GlossaryTest(unittest.TestCase):
-    @unittest.expectedFailure     # crew-glossary-rename Task 1: 255 hits before renaming; removed in Task 5
     def test_no_old_terms(self):
         found = hits()
         self.assertEqual(found, [], f"{len(found)} 处旧称：\n" + "\n".join(found[:80]))
