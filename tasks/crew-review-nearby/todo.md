@@ -52,7 +52,7 @@
   - 验收：Spec 验收 12
   - 文件：`module_crew/merge.py`、`module_crew/__main__.py`、`tests/test_review_nearby.py`
 
-- [ ] Task 12：`status` 与 `sessions --json` 返工轮次
+- [x] Task 12：`status` 与 `sessions --json` 返工轮次
   - 验收：Spec 验收 17
   - 文件：`module_crew/failure.py`、`module_crew/probe.py`、`tests/test_review_nearby.py`
 

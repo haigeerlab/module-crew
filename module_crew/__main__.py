@@ -77,6 +77,9 @@ def _status(as_json: bool) -> int:
             extra = f"（{s.get('role')}{'，' + s['module'] if s.get('module') else ''}）" if s.get("role") else ""
             print(f"  {s['name']}{extra}")
         print("  未关：" + "、".join(f"{_KIND_NAME[k]} {n}" for k, n in report.store["open"].items()))
+        for mod, r in review.progress(store.open_store()).items():
+            print(f"  {mod} " + (f"返工中（审查第 {r['round']} 轮）" if r["state"] == "rework" else
+                                 "审查中" + (f"（第 {r['round'] + 1} 轮）" if r["round"] else "")))
     m = probe.summarize_map(report.map)
     print("模块进度")
     if m is None:

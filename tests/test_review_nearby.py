@@ -527,3 +527,24 @@ class RevokeTest(MergeCase):
         with self.assertRaises(merge.AnswerRefused) as ctx:
             merge.revoke(db, n, "撤回")
         self.assertIn("已合并", str(ctx.exception))
+
+
+class ProgressTest(NearbyCase):
+    """Task 12: rework rounds visible in status and the read-only sessions export."""
+    submit = NoteTest.submit
+
+    def test_review_field(self):
+        import json
+        from module_crew import failure
+        row = lambda: {r["module"]: r for r in failure.sessions(self.db)}["b"]
+        self.assertIsNone(row()["review"])
+        n = self.submit()
+        self.assertEqual(row()["review"], {"state": "reviewing", "round": 0})
+        review.note(self.db, n, "arch", conclusion("有须修改项2条", CHANGES))
+        self.assertEqual(row()["review"], {"state": "rework", "round": 1})
+        doc = json.loads(self.run_cli("sessions", "--json", cwd=self.repo).stdout)
+        self.assertEqual(doc["schemaVersion"], 1)
+        self.assertEqual({r["module"]: r["review"] for r in doc["sessions"]}["b"], {"state": "rework", "round": 1})
+        self.assertIn("b 返工中（审查第 1 轮）", self.run_cli("status", cwd=self.repo).stdout)
+        review.note(self.db, self.submit(), "arch", conclusion("通过"))
+        self.assertIsNone(row()["review"])

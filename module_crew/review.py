@@ -348,6 +348,17 @@ def note(db: store.Store, number: int | None, sender: str, text: str) -> NoteRes
     return res
 
 
+def progress(db: store.Store) -> dict[str, dict]:
+    """Module → {"state": reviewing|rework, "round": N} for the read-only export and status (spec key decision 11)."""
+    out = {}
+    for k, v in sorted(store.records(db, "item").items(), key=lambda kv: int(kv[0])):
+        if v.get("kind") == "review" and v.get("state") == "open":
+            state = review_state(db, int(k))
+            if state in ("reviewing", "rework"):
+                out[v["module"]] = {"state": state, "round": _rounds(db, v["module"], v["node"])}
+    return out
+
+
 def waiting(project: str | os.PathLike) -> list[str]:
     """Open reviews a batch still waits for: under review (not timed out) or in rework."""
     db = store.open_store(Path(project))
