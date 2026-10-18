@@ -8,6 +8,7 @@ goes to a new remote branch and a PR the user merges.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -29,29 +30,38 @@ class Approved:
 
 def approve(db: store.Store, review_no: int, original: str) -> Approved:
     """Record the user's approval of a final acceptance and queue the module for a local merge."""
+    return approve_many(db, [review_no], original)[0]
+
+
+def approve_many(db: store.Store, numbers: list[int], original: str) -> list[Approved]:
+    """approve() for several final acceptances at once; any refusal writes nothing."""
     with db.transaction(actor="coordinator") as tx:
-        rec = tx.get("item", str(review_no))
-        if rec is None or rec.get("kind") != "review":
-            raise AnswerRefused(f"没有交审事项 #{review_no}")
-        if rec.get("node") != "final":
-            raise AnswerRefused(f"交审事项 #{review_no} 不是最终验收（Spec／Plan 用 review approve）")
-        if rec.get("state") != "open":
-            raise AnswerRefused(f"交审事项 #{review_no} 已关闭（{rec.get('closedReason')}）")
-        answered_at = store.now()
-        text = _reply_text(review_no, rec, original, answered_at)
-        approval = tx.allocate_number()
-        tx.put("item", str(approval), {
-            "state": "open", "kind": "merge-approval", "module": rec["module"], "review": review_no,
-            "commit": rec["commit"], "from": rec["from"], "relayId": rec["relayId"],
-            "answer": {"original": original, "answeredAt": answered_at},
-            "closedReason": None, "mergeCommit": None, "revertCommit": None, "reason": None,
-        }, action="merge-approved")
-        body = tx.allocate_number()
-        meta = tx.write_body(body, text)
-        tx.put("item", str(review_no), dict(rec, state="closed", closedReason="answered",
-                                            answer={"original": original, "answeredAt": answered_at, "body": body,
-                                                    "approval": approval}),
-               action="answered", data={"body": body})
+        return [_approve_one(tx, db, n, original) for n in numbers]
+
+
+def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved:
+    rec = tx.get("item", str(review_no))
+    if rec is None or rec.get("kind") != "review":
+        raise AnswerRefused(f"没有交审事项 #{review_no}")
+    if rec.get("node") != "final":
+        raise AnswerRefused(f"交审事项 #{review_no} 不是最终验收（Spec／Plan 用 review approve）")
+    if rec.get("state") != "open":
+        raise AnswerRefused(f"交审事项 #{review_no} 已关闭（{rec.get('closedReason')}）")
+    answered_at = store.now()
+    text = _reply_text(review_no, rec, original, answered_at)
+    approval = tx.allocate_number()
+    tx.put("item", str(approval), {
+        "state": "open", "kind": "merge-approval", "module": rec["module"], "review": review_no,
+        "commit": rec["commit"], "from": rec["from"], "relayId": rec["relayId"],
+        "answer": {"original": original, "answeredAt": answered_at},
+        "closedReason": None, "mergeCommit": None, "revertCommit": None, "reason": None,
+    }, action="merge-approved")
+    body = tx.allocate_number()
+    meta = tx.write_body(body, text)
+    tx.put("item", str(review_no), dict(rec, state="closed", closedReason="answered",
+                                        answer={"original": original, "answeredAt": answered_at, "body": body,
+                                                "approval": approval}),
+           action="answered", data={"body": body})
     return Approved(approval, Reply(rec["from"], rec["relayId"], body, db.path / meta["path"]))
 
 
@@ -181,6 +191,7 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
                                      "集成 checkout 处于撤销中途，交用户决定"], approval=n, merge_commit=result.merge_commit)
             revert = _git(checkout, "rev-parse", "HEAD").stdout.strip()
 
+    tick_line = None if reason else _tick(checkout, m, n)[1]
     with db.transaction(actor="coordinator") as tx:
         current = tx.get("item", str(n))
         if reason:
@@ -201,13 +212,71 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
             _notice(tx, db, result, rec["from"], "wrap-up",
                     basis=f"最终验收的合并批准事项 #{n}；已合入集成分支 {short}",
                     todo="停止在本 worktree 开发，等协调会话收回 worktree")
+            busy = {v.get("module") for v in tx.records("item").values() if v.get("kind") == "merge-approval"
+                    and (v.get("state") == "open" or v.get("closedReason") == "merged")}
             for name, s in sorted(tx.records("session").items()):
-                if s.get("role") == "dev" and s.get("status") == "active" and name != rec["from"]:
+                if (s.get("role") == "dev" and s.get("status") == "active" and name != rec["from"]
+                        and s.get("module") not in busy):
                     _notice(tx, db, result, name, "sync-baseline",
                             basis=f"模块 {m} 已合入集成基线 {short}（合并批准事项 #{n}）",
                             todo="把集成分支合进你的模块分支，跑完整检查后继续")
             result.lines.append(f"#{n}（{m}）已合入集成分支 {short}")
+            if tick_line:
+                result.lines.append(tick_line)
     return result
+
+
+_UNCHECKED = re.compile(r"^(\s*[-*] )\[ \]( .*)$")
+
+
+def _tick(checkout: Path, module: str, approval: int) -> tuple[str | None, str | None]:
+    """Tick the module's only unchecked todo item on the integration branch; (commit, report line)."""
+    path = checkout / "tasks" / module / "todo.md"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    except OSError:
+        return None, None
+    open_at = [i for i, line in enumerate(lines) if _UNCHECKED.match(line.rstrip("\n"))]
+    if not open_at:
+        return None, None
+    if len(open_at) > 1:
+        return None, f"tasks/{module}/todo.md 还有 {len(open_at)} 个未勾项，没有替它勾最终验收"
+    i = open_at[0]
+    end = lines[i][len(lines[i].rstrip("\n")):]
+    lines[i] = _UNCHECKED.sub(r"\1[x]\2", lines[i].rstrip("\n")) + end
+    path.write_text("".join(lines), encoding="utf-8")
+    rel = f"tasks/{module}/todo.md"
+    _git(checkout, "add", "--", rel)
+    done = _git(checkout, "commit", "-q", "-m", f"勾选 {module} 的最终验收（合并批准事项 #{approval}）")
+    if done.returncode != 0:
+        _git(checkout, "checkout", "--", rel)
+        return None, f"勾选 {rel} 失败：{done.stderr.strip()[:200]}"
+    commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
+    return commit, f"已在集成分支勾选 {module} 的最终验收 {commit[:7]}"
+
+
+def tick(project: str | os.PathLike, module: str, original: str) -> str:
+    """Tick the final acceptance of a module merged before merge run did it (pilot repair)."""
+    if not original or not original.strip():
+        raise AnswerRefused("用户原话不能为空：只记用户在本会话亲手输入的话")
+    project = Path(project)
+    db = store.open_store(project)
+    merged = sorted(int(k) for k, v in store.records(db, "item").items()
+                    if v.get("kind") == "merge-approval" and v.get("module") == module and v.get("closedReason") == "merged")
+    if not merged:
+        raise AnswerRefused(f"模块 {module} 没有已合并的合并批准")
+    cfg = store.get(db, "config", "main") or {}
+    checkout = probe._checkout_of(project, cfg.get("integrationBranch", ""))
+    if checkout is None or not _clean(checkout):
+        raise AnswerRefused("集成基线不干净或集成分支没有被检出")
+    n = merged[-1]
+    commit, line = _tick(checkout, module, n)
+    if commit is None:
+        raise AnswerRefused(line or f"tasks/{module}/todo.md 没有未勾项，不需要补勾")
+    with db.transaction(actor="coordinator") as tx:
+        tx.put("item", str(n), dict(tx.get("item", str(n)), tickCommit=commit), action="ticked",
+               data={"original": original, "commit": commit})
+    return line
 
 
 @dataclass

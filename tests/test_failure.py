@@ -159,7 +159,8 @@ class IsolationTest(FailureCase):
         self.assertEqual((first.code, first.approval), (0, c_ok))
         kinds = {(x["to"], x["kind"]) for x in first.sends}
         self.assertIn(("shop-c", "wrap-up"), kinds)
-        self.assertIn(("shop-d", "sync-baseline"), kinds)
+        self.assertNotIn(("shop-d", "sync-baseline"), kinds)  # d is still queued (pilot fix C)
+        self.assertIn(("shop-b", "sync-baseline"), kinds)       # suspended b is still developing
         for x in first.sends:
             self.assertTrue(protocol.parse(store.read_body(self.db, x["body"])).ok)
 

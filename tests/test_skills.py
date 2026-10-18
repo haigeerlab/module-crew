@@ -91,3 +91,18 @@ class FailureSectionsTest(unittest.TestCase):
         section = text.split("## 挂起与异常", 1)[1].split("\n## ", 1)[0]
         for words in ("【等待其他会话】", "挂起", "spec-guard", "同一个 gate", "停下"):
             self.assertIn(words, section)
+
+
+class PilotFixesTest(unittest.TestCase):
+    def test_coordinator_registers_and_ticks(self):
+        _, text = read("crew-coordinator")
+        start = text.split("## 开工", 1)[1].split("\n## ", 1)[0]
+        for words in ("bridge_register", "<简称>-coord", "不是开工说明的一部分"):
+            self.assertIn(words, start)
+        merge_section = text.split("## 合并与收尾", 1)[1].split("\n## ", 1)[0]
+        for words in ("可一次给多个编号", "merge tick", "模块会话不再自己勾"):
+            self.assertIn(words, merge_section)
+
+    def test_dev_does_not_tick_after_approval(self):
+        _, text = read("crew-dev")
+        self.assertIn("不要自己勾 todo 末项", text.split("## 收到答复", 1)[1].split("\n## ", 1)[0])

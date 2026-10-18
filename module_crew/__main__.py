@@ -225,6 +225,10 @@ def _review(args) -> int:
             print(f"#{i['number']} {i['module']} 的 {review.NODE_NAME.get(i['node'], i['node'])}（{i['from']}）："
                   + "、".join(f["path"] for f in i["files"]))
             print("  要点：" + i["points"].replace("\n", "\n        "))
+        if not b["dependencyIssues"]:
+            print("依赖：全部就绪")
+        if not b["conflicts"]:
+            print("并行边界重叠：无")
         for d in b["dependencyIssues"]:
             print(f"⚠️ 依赖未就绪：{d['module']} 依赖的 {'、'.join(d['missing'])} 既未完成、也没有 Spec 在本批或已批准")
         for c in b["conflicts"]:
@@ -335,14 +339,22 @@ def _merge(args) -> int:
         return 2
     if args.action == "approve":
         try:
-            res = merge.approve(store.open_store(), args.number, original)
+            done = merge.approve_many(store.open_store(), args.numbers, original)
         except merge.AnswerRefused as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
-        print(f"合并批准事项 #{res.approval}，已排入本地合并队列")
-        print(f"收件人：{res.reply.to}")
-        print(f"replyTo：{res.reply.reply_to}")
-        print(f"正文文件：{res.reply.path}")
+        for res in done:
+            print(f"合并批准事项 #{res.approval}，已排入本地合并队列")
+            print(f"收件人：{res.reply.to}")
+            print(f"replyTo：{res.reply.reply_to}")
+            print(f"正文文件：{res.reply.path}")
+        return 0
+    if args.action == "tick":
+        try:
+            print(merge.tick(".", args.module, original))
+        except merge.AnswerRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
         return 0
     if args.action == "cleanup":
         res = merge.cleanup(".", args.module, original)
@@ -424,10 +436,11 @@ def main(argv: list[str] | None = None) -> int:
     mr = mgs.add_parser("run")
     mr.add_argument("--check-command")
     mr.add_argument("--replace-check", action="store_true")
-    for name, positional in (("approve", ("number", int)), ("cleanup", ("module", str)), ("push", None)):
+    for name, positional in (("approve", ("numbers", int)), ("cleanup", ("module", str)), ("tick", ("module", str)),
+                             ("push", None)):
         c = mgs.add_parser(name)
         if positional:
-            c.add_argument(positional[0], type=positional[1])
+            c.add_argument(positional[0], type=positional[1], **({"nargs": "+"} if name == "approve" else {}))
         g = c.add_mutually_exclusive_group(required=True)
         g.add_argument("--original")
         g.add_argument("--original-file")

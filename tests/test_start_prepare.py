@@ -132,6 +132,7 @@ class PrepareTest(StartCase):
         self.assertTrue(all(str(p["worktree"]).startswith(str(self.tmp)) for p in res.prepared))
         self.assertEqual([p["role"] for p in res.prepared], ["角色标记：module b", "角色标记：module c"])
         self.assertIn("集成 checkout 角色标记：coordinator", res.lines)
+        self.assertTrue(any("bridge_register 注册邮箱名 shop-coord" in line for line in res.lines), res.lines)
 
     def test_kickoff_text(self):
         res = self.run_prepare()

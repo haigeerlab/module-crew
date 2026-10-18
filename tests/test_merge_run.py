@@ -107,7 +107,7 @@ class MergeTest(RunCase):
         self.assertEqual((rec["state"], rec["closedReason"], rec["mergeCommit"]), ("closed", "merged", res.merge_commit))
         kinds = {(x["to"], protocol.parse(store.read_body(self.db, x["body"])).contract()["notice"]["kind"])
                  for x in res.sends}
-        self.assertEqual(kinds, {("shop-b", "wrap-up"), ("shop-c", "sync-baseline")})
+        self.assertEqual(kinds, {("shop-b", "wrap-up")})  # c is still queued: no sync (pilot fix C)
         for x in res.sends:
             self.assertTrue(protocol.parse(store.read_body(self.db, x["body"])).ok)
 

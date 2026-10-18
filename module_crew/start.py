@@ -197,6 +197,8 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             result.lines.append("集成 checkout 角色标记：已是 coordinator")
         else:
             result.lines.append(f"集成 checkout 角色标记已是 {('module ' + module) if module else kind}，没有覆盖，请用户决定")
+    if result.prepared:
+        result.lines.append(f"开会话之前：协调会话先用 agent-relay bridge_register 注册邮箱名 {coord}（wake: \"auto\"），模块只和这个名字说话")
     return result
 
 
