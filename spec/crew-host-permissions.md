@@ -16,7 +16,7 @@
 - 新命令 `module-crew permissions plan|apply|verify|remove`：预览、凭用户原话写入、实测清单与结果记录、撤掉自己写的东西。
 - Claude：写集成 checkout 与每个模块 worktree 的 `.claude/settings.local.json`（allow 常规操作、deny 不可逆操作）。
 - Codex 模块 worktree：写 `.codex/rules/module-crew.rules`（`prefix_rule`，常规 allow、不可逆 forbidden），并检查项目是否受信任。
-- git `pre-push` 钩子：拦模块 worktree 的推送，以及集成 checkout 上没有 `merge push` 一次性放行凭证的推送；`merge push` 推送前写凭证、用后删除。
+- git `pre-push` 钩子：拦模块 worktree 的推送，以及集成 checkout 上没有 `merge push` 一次性放行凭证的推送；`merge push` 推送前写凭证、用后标为已用（module-crew 不删文件）。
 - `start prepare` 新建 worktree 时，若已 apply 过，自动写同一份规则。
 - README、两份 crew-dev skill 与 crew-coordinator skill 写明：代开会话里宿主确认可能不弹，不可逆操作不能只靠弹窗。
 
@@ -57,12 +57,12 @@
    每条带 `match`／`not_match` 样例，宿主加载时自检。只写 `host` 为 codex 的模块 worktree。项目不受信任时规则不生效：`plan`／`verify` 读 `~/.codex/config.toml`（只读）报「项目未受信任，规则不会生效；
    要生效请你在 Codex 里信任该项目」，不替用户改全局配置。`verify` 有 `codex` 命令时跑 `codex execpolicy check` 静态核对清单里每条命令的决定。
 4. **写入只合并、可撤销**：读已有文件（没有就新建），只往 `allow`／`deny` 列表追加缺的条目，不删不改别的键；写之前确认路径被 git 忽略（`git check-ignore`），没被忽略就整体拒绝、什么都不写；
-   每个文件追加了哪些条目记进状态库（`permissions` 记录：路径、条目、时间、用户原话），`permissions remove --original-file` 只删这些条目与 module-crew 的钩子，别人加的不动。JSON 读不出就拒绝，不覆盖。
+   每个文件追加了哪些条目记进状态库（运行配置 `config/main` 的 `permissions` 字段：路径、条目、时间、用户原话；状态库 config 只有 main 一个键），`permissions remove --original-file` 只撤这些条目，别人加的不动；按项目「不删文件」的约束（`tests/test_package.py`），Codex 规则文件改为只剩说明的空规则，钩子改为空操作，文件留给用户手动删。JSON 读不出就拒绝，不覆盖。
 5. **pre-push 钩子**（git 公共目录 `hooks/pre-push`，所有 worktree 共用）：
    - 只装在没有 `core.hooksPath`、也没有已存在的 `pre-push` 的仓库；任一存在就不装，`plan`／`apply` 输出「没装推送守门：<原因>，推送只能靠宿主 deny 规则」，由用户决定。
    - 钩子是一个只用标准库的 Python 脚本，第一行注释带 `module-crew pre-push` 标记（`remove` 凭它认）。逻辑：找不到 module-crew 状态库 → 放行（项目已不用 module-crew）；
      当前 checkout 是登记的模块 worktree → 拒绝，说明「模块会话不推送，做完发最终验收交审」；其他 checkout → 要有效的放行凭证，否则拒绝，说明「推送只经模块协调的 module-crew merge push（要用户原话）；你自己在终端推送可加 --no-verify」。
-   - 放行凭证：`merge push` 在调用 `git push` 前写 `<状态库>/push-token.json`（目标远端分支、过期时间 2 分钟、随机串），钩子核对 stdin 里要推的远端引用与凭证一致、未过期，用掉即删；`merge push` 结束（成功或失败）也删。
+   - 放行凭证：`merge push` 在调用 `git push` 前写 `<状态库>/push-token.json`（目标远端分支、过期时间 2 分钟、随机串），钩子核对 stdin 里要推的远端引用与凭证一致、未过期、未用过，用掉即标为已用；`merge push` 结束（成功或失败）也标为已用。钩子里写死 module-crew 状态库与 worktree 目录（`crewDir`），不依赖插件位置与版本。
    - `--no-verify` 会跳过钩子：对 agent 由 deny 规则 `Bash(git push *)` 挡（复合命令也挡，宿主事实 1）；对用户本人是有意留的出口。Spec 写明这一层的局限。
 6. **实测与记录**：`permissions verify [--host claude|codex]` 输出一份给模块会话照跑的清单——四条应放行（`module-crew status`、`git status`、`git add --dry-run .`、`bridge_agents`）
    与一条应被拒（`git push --dry-run module-crew-probe HEAD`：远端名不存在，就算宿主没拦也推不出去）。模块协调看完后用 `permissions verify --record <会话名> --allowed ok|prompted --denied ok|ran`
@@ -76,7 +76,7 @@ bin/module-crew permissions plan [--json]                                   # �
 bin/module-crew permissions apply (--original <原话> | --original-file <文件>)  # 写规则、装钩子、记状态库
 bin/module-crew permissions verify [--host claude|codex]                    # 输出实测清单（Codex 有 codex 命令时附 execpolicy 静态核对）
 bin/module-crew permissions verify --record <会话名> --allowed ok|prompted --denied ok|ran
-bin/module-crew permissions remove (--original <原话> | --original-file <文件>)  # 只删 module-crew 写的条目与钩子
+bin/module-crew permissions remove (--original <原话> | --original-file <文件>)  # 只撤 module-crew 写的条目；规则文件清空、钩子改为空操作
 ```
 
 - `plan`：`0`；不在 module-crew 仓库 `2`。
@@ -89,7 +89,7 @@ bin/module-crew permissions remove (--original <原话> | --original-file <文�
 ```
 module_crew/permissions.py   清单、合并写入、撤销、Codex 规则文本、信任读取、实测清单与记录
 module_crew/prepush.py       pre-push 钩子脚本正文（装到 git 公共目录 hooks/pre-push）与凭证读写
-module_crew/merge.py         push 前后写删凭证
+module_crew/merge.py         push 前写凭证、结束时标为已用
 module_crew/start.py         prepare 跟随写规则
 module_crew/probe.py / __main__.py   permissions 子命令；status 显示实测结果
 skills/crew-coordinator、skills/crew-dev、codex-skills/crew-dev   开会话后跑实测清单、代开会话里弹窗可能不出现
@@ -109,9 +109,9 @@ python3 -m unittest discover -s tests -v
 
 ## 测试策略
 
-- 临时仓库：`settings.local.json` 不存在、已有别的条目、JSON 坏、没被 git 忽略四种情况下 `apply` 的结果；`remove` 只删自己的条目。
+- 临时仓库：`settings.local.json` 不存在、已有别的条目、JSON 坏、没被 git 忽略四种情况下 `apply` 的结果；`remove` 只撤自己的条目。
 - Codex 规则文本：生成的 `.rules` 能被一个小解析器读出 pattern 与 decision；有 `codex` 命令时测试里跳过真实 execpolicy（只在验收时实跑）。
-- 钩子：在临时仓库装上后，模块 worktree 里 `git push` 到本机裸仓库被拒；集成 checkout 无凭证被拒、有凭证放行且凭证被删、过期凭证被拒、凭证分支不符被拒；没有状态库时放行；`core.hooksPath` 或已有钩子时不装。
+- 钩子：在临时仓库装上后，模块 worktree 里 `git push` 到本机裸仓库被拒；集成 checkout 无凭证被拒、有凭证放行且凭证标为已用、不能再用、过期凭证被拒、凭证分支不符被拒；没有状态库时放行；`core.hooksPath` 或已有钩子时不装。
 - `merge push` 到本机裸仓库：钩子在时照常成功，凭证用后不留。
 - `verify --record` 记录与 `status` 显示。
 - 现有全量测试照常通过。
@@ -132,7 +132,7 @@ python3 -m unittest discover -s tests -v
 6. `core.hooksPath` 已设或已有 `pre-push`：不装钩子，输出原因，`apply` 仍退出 0。
 7. `start prepare` 在已 apply 的项目里新建 worktree 时自动写同一份规则；写失败不阻止开工并在 `status` 标出。
 8. `verify` 输出实测清单（四条应放行、一条应拒）；`verify --record` 记下结果，`status` 显示每个会话最近一次实测，没测过写「权限未实测」。
-9. `remove` 只删 module-crew 追加的条目与带标记的钩子，其他内容不变。
+9. `remove` 只撤 module-crew 追加的条目，Codex 规则文件清空、带标记的钩子改为空操作，其他内容不变。
 10. README 与三份 skill 写明：代开会话里宿主确认可能不弹，不可逆操作靠 deny 规则与推送守门；开会话后跑实测清单并记录。
 11. 实地（验收时，crew-rehearsal，默认权限模式，由别的会话代开的模块会话）：清单四条不弹窗、`git push` 被宿主 deny 拦下；结果用 `verify --record` 记下并附在验收证据里。做不了就写「宿主未实测」与原因。
 12. 全量测试通过。
@@ -146,3 +146,7 @@ python3 -m unittest discover -s tests -v
 
 README 新增「权限预配」一节：`permissions plan → apply → 开会话后 verify → record`、清单内容、钩子与 `--no-verify` 的说明、Codex 要先信任项目；命令表加 `permissions`。
 回告：发版后告诉 decision-inbox 插件会话 module-crew 侧的权限预配已就位（它的 join 写入可以引用），随最终验收列出。
+
+## 变更记录
+
+- 2026-10-19：`remove` 与放行凭证由「删除」改为「清空规则／钩子改空操作／凭证标为已用」；记录位置写明为运行配置 `config/main` 的 `permissions` 字段。原因：构建中全量测试 `tests/test_package.py` 的项目约束「module-crew 源码不调用删除」与状态库 config 只认 main 一个键；来源：构建 Task 3、Task 4 时发现，随最终验收交用户复审。
