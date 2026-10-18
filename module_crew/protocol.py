@@ -570,11 +570,12 @@ def _self_check(text: str, kind: str, expected: dict[str, str]) -> str:
 
 def render_user_reply(item: int, original: str, answered_at: str, option_text: str | None = None,
                       source_relay_id: int | None = None, originals: list[int] | None = None,
-                      relay: str | None = None, scope: str | None = None) -> str:
+                      relay: str | None = None, scope: str | None = None, crew: bool = False) -> str:
     """【用户答复】 from the coordinator; the user's words are copied unchanged.
 
     v1.6 relay: `originals` lists every message of the recipient this hub item covers, `relay` is the
-    「转自」 line (收件枢纽，消息 #R / <短名>（负责人转交），消息 #R) and `scope` the handed-over scope."""
+    「转自」 line (收件枢纽，消息 #R / <短名>（负责人转交），消息 #R) and `scope` the handed-over scope.
+    `crew` marks `item` as the coordinator's own number (C<N>, no hub involved) rather than a hub item #N."""
     if not isinstance(item, int) or isinstance(item, bool) or item < 1:
         raise ValueError(f"事项编号必须是正整数：{item!r}")
     if not isinstance(original, str) or not original.strip():
@@ -582,7 +583,7 @@ def render_user_reply(item: int, original: str, answered_at: str, option_text: s
     if not answered_at or not answered_at.strip():
         raise ValueError("答复时间不能为空")
     refs = [int(x) for x in originals] if originals else ([] if source_relay_id is None else [int(source_relay_id)])
-    ref = f"#{item}" + (f"（你的原消息 {'、'.join(f'#{n}' for n in refs)}）" if refs else "")
+    ref = (f"C{item}" if crew else f"#{item}") + (f"（你的原消息 {'、'.join(f'#{n}' for n in refs)}）" if refs else "")
     lines = ["【用户答复】", f"事项：{ref}"] + ([f"转自：{relay}"] if relay else []) + [f"用户原话：{original}"]
     expected = {"用户原话": original, "答复时间": answered_at}
     if option_text is not None:

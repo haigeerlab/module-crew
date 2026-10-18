@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from module_crew import changes, failure, hooks, inbox, merge, probe, protocol, review, sources, start, store
+from module_crew import changes, failure, hooks, inbox, merge, probe, protocol, refs, review, sources, start, store
 
 
 def _store_init() -> int:
@@ -21,7 +21,7 @@ def _store_check() -> int:
     report = store.check(db)
     print(f"状态库：{report['path']}")
     print(f"版本：{report['version']}")
-    print(f"事件：{report['events']} 条；下一个编号：#{report['nextNumber']}")
+    print(f"事件：{report['events']} 条；下一个编号：C{report['nextNumber']}")
     print("记录：" + "、".join(f"{k} {n}" for k, n in report["counts"].items()))
     for line in report["warnings"]:
         print(f"⚠️ {line}")
@@ -192,7 +192,7 @@ def _failure(args) -> int:
         print(f"模块：{kit.module}")
         print(f"邮箱名：{kit.name}")
         print(f"worktree：{kit.worktree}")
-        print(f"恢复说明（正文 #{kit.body}）：{kit.path}")
+        print(f"恢复说明（正文 C{kit.body}）：{kit.path}")
         print("用户同意后：module-crew takeover " + kit.name + " --original-file <原话文件>，再在这个 worktree 开新会话，第一条消息用恢复说明全文")
         return 0
     original = _original(args.original, args.original_file)
@@ -234,7 +234,7 @@ def _review(args) -> int:
         except review.NoteRefused as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
-        print(f"已记下 #{args.number} 的审查结论：{row['from']} {row['verdict']}")
+        print(f"已记下 C{args.number} 的审查结论：{row['from']} {row['verdict']}")
         return 0
     if args.action == "batch" and args.for_hub:
         made = review.for_hub(".", args.parallel_with)
@@ -243,7 +243,7 @@ def _review(args) -> int:
             return 3
         n, path, text = made
         print(text, end="")
-        print(f"正文文件（正文 #{n}）：{path}")
+        print(f"正文文件（正文 C{n}）：{path}")
         return 0
     if args.action == "batch":
         b = review.batch(".")
@@ -258,7 +258,7 @@ def _review(args) -> int:
             print(f"## {g['module']}（{g['responsibility']}）" if g["responsibility"] else f"## {g['module']}")
             for num in g["items"]:
                 i = by_number[num]
-                print(f"#{i['number']} {i['module']} 的 {review.NODE_NAME.get(i['node'], i['node'])}（{i['from']}）："
+                print(f"C{i['number']} {i['module']} 的 {review.NODE_NAME.get(i['node'], i['node'])}（{i['from']}）："
                       + "、".join(f["path"] for f in i["files"]))
                 print("  要点：" + i["points"].replace("\n", "\n        "))
                 print("  审查：" + review._review_text(i))
@@ -313,7 +313,7 @@ def _change(args) -> int:
                               for n, r in rows], ensure_ascii=False, indent=2))
         for n, r in rows if not args.json else []:
             hint = f"；提示：{'、'.join(r['hints'])}" if r["hints"] else ""
-            print(f"#{n} {r['from']}：{'、'.join(r['files'])}——{r['what']}{'（完全停住）' if r['fullyStopped'] else ''}{hint}")
+            print(f"C{n} {r['from']}：{'、'.join(r['files'])}——{r['what']}{'（完全停住）' if r['fullyStopped'] else ''}{hint}")
         if not rows and not args.json:
             print("没有未处理的公共变更请求")
         return 0 if rows else 3
@@ -349,7 +349,7 @@ def _merge(args) -> int:
                              ensure_ascii=False, indent=2))
         else:
             for n, r in rows:
-                print(f"#{n} {r['module']}（最终验收交审 #{r['review']}）")
+                print(f"C{n} {r['module']}（最终验收交审 C{r['review']}）")
             if not rows:
                 print("合并队列是空的")
         return 0 if rows else 3
@@ -382,7 +382,7 @@ def _merge(args) -> int:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
         for res in done:
-            print(f"合并批准事项 #{res.approval}，已排入本地合并队列")
+            print(f"合并批准事项 C{res.approval}，已排入本地合并队列")
             print(f"收件人：{res.reply.to}")
             print(f"replyTo：{res.reply.reply_to}")
             print(f"正文文件：{res.reply.path}")
@@ -422,7 +422,7 @@ def main(argv: list[str] | None = None) -> int:
     ib.add_argument("--from", dest="sender", required=True)
     ib.add_argument("--relay-id", type=int, required=True)
     an = sub.add_parser("answer", help="转达用户答复")
-    an.add_argument("number", type=int)
+    an.add_argument("number", type=refs.parse)
     src = an.add_mutually_exclusive_group(required=True)
     src.add_argument("--original")
     src.add_argument("--original-file")
@@ -451,15 +451,15 @@ def main(argv: list[str] | None = None) -> int:
     rb.add_argument("--for-hub", action="store_true", help="生成交给收件枢纽的【等待用户】正文")
     rb.add_argument("--parallel-with", type=int, help="与枢纽事项 #H 并行")
     rn = rvs.add_parser("note", help="记下审查会话的【审查结论】")
-    rn.add_argument("number", type=int)
+    rn.add_argument("number", type=refs.parse)
     rn.add_argument("--from", dest="sender", required=True)
     rn.add_argument("--file", required=True)
     for name in ("approve", "answer"):
         r = rvs.add_parser(name)
         if name == "approve":
-            r.add_argument("numbers", type=int, nargs="+")
+            r.add_argument("numbers", type=refs.parse, nargs="+")
         else:
-            r.add_argument("number", type=int)
+            r.add_argument("number", type=refs.parse)
         g = r.add_mutually_exclusive_group(required=True)
         g.add_argument("--original")
         g.add_argument("--original-file")
@@ -473,7 +473,7 @@ def main(argv: list[str] | None = None) -> int:
     cl.add_argument("--json", action="store_true")
     for name in ("land", "answer"):
         c = chs.add_parser(name)
-        c.add_argument("number", type=int)
+        c.add_argument("number", type=refs.parse)
         g = c.add_mutually_exclusive_group(required=(name == "answer"))
         g.add_argument("--original")
         g.add_argument("--original-file")
@@ -512,7 +512,7 @@ def main(argv: list[str] | None = None) -> int:
     tc = sub.add_parser("ticket", help="等待单")
     tcs = tc.add_subparsers(dest="action", required=True)
     tcc = tcs.add_parser("close", help="协调会话关等待单（所等的事已发生／用户关闭）")
-    tcc.add_argument("number", type=int)
+    tcc.add_argument("number", type=refs.parse)
     tcc.add_argument("--reason", required=True, choices=tuple(inbox.TICKET_REASONS))
     tcg = tcc.add_mutually_exclusive_group(required=True)
     tcg.add_argument("--original")
@@ -610,17 +610,18 @@ def _run(args) -> int:
         try:
             db = store.open_store()
             if args.action == "map":
-                ref = args.ref.lstrip("#")
+                raw = args.ref.strip()
+                ref = raw.lstrip("#Cc")
                 if not ref.isdigit():
-                    print("❌ 编号要写数字：H，或 #crew 编号", file=sys.stderr)
+                    print("❌ 编号要写：枢纽事项号 H（或 #H），或 crew 编号 C<N>", file=sys.stderr)
                     return 2
-                if args.ref.startswith("#"):
+                if raw[:1] in ("C", "c"):
                     found = sources.map_crew(db, int(ref))
-                    out = found if args.json else (f"#{ref} 的批准来源：{found['name']}（{found['kind']}）事项 #{found['item']}"
-                                                   if found else f"#{ref} 没有外部来源（用户在本会话批准或尚未批准）")
+                    out = found if args.json else (f"C{ref} 的批准来源：{found['name']}（{found['kind']}）事项 #{found['item']}"
+                                                   if found else f"C{ref} 没有外部来源（用户在本会话批准或尚未批准）")
                 else:
                     rows = sources.map_item(db, int(ref))
-                    out = rows if args.json else ("\n".join(f"#{r['number']} {r['kind']} {r['module'] or ''} {r['node'] or ''}".rstrip()
+                    out = rows if args.json else ("\n".join(f"C{r['number']} {r['kind']} {r['module'] or ''} {r['node'] or ''}".rstrip()
                                                              for r in rows) or f"没有经事项 #{ref} 批准的记录")
                 print(json.dumps(out, ensure_ascii=False, indent=2) if args.json else out)
                 return 0
@@ -662,7 +663,7 @@ def _run(args) -> int:
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 2
-        print(f"已关等待单 #{args.number}（理由 {code}）")
+        print(f"已关等待单 C{args.number}（理由 {code}）")
         return 0
     if args.group == "takeover":
         original = _original(args.original, args.original_file)

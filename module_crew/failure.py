@@ -67,7 +67,7 @@ def suspend(db: store.Store, module: str, reason: str, original: str) -> Changed
         mark = {"reason": reason.strip(), "at": store.now(), "original": original, "approval": n}
         tx.put("session", name, {**rec, "suspended": mark}, action="suspended")
         _send(tx, db, sends, name, "suspend", protocol.render_coordination_notice(
-            kind="suspend", reason=reason.strip(), basis=f"用户批准事项 #{n}（挂起 {module}）", todo=SUSPEND_TODO))
+            kind="suspend", reason=reason.strip(), basis=f"用户批准事项 C{n}（挂起 {module}）", todo=SUSPEND_TODO))
     return Changed(name, sends)
 
 
@@ -87,10 +87,10 @@ def resume(db: store.Store, module: str, original: str) -> Changed:
         since = max((e["seq"] for e in log if e["type"] == "session.suspended" and e["key"] == name), default=0)
         items = tx.records("item")
         merged = [(e["key"], items.get(e["key"]) or {}) for e in log if e["type"] == "item.merged" and e["seq"] > since]
-        basis = f"用户批准事项 #{n}（恢复 {module}）" + (f"，挂起依据 #{mark['approval']}" if mark.get("approval") else "")
+        basis = f"用户批准事项 C{n}（恢复 {module}）" + (f"，挂起依据 C{mark['approval']}" if mark.get("approval") else "")
         todo = RESUME_TODO
         if merged:
-            done = "、".join(f"{r.get('module')}（合并批准事项 #{k}，{(r.get('mergeCommit') or '')[:7]}）" for k, r in merged)
+            done = "、".join(f"{r.get('module')}（合并批准事项 C{k}，{(r.get('mergeCommit') or '')[:7]}）" for k, r in merged)
             todo = f"集成分支在挂起期间合入了 {done}：先把集成分支合进你的模块分支、跑完整检查，再{RESUME_TODO}"
         _send(tx, db, sends, name, "resume", protocol.render_coordination_notice(kind="resume", basis=basis, todo=todo))
     return Changed(name, sends)
@@ -165,8 +165,8 @@ def render_sessions(rows: list[dict]) -> list[str]:
     for r in rows:
         lines.append(f"{r['module']}（{r['name']}）" + (f"　挂起：{r['suspended']}" if r["suspended"] else ""))
         lines.append(f"  最后动静：{r['lastActivity'] or '无记录'}" + (f"（{r['ago']}）" if r["ago"] else ""))
-        lines.append("  未关等待单：" + ("、".join(f"#{n}" for n in r["openTickets"]) or "无")
-                     + "；未关事项：" + ("、".join(f"#{n}" for n in r["openItems"]) or "无"))
+        lines.append("  未关等待单：" + ("、".join(f"C{n}" for n in r["openTickets"]) or "无")
+                     + "；未关事项：" + ("、".join(f"C{n}" for n in r["openItems"]) or "无"))
         lines.append(f"  当前：{r['stageText']}")
     return lines
 

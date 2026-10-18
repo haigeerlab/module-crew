@@ -112,8 +112,8 @@ class ApproveWithSourceTest(ReviewCase):
         self.assertEqual(sources.map_crew(self.db, self.spec), want)
         self.assertIn("replyTo：4001，alsoAnswers：4002", out.stdout)
         listed = self.run_cli("source", "map", "120", cwd=self.repo).stdout
-        self.assertIn(f"#{self.spec}", listed)
-        self.assertIn("live-saas-hub", self.run_cli("source", "map", f"#{self.plan}", cwd=self.repo).stdout)
+        self.assertIn(f"C{self.spec}", listed)
+        self.assertIn("live-saas-hub", self.run_cli("source", "map", f"C{self.plan}", cwd=self.repo).stdout)
 
     def test_relayed_reply_and_closing(self):
         from module_crew import review

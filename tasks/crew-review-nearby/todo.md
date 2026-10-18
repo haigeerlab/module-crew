@@ -6,11 +6,11 @@
   - 验收：Spec 验收 2、4、6、9（协议部分）
   - 文件：`module_crew/protocol.py`、`tests/test_review_nearby.py`
 
-- [ ] Task 2：编号对外写 `C<数字>`
+- [x] Task 2：编号对外写 `C<数字>`
   - 验收：Spec 验收 13
   - 文件：`module_crew/refs.py`、`module_crew/*.py`（对外文字）、`module_crew/__main__.py`、`tests/test_refs.py`、受影响的现有测试
 
-- [ ] Checkpoint 1（report）：Phase 1 全绿；不登记审查者与收件枢纽时现有流程通过
+- [x] Checkpoint 1（report）：Phase 1 全绿；不登记审查者与收件枢纽时现有流程通过（2026-10-19，320 个测试；现有测试只改了编号写法与通知 refs 的断言——refs 只放枢纽事项号，crew 批准写在依据里的 C<N>；协调会话 skill 第 167 行示例「批准 #32 #33」留到 Task 9 改成 C）
 
 - [ ] Task 3：送审与审查状态
   - 验收：Spec 验收 1、4、5

@@ -85,7 +85,7 @@ COMPACT_NOTE = "刚压缩过：先跑 `module-crew status`、读未完成的事�
 STAGE_WRITE = "写 Spec 与 Plan、发【交审】，收到开工通知之前不要构建"
 STAGE_BUILD = "Spec 与 Plan 已批准，可以构建；做完发最终验收【交审】"
 STAGE_WAIT_MERGE = "最终验收已批准，等协调会话合并"
-STAGE_WAIT_FINAL = "最终验收已交审（交审事项 #{n}），等用户批准；不要重做或重发"
+STAGE_WAIT_FINAL = "最终验收已交审（交审事项 C{n}），等用户批准；不要重做或重发"
 STAGE_MERGED = "已合入集成分支，停止开发，等协调会话收回 worktree"
 
 
@@ -144,7 +144,7 @@ def session_start(cwd: str | os.PathLike, source: str = "startup") -> str | None
         lines = [f"module-crew：你是模块 {role.module} 的模块会话（邮箱名 {role.name}），协调会话是 {_coordinator_name(role.db)}，你只和它说话。",
                  "按 crew-dev skill 的规则做；被挡住必须发【等待其他会话】；发出前 module-crew protocol check。",
                  f"当前：{_stage(store.records(role.db, 'item'), role.module)}",
-                 "未关的等待单：" + ("、".join(f"#{n}" for n in tickets) or "无")]
+                 "未关的等待单：" + ("、".join(f"C{n}" for n in tickets) or "无")]
     else:
         lines = [f"module-crew：本会话是协调会话（{role.name}）。{_count_text(_counts(role.db))}。",
                  "先跑 `module-crew status` 再动手；看 agent-relay 在线状态里谁处于「等待审批」，提醒用户去那个会话点权限弹窗。",

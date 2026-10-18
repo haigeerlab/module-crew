@@ -446,7 +446,7 @@ class Transaction:
         if not _NUMBER_RE.match(key):
             raise InvalidRecord(f"正文编号不合法：{number!r}")
         if key in self._views["body"].records:
-            raise InvalidRecord(f"正文 #{number} 已存在，正文不可修改")
+            raise InvalidRecord(f"正文 C{number} 已存在，正文不可修改")
         data = text.encode("utf-8")
         rec = {"path": f"bodies/{number}.txt", "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
         self.put("body", key, rec, action="written")

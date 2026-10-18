@@ -85,9 +85,9 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             "closedReason": None, "answer": None,
         }, action="created", data={"relayId": relay_id})
         out.number = n
-        out.lines.append(f"已记为交审事项 #{n}（{sub['module']} 的 {msg.fields.get('节点', '').strip()}）")
+        out.lines.append(f"已记为交审事项 C{n}（{sub['module']} 的 {msg.fields.get('节点', '').strip()}）")
         if out.closed:
-            out.lines.append("取代了 " + "、".join(f"#{k}" for k in out.closed))
+            out.lines.append("取代了 " + "、".join(f"C{k}" for k in out.closed))
         return out
 
 
@@ -140,7 +140,7 @@ def batch(project: str | os.PathLike) -> dict:
             groups.append({"module": v["module"], "responsibility": modules.get(v["module"], {}).get("responsibility", ""),
                            "items": []})
         groups[-1]["items"].append(n)
-    return {"items": [{"number": n, "module": v["module"], "node": v["node"], "from": v["from"],
+    return {"items": [{"number": n, "ref": f"C{n}", "module": v["module"], "node": v["node"], "from": v["from"],
                        "files": v["files"], "points": _points(v["text"]), "reviews": list(v.get("reviews") or [])}
                       for n, v in open_items],
             "groups": groups, "dependencyIssues": issues, "conflicts": conflicts}
@@ -161,11 +161,11 @@ def note(db: store.Store, number: int, sender: str, text: str) -> dict:
     with db.transaction(actor="coordinator") as tx:
         rec = tx.get("item", str(number))
         if rec is None or rec.get("kind") != "review" or rec.get("state") != "open":
-            raise NoteRefused(f"#{number} 不是未答的交审")
+            raise NoteRefused(f"C{number} 不是未答的交审")
         node = protocol.REVIEW_NODES.get(msg.fields.get("节点", "").strip())
         if msg.fields.get("模块", "").strip() != rec["module"] or node != rec["node"]:
             raise NoteRefused(f"审查结论说的是 {msg.fields.get('模块')} 的 {msg.fields.get('节点')}，"
-                              f"对不上 #{number}（{rec['module']} 的 {NODE_NAME.get(rec['node'], rec['node'])}）")
+                              f"对不上 C{number}（{rec['module']} 的 {NODE_NAME.get(rec['node'], rec['node'])}）")
         row = {"from": sender, "ref": msg.fields.get("审查编号"), "verdict": msg.fields.get("结论"), "at": store.now(),
                "points": (msg.fields.get("要点") or "").strip()}
         tx.put("item", str(number), dict(rec, reviews=list(rec.get("reviews") or []) + [row]), action="review-noted")
@@ -201,7 +201,7 @@ def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> tup
         return None
     coord = next((n for n, s in sorted(store.records(db, "session").items())
                   if s.get("role") == "coordinator" and s.get("status") == "active"), "协调会话")
-    numbers = "、".join(f"#{i['number']}" for i in b["items"])
+    numbers = "、".join(f"C{i['number']}" for i in b["items"])
     points = []
     by_number = {i["number"]: i for i in b["items"]}
     for g in b["groups"]:
@@ -209,7 +209,7 @@ def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> tup
         for n in g["items"]:
             i = by_number[n]
             body = [line.strip() for line in i["points"].splitlines() if line.strip()][:POINT_LINES] or [""]
-            points.append(f"  #{n} {i['module']} 的 {NODE_NAME.get(i['node'], i['node'])}：{body[0].lstrip('- ').strip()}"
+            points.append(f"  C{n} {i['module']} 的 {NODE_NAME.get(i['node'], i['node'])}：{body[0].lstrip('- ').strip()}"
                           f"（审查：{_review_text(i)}）")
             points += [f"    {line}" for line in body[1:]]
     for d in b["dependencyIssues"]:
@@ -315,7 +315,7 @@ def _reply_text(item_no: int, rec: dict, original: str, answered_at: str) -> str
                                               originals=[rec["relayId"]] if rec.get("relayId") is not None else None,
                                               relay=sources.relay_line(src), scope=src.get("scope"))
         return protocol.render_user_reply(item=item_no, original=original, answered_at=answered_at,
-                                          source_relay_id=rec["relayId"])
+                                          source_relay_id=rec["relayId"], crew=True)
     except ValueError as exc:
         raise AnswerRefused(str(exc)) from exc
 
@@ -325,9 +325,9 @@ def answer(db: store.Store, number: int, original: str) -> Reply:
     with db.transaction(actor="coordinator") as tx:
         rec = tx.get("item", str(number))
         if rec is None or rec.get("kind") != "review":
-            raise AnswerRefused(f"没有交审事项 #{number}")
+            raise AnswerRefused(f"没有交审事项 C{number}")
         if rec.get("state") != "open":
-            raise AnswerRefused(f"交审事项 #{number} 已关闭（{rec.get('closedReason')}）")
+            raise AnswerRefused(f"交审事项 C{number} 已关闭（{rec.get('closedReason')}）")
         answered_at = store.now()
         text = _reply_text(number, rec, original, answered_at)
         body = tx.allocate_number()
@@ -393,7 +393,7 @@ def _record_lead(db: store.Store, picked: list, original: str, reasons: list[str
                                 "answer": {"original": original, "answeredAt": store.now(), **store.source_field()}},
                action="lead-recorded")
     res = ApproveResult(0, approval=n)
-    res.lines += [f"负责人转交的批准只记账（记录 #{n}）：没有写评审标记、没有提交、没有发答复与开工通知，交审事项保持未关",
+    res.lines += [f"负责人转交的批准只记账（记录 C{n}）：没有写评审标记、没有提交、没有发答复与开工通知，交审事项保持未关",
                   "原因：spec-guard 不认负责人转交为写评审标记的来源；请用户在本会话亲手批准，或经收件枢纽再批准一次"]
     return res
 
@@ -410,11 +410,11 @@ def approve(project: str | os.PathLike, numbers: list[int], original: str) -> Ap
     for n in numbers:
         rec = items.get(str(n))
         if rec is None or rec.get("kind") != "review":
-            reasons.append(f"没有交审事项 #{n}")
+            reasons.append(f"没有交审事项 C{n}")
         elif rec.get("state") != "open":
-            reasons.append(f"交审事项 #{n} 已关闭（{rec.get('closedReason')}）")
+            reasons.append(f"交审事项 C{n} 已关闭（{rec.get('closedReason')}）")
         elif rec.get("node") not in APPROVABLE:
-            reasons.append(f"交审事项 #{n} 是最终验收：用 review answer 答复，合并归 crew-merge")
+            reasons.append(f"交审事项 C{n} 是最终验收：用 review answer 答复，合并归 crew-merge")
         else:
             picked.append((n, rec))
     src = store.source_field().get("source") or {}
@@ -436,7 +436,7 @@ def approve(project: str | os.PathLike, numbers: list[int], original: str) -> Ap
         for f in rec["files"]:
             shown = subprocess.run(["git", "-C", str(wt), "show", f"{rec['commit']}:{f['path']}"], capture_output=True)
             if shown.returncode != 0:
-                reasons.append(f"#{n} 的 {f['path']} 从提交 {rec['commit'][:7]} 里取不出")
+                reasons.append(f"C{n} 的 {f['path']} 从提交 {rec['commit'][:7]} 里取不出")
             else:
                 contents.append((f["path"], shown.stdout))
     if reasons:
@@ -453,7 +453,7 @@ def approve(project: str | os.PathLike, numbers: list[int], original: str) -> Ap
         cmd = probe.safe_command(root, doc, "reviewMark", _mark_fill(checkout, rec["module"], MARK_TARGET[rec["node"]])) + ["--confirm"]
         ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
         if ran.returncode != 0:
-            return ApproveResult(4, [f"#{n}（{rec['module']}）写评审标记失败，已停下：{ran.stderr.strip()[:200]}",
+            return ApproveResult(4, [f"C{n}（{rec['module']}）写评审标记失败，已停下：{ran.stderr.strip()[:200]}",
                                      "集成 checkout 里已改、未提交的文件：" + "、".join(written),
                                      "状态库与集成分支都没有变化；这些文件留着，交用户决定"])
     approval_no = _next_number(db)
@@ -461,7 +461,7 @@ def approve(project: str | os.PathLike, numbers: list[int], original: str) -> Ap
     nodes = "、".join(f"{rec['module']} 的 {NODE_NAME[rec['node']]}" for _, rec in picked)
     _git(checkout, "add", "--", *written)
     hub = f"（收件枢纽事项 #{src['item']}）" if src.get("kind") == "hub" else ""
-    commit_run = _git(checkout, "commit", "-q", "-m", commits.message(f"用户批准事项 #{approval_no}{hub}：批准 {nodes}"))
+    commit_run = _git(checkout, "commit", "-q", "-m", commits.message(f"用户批准事项 C{approval_no}{hub}：批准 {nodes}"))
     if commit_run.returncode != 0:
         return ApproveResult(4, [commits.failure(checkout, commit_run, "集成分支提交失败"),
                                  "已改、已暂存的文件：" + "、".join(written)])
@@ -493,7 +493,7 @@ def approve(project: str | os.PathLike, numbers: list[int], original: str) -> Ap
                 continue
             sender = next(rec["from"] for _, rec in picked if rec["module"] == m)
             text = protocol.render_coordination_notice(
-                kind="start", basis=f"用户批准事项 #{approval}（{m} 的 Spec 与 Plan），已提交到集成基线 {commit[:7]}",
+                kind="start", basis=f"用户批准事项 C{approval}（{m} 的 Spec 与 Plan），已提交到集成基线 {commit[:7]}",
                 todo=(f"把集成分支合进你的模块分支（spec/{m}.md、tasks/{m}/ 冲突时取集成分支的版本，它带评审标记），"
                       f"然后按 tasks/{m}/plan.md 开始构建；公共文件只能经【公共变更请求】改"))
             body = tx.allocate_number()
@@ -501,7 +501,7 @@ def approve(project: str | os.PathLike, numbers: list[int], original: str) -> Ap
             result.sends.append({"kind": "coordination-notice", "to": sender, "replyTo": None, "body": body,
                                  "path": db.path / meta["path"]})
     result.approval = approval
-    result.lines.append(f"批准事项 #{approval}；集成基线提交 {commit[:7]}")
+    result.lines.append(f"批准事项 C{approval}；集成基线提交 {commit[:7]}")
     if approval != approval_no:
-        result.lines.append(f"注意：提交信息里写的是 #{approval_no}，实际批准事项是 #{approval}（期间有其他写入）")
+        result.lines.append(f"注意：提交信息里写的是 C{approval_no}，实际批准事项是 C{approval}（期间有其他写入）")
     return result

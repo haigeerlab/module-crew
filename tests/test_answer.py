@@ -20,7 +20,7 @@ class AnswerTest(RepoCase):
         reply = inbox.answer(self.db, self.n, "1 A 就这么办", option="A")
         item = store.get(self.db, "item", str(self.n))
         expected = protocol.render_user_reply(item=self.n, original="1 A 就这么办", answered_at=item["answer"]["answeredAt"],
-                                              option_text="A：方案甲", source_relay_id=4540)
+                                              option_text="A：方案甲", source_relay_id=4540, crew=True)
         self.assertEqual(store.read_body(self.db, reply.body), expected)
         self.assertEqual((item["state"], item["closedReason"]), ("closed", "answered"))
         self.assertEqual(item["answer"]["original"], "1 A 就这么办")

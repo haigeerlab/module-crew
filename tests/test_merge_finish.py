@@ -34,7 +34,7 @@ class CleanupTest(MergeCase):
                                       "what": "补勾", "closedReason": None, "closedBy": None}, action="opened")
         res = merge.cleanup(self.repo, "b", "b 可以收回")
         self.assertEqual(res.code, 0, res.lines)
-        self.assertIn(f"#{n}", " ".join(res.lines))
+        self.assertIn(f"C{n}", " ".join(res.lines))
         self.assertEqual(store.get(self.db, "ticket", str(n))["state"], "open")
 
     def test_cleanup_refused(self):

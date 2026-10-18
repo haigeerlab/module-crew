@@ -42,11 +42,11 @@ def approve_many(db: store.Store, numbers: list[int], original: str) -> list[App
 def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved:
     rec = tx.get("item", str(review_no))
     if rec is None or rec.get("kind") != "review":
-        raise AnswerRefused(f"没有交审事项 #{review_no}")
+        raise AnswerRefused(f"没有交审事项 C{review_no}")
     if rec.get("node") != "final":
-        raise AnswerRefused(f"交审事项 #{review_no} 不是最终验收（Spec／Plan 用 review approve）")
+        raise AnswerRefused(f"交审事项 C{review_no} 不是最终验收（Spec／Plan 用 review approve）")
     if rec.get("state") != "open":
-        raise AnswerRefused(f"交审事项 #{review_no} 已关闭（{rec.get('closedReason')}）")
+        raise AnswerRefused(f"交审事项 C{review_no} 已关闭（{rec.get('closedReason')}）")
     answered_at = store.now()
     text = _reply_text(review_no, rec, original, answered_at)
     approval = tx.allocate_number()
@@ -179,12 +179,12 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
     if checkout is None or not _clean(checkout):
         problems.append("集成基线不干净或集成分支没有被检出")
     if problems:
-        return RunResult(3, [f"#{n}（{m}）没有合并："] + problems, approval=n)
+        return RunResult(3, [f"C{n}（{m}）没有合并："] + problems, approval=n)
     if pending_write:
         _write_config(db, cfg)
 
     result = RunResult(0, approval=n)
-    merged = _git(checkout, "merge", "--no-ff", "--no-edit", "-m", commits.message(f"合并批准事项 #{n}：合入 {m}"), m)
+    merged = _git(checkout, "merge", "--no-ff", "--no-edit", "-m", commits.message(f"合并批准事项 C{n}：合入 {m}"), m)
     reset_to = None
     if merged.returncode != 0:
         conflicted = _git(checkout, "diff", "--name-only", "--diff-filter=U").stdout.split()
@@ -192,7 +192,7 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
         if not conflicted:
             # No conflicted file: the merge commit itself was refused (usually a commit hook). Not the module's
             # fault, so nothing is sent back and the approval stays open for the user to decide.
-            return RunResult(4, [commits.failure(checkout, merged, f"#{n}（{m}）的合并提交没有做成"),
+            return RunResult(4, [commits.failure(checkout, merged, f"C{n}（{m}）的合并提交没有做成"),
                                  "已中止合并，集成分支未变；合并批准仍开着，交用户决定"], approval=n)
         reason = f"与集成基线冲突：{'、'.join(conflicted)}"
     else:
@@ -203,12 +203,12 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
             # so the module branch can be merged again later with all of its changes (pilot round 2, problem K).
             first = reason.splitlines()[0]
             if _git(checkout, "rev-parse", "HEAD").stdout.strip() != result.merge_commit:
-                return RunResult(4, [f"#{n}（{m}）{first}；集成分支顶端已不是本次合并提交 {result.merge_commit[:7]}，没有撤销",
+                return RunResult(4, [f"C{n}（{m}）{first}；集成分支顶端已不是本次合并提交 {result.merge_commit[:7]}，没有撤销",
                                      "交用户决定"], approval=n, merge_commit=result.merge_commit)
             reset_to = _git(checkout, "rev-parse", f"{result.merge_commit}^1").stdout.strip()
             undo = _git(checkout, "reset", "-q", "--hard", reset_to)
             if undo.returncode != 0:
-                return RunResult(4, [f"#{n}（{m}）{first}；撤销合并失败：{undo.stderr.strip()[:200]}",
+                return RunResult(4, [f"C{n}（{m}）{first}；撤销合并失败：{undo.stderr.strip()[:200]}",
                                      "集成 checkout 状态未知，交用户决定"], approval=n, merge_commit=result.merge_commit)
 
     tick_line = None if reason else _tick(checkout, m, n)[1]
@@ -223,7 +223,7 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
             where = (f"已撤销合并：集成分支回到合并前的 {reset_to[:7]}，你的分支原样保留，修好后直接重新交审" if reset_to
                      else "集成基线未改动")
             _notice(tx, db, result, rec["from"], "returned",
-                    basis=f"最终验收的合并批准事项 #{n}；{first}；{where}",
+                    basis=f"最终验收的合并批准事项 C{n}；{first}；{where}",
                     todo="同步集成基线、修好后重新发最终验收【交审】")
             result.lines.append(f"#{n}（{m}）已退回：{first}")
         else:
@@ -231,7 +231,7 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
                    action="merged")
             short = result.merge_commit[:7]
             _notice(tx, db, result, rec["from"], "wrap-up",
-                    basis=f"最终验收的合并批准事项 #{n}；已合入集成分支 {short}",
+                    basis=f"最终验收的合并批准事项 C{n}；已合入集成分支 {short}",
                     todo="停止在本 worktree 开发，等协调会话收回 worktree")
             busy = {v.get("module") for v in tx.records("item").values() if v.get("kind") == "merge-approval"
                     and (v.get("state") == "open" or v.get("closedReason") == "merged")}
@@ -239,9 +239,9 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
                 if (s.get("role") == "dev" and s.get("status") == "active" and name != rec["from"]
                         and s.get("module") not in busy and not s.get("suspended")):  # resume sends it later
                     _notice(tx, db, result, name, "sync-baseline",
-                            basis=f"模块 {m} 已合入集成基线 {short}（合并批准事项 #{n}）",
+                            basis=f"模块 {m} 已合入集成基线 {short}（合并批准事项 C{n}）",
                             todo="把集成分支合进你的模块分支，跑完整检查后继续")
-            result.lines.append(f"#{n}（{m}）已合入集成分支 {short}")
+            result.lines.append(f"C{n}（{m}）已合入集成分支 {short}")
             if tick_line:
                 result.lines.append(tick_line)
     return result
@@ -268,7 +268,7 @@ def _tick(checkout: Path, module: str, approval: int) -> tuple[str | None, str |
     path.write_text("".join(lines), encoding="utf-8")
     rel = f"tasks/{module}/todo.md"
     _git(checkout, "add", "--", rel)
-    done = _git(checkout, "commit", "-q", "-m", commits.message(f"合并批准事项 #{approval}：勾选 {module} 的最终验收"))
+    done = _git(checkout, "commit", "-q", "-m", commits.message(f"合并批准事项 C{approval}：勾选 {module} 的最终验收"))
     if done.returncode != 0:
         _git(checkout, "reset", "-q", "--", rel)
         _git(checkout, "checkout", "--", rel)
@@ -336,7 +336,7 @@ def cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
              f"待退役的邮箱名：{name}（列给用户确认；用户同意后由用户在 Claude Code 里用 /agent-relay:collaboration 退役，"
              "一次一个名字，有未确认的消息时会被拒绝）"]
     if tickets:
-        lines.append("这个模块还开着的等待单：" + "、".join(f"#{n}" for n in tickets)
+        lines.append("这个模块还开着的等待单：" + "、".join(f"C{n}" for n in tickets)
                      + "（它已不能再发【已恢复】：所等的事已办好就 ticket close --reason happened，用户说关就 --reason user）")
     return Simple(0, lines)
 
@@ -387,7 +387,7 @@ def push_plan(project: str | os.PathLike) -> PushPlan:
     branch = f"crew/batch-{number}"
     names = "、".join(m["module"] for m in modules) or "集成分支改动"
     title = f"module-crew：合入 {names}"
-    module_lines = [f"- {m['module']}：合并批准事项 #{m['approval']}，合并提交 {m['mergeCommit'][:7]}"
+    module_lines = [f"- {m['module']}：合并批准事项 C{m['approval']}，合并提交 {m['mergeCommit'][:7]}"
                     for m in modules] or ["- （无）"]
     body = "\n".join(["本批由 module-crew 协调会话在本地集成分支合入，远端合并请由你决定。", "",
                       "## 合入的模块", *module_lines, "", "## 提交", *[f"- {c}" for c in commits]]) + "\n"
@@ -455,5 +455,5 @@ def push(project: str | os.PathLike, original: str) -> PushResult:
         result.lines.append(plan.body)
     result.record, result.pr = number, pr
     if f"batch-{number}" not in plan.branch:
-        result.lines.append(f"注意：分支名用的是 {plan.branch}，推送记录编号是 #{number}（期间有其他写入）")
+        result.lines.append(f"注意：分支名用的是 {plan.branch}，推送记录编号是 C{number}（期间有其他写入）")
     return result

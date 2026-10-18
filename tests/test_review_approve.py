@@ -60,7 +60,7 @@ class ApproveTest(ReviewCase):
         self.assertEqual(res.code, 0, res.lines)
         log = git(self.repo, "log", "--format=%H %s", f"{before}..HEAD").strip().splitlines()
         self.assertEqual(len(log), 1)
-        self.assertIn(f"#{res.approval}", log[0])
+        self.assertIn(f"C{res.approval}", log[0])
         changed = git(self.repo, "diff", "--name-only", before, "HEAD").split()
         self.assertEqual(sorted(changed), ["spec/b.md", "tasks/b/plan.md", "tasks/b/todo.md"])   # todo travels with the Plan
         spec = (self.repo / "spec" / "b.md").read_text()
@@ -77,7 +77,8 @@ class ApproveTest(ReviewCase):
         self.assertEqual(len(notices), 1)
         notice = protocol.parse(store.read_body(self.db, notices[0]["body"]))
         self.assertTrue(notice.ok, notice.problems)
-        self.assertEqual(notice.contract()["notice"], {"kind": "start", "refs": [res.approval]})
+        self.assertEqual(notice.contract()["notice"], {"kind": "start", "refs": []})   # refs: hub items only
+        self.assertIn(f"C{res.approval}", notice.fields["依据"])                          # the coordinator's own approval
         self.assertEqual(notices[0]["to"], "shop-b")
         reply = protocol.parse(store.read_body(self.db, replies[0]["body"]))
         self.assertEqual(reply.fields["用户原话"], "b 的 Spec 和 Plan 都批准")

@@ -144,7 +144,7 @@ class PrepareTest(StartCase):
         self.assertTrue(str(db.path / "bodies" / f"{b['kickoff']}.txt"))
         crew = self.tmp / "repo-crew"
         for words in ("负责模块 b：支付页", "crew-dev skill", f"工作目录：{crew / 'b'}（分支 b，从集成分支 main 切出）",
-                      "邮箱名：shop-b", "wake: \"auto\"", "协调会话：shop-coord", f"用户批准事项 #{res.approval}",
+                      "邮箱名：shop-b", "wake: \"auto\"", "协调会话：shop-coord", f"用户批准事项 C{res.approval}",
                       "spec/b.md", "tasks/b/plan.md", "【交审】", "收到开工类【协调通知】之前不要开始构建",
                       "接口：\nspec/a.md", "不要抄进这个 worktree 的 CLAUDE.md"):
             self.assertIn(words, text)

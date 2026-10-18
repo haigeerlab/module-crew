@@ -224,7 +224,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             **({"host": host_id} if host_id != "claude-desktop" else {}),
         }, action="start-approved")
     result = PrepareResult(0, approval=approval)
-    result.lines.append(f"开工批准事项 #{approval}：{'、'.join(modules)}")
+    result.lines.append(f"开工批准事项 C{approval}：{'、'.join(modules)}")
     for m in modules:
         path = Path(cfg["crewDir"]) / m
         if path.exists():  # checked again: git would create the branch before refusing a busy directory
@@ -315,7 +315,7 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
         f"工作目录：{worktree}（分支 {module}，从集成分支 {cfg['integrationBranch']} 切出）",
         f"邮箱名：{relay}，用 agent-relay bridge_register 注册，wake: \"auto\"",
         f"协调会话：{coord}（你只和它说话）",
-        f"开会话依据：用户批准事项 #{approval}",
+        f"开会话依据：用户批准事项 C{approval}",
         "",
         f"这一步只做：用 /spec 写 spec/{module}.md 与 tasks/{module}/plan.md、todo.md，写好后给协调会话发【交审】（节点 Spec、Plan 各一条，或接口提案）。",
         "收到开工类【协调通知】之前不要开始构建。",

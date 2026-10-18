@@ -22,7 +22,7 @@ class CheckTest(RepoCase):
         code, out = self.check()
         self.assertEqual(code, 0, out)
         self.assertIn("✅ 一致", out)
-        self.assertIn("下一个编号：#3", out)
+        self.assertIn("下一个编号：C3", out)
         self.assertIn(str(self.db.path), out)
 
     def test_lag_is_warning_only(self):

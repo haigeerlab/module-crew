@@ -121,7 +121,8 @@ class MergeTest(RunCase):
         self.assertEqual(len(notice), 1)
         msg = protocol.parse(store.read_body(self.db, notice[0]["body"]))
         self.assertTrue(msg.ok, msg.problems)
-        self.assertEqual(msg.contract()["notice"], {"kind": "returned", "refs": [n]})
+        self.assertEqual(msg.contract()["notice"]["kind"], "returned")
+        self.assertIn(f"C{n}", msg.fields["依据"])   # crew approval, written C<N>
         self.assertIn("重新发最终验收【交审】", msg.fields["要你做什么"])
         return rec, msg
 

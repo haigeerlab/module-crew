@@ -1,3 +1,4 @@
+import re
 import unittest
 
 from helpers import MergeCase
@@ -58,7 +59,7 @@ class SuspendTest(FailureCase):
         [note] = out.sends
         self.assertEqual((note["to"], note["kind"]), ("shop-b", "suspend"))
         msg = self.notice(note)
-        approval = msg.contract()["notice"]["refs"][0]
+        approval = int(re.findall(r"C(\d+)", msg.fields["依据"])[0])   # crew numbers are C<N>
         self.assertEqual((msg.contract()["notice"]["kind"], msg.fields["原因"]), ("suspend", "等设计稿"))
         self.assertIn("spec-guard", msg.fields["要你做什么"])
         rec = store.get(self.db, "item", str(approval))
@@ -66,7 +67,7 @@ class SuspendTest(FailureCase):
         out = failure.resume(self.db, "b", "设计稿到了，恢复 b")
         [note] = out.sends
         msg = self.notice(note)
-        refs = msg.contract()["notice"]["refs"]
+        refs = [int(x) for x in re.findall(r"C(\d+)", msg.fields["依据"])]
         self.assertEqual((msg.contract()["notice"]["kind"], refs[1]), ("resume", approval))
         self.assertEqual(store.get(self.db, "item", str(refs[0]))["answer"]["original"], "设计稿到了，恢复 b")
         self.assertNotIn("集成分支在挂起期间", msg.fields["要你做什么"])   # nothing merged meanwhile
@@ -79,7 +80,7 @@ class SuspendTest(FailureCase):
         self.assertNotIn("shop-b", [x["to"] for x in res.sends])       # suspended: no "continue" (problem L)
         [note] = failure.resume(self.db, "b", "恢复 b").sends
         todo = self.notice(note).fields["要你做什么"]
-        self.assertIn(f"#{n}", todo)
+        self.assertIn(f"C{n}", todo)
         self.assertIn("先把集成分支合进你的模块分支", todo)
 
     def test_suspended_session_keeps_its_identity(self):
@@ -150,7 +151,7 @@ class ResumeKitTest(FailureCase):
     def test_kit_after_final_review(self):
         n = review.add(self.db, self.finish("b"), "shop-b", 4800).number
         text = store.read_body(self.db, failure.resume_kit(self.db, "b").body)
-        self.assertIn(f"最终验收已交审（交审事项 #{n}）", text)
+        self.assertIn(f"最终验收已交审（交审事项 C{n}）", text)
         self.assertNotIn("刚压缩过", text)
         row = {r["module"]: r for r in failure.sessions(self.db)}["b"]
         self.assertEqual(row["stage"], "build")                        # export enum unchanged

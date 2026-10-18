@@ -53,7 +53,7 @@ class CliTest(InboxCase):
         msg.write_text(wait_user(), encoding="utf-8")
         r = self.run_cli("inbox", "add", str(msg), "--from", "shop-a", "--relay-id", "100")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("#1", r.stdout)
+        self.assertIn("C1", r.stdout)
         r = self.run_cli("inbox", "add", str(msg), "--from", "shop-x", "--relay-id", "101")
         self.assertEqual(r.returncode, 3)
         r = self.run_cli("inbox", "add", str(self.tmp / "none.txt"), "--from", "shop-a", "--relay-id", "1")

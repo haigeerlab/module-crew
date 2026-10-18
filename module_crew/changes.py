@@ -76,7 +76,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             "closedReason": None, "commit": None, "answer": None,
         }, action="created", data={"relayId": relay_id})
         out.number = n
-        out.lines.append(f"已记为公共变更请求 #{n}" + (f"，等待单 #{ticket}" if ticket else ""))
+        out.lines.append(f"已记为公共变更请求 C{n}" + (f"，等待单 C{ticket}" if ticket else ""))
         if hints:
             out.lines.append("提示：" + "、".join(hints))
         out.lines.append("要问用户" if _asks_user(hints) else "可由协调会话判断是否在已批准 Spec 范围内直接办")
@@ -101,13 +101,13 @@ def answer(db: store.Store, number: int, original: str) -> Reply:
     with db.transaction(actor="coordinator") as tx:
         rec = tx.get("request", str(number))
         if rec is None:
-            raise AnswerRefused(f"没有公共变更请求 #{number}")
+            raise AnswerRefused(f"没有公共变更请求 C{number}")
         if rec.get("state") != "open":
-            raise AnswerRefused(f"公共变更请求 #{number} 已关闭（{rec.get('closedReason')}）")
+            raise AnswerRefused(f"公共变更请求 C{number} 已关闭（{rec.get('closedReason')}）")
         answered_at = store.now()
         try:
             text = protocol.render_user_reply(item=number, original=original, answered_at=answered_at,
-                                              source_relay_id=rec["relayId"])
+                                              source_relay_id=rec["relayId"], crew=True)
         except ValueError as exc:
             raise AnswerRefused(str(exc)) from exc
         body = tx.allocate_number()
@@ -151,9 +151,9 @@ def land(project: str | os.PathLike, number: int, original: str | None = None) -
     db = store.open_store(project)
     rec = store.get(db, "request", str(number))
     if rec is None:
-        return LandResult(3, [f"没有公共变更请求 #{number}"])
+        return LandResult(3, [f"没有公共变更请求 C{number}"])
     if rec.get("state") != "open":
-        return LandResult(3, [f"公共变更请求 #{number} 已关闭（{rec.get('closedReason')}）"])
+        return LandResult(3, [f"公共变更请求 C{number} 已关闭（{rec.get('closedReason')}）"])
     cfg = store.get(db, "config", "main") or {}
     checkout = probe._checkout_of(project, cfg.get("integrationBranch", "")) if cfg else None
     if checkout is None:
@@ -166,15 +166,15 @@ def land(project: str | os.PathLike, number: int, original: str | None = None) -
         return LandResult(3, [f"清单里的文件都没有改动：{'、'.join(rec['files'])}"])
     probe._git(checkout, "add", "-A", "--", *changed)
     done = probe._git(checkout, "commit", "-q", "-m",
-                      commits.message(f"公共变更请求 #{number}（{rec['from']}）：{rec['what'][:40]}"))
+                      commits.message(f"公共变更请求 C{number}（{rec['from']}）：{rec['what'][:40]}"))
     if done.returncode != 0:
         return LandResult(4, [commits.failure(checkout, done, "集成分支提交失败"), "已暂存的文件：" + "、".join(changed)])
     commit = probe._git(checkout, "rev-parse", "HEAD").stdout.strip()
     result = LandResult(0, commit=commit)
-    result.lines.append(f"公共变更请求 #{number} 已在集成基线提交 {commit[:7]}")
+    result.lines.append(f"公共变更请求 C{number} 已在集成基线提交 {commit[:7]}")
     if original is None and _asks_user(rec.get("hints", [])):
         result.lines.append("提醒：这条请求带「要问用户」提示，但没有记下用户原话")
-    basis = f"公共变更请求 #{number} 已在集成基线提交 {commit[:7]}"
+    basis = f"公共变更请求 C{number} 已在集成基线提交 {commit[:7]}"
     todo = "把集成分支合进你的模块分支，跑完整检查后继续"
     with db.transaction(actor="coordinator") as tx:
         answer_rec = {"original": original, "answeredAt": store.now(), **store.source_field()} if original is not None else None

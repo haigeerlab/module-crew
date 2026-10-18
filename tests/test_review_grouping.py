@@ -29,8 +29,8 @@ class GroupingTest(ReviewCase):
         out = self.run_cli("review", "batch", cwd=self.repo).stdout
         b_at, c_at = out.index("## b（支付页）"), out.index("## c（订单页）")
         self.assertLess(b_at, c_at)
-        self.assertLess(out.index(f"#{self.b_plan} b 的 Plan"), c_at)        # b's Plan is inside b's section
-        self.assertGreater(out.index(f"#{self.c_spec} c 的 Spec"), c_at)
+        self.assertLess(out.index(f"C{self.b_plan} b 的 Plan"), c_at)        # b's Plan is inside b's section
+        self.assertGreater(out.index(f"C{self.c_spec} c 的 Spec"), c_at)
         doc = json.loads(self.run_cli("review", "batch", "--json", cwd=self.repo).stdout)
         self.assertEqual([g["module"] for g in doc["groups"]], ["b", "c"])
 
@@ -38,8 +38,8 @@ class GroupingTest(ReviewCase):
         n, path, text = review.for_hub(self.repo)
         points = text.split("要点：", 1)[1].split("选项与我的建议：", 1)[0]
         self.assertLess(points.index("b（支付页）"), points.index("c（订单页）"))
-        self.assertLess(points.index(f"#{self.b_plan}"), points.index("c（订单页）"))
-        self.assertLess(points.index(f"#{self.b_spec}"), points.index(f"#{self.b_plan}"))
+        self.assertLess(points.index(f"C{self.b_plan}"), points.index("c（订单页）"))
+        self.assertLess(points.index(f"C{self.b_spec}"), points.index(f"C{self.b_plan}"))
 
 
 if __name__ == "__main__":

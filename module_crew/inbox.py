@@ -60,7 +60,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
                 "closedReason": None, "closedBy": None,
             }, action="opened", data={"relayId": relay_id})
             out.number = n
-            out.lines.append(f"已记为等待单 #{n}")
+            out.lines.append(f"已记为等待单 C{n}")
         elif msg.kind == "resumed":
             _close_tickets(tx, sender, msg.end.items, 1, relay_id, out)
             if msg.end.unnumbered_reason:
@@ -73,7 +73,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             else:
                 out.unmatched.append(msg.item)
         if out.closed:
-            out.lines.append("已关闭 " + "、".join(f"#{n}" for n in out.closed))
+            out.lines.append("已关闭 " + "、".join(f"C{n}" for n in out.closed))
         return out
 
 
@@ -137,7 +137,7 @@ def _wait_user(tx, msg: protocol.Message, text: str, sender: str, relay_id: int,
         "multiline": multiline, "closedReason": None, "answer": None,
     }, action="created", data={"relayId": relay_id})
     out.number = n
-    out.lines.append(f"已记为事项 #{n}")
+    out.lines.append(f"已记为事项 C{n}")
 
 
 class AnswerRefused(Exception):
@@ -157,19 +157,19 @@ def answer(db: store.Store, number: int, original: str, option: str | None = Non
     with db.transaction(actor="coordinator") as tx:
         item = tx.get("item", str(number))
         if item is None:
-            raise AnswerRefused(f"没有事项 #{number}")
+            raise AnswerRefused(f"没有事项 C{number}")
         if item.get("state") != "open":
-            raise AnswerRefused(f"事项 #{number} 已关闭（{item.get('closedReason')}），不能再答")
+            raise AnswerRefused(f"事项 C{number} 已关闭（{item.get('closedReason')}），不能再答")
         option_text = None
         if option is not None:
             match = [o for o in item.get("options", []) if o["letter"] == option.strip().upper()]
             if not match:
-                raise AnswerRefused(f"事项 #{number} 没有选项 {option}")
+                raise AnswerRefused(f"事项 C{number} 没有选项 {option}")
             option_text = f"{match[0]['letter']}：{match[0]['text']}"
         answered_at = store.now()
         try:
             text = protocol.render_user_reply(item=number, original=original, answered_at=answered_at,
-                                              option_text=option_text, source_relay_id=item["relayId"])
+                                              option_text=option_text, source_relay_id=item["relayId"], crew=True)
         except ValueError as exc:
             raise AnswerRefused(str(exc)) from exc
         body = tx.allocate_number()
@@ -194,9 +194,9 @@ def close_ticket(db: store.Store, number: int, reason: str, original: str) -> in
     with db.transaction(actor="coordinator") as tx:
         rec = tx.get("ticket", str(number))
         if rec is None:
-            raise AnswerRefused(f"没有等待单 #{number}")
+            raise AnswerRefused(f"没有等待单 C{number}")
         if rec.get("state") != "open":
-            raise AnswerRefused(f"等待单 #{number} 已关闭（理由 {rec.get('closedReason')}）")
+            raise AnswerRefused(f"等待单 C{number} 已关闭（理由 {rec.get('closedReason')}）")
         tx.put("ticket", str(number), dict(rec, state="closed", closedReason=code, closedBy="coordinator"),
                action="closed", data={"reason": code, "note": original})
     return code

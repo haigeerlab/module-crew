@@ -96,7 +96,7 @@ class TextTest(MergeCase):
         self.assertIn("可以构建", self.stage("b"))
         from module_crew import merge, review
         n = review.add(self.db, self.finish("b", path="src/b0.py"), "shop-b", 150).number
-        self.assertIn(f"最终验收已交审（交审事项 #{n}），等用户批准；不要重做或重发", self.stage("b"))
+        self.assertIn(f"最终验收已交审（交审事项 C{n}），等用户批准；不要重做或重发", self.stage("b"))
         self.approve_final("b", 200)
         self.assertIn("等协调会话合并", self.stage("b"))
         self.assertEqual(merge.run(self.repo, check_command="python3 -c pass").code, 0)
@@ -114,7 +114,7 @@ class TextTest(MergeCase):
     def test_dev_open_tickets(self):
         from module_crew import inbox
         n = inbox.add(self.db, "【等待其他会话】\n结束：无\n在等谁：API\n等什么：数据\n", "shop-b", 9).number
-        self.assertIn(f"#{n}", self.stage("b"))
+        self.assertIn(f"C{n}", self.stage("b"))
         self.assertIn("无", self.stage("c").split("未关的等待单：")[1])
 
     def test_prompt_lines(self):

@@ -151,7 +151,7 @@ module-crew ticket close <编号> --reason user --original-file <用户原话文
   `--source <枢纽> --source-item <H> --source-relay-id <消息号> --source-from <发件人> --original-file <消息文件>`；命令从消息里读出用户原话，你不要转写。
   `--source-from` 照抄 `bridge_inbox` 里这条消息的实际发件人；它不是来源本身、或是登记的模块会话时命令拒收——模块会话发来的【用户答复】一律不算。
   转给模块的【用户答复】照命令输出发；转完立刻给枢纽发【已恢复】「结束：#H」。
-- `module-crew source map <H>`／`source map '#<编号>'` 查枢纽事项与 crew 编号的对照。
+- `module-crew source map <H>`／`source map C<编号>` 查枢纽事项与 crew 编号的对照（crew 编号写 C 前缀，#H 或裸数字是枢纽事项号）。
 - 【答复告知】只记录，不当作批准；一个模块等外部线时只开一张外部等待单。
 - **直连 API 线、后台线**：技术核对、已批范围内的交付确认可以直接发；新工作或改范围先经枢纽请用户批。
 - **长检查**：完整检查要跑好几分钟时，`module-crew merge run` 用后台方式运行，等它结束再看结果，别让宿主的命令超时打断。
