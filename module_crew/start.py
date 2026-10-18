@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -144,6 +145,19 @@ def _git(cwd: Path, *args: str):
 
 def _toplevel(project: Path) -> Path:
     return Path(_git(project, "rev-parse", "--show-toplevel").stdout.strip())
+
+
+CADENCES = ("separate", "combined")
+
+
+def review_cadence(project: str | os.PathLike) -> str:
+    """The project's spec-guard reviewCadence (.agent/config.json, read only); `separate` when unset or unreadable."""
+    try:
+        top = _toplevel(Path(project))
+        value = json.loads((top / ".agent" / "config.json").read_text(encoding="utf-8")).get("reviewCadence")
+    except (OSError, ValueError, AttributeError):
+        return "separate"
+    return value if value in CADENCES else "separate"
 
 
 def _settings(project: Path, db: store.Store | None, short: str | None, max_modules: int | None) -> tuple[dict, list[str]]:

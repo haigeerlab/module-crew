@@ -30,7 +30,7 @@
   - 验收：Spec 验收 18
   - 文件：`tests/fixtures/session-protocol/v2.1/`、`module_crew/protocol.py`、`module_crew/review.py`、`tests/test_protocol_conformance.py`、`tests/test_review_nearby.py`
 
-- [ ] Task 7：提请批准重写（一个模块一项、原样、原文文件、产物、待用户决定字段、批准会发生什么）
+- [x] Task 7：提请批准重写（一个模块一项、原样、原文文件、产物、待用户决定字段、批准会发生什么）
   - 验收：Spec 验收 3、5、6、10、11、14
   - 文件：`module_crew/review.py`、`module_crew/__main__.py`、`tests/test_review_nearby.py`、`tests/test_hub_output.py`、`tests/test_review_grouping.py`
 

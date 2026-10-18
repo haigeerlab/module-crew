@@ -49,24 +49,26 @@ class NoteTest(HubCase):
 class ForHubTest(HubCase):
     def test_wait_user_for_hub(self):
         review.note(self.db, self.spec, "live-saas-arch-review", conclusion())
-        n, path, text = review.for_hub(self.repo)
+        [(n, path, text)] = review.for_hub(self.repo)
         msg = protocol.parse(path.read_text(encoding="utf-8"))
         self.assertEqual((msg.kind, msg.ok), ("wait-user", True), msg.problems)
         for want in (f"C{self.spec}", "b 的 Spec", "审查：live-saas-arch-review 通过", "架构审查：通过",
-                     "推荐 A：全部批准", "B：只批准部分", "C：都退回修改"):
+                     "推荐 A：批准", "B：退回修改"):
             self.assertIn(want, text)
-        # crew-review-nearby: with a reviewer registered, a review still under review stays out of the batch
+        # crew-review-nearby: with a reviewer registered, a review still under review stays out
         self.assertNotIn(f"C{self.plan}", msg.fields["要你决定"])
         self.assertEqual(store.read_body(self.db, n), text)
-        # rehearsal T1: project line, up to three lines of each review's points, full suggested reply
+        # rehearsal T1: project line, the review's points as written, full suggested reply
         self.assertEqual(msg.fields["项目"].strip(), self.repo.name)
-        self.assertIn("    - 不做：后台", text)
-        self.assertEqual(msg.fields["你该回"].strip(), "A 全部批准")
+        self.assertIn("- 不做：后台", msg.fields["要点"])
+        self.assertEqual(msg.fields["你该回"].strip(), "A")
 
     def test_all_reviewed_and_parallel(self):
         review.note(self.db, self.spec, "live-saas-arch-review", conclusion(verdict="通过，附建议2条"))
         review.note(self.db, self.plan, "live-saas-arch-review", conclusion(node="Plan"))
-        _, _, text = review.for_hub(self.repo, parallel_with=118)
+        made = review.for_hub(self.repo, parallel_with=118)
+        self.assertEqual(len(made), 2)                       # separate cadence: Spec and Plan are two items
+        text = made[0][2]
         msg = protocol.parse(text)
         self.assertTrue(msg.ok, msg.problems)
         self.assertIn(("parallel", 118), msg.markers)

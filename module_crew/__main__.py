@@ -243,21 +243,25 @@ def _review(args) -> int:
         if args.then_batch:
             wait = review.waiting(".")
             if wait:
-                print("还在等：" + "、".join(wait) + "；合批正文等它们有结论后再生成")
+                print("还在等：" + "、".join(wait) + "；提请批准的正文等它们有结论后再生成")
             elif args.for_hub:
                 made = review.for_hub(".")
-                print("没有未答的交审" if made is None else f"正文文件（正文 C{made[0]}）：{made[1]}")
+                if not made:
+                    print("没有可以提请批准的交审")
+                for n, path, _ in made:
+                    print(f"提请批准正文（一个模块一条，正文 C{n}）：{path}")
             else:
                 print("都有结论了：运行 module-crew review batch 交用户审")
         return 0
     if args.action == "batch" and args.for_hub:
         made = review.for_hub(".", args.parallel_with)
-        if made is None:
-            print("没有未答的交审")
+        if not made:
+            print("没有可以提请批准的交审（审查中、返工中的不算）")
             return 3
-        n, path, text = made
-        print(text, end="")
-        print(f"正文文件（正文 C{n}）：{path}")
+        for n, path, text in made:
+            print(text, end="")
+            print(f"正文文件（正文 C{n}）：{path}\n")
+        print(f"共 {len(made)} 条，一个模块一条：逐条用 bodyFile 原样发给决策收件箱")
         return 0
     if args.action == "batch":
         b = review.batch(".")

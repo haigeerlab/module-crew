@@ -1,6 +1,7 @@
 """crew-review-nearby: review close to the coordinator, decisions for the user (spec/crew-review-nearby.md)."""
 
 import unittest
+from pathlib import Path
 from datetime import datetime, timedelta
 
 from helpers import MergeCase, ReviewCase, git, review_text
@@ -250,49 +251,87 @@ class NoteTest(NearbyCase):
         out = self.run_cli("review", "note", f"C{plan}", "--from", "arch", "--file", str(f), "--then-batch", "--for-hub",
                            cwd=self.repo)
         self.assertEqual(out.returncode, 0, out.stderr)
-        self.assertIn("正文文件", out.stdout)
+        self.assertIn("提请批准正文", out.stdout)
 
 
 class BatchTest(NearbyCase):
-    """Task 5: what goes into the batch for the user, and how the body reads."""
+    """Task 7: one item per module for the user, shown as it is (spec key decisions 5, 6)."""
     submit = NoteTest.submit
 
-    def body(self):
+    def bodies(self):
         made = review.for_hub(self.repo)
-        self.assertIsNotNone(made)
-        msg = protocol.parse(made[2])
-        self.assertTrue(msg.ok, msg.problems)
-        return made[2], msg
+        out = []
+        for n, path, text in made:
+            msg = protocol.parse(text)
+            self.assertTrue(msg.ok, msg.problems)
+            self.assertEqual(path.read_text(encoding="utf-8"), text)
+            out.append((text, msg))
+        return out
 
     def test_only_ready_reviews(self):
         spec, plan = self.submit(), self.submit("Plan")
         review.note(self.db, spec, "arch", conclusion("通过"))
-        text, msg = self.body()
+        [(text, msg)] = self.bodies()
         self.assertIn(f"C{spec}", msg.fields["要你决定"])
         self.assertNotIn(f"C{plan}", msg.fields["要你决定"])                       # still under review
         review.note(self.db, plan, "arch", conclusion("有须修改项2条", CHANGES, node="Plan", ref="R-8"))
-        self.assertNotIn(f"C{plan}", self.body()[1].fields["要你决定"])          # in rework
+        self.assertNotIn(f"C{plan}", self.bodies()[0][1].fields["要你决定"])     # in rework
 
-    def test_rounds_line_and_summary(self):
+    def test_one_item_per_module(self):
+        b = self.submit()
+        c = review.add(self.db, self.spec_review("c"), "shop-c", 9001).number
+        review.note(self.db, b, "arch", conclusion("通过"))
+        review.note(self.db, c, "arch", conclusion("通过", module="c"))
+        (tb, mb), (tc, mc) = self.bodies()
+        self.assertIn(f"C{b}", mb.fields["要你决定"])
+        self.assertNotIn(f"C{c}", mb.fields["要你决定"])
+        self.assertIn(f"C{c}", mc.fields["要你决定"])
+        self.assertEqual([r["module"] for _, r in sorted(store.records(self.db, "item").items(), key=lambda kv: int(kv[0]))
+                          if r.get("kind") == "hub-batch"], ["b", "c"])
+
+    def test_as_is_with_artifacts_and_originals(self):
+        long = self.plan_review("b").replace("要点：\n- 做：页面与接口\n- 不做：后台",
+                                              "要点：\n假设：\n1. 一\n2. 二\n3. 三\n4. 四\n5. 五")
+        n = review.add(self.db, long, "shop-b", 7001).number
+        verdict = conclusion("通过", node="Plan")
+        review.note(self.db, n, "arch", verdict)
+        [(text, msg)] = self.bodies()
+        for line in ("1. 一", "5. 五"):
+            self.assertIn(line, msg.fields["要点"])                                 # nothing cut
+        self.assertNotIn("共 5 条", text)
+        self.assertIn("批准会发生什么", msg.fields["要点"])
+        rec = store.get(self.db, "item", str(n))
+        self.assertEqual({a["path"] for a in msg.contract()["artifacts"]},
+                         {str(self.wt["b"] / "tasks" / "b" / "plan.md"), str(self.wt["b"] / "tasks" / "b" / "todo.md")})
+        self.assertEqual({a["commit"] for a in msg.contract()["artifacts"]}, {rec["commit"]})
+        import hashlib
+        for row, original in ((msg.contract()["originals"]["submission"][0], long),
+                              (msg.contract()["originals"]["conclusion"][0], verdict)):
+            data = Path(row["path"]).read_bytes()
+            self.assertEqual(data.decode("utf-8"), original)                       # word for word
+            self.assertEqual(row["fingerprint"], "sha256:" + hashlib.sha256(data).hexdigest())
+
+    def test_resubmit_shows_previous_version(self):
         n = self.submit()
+        old = store.get(self.db, "item", str(n))["commit"]
         review.note(self.db, n, "arch", conclusion("有须修改项2条", CHANGES))
+        spec = self.wt["b"] / "spec" / "b.md"
+        spec.write_text(spec.read_text() + "补上错误码\n")
+        git(self.wt["b"], "commit", "-qam", "fix")
         n = self.submit()
         review.note(self.db, n, "arch", conclusion("通过"))
-        text, msg = self.body()
-        self.assertIn("经 1 轮审查修改：错误码表缺两项", text)
-        points = msg.fields["要点"].split("\n\n")[0].splitlines()
-        self.assertLessEqual(len(points), 5)
-        self.assertEqual(points[0], "- b：Spec（审查通过，经 1 轮修改）")
-        self.assertEqual(points[-1], "- 待你决定的问题：无")
+        [(text, msg)] = self.bodies()
+        [art] = msg.contract()["artifacts"]
+        self.assertEqual(art["previousCommit"], old)
+        self.assertIn("错误码表缺两项", msg.fields["要点"])                           # last round's changes, as written
 
-    def test_decisions_in_body(self):
+    def test_decisions_field(self):
         n = self.submit()
         review.note(self.db, n, "arch", conclusion("通过", DECISIONS))
-        text, msg = self.body()
-        self.assertIn("D1：alpha 首字母要不要大写？", msg.fields["要你决定"])
-        self.assertIn("倾向：B", msg.fields["要你决定"])
-        self.assertEqual(msg.fields["你该回"].strip(), "A 全部批准；D1 选 B；D2 选 A")
-        self.assertIn("- 待你决定的问题：2 个（D1、D2）", text)
+        [(text, msg)] = self.bodies()
+        self.assertEqual([d["id"] for d in msg.contract()["decisions"]], ["D1", "D2"])
+        self.assertEqual(msg.contract()["decisions"][0]["lean"], "B")
+        self.assertEqual(msg.fields["你该回"].strip(), "A；D1 B；D2 A")
         rec = [v for v in store.records(self.db, "item").values() if v.get("kind") == "hub-batch"][-1]
         self.assertEqual(rec["decisions"]["D2"]["review"], n)
 
@@ -301,32 +340,34 @@ class BatchTest(NearbyCase):
         with self.db.transaction(actor="t") as tx:
             rec = tx.get("item", str(n))
             tx.put("item", str(n), dict(rec, sentAt="2026-01-01T00:00:00+08:00"), action="aged")
-        text, msg = self.body()
+        [(text, msg)] = self.bodies()
         self.assertIn("未审查（审查者无响应）", text)
-        self.assertIn("不等审查直接批", msg.fields["要你决定"])
+        self.assertIn("不等审查直接批", msg.fields["待用户决定"])
         review.note(self.db, n, "arch", conclusion("有须修改项2条", CHANGES))
-        same = self.spec_review("b").replace("要点：", "不同意：R-7：错误码已在接口提案里定\n要点：")
+        same = self.spec_review("b").replace("要点：", "不同意：\nR-7：错误码已在接口提案里定\n要点：")
         review.add(self.db, same, "shop-b", 6001)
-        text, msg = self.body()
-        self.assertIn("按模块现版本批准", msg.fields["要你决定"])
-        self.assertIn("错误码已在接口提案里定", msg.fields["要你决定"])
+        [(text, msg)] = self.bodies()
+        self.assertIn("按模块现版本批准", msg.fields["待用户决定"])
+        self.assertIn("错误码已在接口提案里定", msg.fields["待用户决定"])
 
-    def test_points_list_not_cut_silently(self):
-        long = self.plan_review("b").replace("要点：\n- 做：页面与接口\n- 不做：后台",
-                                              "要点：\n假设：\n1. 一\n2. 二\n3. 三\n4. 四\n5. 五")
-        n = review.add(self.db, long, "shop-b", 7001).number
-        review.note(self.db, n, "arch", conclusion("通过", node="Plan"))
-        text, _ = self.body()
-        self.assertIn("…（共 5 条，回『详情』看全文）", text)
-        out = self.run_cli("review", "batch", cwd=self.repo).stdout
-        self.assertIn("5. 五", out)                                                 # the coordinator sees everything
+    def test_cadence_combined_puts_spec_and_plan_together(self):
+        spec, plan = self.submit(), self.submit("Plan")
+        review.note(self.db, spec, "arch", conclusion("通过"))
+        review.note(self.db, plan, "arch", conclusion("通过", node="Plan", ref="R-8"))
+        self.assertEqual(len(self.bodies()), 2)                                     # separate (the default): one node each
+        cfg = self.repo / ".agent" / "config.json"
+        cfg.parent.mkdir(exist_ok=True)
+        cfg.write_text('{"version": 1, "reviewCadence": "combined"}', encoding="utf-8")
+        [(text, msg)] = self.bodies()
+        self.assertIn(f"C{spec}", msg.fields["要你决定"])
+        self.assertIn(f"C{plan}", msg.fields["要你决定"])
 
 
 class FinalOptionsTest(MergeCase):
     def test_final_consequence_and_chinese_node(self):
         db = store.open_store(self.repo)
         review.add(db, self.finish("b"), "shop-b", 8001)
-        text = review.for_hub(self.repo)[2]
+        text = review.for_hub(self.repo)[0][2]
         self.assertIn("合并进集成分支", text)
         self.assertIn("b 的 最终验收", text)
         self.assertNotIn("final", text)

@@ -5,7 +5,7 @@ import unittest
 
 from helpers import ReviewCase
 
-from module_crew import review, store
+from module_crew import protocol, review, store
 
 
 class GroupingTest(ReviewCase):
@@ -34,12 +34,12 @@ class GroupingTest(ReviewCase):
         doc = json.loads(self.run_cli("review", "batch", "--json", cwd=self.repo).stdout)
         self.assertEqual([g["module"] for g in doc["groups"]], ["b", "c"])
 
-    def test_for_hub_points_grouped(self):
-        n, path, text = review.for_hub(self.repo)
-        points = text.split("要点：", 1)[1].split("选项与我的建议：", 1)[0]
-        self.assertLess(points.index("b（支付页）"), points.index("c（订单页）"))
-        self.assertLess(points.index(f"C{self.b_plan}"), points.index("c（订单页）"))
-        self.assertLess(points.index(f"C{self.b_spec}"), points.index(f"C{self.b_plan}"))
+    def test_for_hub_one_item_per_module_in_build_order(self):
+        made = review.for_hub(self.repo)          # no reviewer: everything is ready; separate cadence: one node each
+        asked = [protocol.parse(text).fields["要你决定"] for _, _, text in made]
+        self.assertEqual(len(asked), 4)
+        for want, got in zip((self.b_spec, self.b_plan, self.c_spec, self.c_plan), asked):
+            self.assertIn(f"C{want}", got)
 
 
 if __name__ == "__main__":

@@ -209,12 +209,12 @@ def batch(project: str | os.PathLike) -> dict:
                       "files": v["files"], "points": _points(v["text"]), "reviews": list(v.get("reviews") or []),
                       "reviewState": state, "round": _rounds(db, v["module"], v["node"]), "ready": state in READY,
                       "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state)})
-    return {"items": items, "groups": groups, "dependencyIssues": issues, "conflicts": conflicts,
-            "summary": _summary(items, groups)}
+    return {"items": items, "groups": groups, "dependencyIssues": issues, "conflicts": conflicts}
 
 
 READY = ("none", "timeout", "passed", "decide")   # states that may go to the user (key decision 3)
 CHOOSE_CURRENT = [{"letter": "A", "text": "按模块现版本批准"}, {"letter": "B", "text": "退回按审查意见改"}]
+CAUTIOUS = "取稳妥的一边；模块协调不替你判断，请按你的意见选"
 CHOOSE_WAIT = [{"letter": "A", "text": "不等审查直接批"}, {"letter": "B", "text": "等审查结论"}]
 
 
@@ -238,49 +238,17 @@ def _item_decisions(n: int, v: dict, state: str) -> list[dict]:
     asked = (last.get("changes") or [last.get("points", "")])
     if v.get("disputes"):
         reasons = "；".join(f"{d['review']}：{d['reason']}" for d in v["disputes"])
-        return [{"source": "coordinator", "kind": "disagree", "lean": None, "options": CHOOSE_CURRENT,
+        return [{"source": "coordinator", "kind": "disagree", "lean": "B", "leanReason": CAUTIOUS, "options": CHOOSE_CURRENT,
                  "question": f"{what}：模块不同意审查——审查要求：{'；'.join(asked) or '见审查结论'}；模块理由：{reasons}"}]
     if v.get("overLimit"):
-        return [{"source": "coordinator", "kind": "over-limit", "lean": None, "options": CHOOSE_CURRENT,
+        return [{"source": "coordinator", "kind": "over-limit", "lean": "B", "leanReason": CAUTIOUS, "options": CHOOSE_CURRENT,
                  "question": f"{what}：返工 {REWORK_LIMIT} 轮后审查仍要求修改——{'；'.join(asked)}"}]
     if state == "timeout":
-        return [{"source": "coordinator", "kind": "timeout", "lean": None, "options": CHOOSE_WAIT,
+        return [{"source": "coordinator", "kind": "timeout", "lean": "B", "leanReason": CAUTIOUS, "options": CHOOSE_WAIT,
                  "question": f"{what}：审查者 {'、'.join(v.get('sentTo') or [])} 15 分钟没有给出结论"}]
-    return [{"source": last["from"], "kind": "reviewer", "lean": d["lean"], "options": d["options"], "question": d["question"]}
+    return [{"source": last["from"], "kind": "reviewer", "lean": d["lean"], "leanReason": d.get("leanReason"),
+             "options": d["options"], "question": d["question"]}
             for d in last.get("decisions") or []]
-
-
-def _state_text(items: list[dict]) -> str:
-    texts = []
-    for i in items:
-        if i["reviewState"] == "passed":
-            line = protocol._review_line(i["reviews"][-1]["verdict"])
-            t = f"审查通过，附建议{line['adviceCount']}条" if line["status"] == "passed-with-advice" else "审查通过"
-        elif i["reviewState"] == "timeout":
-            t = "未审查（审查者无响应）"
-        else:
-            t = STATE_TEXT[i["reviewState"]]
-        if t not in texts:
-            texts.append(t)
-    rounds = max((i["round"] for i in items), default=0)
-    return "、".join(texts) + (f"，经 {rounds} 轮修改" if rounds else "")
-
-
-def _summary(items: list[dict], groups: list[dict]) -> list[str]:
-    """R8: one line per module plus the number of questions, at most five lines."""
-    by = {i["number"]: i for i in items}
-    lines = []
-    for g in groups:
-        mine = [by[n] for n in g["items"] if by[n]["ready"]]
-        if mine:
-            lines.append(f"- {g['module']}：{'、'.join(NODE_NAME.get(i['node'], i['node']) for i in mine)}（{_state_text(mine)}）")
-    if len(lines) > 4:
-        rest = [l.split("：", 1)[0].lstrip("- ") for l in lines[3:]]
-        lines = lines[:3] + [f"- 另有 {len(rest)} 个模块：{'、'.join(rest)}"]
-    count = sum(len(i["decisions"]) for i in items if i["ready"])
-    lines.append(f"- 待你决定的问题：{count} 个（{'、'.join(f'D{k}' for k in range(1, count + 1))}）" if count
-                 else "- 待你决定的问题：无")
-    return lines
 
 
 class NoteRefused(Exception):
@@ -328,14 +296,14 @@ def note(db: store.Store, number: int | None, sender: str, text: str) -> NoteRes
         if c["module"] != rec["module"] or c["node"] != rec["node"]:
             raise NoteRefused(f"{where}审查结论说的是 {msg.fields.get('模块')} 的 {msg.fields.get('节点')}，"
                               f"对不上 C{n}（{rec['module']} 的 {NODE_NAME.get(rec['node'], rec['node'])}）")
-        picked.append((n, msg))
+        picked.append((n, msg, section))
     res = NoteResult()
     with db.transaction(actor="coordinator") as tx:
-        for n, msg in picked:
+        for n, msg, section in picked:
             c = msg.contract()["conclusion"]
             rec = tx.get("item", str(n))
             row = {"from": sender, "ref": c["ref"], "verdict": msg.fields.get("结论"), "at": store.now(),
-                   "points": (msg.fields.get("要点") or "").strip()}
+                   "points": (msg.fields.get("要点") or "").strip(), "text": section}
             if msg.contract().get("decisions"):
                 row["decisions"] = msg.contract()["decisions"]
             if c.get("changes"):
@@ -396,70 +364,136 @@ def _review_text(item: dict) -> str:
     return f"{rows[-1]['from']} {rows[-1]['verdict']}" + (f"：{advice}" if advice else "")
 
 
-POINT_LINES = 3      # contract §6: 3–5 lines of points; per review in a batch, keep up to three
 SUMMARY_MAX = 60
 
 
-def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> tuple[int, Path, str] | None:
-    """One 【等待用户】 for the decision inbox covering every open review; None when there is none."""
-    from module_crew import sources
+def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> list[tuple[int, Path, str]]:
+    """One 【等待用户】 per module for the decision inbox (decision 47), shown as it is (R12); [] when nothing is ready.
+
+    `separate` cadence: one node per item; `combined`: a module's ready Spec and Plan share an item."""
+    from module_crew import start
     project = Path(project)
     db = store.open_store(project)
     b = batch(project)
-    if not b["items"]:
-        return None
-    coord = next((n for n, s in sorted(store.records(db, "session").items())
-                  if s.get("role") == "coordinator" and s.get("status") == "active"), "协调会话")
-    ready = [i for i in b["items"] if i["ready"]]
-    if not ready:
-        return None
-    numbers = "、".join(f"C{i['number']}" for i in ready)
-    by_number = {i["number"]: i for i in ready}
-    points = list(b["summary"]) + [""]
+    ready = {i["number"]: i for i in b["items"] if i["ready"]}
+    combined = start.review_cadence(project) == "combined"
+    out = []
     for g in b["groups"]:
-        mine = [n for n in g["items"] if n in by_number]
+        mine = [ready[n] for n in g["items"] if n in ready]
         if not mine:
             continue
-        points.append(f"- {g['module']}（{g['responsibility']}）：" if g["responsibility"] else f"- {g['module']}：")
-        for n in mine:
-            points += _item_points(n, by_number[n])
-    numbered = numbered_decisions(b)
-    questions = question_lines(numbered)
-    mapping = {k: {"review": n, "index": j, "kind": d["kind"], "letters": [o["letter"] for o in d["options"]]}
-               for k, (n, j), d in ((k, nj, d) for k, nj, d in numbered)}
+        for part in ([mine] if combined else [[i] for i in mine]):
+            out.append(_hub_item(project, db, b, g, part, parallel_with))
+    return out
+
+
+def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict], parallel_with: int | None):
+    from module_crew import sources
+    coord = next((n for n, s in sorted(store.records(db, "session").items())
+                  if s.get("role") == "coordinator" and s.get("status") == "active"), "模块协调")
+    refs = "、".join(f"C{i['number']}" for i in part)
+    nodes = "、".join(NODE_NAME.get(i["node"], i["node"]) for i in part)
+    numbered = [(f"D{k}", (i["number"], j), d) for k, (i, j, d) in
+                enumerate(((i, j, d) for i in part for j, d in enumerate(i["decisions"])), 1)]
+    points, artifacts, subs, revs = [], [], [], []
+    for i in part:
+        rec = store.get(db, "item", str(i["number"]))
+        wt = Path((store.get(db, "session", rec["from"]) or {}).get("worktree", ""))
+        prev = _previous_commit(db, rec)
+        artifacts += [f"{g['module']}：{wt / f['path']} ＠ {rec['commit']}" + (f"（上一版 {prev}）" if prev else "")
+                      for f in rec["files"]]
+        subs.append(_original_line(db, g["module"], f"C{i['number']}-submission.txt", rec["text"]))
+        last = (rec.get("reviews") or [{}])[-1]
+        if last.get("text"):
+            revs.append(_original_line(db, g["module"], f"C{i['number']}-review-{last['ref']}.txt", last["text"]))
+        points.append(f"C{i['number']} {g['module']} 的 {NODE_NAME.get(i['node'], i['node'])}（审查：{_review_text(i)}）：")
+        points += [_safe(line) for line in i["points"].splitlines()]
+        if i["round"]:
+            points.append(f"经 {i['round']} 轮审查修改，上次须修改：")
+            points += [_safe(line) for line in _last_changes(db, rec)]
     for d in b["dependencyIssues"]:
-        points.append(f"- 依赖未就绪：{d['module']} 依赖的 {'、'.join(d['missing'])}")
-    for c in b["conflicts"]:
-        points.append(f"- 并行边界重叠：{'、'.join(c.get('modules', []))} 在 {'、'.join(c.get('paths', []))}")
-    decide = f"批准下列交审吗（{numbers}）" + ("，并回答下面待你决定的问题：\n" + "\n".join(questions) if questions else "")
-    reply = "A 全部批准" + "".join(f"；{d} 选 {_lean(ready, m)}" for d, m in mapping.items())
-    lines = []
-    if parallel_with is not None:
-        lines.append(f"【与 #{parallel_with} 并行】")
+        if d["module"] == g["module"]:
+            points.append(f"依赖未就绪：依赖的 {'、'.join(d['missing'])}")
+    points += ["", "批准会发生什么："] + _what_happens(part)
+    lines = [f"【与 #{parallel_with} 并行】"] if parallel_with is not None else []
     top = Path(probe._git(project, "rev-parse", "--show-toplevel").stdout.strip() or project)
-    lines += ["【等待用户】", "结束：无", f"来自：{coord}", f"项目：{top.name}", f"要你决定：{decide}", "要点："] + points
+    lines += ["【等待用户】", "结束：无", f"来自：{coord}", f"项目：{top.name}",
+              f"要你决定：批准 {g['module']} 的 {nodes}（{refs}）吗", "要点："] + points
+    lines += ["产物："] + artifacts + ["交审原文："] + subs + (["审查原文："] + revs if revs else [])
+    if numbered:
+        lines += ["待用户决定："] + question_lines(numbered)
     if any(r.get("kind") == "lead" for r in sources.listing(db)):
-        lines.append("架构审查：" + _review_summary(ready))
+        lines.append("架构审查：" + _review_summary(part))
     lines += ["选项与我的建议：",
-              "推荐 A：全部批准",
-              f"  选了会怎样：{_consequence(ready)}",
-              "B：只批准部分（请写编号）",
-              "  选了会怎样：只有写到的交审往下走，其余等修改",
-              "C：都退回修改",
-              "  选了会怎样：各模块按你的意见改完再交审",
-              f"你该回：{reply}",
+              "推荐 A：批准",
+              f"  选了会怎样：{_consequence(part)}",
+              "B：退回修改（请写修改意见）",
+              "  选了会怎样：模块按你的意见改完再交审，集成分支不变",
+              "你该回：A" + "".join(f"；{k} {d['lean'] or 'A'}" for k, _, d in numbered),
               "是否完全停住：否"]
     text = "\n".join(lines) + "\n"
     msg = protocol.parse(text)
     if not msg.ok or msg.kind != "wait-user":
         raise ValueError("生成的【等待用户】不合格：" + "、".join(msg.problems))
+    mapping = {k: {"review": n, "index": j, "kind": d["kind"], "letters": [o["letter"] for o in d["options"]]}
+               for k, (n, j), d in numbered}
     with db.transaction(actor="coordinator") as tx:
         n = tx.allocate_number()
         meta = tx.write_body(n, text)
-        rec_no = tx.allocate_number()
-        tx.put("item", str(rec_no), {"state": "closed", "kind": "hub-batch", "body": n, "closedReason": "recorded",
-                                     "reviews": [i["number"] for i in ready], "decisions": mapping}, action="hub-batch")
+        tx.put("item", str(tx.allocate_number()), {
+            "state": "closed", "kind": "hub-batch", "body": n, "closedReason": "recorded", "module": g["module"],
+            "reviews": [i["number"] for i in part], "decisions": mapping}, action="hub-batch")
     return n, db.path / meta["path"], text
+
+
+_WAIT_USER_FIELD = re.compile(r"^\s*(" + "|".join(map(re.escape, protocol.FIELDS["wait-user"])) + r")\s*[：:]")
+
+
+def _safe(line: str) -> str:
+    """A points line that would read as another field gets a leading 「＞」; the word-for-word copy is the 交审原文 file."""
+    return "＞" + line if _WAIT_USER_FIELD.match(line) else line
+
+
+def _original_line(db: store.Store, module: str, name: str, text: str) -> str:
+    """Write a message word for word under <store>/originals/ (never rewritten) and give its 「路径 sha256」 line."""
+    folder = db.path / "originals"
+    folder.mkdir(exist_ok=True)
+    data = text.encode("utf-8")
+    path = folder / name
+    if path.exists() and path.read_bytes() != data:
+        path = folder / f"{path.stem}-{hashlib.sha256(data).hexdigest()[:12]}{path.suffix}"
+    if not path.exists():
+        path.write_bytes(data)
+    return f"{module}：{path} sha256:{hashlib.sha256(data).hexdigest()}"
+
+
+def _previous_commit(db: store.Store, rec: dict) -> str | None:
+    """Commit of the version this submission replaced after rework, for showing the difference."""
+    olds = [v for _, v in sorted(store.records(db, "item").items(), key=lambda kv: int(kv[0]))
+            if v.get("kind") == "review" and v.get("closedReason") == "superseded" and v.get("module") == rec["module"]
+            and v.get("node") == rec["node"] and v.get("commit") != rec["commit"]]
+    return olds[-1]["commit"] if olds else None
+
+
+def _last_changes(db: store.Store, rec: dict) -> list[str]:
+    """The 须修改 of the last rework round on this module and node, numbered as written."""
+    for _, v in sorted(store.records(db, "item").items(), key=lambda kv: -int(kv[0])):
+        if v.get("kind") == "review" and v.get("module") == rec["module"] and v.get("node") == rec["node"]:
+            row = next((r for r in reversed(v.get("reviews") or []) if r.get("changes")), None)
+            if row:
+                return [f"{k}. {x}" for k, x in enumerate(row["changes"], 1)]
+    return []
+
+
+def _what_happens(part: list[dict]) -> list[str]:
+    out = []
+    if any(i["node"] != "final" for i in part):
+        out.append("- 在集成分支记批准标记并提交这些文件；Spec 与 Plan 都批了的模块收到开工通知开始构建")
+        out.append("- 不授权合并代码；批准后要改，模块重新交审再批")
+    if any(i["node"] == "final" for i in part):
+        out.append("- 排进本地合并队列，完整检查通过后合并进集成分支；不推送远端")
+        out.append("- 合并前可以撤回批准（merge revoke）；合并后只能另走回退")
+    return out
 
 
 def numbered_decisions(b: dict) -> list[tuple[str, tuple[int, int], dict]]:
@@ -480,13 +514,8 @@ def question_lines(numbered: list) -> list[str]:
         lines.append(f"{k}：{d['question']}")
         lines += [f"  {o['letter']}. {o['text']}" for o in d["options"]]
         if d["lean"]:
-            lines.append(f"  倾向：{d['lean']}（{d['source']}）")
+            lines.append(f"  倾向：{d['lean']}（{d.get('leanReason') or d['source']}）")
     return lines
-
-
-def _lean(ready: list[dict], m: dict) -> str:
-    d = next(i for i in ready if i["number"] == m["review"])["decisions"][m["index"]]
-    return d["lean"] or "（A 或 B）"
 
 
 def _consequence(ready: list[dict]) -> str:
@@ -497,20 +526,6 @@ def _consequence(ready: list[dict]) -> str:
     if any(i["node"] == "final" for i in ready):
         parts.append("最终验收排进合并队列，检查通过后合并进集成分支")
     return "；".join(parts)
-
-
-def _item_points(n: int, i: dict) -> list[str]:
-    """R7: up to three lines of a review's points, saying how many items a cut list really has."""
-    lines = [line.strip() for line in i["points"].splitlines() if line.strip()]
-    body = lines[:POINT_LINES] or [""]
-    out = [f"  C{n} {i['module']} 的 {NODE_NAME.get(i['node'], i['node'])}：{body[0].lstrip('- ').strip()}"
-           f"（审查：{_review_text(i)}）"] + [f"    {line}" for line in body[1:]]
-    if len(lines) > POINT_LINES:
-        listed = [x for x in lines if re.match(r"^(\d+[.．、)）]|[-*•])\s*", x)]
-        out.append(f"    …（共 {len(listed) or len(lines)} 条，回『详情』看全文）")
-    if i["round"]:
-        out.append(f"    经 {i['round']} 轮审查修改：{'；'.join(x for x in i['reworked'] if x)}")
-    return out
 
 
 def _review_summary(items: list[dict]) -> str:
