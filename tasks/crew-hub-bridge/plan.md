@@ -1,4 +1,4 @@
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 # Implementation Plan: crew-hub-bridge
 
 > 依据：`spec/crew-hub-bridge.md`（已批准）。任务清单：`tasks/crew-hub-bridge/todo.md`。
