@@ -76,7 +76,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             "closedReason": None, "commit": None, "answer": None,
         }, action="created", data={"relayId": relay_id})
         out.number = n
-        out.lines.append(f"已记为公共变更请求 C{n}" + (f"，等待单 C{ticket}" if ticket else ""))
+        out.lines.append(f"已记为公共变更请求 C{n}" + (f"，等待记录 W{ticket}" if ticket else ""))
         if hints:
             out.lines.append("提示：" + "、".join(hints))
         out.lines.append("要问用户" if _asks_user(hints) else "可由协调会话判断是否在已批准 Spec 范围内直接办")

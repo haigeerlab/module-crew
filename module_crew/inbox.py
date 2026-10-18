@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from module_crew import protocol, store
+from module_crew import protocol, refs, store
 
 RECORDED_HERE = ("wait-user", "wait-session", "resumed", "withdraw")
 RECORDED_ELSEWHERE = {"review-request": "crew-review-batch", "shared-change-request": "crew-shared-changes"}
@@ -21,6 +21,7 @@ class Outcome:
     code: int                                  # 0 recorded / 3 rejected / 4 not recorded here
     number: int | None = None                  # new record number
     closed: list[int] = field(default_factory=list)
+    closed_waits: list[int] = field(default_factory=list)   # the wait records among `closed`, shown as W<N>
     unmatched: list[int] = field(default_factory=list)
     tell_sender: list[str] = field(default_factory=list)
     lines: list[str] = field(default_factory=list)
@@ -61,7 +62,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
                 "closedReason": None, "closedBy": None,
             }, action="opened", data={"relayId": relay_id})
             out.number = n
-            out.lines.append(f"已记为等待单 C{n}")
+            out.lines.append(f"已记为等待记录 {refs.wait(n)}")
         elif msg.kind == "resumed":
             _close_tickets(tx, sender, msg.end.items, 1, relay_id, out)
             if msg.end.unnumbered_reason:
@@ -74,7 +75,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             else:
                 out.unmatched.append(msg.item)
         if out.closed:
-            out.lines.append("已关闭 " + "、".join(f"C{n}" for n in out.closed))
+            out.lines.append("已关闭 " + "、".join(refs.wait(n) if n in out.closed_waits else refs.fmt(n) for n in out.closed))
         return out
 
 
@@ -88,6 +89,7 @@ def _close_tickets(tx, sender: str, refs, reason: int, by: int, out: Outcome) ->
             tx.put("ticket", key, rec, action="closed", data={"relayId": by, "reason": reason})
             tickets[key] = rec
             out.closed.append(int(key))
+            out.closed_waits.append(int(key))
         else:
             out.unmatched.append(n)
 
@@ -195,9 +197,9 @@ def close_ticket(db: store.Store, number: int, reason: str, original: str) -> in
     with db.transaction(actor="coordinator") as tx:
         rec = tx.get("ticket", str(number))
         if rec is None:
-            raise AnswerRefused(f"没有等待单 C{number}")
+            raise AnswerRefused(f"没有等待记录 {refs.wait(number)}")
         if rec.get("state") != "open":
-            raise AnswerRefused(f"等待单 C{number} 已关闭（理由 {rec.get('closedReason')}）")
+            raise AnswerRefused(f"等待记录 {refs.wait(number)} 已关闭（理由 {rec.get('closedReason')}）")
         tx.put("ticket", str(number), dict(rec, state="closed", closedReason=code, closedBy="coordinator"),
                action="closed", data={"reason": code, "note": original})
     return code

@@ -114,8 +114,8 @@ class TextTest(MergeCase):
     def test_dev_open_tickets(self):
         from module_crew import inbox
         n = inbox.add(self.db, "【等待其他会话】\n结束：无\n在等谁：API\n等什么：数据\n", "shop-b", 9).number
-        self.assertIn(f"C{n}", self.stage("b"))
-        self.assertIn("无", self.stage("c").split("未关的等待单：")[1])
+        self.assertIn(f"W{n}", self.stage("b"))
+        self.assertIn("无", self.stage("c").split("未关的等待记录：")[1])
 
     def test_prompt_lines(self):
         line = hooks.prompt_line(self.wt["b"])

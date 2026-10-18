@@ -227,3 +227,21 @@ class WithdrawAndRepeatTest(InboxCase):
                 self.assertEqual(out.code, 0)
                 self.assertIn("已记过", " ".join(out.lines))
                 self.assertEqual(files(self.db), before)
+
+
+class WaitRecordRefTest(TicketTest):
+    """crew-glossary-rename acceptance 3."""
+
+    def test_shown_as_w_and_closed_by_w(self):
+        out = self.add(wait_session(), relay_id=70)
+        self.assertIn(f"等待记录 W{out.number}", " ".join(out.lines))
+        again = self.add(wait_session(end=f"#{out.number}", who="设计"), relay_id=71)
+        self.assertIn(f"已关闭 W{out.number}", " ".join(again.lines))
+        n = again.number
+        from module_crew import failure
+        row = {r["name"]: r for r in failure.sessions(self.db)}["shop-a"]
+        self.assertEqual(row["openTicketRefs"], [f"W{n}"])
+        res = self.run_cli("ticket", "close", f"W{n}", "--reason", "user", "--original", "关掉")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn(f"已关等待记录 W{n}", res.stdout)
+        self.assertEqual(self.ticket(n)["state"], "closed")

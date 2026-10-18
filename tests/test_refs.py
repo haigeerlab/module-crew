@@ -55,3 +55,12 @@ class OutwardTextTest(ReviewCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WaitRefTest(unittest.TestCase):
+    """crew-glossary-rename acceptance 3: wait records show as W<N>; W, C and bare numbers are all accepted."""
+
+    def test_wait_prefix(self):
+        from module_crew import refs
+        self.assertEqual(refs.wait(25), "W25")
+        self.assertEqual([refs.parse(v) for v in ("W25", "w25", "C25", "25")], [25, 25, 25, 25])

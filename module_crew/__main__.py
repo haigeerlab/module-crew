@@ -56,7 +56,7 @@ def _protocol_check(path: str) -> int:
 
 
 _STATE_ICON = {"ok": "✅", "warning": "⚠️", "blocker": "❌"}
-_KIND_NAME = {"item": "事项", "request": "请求", "ticket": "等待单"}
+_KIND_NAME = {"item": "事项", "request": "请求", "ticket": "等待记录"}
 
 
 def _stall_facts(row: dict | None) -> str:
@@ -135,7 +135,7 @@ def _inbox_add(path: str, sender: str, relay_id: int) -> int:
     for line in out.lines:
         print(line)
     if out.closed:
-        print("已关闭：" + "、".join(f"#{n}" for n in out.closed))
+        print("已关闭：" + "、".join(refs.wait(n) if n in out.closed_waits else refs.fmt(n) for n in out.closed))
     if out.unmatched:
         print("没对上：" + "、".join(f"#{n}" for n in out.unmatched))
     for line in out.tell_sender:
@@ -797,7 +797,7 @@ def _run(args) -> int:
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 2
-        print(f"已关等待单 C{args.number}（理由 {code}）")
+        print(f"已关等待记录 {refs.wait(args.number)}（理由 {code}）")
         return 0
     if args.group == "takeover":
         original = _original(args.original, args.original_file)

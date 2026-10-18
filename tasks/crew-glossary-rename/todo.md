@@ -6,7 +6,7 @@
   - 验收：Spec 验收 1（护栏）
   - 文件：`tests/test_glossary.py`
 
-- [ ] Task 2：等待记录 W 前缀
+- [x] Task 2：等待记录 W 前缀
   - 验收：Spec 验收 3
   - 文件：`module_crew/refs.py`、显示等待记录编号的模块、`module_crew/__main__.py`、`tests/test_refs.py`
 

@@ -398,7 +398,7 @@ def cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
              f"待退役的邮箱名：{name}（列给用户确认；用户同意后由用户在 Claude Code 里用 /agent-relay:collaboration 退役，"
              "一次一个名字，有未确认的消息时会被拒绝）"]
     if tickets:
-        lines.append("这个模块还开着的等待单：" + "、".join(f"C{n}" for n in tickets)
+        lines.append("这个模块还开着的等待记录：" + "、".join(f"W{n}" for n in tickets)
                      + "（它已不能再发【已恢复】：所等的事已办好就 ticket close --reason happened，用户说关就 --reason user）")
     return Simple(0, lines)
 

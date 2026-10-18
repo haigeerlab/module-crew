@@ -144,7 +144,7 @@ def session_start(cwd: str | os.PathLike, source: str = "startup") -> str | None
         lines = [f"module-crew：你是模块 {role.module} 的模块会话（邮箱名 {role.name}），协调会话是 {_coordinator_name(role.db)}，你只和它说话。",
                  "按 crew-dev skill 的规则做；被挡住必须发【等待其他会话】；发出前 module-crew protocol check。",
                  f"当前：{_stage(store.records(role.db, 'item'), role.module)}",
-                 "未关的等待单：" + ("、".join(f"C{n}" for n in tickets) or "无")]
+                 "未关的等待记录：" + ("、".join(f"W{n}" for n in tickets) or "无")]
     else:
         lines = [f"module-crew：本会话是协调会话（{role.name}）。{_count_text(_counts(role.db))}。",
                  "先跑 `module-crew status` 再动手；看 agent-relay 在线状态里谁处于「等待审批」，提醒用户去那个会话点权限弹窗。",

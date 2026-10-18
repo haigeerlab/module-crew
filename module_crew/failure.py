@@ -154,6 +154,8 @@ def sessions(db: store.Store, now: datetime | None = None) -> list[dict]:
             "stage": stage_code(text), "stageText": text,
             "lastActivity": last, "ago": _ago(last, now) if last else None,
             "openTickets": sorted(int(k) for k, v in tickets.items() if v.get("from") == name and v.get("state") != "closed"),
+            "openTicketRefs": [f"W{k}" for k in sorted(int(k) for k, v in tickets.items()
+                                                       if v.get("from") == name and v.get("state") != "closed")],
             "openItems": sorted(int(k) for k, v in items.items()
                                 if v.get("state") != "closed" and (v.get("from") == name or v.get("module") == module)),
             "suspended": (rec.get("suspended") or {}).get("reason"),
@@ -193,7 +195,7 @@ def render_sessions(rows: list[dict], now: datetime | None = None) -> list[str]:
     for r in rows:
         lines.append(f"{r['module']}（{r['name']}）" + (f"　挂起：{r['suspended']}" if r["suspended"] else ""))
         lines.append(f"  最后动静：{r['lastActivity'] or '无记录'}" + (f"（{r['ago']}）" if r["ago"] else ""))
-        lines.append("  未关等待单：" + ("、".join(f"C{n}" for n in r["openTickets"]) or "无")
+        lines.append("  未关等待记录：" + ("、".join(f"W{n}" for n in r["openTickets"]) or "无")
                      + "；未关事项：" + ("、".join(f"C{n}" for n in r["openItems"]) or "无"))
         lines.append(f"  当前：{r['stageText']}")
         lines += [_commit_line(r, now), _asks_line(r)]
