@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved a6eae5125cfa -->
+<!-- spec-guard: review approved c02445afe309 -->
 # Spec: crew-onboarding
 
 > 能力图模块 `crew-onboarding`。需求来源：`docs/requirements-record.md` B1（角色与职责、权限弹窗）、B4（消息、答复有效性、被挡住必须报、规则不写进 worktree）、
@@ -137,6 +137,9 @@ python3 -m unittest discover -s tests -v
 10. `status` 的未关计数随这些流转正确变化（与 crew-probe 的约定一致）。
 11. 两份 skill 有合法 frontmatter（`name`、`description`），并包含：`inbox add`、`answer`、`bodyFile`、「等待审批」、「不是批准」（协调会话）；`protocol check`、【等待其他会话】、【交审】、「最终验收」、回显句式（模块会话）；以及「不要抄进 worktree 的 CLAUDE.md」。
 
+12. `ticket close <编号> --reason happened --original-file <说明>`：开着的等待单关为原因 3（所等的事已发生）并记下说明；`--reason user` 关为原因 4（用户关闭）并记下用户原话；
+    不存在、已关闭或说明为空：退出码 3，状态库不变。协调会话 skill 有「等待单」一节：模块还在时办好它等的事、请它发【已恢复】自己关；模块已收回或用户说关时用 `ticket close`。（2026-10-18 修订）
+
 ## 未决问题
 
 无。
@@ -144,3 +147,7 @@ python3 -m unittest discover -s tests -v
 ## 文档建议
 
 README 的「一次完整流程」里引用两份 skill 的要点；本模块不另写文档。
+
+## 变更记录
+
+- 2026-10-18：增加 `ticket close`，按契约第 11 节原因 3（所等的事已发生）或 4（用户关闭）由协调会话关等待单；协调会话 skill 加「等待单」一节；增加验收 12。原因：试点中发单的模块已收回、无法再发【已恢复】，等待单 #25 关不掉（问题 I）；来源：第 7 关试点收尾（`docs/pilot-report.md`），用户 2026-10-18 批准。

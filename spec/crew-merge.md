@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved b98d73e3996d -->
+<!-- spec-guard: review approved e9d146d28022 -->
 # Spec: crew-merge
 
 > 能力图模块 `crew-merge`。需求来源：`docs/requirements-record.md` B5（两层合并）、假设 6（完整检查命令）、假设 9（远端合并由用户做）、第 5 节规则措辞（模块合入本地集成分支可在用户批准最终验收后由协调会话执行）。
@@ -21,7 +21,7 @@
 **范围外**
 
 - 远端 PR 的合并（用户做）；GitHub 自动合并（不开）。
-- agent-relay 邮箱身份的退役（协调会话用 agent-relay 工具做，写进 skill）。
+- agent-relay 邮箱身份的退役：`merge cleanup` 只列出待退役的名字，经用户同意后由用户在 Claude Code 里用 `/agent-relay:collaboration`（或 Codex 的 collaboration-ops skill、或 agent-relay 插件的退役脚本）退役；module-crew 不定位也不运行 agent-relay 的脚本（2026-10-18 修订）。
 - spec-guard 进度重算（`/map` 自己算）。
 
 ## 假设（用户 2026-10-18 已确认）
@@ -83,9 +83,10 @@ bin/module-crew merge push (--original <原话> | --original-file <文件>)
 - `tick`：补救修订前合并时漏勾的最终验收：在集成分支勾上该模块 todo 唯一的未勾项并单独提交；`0` 成功；`3` 模块没有已合并的合并批准、未勾项不是恰好一个、集成基线不干净或原话为空。
 - `queue`：`0` 队列非空；`3` 空。
 - `run`：`0` 合并成功（输出合并提交与要发送的收尾、同步基线通知）；`5` 检查失败已撤销或冲突已中止（输出要发送的退回通知）；`3` 合并前清单不过（什么都没动）；`2` 没有检查命令或参数错；`4` 撤销本身失败（集成 checkout 状态写明，交用户）。
-- `cleanup`：`0` 成功；`3` 模块未合并、worktree 不干净或不存在。
+- `cleanup`：`0` 成功（输出列出待退役的邮箱名与退役做法，以及该模块还开着的等待单编号，只提醒不自动关）；`3` 模块未合并、worktree 不干净或不存在。
 - `push-plan`：列出远端、新分支名、`prBase`、要推送的提交、PR 标题与正文；`0` 有可推送的提交；`3` 没有或没有远端。
-- `push`：`0` 推送成功（有 `gh` 时附 PR 链接，没有时打印 PR 正文）；`3` 检查不过；`4` 推送或开 PR 失败。
+- `push`：`0` 推送成功（远端是 github.com 且有 `gh` 时附 PR 链接；其他远端或没有 `gh` 时打印 PR 标题与正文）；`3` 检查不过；`4` 推送或开 PR 失败。
+  PR 正文先随推送记录写进状态库（落盘）再调 `gh`，开好后另记一次 PR 链接（2026-10-18 修订）。
 
 ## 项目结构
 
@@ -136,6 +137,8 @@ python3 -m unittest discover -s tests -v
 13. 合入并通过检查后，模块 todo 恰好剩一个未勾项时集成分支多一个勾选提交、该项已勾；剩 0 个时没有勾选提交；不止 1 个时不勾并在输出里报告；检查失败或冲突时不勾。
 14. `merge approve 15 16`：两个都记批准并各生成【用户答复】；其中一个不合格时退出码 3、什么都不写。
 15. `merge tick b`：已合并、todo 剩一个未勾项时在集成分支勾上并提交；未合并、未勾项不是一个、原话为空时退出码 3 且不改动。
+16. `merge push`：假 `gh` 被调用时 `--body-file` 指向的正文文件已经存在；远端不是 github.com 时不调用 `gh`、打印 PR 正文、退出码 0。
+17. `merge cleanup`：输出列出待退役的邮箱名与 `/agent-relay:collaboration` 的做法，不含 agent-relay 脚本的路径；该模块有开着的等待单时列出编号、不关单。
 11. 协调会话 skill 有「合并与收尾」一节：`review add`／`merge approve` → `merge run` 一次一个、发通知 → 退回时转告原因 → 用户同意后 `merge cleanup` 并用 agent-relay 退役邮箱 → `merge push-plan` 给用户看 → 用户授权后 `merge push` → 远端 PR 由用户合并。
 
 ## 未决问题
@@ -150,3 +153,4 @@ README「一次完整流程」补上合并、退回、收尾、推送与 PR 一�
 
 - 2026-10-18：契约 v1.5 已新增「退回」类型，删去「发版前不生成退回通知」的过渡做法与对应未决问题；关键决策 5、验收 6、7 改为生成退回类【协调通知】。原因：契约负责人发布 v1.5（246e138）；来源：用户 2026-10-18 批准（选 A）。
 - 2026-10-18：同步基线只发给还在开发的模块（关键决策 7）；合入通过检查后由协调会话在集成分支勾选最终验收（关键决策 8），并加 `merge tick` 补救修订前漏勾的数据；`merge approve` 一次可收多个编号；增加验收 12–15。原因：试点发现缺陷 A、B、C 与不一致 E；来源：第 7 关试点（`docs/pilot-report.md`），用户 2026-10-18 批准。
+- 2026-10-18：`merge push` 先落盘 PR 正文再调 `gh`，远端不是 github.com 时只打印正文；`merge cleanup` 列出待退役的邮箱名（由用户经 `/agent-relay:collaboration` 退役，module-crew 不定位 agent-relay 脚本）与该模块开着的等待单；增加验收 16、17。原因：试点问题 J（推送成功却退出码 4）、K（agent-relay 0.8.2 无退役工具，负责人确认只能由用户同意后走运维脚本，接口保持 2.5）、I；来源：第 7 关试点收尾（`docs/pilot-report.md`），用户 2026-10-18 批准。
