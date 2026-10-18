@@ -147,3 +147,25 @@ class CopyablePromptTest(unittest.TestCase):
         section = text.split("## 请用户给原话", 1)[1].split("\n## ", 1)[0]
         for words in ("可以直接复制的代码块", "```text", "不要只写「请用你自己的话说」", "点按钮发出的"):
             self.assertIn(words, section)
+
+
+class PilotRound2SkillTest(unittest.TestCase):
+    def test_wake_idle_sessions(self):
+        for name in ("crew-coordinator", "crew-dev"):
+            _, text = read(name)
+            for words in ("pendingReason", "offline", "去读 agent-relay 收件箱", "不带消息正文"):
+                self.assertIn(words, text, name)
+
+    def test_coordinator_checks_permission_modes_and_queue(self):
+        _, text = read("crew-coordinator")
+        wake = text.split("## 每次醒来", 1)[1].split("\n## ", 1)[0]
+        for words in ("plan < default < acceptEdits < auto < bypassPermissions", "由用户决定", "不要自己改"):
+            self.assertIn(words, wake)
+        self.assertIn("按模块在 Build order 里的位置排", text)
+        self.assertIn("resume <模块> --original-file", text)
+
+    def test_dev_handles_suspend_and_return(self):
+        _, text = read("crew-dev")
+        section = text.split("## 挂起与异常", 1)[1].split("\n## ", 1)[0]
+        for words in ("挂起类【协调通知】", "恢复类【协调通知】", "不要**撤销任何提交"):
+            self.assertIn(words, section)

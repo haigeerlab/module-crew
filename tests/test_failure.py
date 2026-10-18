@@ -37,12 +37,50 @@ class SuspendTest(FailureCase):
 
     def test_resume(self):
         with self.assertRaises(failure.FailureRefused):
-            failure.resume(self.db, "b")
+            failure.resume(self.db, "b", "恢复 b")
         failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
-        failure.resume(self.db, "b")
+        with self.assertRaises(failure.FailureRefused):
+            failure.resume(self.db, "b", " ")                      # pilot round 2, problem M
+        failure.resume(self.db, "b", "恢复 b")
         self.assertIsNone(self.session("shop-b")["suspended"])
         self.assertEqual(start.plan(self.repo).slots, 1)
-        self.assertEqual(store.events(self.db, key="shop-b")[-1]["type"], "session.resumed")
+        last = store.events(self.db, key="shop-b")[-1]
+        self.assertEqual((last["type"], last["data"]["original"]), ("session.resumed", "恢复 b"))
+
+    def notice(self, x):
+        msg = protocol.parse(store.read_body(self.db, x["body"]))
+        self.assertTrue(msg.ok, msg.problems)
+        return msg
+
+    def test_suspend_and_resume_notices(self):
+        out = failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        self.assertEqual(out.name, "shop-b")
+        [note] = out.sends
+        self.assertEqual((note["to"], note["kind"]), ("shop-b", "suspend"))
+        msg = self.notice(note)
+        approval = msg.contract()["notice"]["refs"][0]
+        self.assertEqual((msg.contract()["notice"]["kind"], msg.fields["原因"]), ("suspend", "等设计稿"))
+        self.assertIn("spec-guard", msg.fields["要你做什么"])
+        rec = store.get(self.db, "item", str(approval))
+        self.assertEqual((rec["kind"], rec["answer"]["original"]), ("suspend", "先挂起 b"))
+        out = failure.resume(self.db, "b", "设计稿到了，恢复 b")
+        [note] = out.sends
+        msg = self.notice(note)
+        refs = msg.contract()["notice"]["refs"]
+        self.assertEqual((msg.contract()["notice"]["kind"], refs[1]), ("resume", approval))
+        self.assertEqual(store.get(self.db, "item", str(refs[0]))["answer"]["original"], "设计稿到了，恢复 b")
+        self.assertNotIn("集成分支在挂起期间", msg.fields["要你做什么"])   # nothing merged meanwhile
+
+    def test_resume_sends_sync_when_baseline_moved(self):
+        failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        n = self.approve_final("c", 70)
+        res = merge.run(self.repo, self.check_script())
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertNotIn("shop-b", [x["to"] for x in res.sends])       # suspended: no "continue" (problem L)
+        [note] = failure.resume(self.db, "b", "恢复 b").sends
+        todo = self.notice(note).fields["要你做什么"]
+        self.assertIn(f"#{n}", todo)
+        self.assertIn("先把集成分支合进你的模块分支", todo)
 
     def test_suspended_session_keeps_its_identity(self):
         failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
@@ -109,6 +147,14 @@ class ResumeKitTest(FailureCase):
             self.assertIn(want, text)
         self.assertTrue(kit.path.endswith(f"bodies/{kit.body}.txt"))
 
+    def test_kit_after_final_review(self):
+        n = review.add(self.db, self.finish("b"), "shop-b", 4800).number
+        text = store.read_body(self.db, failure.resume_kit(self.db, "b").body)
+        self.assertIn(f"最终验收已交审（交审事项 #{n}）", text)
+        self.assertNotIn("刚压缩过", text)
+        row = {r["module"]: r for r in failure.sessions(self.db)}["b"]
+        self.assertEqual(row["stage"], "build")                        # export enum unchanged
+
     def test_kit_refused_without_session(self):
         with self.assertRaises(failure.FailureRefused):
             failure.resume_kit(self.db, "d")
@@ -160,7 +206,7 @@ class IsolationTest(FailureCase):
         kinds = {(x["to"], x["kind"]) for x in first.sends}
         self.assertIn(("shop-c", "wrap-up"), kinds)
         self.assertNotIn(("shop-d", "sync-baseline"), kinds)  # d is still queued (pilot fix C)
-        self.assertIn(("shop-b", "sync-baseline"), kinds)       # suspended b is still developing
+        self.assertNotIn(("shop-b", "sync-baseline"), kinds)    # suspended b gets it on resume (problem L)
         for x in first.sends:
             self.assertTrue(protocol.parse(store.read_body(self.db, x["body"])).ok)
 
@@ -187,8 +233,11 @@ class CliTest(FailureCase):
         rows = json.loads(run("sessions", "--json").stdout)["sessions"]
         self.assertEqual({r["module"]: r["suspended"] for r in rows}, {"b": "等设计稿", "c": None})
         self.assertIn("挂起：等设计稿", run("sessions").stdout)
-        self.assertEqual(run("resume", "b").returncode, 0)
-        self.assertEqual(run("resume", "b").returncode, 3)
+        self.assertEqual(run("resume", "b").returncode, 2)               # the user's words are required
+        out = run("resume", "b", "--original", "恢复 b")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("发送 【协调通知】 → shop-b", out.stdout)
+        self.assertEqual(run("resume", "b", "--original", "再恢复").returncode, 3)
         kit = run("resume-kit", "b")
         self.assertEqual(kit.returncode, 0, kit.stderr)
         self.assertIn("shop-b", kit.stdout)

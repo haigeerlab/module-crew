@@ -4,6 +4,10 @@
 70df3a8dea6d71f0c5a88ef775b47ff71f91c4ec852efcacb1d07f5109eee628  ./coordination-notice/bad-kind.txt
 bb51786458ab47cb360a7667cb716ade7697cbd41411bf20569b82355d55acf8  ./coordination-notice/missing-field.json
 cf107b7cf693d6f8ab85514456f53a1dc232b1c4b61fee4dbab8609c41778444  ./coordination-notice/missing-field.txt
+e897680dc046ebf1b61309b95a807f5497ca9ab12bfb7b949969a55b7ec76951  ./coordination-notice/resume-no-ref.json
+106bfb078d9ea814f2dddf6d38badd29dea7a348c1208e7c56b13f9a775cfd81  ./coordination-notice/resume-no-ref.txt
+e094d329882d1db915c92a7d0df5fdb62de3d23dcf529bd47abef6d37ca64ded  ./coordination-notice/resume.json
+b6e878ece707282ffd6719ad57e1a95f341083686bf56d270ab10d1a59aedc0b  ./coordination-notice/resume.txt
 3930a7c39deeb5a15aabcd8f2c80de40814d3b332b799f6167eec628fa30f1d6  ./coordination-notice/returned-check-failed.json
 3621cb69cd485f2b9fb8ffcb8222f81ee9438821bd06cd9cb5cdbc772daa5bd6  ./coordination-notice/returned-check-failed.txt
 1a98b3f168332c76f5c23317adbf9d826cd35eb4184c5affc3b9351643dd509d  ./coordination-notice/returned-conflict.json
@@ -14,6 +18,12 @@ cf107b7cf693d6f8ab85514456f53a1dc232b1c4b61fee4dbab8609c41778444  ./coordination
 7fa20a5dc94ee85f0b6ca89a8e1cca9de8a1f30b97ce582f34d38184fd73c433  ./coordination-notice/start-no-approval.txt
 e013a8770bc9a68fde3d12ff4af7bbb5f6932972ae0c30654c1b71f46298cbe3  ./coordination-notice/start.json
 75e4023f1bf0728fe7672db5c315503780f6c5fbf275f5d074eb64d5ab496d62  ./coordination-notice/start.txt
+7641ce2a87b07e138ebb109c0a2f3a18b53dc972285fde373ec57e4649ff94e0  ./coordination-notice/suspend-no-reason.json
+94e11449c94bfa919724ee13fc9b57806459b8e71a0df07b8b09184537d4572e  ./coordination-notice/suspend-no-reason.txt
+85ec8c95777d3e9e945bae276935a65aa35e37fac8826fec2eb30d6cf93d2afb  ./coordination-notice/suspend-no-ref.json
+dd1d458046db166d1e8e8e41deebddb80312bd0fdd25facd9cf65d5ecf7586aa  ./coordination-notice/suspend-no-ref.txt
+51427604947cea1bf78aef8f3a1339c4548275b94ddc8850dc885060ddc9a1d5  ./coordination-notice/suspend.json
+b833d81ab240b9daf684ff22e32a99e6d4a3d9b9f24fcc146729ec652ca07184  ./coordination-notice/suspend.txt
 4f6bf8be487c2a46cf30378d04d95de4265ff22a9cb45ba7175d6af97c680ee0  ./coordination-notice/sync-baseline.json
 d7de94bef37d5f3ecb9407ac9d0bae918354d7ef53a508e619cfff38a580e5cf  ./coordination-notice/sync-baseline.txt
 659e82827d83da459ee921c3416680ed5b4e36c7b1d35c75fd1c3708ab49748b  ./owner-handoff/basic.json

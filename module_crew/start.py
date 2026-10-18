@@ -21,6 +21,7 @@ class Proposal:
     modules: list[dict] = field(default_factory=list)      # {"id", "responsibility", "dependsOn"}
     conflicts: list[dict] = field(default_factory=list)
     blockers: list[str] = field(default_factory=list)
+    reasons: list[dict] = field(default_factory=list)      # {"module", "reason"} when nothing can be started
 
 
 def _open_store(project: Path) -> store.Store | None:
@@ -41,9 +42,42 @@ def _active_devs(db: store.Store | None) -> dict[str, dict]:
             if v.get("role") == "dev" and v.get("status") == "active"}
 
 
+def _merged_modules(db: store.Store | None) -> set[str]:
+    if db is None:
+        return set()
+    return {v.get("module") for v in store.records(db, "item").values()
+            if v.get("kind") == "merge-approval" and v.get("closedReason") == "merged"}
+
+
 def _counted_devs(db: store.Store | None) -> dict[str, dict]:
-    """Module sessions that take a slot: suspended ones (waiting on an outside condition) do not."""
-    return {k: v for k, v in _active_devs(db).items() if not v.get("suspended")}
+    """Module sessions that take a slot: suspended ones (waiting on an outside condition) and merged ones do not."""
+    merged = _merged_modules(db)
+    return {k: v for k, v in _active_devs(db).items() if not v.get("suspended") and v.get("module") not in merged}
+
+
+def _why_not(m: dict, sessions: dict[str, dict], merged: set[str], done: set[str], slots: int) -> str | None:
+    """Why a capability-map module cannot be started now, or None when it is done."""
+    mid = m.get("id")
+    if m.get("status") == "done":
+        return None
+    own = sessions.get(mid)
+    if own is not None:
+        if mid in merged:
+            return "已合入，等 merge cleanup 收回"
+        if own.get("suspended"):
+            return f"挂起中（{own['suspended'].get('reason')}）"
+        return "已有模块会话"
+    status = m.get("status")
+    if status == "in_progress":
+        return f"spec-guard 的当前模块（{m.get('step') or '进行中'}），不在可开工列表"
+    if status == "suspended":
+        return f"在 spec-guard 里挂起（{m.get('suspendedReason') or '未记原因'}）"
+    if status == "blocked":
+        return f"等被挂起的 {m.get('blockedOn') or '模块'}"
+    waiting = m.get("missingDeps") or [d for d in m.get("dependsOn") or [] if d not in done]
+    if waiting:
+        return "等 " + "、".join(waiting)
+    return "没有空位" if slots == 0 else "不在 spec-guard 的可开工列表"
 
 
 def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal:
@@ -60,10 +94,18 @@ def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal
     if blockers:
         return Proposal(slots, blockers=blockers)
     modules = {m.get("id"): m for m in report.map.get("modules") or [] if isinstance(m, dict)}
+    sessions = {v.get("module"): v for v in _active_devs(db).values()}
     picked = [{"id": mid, "responsibility": modules.get(mid, {}).get("responsibility", ""),
                "dependsOn": list(modules.get(mid, {}).get("dependsOn") or [])}
-              for mid in (report.startable or {}).get("modules", [])][:slots]
-    return Proposal(slots, picked, list((report.startable or {}).get("conflicts", [])))
+              for mid in (report.startable or {}).get("modules", []) if mid not in sessions][:slots]
+    reasons = []
+    if not picked:
+        merged, done = _merged_modules(db), {k for k, m in modules.items() if m.get("status") == "done"}
+        for mid, m in modules.items():
+            why = _why_not(m, sessions, merged, done, slots)
+            if why:
+                reasons.append({"module": mid, "reason": why})
+    return Proposal(slots, picked, list((report.startable or {}).get("conflicts", [])), reasons=reasons)
 
 
 SHORT_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,18}[a-z0-9]$")

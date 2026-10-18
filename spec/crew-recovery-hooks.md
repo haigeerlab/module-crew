@@ -126,6 +126,8 @@ python3 -m unittest discover -s tests -v
 9. 角色标记：worktree 标记为 `module b` 时按 b 的模块会话注入（含 worktree 被移到别处、登记路径对不上的情况）；集成 checkout 标记为 `coordinator` 时按协调会话注入；
    标记为 `module x`（没有在用会话）时静默；没有标记或标记不合法时结果与修订前相同；仍不 import `subprocess`。
 
+10. 最终验收已交审、还没批准（有未关的 node 为 final 的交审）：档位为「最终验收已交审（交审事项 #N），等用户批准；不要重做或重发」；只读出口的 `stage` 仍为 `build`，只改 `stageText`。
+
 ## 未决问题
 
 - 无（角色标记按 interface 1.1 定稿接入；0.68.0 发版后在第 7 关用真实版本再核一次）。
@@ -137,3 +139,4 @@ README 的安装说明写「首次使用需在 Claude Code 里信任 module-crew
 ## 变更记录
 
 - 2026-10-18：角色判断改为以 spec-guard 角色标记为准（关键决策 6、验收 9），没有标记时保留原路径规则；删去对应未决问题。原因：interface 1.1 定稿 `checkoutRole`（标记位置 `git rev-parse --git-path spec-guard/role`、取值 `module <id>`／`coordinator`）；来源：spec-guard 负责人通知 interface.json 1.1 定稿（spec-guard 分支 `claude/module-concurrency` 提交 6231abc，0.68.0 未发版），用户 2026-10-18 复审批准。
+- 2026-10-18：新增「最终验收已交审、等批准」档位（只读出口 stage 枚举不变，仍报 build），增加验收 10。原因：试点问题 J（恢复说明在已交最终验收时仍写「可以构建」）；来源：第二轮试点（`docs/pilot-report.md` 第二轮一节），用户 2026-10-18 批准修法。

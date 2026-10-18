@@ -132,7 +132,8 @@ def _answer(number: int, original: str | None, original_file: str | None, option
 def _start_plan(as_json: bool) -> int:
     p = start.plan(".")
     if as_json:
-        print(json.dumps({"slots": p.slots, "modules": p.modules, "conflicts": p.conflicts, "blockers": p.blockers},
+        print(json.dumps({"slots": p.slots, "modules": p.modules, "conflicts": p.conflicts, "blockers": p.blockers,
+                          "reasons": p.reasons},
                          ensure_ascii=False, indent=2))
     else:
         print(f"空位：{p.slots}")
@@ -144,6 +145,10 @@ def _start_plan(as_json: bool) -> int:
             print(f"⚠️ 冲突：{'、'.join(c.get('modules', []))} 在 {'、'.join(c.get('paths', []))}")
         if p.modules and not p.blockers:
             print(f"提议：开这 {len(p.modules)} 个吗？（问用户一次，答应后运行 start prepare）")
+        elif not p.blockers:
+            print("没有可开的模块：" if p.reasons else "没有可开的模块（能力图上的模块都已完成）")
+            for r in p.reasons:
+                print(f"  {r['module']}：{r['reason']}")
     return 0 if p.modules and not p.blockers else 3
 
 
@@ -187,14 +192,18 @@ def _failure(args) -> int:
         print(f"恢复说明（正文 #{kit.body}）：{kit.path}")
         print("用户同意后：module-crew takeover " + kit.name + " --original-file <原话文件>，再在这个 worktree 开新会话，第一条消息用恢复说明全文")
         return 0
-    if args.group == "resume":
-        print(f"已恢复：{failure.resume(db, args.module)}（重新占名额）")
-        return 0
     original = _original(args.original, args.original_file)
     if original is None:
         return 2
-    if args.group == "suspend":
-        print(f"已挂起：{failure.suspend(db, args.module, args.reason, original)}（不占名额；spec-guard 的挂起由模块会话在自己的 worktree 里做）")
+    if args.group in ("suspend", "resume"):
+        if args.group == "suspend":
+            out = failure.suspend(db, args.module, args.reason, original)
+            print(f"已挂起：{out.name}（不占名额；spec-guard 的挂起由模块会话在自己的 worktree 里做）")
+        else:
+            out = failure.resume(db, args.module, original)
+            print(f"已恢复：{out.name}（重新占名额）")
+        for x in out.sends:
+            print(f"发送 【协调通知】 → {x['to']}：bridge_send bodyFile={x['path']}")
         return 0
     failure.set_mode(db, not args.off, original)
     print("已恢复并行：可以再开新模块" if args.off
@@ -510,7 +519,11 @@ def main(argv: list[str] | None = None) -> int:
     sg = ss.add_mutually_exclusive_group(required=True)
     sg.add_argument("--original")
     sg.add_argument("--original-file")
-    sub.add_parser("resume", help="撤销挂起").add_argument("module")
+    rs = sub.add_parser("resume", help="撤销挂起（要用户原话）")
+    rs.add_argument("module")
+    rg = rs.add_mutually_exclusive_group(required=True)
+    rg.add_argument("--original")
+    rg.add_argument("--original-file")
     sub.add_parser("sessions", help="列出模块会话的事实（只读）").add_argument("--json", action="store_true")
     sub.add_parser("resume-kit", help="生成换会话恢复说明").add_argument("module")
     se = sub.add_parser("serial", help="退回串行／恢复并行")

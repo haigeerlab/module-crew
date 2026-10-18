@@ -40,7 +40,7 @@ worktree、会话登记、开工说明一次准备好，协调会话再用桌面
 ## 关键决策与取舍（请重点审）
 
 1. **`prepare` 先全部校验、再逐个模块落地，每个模块一个事务；中途失败就停，已完成的保留，可以重跑。**
-   校验项：probe 无阻塞；每个模块都在 `startable.modules` 里；没有在用的同名模块会话；worktree 目录与同名分支都不存在；数量不超过空位。
+   校验项：probe 无阻塞；每个模块都在 `startable.modules` 里；没有在用的同名模块会话（挂起的也算在用）；worktree 目录与同名分支都不存在；数量不超过空位。
    落地顺序（每个模块）：`git worktree add -b <模块 id> <路径> <集成分支>` → 状态库事务（登记会话、写开工说明正文）。
    `git worktree add` 是状态库之外的副作用，没法和事务绑在一起；所以失败时**不删已建的 worktree**（遵守不删除原则），
    重跑时已登记的模块会被「已有在用会话」挡住、跳过；只建了 worktree 没登记的，会被「目录已存在」挡住，输出里写明怎么处理（交用户决定）。
@@ -50,6 +50,9 @@ worktree、会话登记、开工说明一次准备好，协调会话再用桌面
 4. **运行配置第一次 `prepare` 时写定**：`projectShort` 必须由参数给出（小写字母、数字、连字符，2～20 位），之后不可再改（改名会让邮箱名对不上）；
    `integrationBranch` 取当前分支；`maxModules` 默认 3，可用 `--max` 改；`crewDir` 按假设 3 算出。后续 `prepare` 读配置，不再接受这几个参数。
 5. **开工说明正文是状态库里的不可变正文**（crew-store 的 `body`）；`prepare` 输出每个模块的 worktree 路径、邮箱名、正文路径，协调会话把正文原样作为新会话的第一条消息。
+6. **提议与名额以 crew 自己的会话为准**（2026-10-18 修订）：`start plan` 不提议已有在用模块会话的模块（含挂起的），即使 `startable` 列了它；
+   已合入的模块（有关闭为 merged 的合并批准）不再占名额，不必等 `merge cleanup`；没有可开的模块时，逐个写出能力图上未完成模块不能开的原因
+   （取 `/map --json`：「spec-guard 的当前模块（<状态>）」「等 <依赖>」「已有模块会话」「挂起中」），不再只打印空位。
 
 ## 接口约定
 
@@ -60,7 +63,7 @@ bin/module-crew start plan [--json]
 bin/module-crew start prepare <模块 id>… (--original <原话> | --original-file <文件>) [--project-short <简称>] [--max <N>] [--json]
 ```
 
-- `start plan` 输出：空位数、提议开的模块（按 Build order，最多空位数个）及其职责、`conflicts`（如有，原样列出）、阻塞项（如有）。退出码 `0` 有可开的模块；`3` 有阻塞或没有可开的；`2` 参数错。
+- `start plan` 输出：空位数、提议开的模块（按 Build order，最多空位数个）及其职责、`conflicts`（如有，原样列出）、阻塞项（如有）。退出码 `0` 有可开的模块；`3` 有阻塞或没有可开的（没有可开的时逐个写出原因，`--json` 的 `reasons` 列出 `{module, reason}`）；`2` 参数错。
 - `start prepare` 输出：每个模块一段（worktree、分支、邮箱名、开工说明正文路径、角色标记结果）、批准事项编号、集成 checkout 的角色标记结果。
   角色标记命令取 `checkoutRole.commands`，安全限制与 `/map` 相同（`python3` 开头、脚本在 spec-guard 安装目录内），填 `<module-id>`、`<checkout-root>` 并加 `--confirm`，参数列表、带超时、不经 shell。
   设角色失败（入口缺失、退出码非 0）**不算中途失败**：worktree 与登记照常保留，该模块一段写「角色标记未设」、原因与可手动执行的命令，退出码不变；
@@ -132,6 +135,10 @@ python3 -m unittest discover -s tests -v
 9. 角色标记：`prepare b c` 后 b、c 两个 worktree 的角色标记分别为 `module b`、`module c`，集成 checkout 为 `coordinator`；集成 checkout 已是别的角色时不覆盖；
    假 `checkoutRole` 脚本失败或 interface 没有 `checkoutRole` 时，worktree 与登记照常完成、退出码 0，输出写明「角色标记未设」与手动命令。
 
+10. 挂起中的 b：`startable` 仍列 b 时 `start plan` 不提议 b、`start prepare b` 退出码 3。
+11. b 已合入（合并批准关为 merged）但未 `merge cleanup`：空位与 b 已收回时相同。
+12. 能力图剩 w（spec-guard 当前模块）与 r（依赖 w）、没有可开的：`start plan` 退出码 3，输出逐行写出 w、r 的原因；`--json` 的 `reasons` 可解析。
+
 ## 未决问题
 
 - `/map --json` 里每个模块的依赖字段名以 spec-guard 0.68.0 实际输出为准（现行 0.67.0 为 `dependsOn`，验收 6 按它写）。
@@ -145,3 +152,4 @@ README 的「一次完整流程」从这里开始写：`status` → `start plan`
 - 2026-10-18：空位计算与名额检查不再数挂起的模块会话（会话登记 `suspended` 非空）；运行配置 `mode` 为 `serial` 时，`start plan` 把「已退回串行」列为阻塞、`start prepare` 退出码 3 拒绝开新模块（沿用原有退出码含义）。原因：crew-failure 要求挂起不占名额、用户可随时退回串行；来源：`spec/crew-failure.md`（用户 2026-10-18 批准），随 crew-failure 最终验收复审。
 - 2026-10-18：`start prepare` 建好 worktree 后用 interface 1.1 的 `checkoutRole.setModule` 设角色标记，集成 checkout 没有角色时用 `setCoordinator`；设角色失败只报告、不算中途失败；删去「角色标记待 spec-guard 0.68.0」提示与对应未决问题，增加验收 9。原因：interface 1.1 定稿 `checkoutRole`；来源：spec-guard 负责人通知 interface.json 1.1 定稿（spec-guard 分支 `claude/module-concurrency` 提交 6231abc，0.68.0 未发版），用户 2026-10-18 复审批准。
 - 2026-10-18：`start prepare` 输出提醒协调会话注册自己的邮箱名 `<简称>-coord`；协调会话 skill「开工」加这一步，并写明开会话工具强制附带的背景要标明「不是开工说明」。原因：试点发现缺口 D 与宿主限制 F；来源：第 7 关试点（`docs/pilot-report.md`），用户 2026-10-18 批准。
+- 2026-10-18：`start plan` 不提议已有在用会话（含挂起）的模块；已合入的模块不占名额；没有可开的模块时逐个写原因（关键决策 6、接口约定），增加验收 10–12。原因：试点问题 H、O、P；来源：第二轮试点（`docs/pilot-report.md` 第二轮一节），用户 2026-10-18 批准修法。

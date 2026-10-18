@@ -16,7 +16,11 @@ description: 本会话是 module-crew 的协调会话时使用：开工说明点
 
 1. 先跑 `module-crew status`，以它为准重建全貌，不凭对话记忆。
 2. 看 agent-relay 在线状态（`bridge_sessions`／`bridge_agents`）：哪个模块会话处于「等待审批」，就提醒用户去那个会话点权限弹窗——那只能用户在原会话亲手点。
-3. 读 `bridge_inbox`，逐条按下节处理，处理完 `bridge_ack`。
+3. 核对各模块会话的权限模式（桌面版会话列表或 `get_session`）：按 plan < default < acceptEdits < auto < bypassPermissions 排，
+   比本会话宽的就告诉用户是哪个会话、现在是什么模式，由用户决定要不要调回去；不要自己改。弹窗里点「本会话都允许」会把模式抬高。
+4. 读 `bridge_inbox`，逐条按下节处理，处理完 `bridge_ack`。
+
+- **对方空闲时要另外叫醒**：`bridge_send` 结果里 `wake.pendingReason` 是 `offline`（或 `deliveryState` 为 queued 且带「not running」警告、`bridge_agents` 里 `presence.state` 为 `stopped`），说明桌面版已经停掉了对方的空闲会话，agent-relay 叫不醒它（宿主限制）。这时用桌面版的跨会话消息（`SendMessage`，`to` 填对方会话 id）发一句「去读 agent-relay 收件箱」，**不带消息正文**，正文以信箱为准。对方是 Codex 会话时做不到，告诉用户去打开那个会话。
 
 ## 开工（扩张点）
 
@@ -86,8 +90,10 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 2. 用户批准（批准即授权合入本地集成分支）：`module-crew merge approve <交审编号>… --original-file <原话文件>`（可一次给多个编号），逐条发出输出的【用户答复】。
    合入并通过检查后，`merge run` 会在集成分支替模块勾上 todo 里剩下的最终验收项；模块会话不再自己勾。
    修订前合并、漏勾了的模块：用户同意后 `module-crew merge tick <模块> --original-file <原话文件>` 补勾。
-3. `module-crew merge run`（第一次加 `--check-command "<项目 Spec 里的完整检查命令>"`）：一次只合队首一个；按输出逐条发通知，发完再跑下一次。
-   - 退出码 5：模块被退回（检查失败已撤销，或冲突已中止），把退回类【协调通知】发给它；3：合并前清单不过，按原因处理；4：撤销本身失败，交用户。
+3. `module-crew merge run`（第一次加 `--check-command "<项目 Spec 里的完整检查命令>"`）：一次只合队首一个（队列按模块在 Build order 里的位置排，不按批准先后）；按输出逐条发通知，发完再跑下一次。
+   - 退出码 5：模块被退回（检查失败时集成分支已重置回合并前、模块分支原样保留，或冲突已中止），把退回类【协调通知】发给它，通知里带失败的检查行；
+     失败与模块无关（检查环境的问题）时如实告诉用户和模块，修好环境后模块直接重新交审即可。3：合并前清单不过，按原因处理；4：集成分支顶端不是本次合并提交或撤销失败，没动，交用户。
+   - 同步基线通知不发给挂起中的模块；它恢复时 `resume` 会补发。
    - 检查命令要改，先问用户，再加 `--replace-check`。
 4. 模块合入后、用户同意收回时：`module-crew merge cleanup <模块> --original-file <原话文件>`。输出列出待退役的邮箱名：
    逐个交给用户确认，用户同意后由用户在 Claude Code 里用 `/agent-relay:collaboration` 退役（Codex 用 collaboration-ops skill，或用户自己运行 agent-relay 的退役脚本）；
@@ -100,7 +106,9 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 - **谁悄悄停下了**：`module-crew sessions` 只列事实（最后动静、未关等待单与事项、当前档位、挂起原因），不下结论；
   结合 agent-relay 在线状态自己判断，拿不准就问那个会话或问用户，不要替用户认定它已停下。
 - **等外部条件**（等设计稿、等别人交付）：用户同意后 `module-crew suspend <模块> --reason "<原因>" --original-file <原话文件>`，
-  它不再占名额；请那个模块会话在自己的 worktree 里用 spec-guard 挂起。条件满足后 `module-crew resume <模块>`。
+  它不再占名额；把输出的挂起类【协调通知】原样发给那个模块会话，它会停在当前停点、在自己的 worktree 里用 spec-guard 挂起。
+  条件满足、用户同意恢复后 `module-crew resume <模块> --original-file <原话文件>`，按输出发恢复类【协调通知】；挂起期间有模块合入时，通知里已写明先同步。
+- **已合入的模块**：一合入就不再占名额，不用等 `merge cleanup`。`start plan` 没有可开的模块时会逐个写出原因，照着告诉用户。
 - **会话崩溃或换会话**：`module-crew resume-kit <模块>` 生成恢复说明；用户同意后 `module-crew takeover <邮箱名> --original-file <原话文件>`，
   在原 worktree 开新会话，第一条消息用恢复说明全文。
 - **用户想收手**：`module-crew serial --original-file <原话文件>` 退回串行，之后不再开新模块，已开的模块照常交审、合并、收尾；

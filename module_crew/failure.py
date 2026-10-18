@@ -26,27 +26,74 @@ def _need(original: str | None) -> None:
         raise FailureRefused("用户原话不能为空：只记用户在本会话亲手输入的话")
 
 
-def suspend(db: store.Store, module: str, reason: str, original: str) -> str:
+@dataclass
+class Changed:
+    name: str
+    sends: list[dict]        # {"to", "kind", "body", "path"}: bodies the coordinator sends unchanged
+
+
+SUSPEND_TODO = ("停在当前停点，不构建、不发交审；挂起期间收到同步基线也先不动。"
+                "在本 worktree 用 spec-guard 挂起（/spec-guard:module-suspend，原因照抄）")
+RESUME_TODO = "在本 worktree 取消 spec-guard 的挂起，从原停点继续"
+
+
+def _approval(tx, kind: str, module: str, original: str) -> int:
+    """An answered item recording the user's words; suspend/resume notices cite it (contract v1.8)."""
+    n = tx.allocate_number()
+    tx.put("item", str(n), {"state": "closed", "kind": kind, "module": module, "closedReason": "answered",
+                            "answer": {"original": original, "answeredAt": store.now(), **store.source_field()}},
+           action="answered")
+    return n
+
+
+def _send(tx, db: store.Store, sends: list[dict], to: str, kind: str, text: str) -> None:
+    n = tx.allocate_number()
+    meta = tx.write_body(n, text)
+    sends.append({"to": to, "kind": kind, "body": n, "path": str(db.path / meta["path"])})
+
+
+def suspend(db: store.Store, module: str, reason: str, original: str) -> Changed:
     """Mark the module session as waiting on an outside condition; it stops counting against the limit."""
+    from module_crew import protocol
     _need(original)
     if not reason or not reason.strip():
         raise FailureRefused("挂起原因不能为空")
+    sends: list[dict] = []
     with db.transaction(actor="coordinator") as tx:
         name, rec = _dev_of(tx.records("session"), module)
         if rec.get("suspended"):
             raise FailureRefused(f"模块 {module} 已挂起（{rec['suspended'].get('reason')}）")
-        mark = {"reason": reason.strip(), "at": store.now(), "original": original}
+        n = _approval(tx, "suspend", module, original)
+        mark = {"reason": reason.strip(), "at": store.now(), "original": original, "approval": n}
         tx.put("session", name, {**rec, "suspended": mark}, action="suspended")
-    return name
+        _send(tx, db, sends, name, "suspend", protocol.render_coordination_notice(
+            kind="suspend", reason=reason.strip(), basis=f"用户批准事项 #{n}（挂起 {module}）", todo=SUSPEND_TODO))
+    return Changed(name, sends)
 
 
-def resume(db: store.Store, module: str) -> str:
+def resume(db: store.Store, module: str, original: str) -> Changed:
+    """Lift the suspension; the notice says to sync first when modules were merged meanwhile."""
+    from module_crew import protocol
+    _need(original)
+    sends: list[dict] = []
     with db.transaction(actor="coordinator") as tx:
         name, rec = _dev_of(tx.records("session"), module)
-        if not rec.get("suspended"):
+        mark = rec.get("suspended")
+        if not mark:
             raise FailureRefused(f"模块 {module} 没有挂起")
-        tx.put("session", name, {**rec, "suspended": None}, action="resumed")
-    return name
+        n = _approval(tx, "resume", module, original)
+        tx.put("session", name, {**rec, "suspended": None}, action="resumed", data={"original": original})
+        log = store.events(db)
+        since = max((e["seq"] for e in log if e["type"] == "session.suspended" and e["key"] == name), default=0)
+        items = tx.records("item")
+        merged = [(e["key"], items.get(e["key"]) or {}) for e in log if e["type"] == "item.merged" and e["seq"] > since]
+        basis = f"用户批准事项 #{n}（恢复 {module}）" + (f"，挂起依据 #{mark['approval']}" if mark.get("approval") else "")
+        todo = RESUME_TODO
+        if merged:
+            done = "、".join(f"{r.get('module')}（合并批准事项 #{k}，{(r.get('mergeCommit') or '')[:7]}）" for k, r in merged)
+            todo = f"集成分支在挂起期间合入了 {done}：先把集成分支合进你的模块分支、跑完整检查，再{RESUME_TODO}"
+        _send(tx, db, sends, name, "resume", protocol.render_coordination_notice(kind="resume", basis=basis, todo=todo))
+    return Changed(name, sends)
 
 
 def _related(event: dict, name: str, module: str) -> bool:
@@ -143,7 +190,7 @@ def resume_kit(db: store.Store, module: str) -> Kit:
     """Store the first message for a new conversation that takes over `module` in its original worktree."""
     from module_crew import hooks
     name, rec = _dev_of(store.records(db, "session"), module)
-    context = hooks.session_start(rec["worktree"], "compact") or ""
+    context = hooks.session_start(rec["worktree"], "startup") or ""
     text = "\n".join([f"模块：{module}　邮箱名：{name}　worktree：{rec['worktree']}", "", context, "",
                       RECOVERY_NOTE.format(name=name)]) + "\n"
     with db.transaction(actor="coordinator") as tx:

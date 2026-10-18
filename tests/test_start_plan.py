@@ -44,10 +44,6 @@ class PlanTest(StartCase):
         self.assertEqual(p.modules, [])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PlanCliTest(StartCase):
     def test_human_and_json(self):
         r = self.run_cli("start", "plan")
@@ -63,3 +59,49 @@ class PlanCliTest(StartCase):
         r = self.run_cli("start", "plan")
         self.assertEqual(r.returncode, 3)
         self.assertIn("集成基线不干净", r.stdout)
+
+
+class PilotRound2Test(StartCase):
+    def dev(self, module, **extra):
+        db = store.open_store(self.repo) if (self.repo / ".git" / "module-crew").exists() else store.init_store(self.repo)[0]
+        with db.transaction(actor="t") as tx:
+            tx.put("session", f"shop-{module}", {"role": "dev", "host": "claude-desktop", "status": "active",
+                                                 "module": module, "worktree": f"/tmp/{module}", **extra}, action="registered")
+        return db
+
+    def test_suspended_module_not_proposed(self):
+        self.dev("b", suspended={"reason": "等设计稿", "at": "2026-10-18T00:00:00+08:00", "original": "挂起 b"})
+        p = start.plan(self.repo)
+        self.assertEqual(p.slots, 3)
+        self.assertEqual([m["id"] for m in p.modules], ["c", "d"])      # problem H
+
+    def test_merged_module_frees_its_slot(self):
+        db = self.dev("b")
+        with db.transaction(actor="t") as tx:
+            tx.put("item", "9", {"kind": "merge-approval", "module": "b", "state": "closed", "closedReason": "merged"},
+                   action="merged")
+        self.assertEqual(start.plan(self.repo).slots, 3)                # problem O
+
+    def test_reasons_when_nothing_startable(self):
+        from helpers import START_MAP
+        mods = [dict(m) for m in START_MAP["modules"]]
+        for m in mods:
+            m["status"] = {"a": "done", "b": "in_progress", "c": "done", "d": "done", "e": "not_ready"}[m["id"]]
+        mods[1]["step"] = "写 Spec"
+        self.set_map(dict(START_MAP, modules=mods, startable={"modules": [], "conflicts": []}))
+        p = start.plan(self.repo)
+        self.assertEqual(p.modules, [])
+        reasons = {r["module"]: r["reason"] for r in p.reasons}
+        self.assertIn("spec-guard 的当前模块", reasons["b"])
+        self.assertIn("等 b", reasons["e"])
+        r = self.run_cli("start", "plan")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("b：", r.stdout)
+        self.assertIn("e：", r.stdout)
+        import json
+        doc = json.loads(self.run_cli("start", "plan", "--json").stdout)
+        self.assertEqual({x["module"] for x in doc["reasons"]}, {"b", "e"})
+
+
+if __name__ == "__main__":
+    unittest.main()

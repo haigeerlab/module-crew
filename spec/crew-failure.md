@@ -50,13 +50,16 @@
 
 ```bash
 bin/module-crew suspend <模块 id> --reason <原因> (--original <原话> | --original-file <文件>)
-bin/module-crew resume <模块 id>
+bin/module-crew resume <模块 id> (--original <原话> | --original-file <文件>)
 bin/module-crew sessions [--json]
 bin/module-crew resume-kit <模块 id>
 bin/module-crew serial (--original <原话> | --original-file <文件>) [--off]
 ```
 
-- `suspend`／`resume`：`0` 成功；`3` 模块没有在用会话、已挂起（`suspend`）或未挂起（`resume`）、原话为空。
+- `suspend`／`resume`：`0` 成功；`3` 模块没有在用会话、已挂起（`suspend`）或未挂起（`resume`）、原话为空。（2026-10-18 修订：`resume` 也要用户原话）
+- `suspend`／`resume` 各记一条已答事项（`kind` 为 `suspend`／`resume`，含用户原话），并生成一条契约 v1.8 的【协调通知】（类型挂起／恢复）给模块会话：
+  挂起类带「原因」，「依据」写那条事项编号；恢复类「依据」写恢复事项编号与当初的挂起依据。「要你做什么」另带 module-crew 的做法（在本 worktree 用 spec-guard 挂起／取消挂起）；
+  挂起之后有模块合入集成分支时，恢复类「要你做什么」写明先把集成分支合进模块分支、跑完整检查再继续（含合入的模块与合并批准事项编号）。
 - `sessions`：`0`；没有在用模块会话时输出「没有在用的模块会话」，仍为 `0`。
 - `resume-kit`：输出 worktree 路径、邮箱名与恢复说明正文路径；`0` 成功；`3` 模块没有在用会话。
 - `serial`：`0` 成功；`3` 已是该模式或原话为空。
@@ -97,7 +100,7 @@ python3 -m unittest discover -s tests -v
 ## 验收标准
 
 1. `suspend b --reason "等设计稿" --original "先挂起 b"`：b 的会话登记带 `suspended`（原因、时间、原话）、状态仍为 `active`；`start plan` 空位从 1 变为 2（上限 3、在用 b、c）；再挂一次退出码 3。
-2. `resume b`：`suspended` 为 `null`，空位恢复；未挂起时 `resume` 退出码 3。
+2. `resume b --original "恢复 b"`：`suspended` 为 `null`，空位恢复，事件记原话；未挂起或原话为空时 `resume` 退出码 3。（2026-10-18 修订）
 3. 挂起的 b 仍能被钩子识别为模块会话、仍能 `inbox add` 收件。
 4. `sessions` 列出 b、c：最后动静时间、未关等待单与事项编号、四档状态、挂起原因（如有）；`--json` 可解析；不含任何「已停下」之类的判断字样。
 5. `resume-kit b`：正文含模块、邮箱名、worktree、当前档位、「以状态库为准」、`takeover` 与 `bridge_register` 的做法；存为正文、可按编号读回。
@@ -106,6 +109,9 @@ python3 -m unittest discover -s tests -v
 8. 两份 skill 新增一节：协调会话「出状况时」（`sessions` 结合 agent-relay 在线状态判断、`suspend`／`resume`、`resume-kit` 配合 `takeover`、`serial` 与 `/spec-guard:config`、异常停点／同一 gate 再挡／改能力图按 spec-guard 规则）；模块会话「挂起与异常」（等外部条件时请协调会话挂起并在本 worktree 用 spec-guard 挂起、同一 gate 再挡时停下交协调会话）。
 9. crew-start 修订：`start.plan`／`validate` 不数挂起会话、`mode: "serial"` 时拒绝；crew-start 原有测试全部通过；`spec/crew-start.md` 末尾追加变更记录。
 
+10. `suspend b` 与 `resume b` 各输出一条给 b 的挂起／恢复类【协调通知】（`protocol.parse` 合格，依据里的编号指向记着用户原话的事项，恢复类同时列出挂起依据）；b 挂起期间 c 合入后，恢复类「要你做什么」写明先同步并含 c 的合并批准事项编号，没有合入时不写。
+11. `resume-kit b`：正文不含「刚压缩过」；b 有未关的最终验收交审时「当前」写「最终验收已交审（交审事项 #N）」。
+
 ## 未决问题
 
 无。
@@ -113,3 +119,5 @@ python3 -m unittest discover -s tests -v
 ## 文档建议
 
 README 增加「出状况时怎么办」：挂起、换会话、退回串行。能力图全部完成后另提一次整体文档建议。
+- 2026-10-18：`resume` 要用户原话；`suspend`／`resume` 生成给模块的通知正文（契约 v1.8 前为非协议消息，已向契约负责人提需求），`resume` 在挂起期间有合入时补发同步基线；恢复说明不再带压缩提示；增加验收 10、11，改验收 2。原因：试点问题 M、I、L、J；来源：第二轮试点（`docs/pilot-report.md` 第二轮一节），用户 2026-10-18 批准修法。
+- 2026-10-18：契约 v1.8（c982bc3）新增挂起、恢复类【协调通知】，`suspend`／`resume` 改为记一条已答事项并生成正式通知（取代上一条里的非协议正文与单独的同步基线通知），改验收 10。原因：契约负责人按本模块的需求发布 v1.8；来源：第二轮试点修法（用户 2026-10-18 批准「契约发版后改为正式通知」）。

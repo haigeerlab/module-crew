@@ -1,7 +1,7 @@
 """Local merge queue and remote hand-off (see spec/crew-merge.md).
 
 Approved final acceptances are merged into the local integration branch one at a time with
---no-ff and checked; failures are reverted (or aborted) and the module is sent back. Pushing
+--no-ff and checked; failures are reset away (or aborted) and the module is sent back. Pushing
 goes to a new remote branch and a PR the user merges.
 """
 
@@ -54,7 +54,7 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
         "state": "open", "kind": "merge-approval", "module": rec["module"], "review": review_no,
         "commit": rec["commit"], "from": rec["from"], "relayId": rec["relayId"],
         "answer": {"original": original, "answeredAt": answered_at, **store.source_field()},
-        "closedReason": None, "mergeCommit": None, "revertCommit": None, "reason": None,
+        "closedReason": None, "mergeCommit": None, "revertCommit": None, "resetTo": None, "reason": None,
     }, action="merge-approved")
     body = tx.allocate_number()
     meta = tx.write_body(body, text)
@@ -85,7 +85,7 @@ def queue(project: str | os.PathLike) -> list[tuple[int, dict]]:
 
 @dataclass
 class RunResult:
-    code: int                 # 0 merged / 2 no check command / 3 checklist failed or empty queue / 4 revert failed / 5 returned
+    code: int                 # 0 merged / 2 no check command / 3 checklist failed or empty queue / 4 reset refused or failed / 5 returned
     lines: list[str] = field(default_factory=list)
     approval: int | None = None
     merge_commit: str | None = None
@@ -139,6 +139,15 @@ def _run_check(cfg: dict, checkout: Path) -> str | None:
     return None
 
 
+_FAILED = re.compile(r"^(FAIL|ERROR|FAILED)\b")
+
+
+def _failed_lines(reason: str) -> str:
+    """The test runner's FAIL/ERROR lines (at most 5), so the module sees which check failed."""
+    hits = [line.strip() for line in reason.splitlines()[1:] if _FAILED.match(line.strip())][:5]
+    return f"（{'；'.join(hits)}）" if hits else ""
+
+
 def _notice(tx, db: store.Store, result: RunResult, to: str, kind: str, basis: str, todo: str) -> None:
     text = protocol.render_coordination_notice(kind=kind, basis=basis, todo=todo)
     body = tx.allocate_number()
@@ -147,7 +156,7 @@ def _notice(tx, db: store.Store, result: RunResult, to: str, kind: str, basis: s
 
 
 def run(project: str | os.PathLike, check_command: str | None = None, replace: bool = False) -> RunResult:
-    """Merge the head of the queue, run the full check, and revert or abort on failure."""
+    """Merge the head of the queue, run the full check, and reset or abort on failure."""
     project = Path(project)
     db = store.open_store(project)
     cfg, reasons, pending_write = _check_config(db, check_command, replace)
@@ -176,7 +185,7 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
 
     result = RunResult(0, approval=n)
     merged = _git(checkout, "merge", "--no-ff", "--no-edit", "-m", f"合入 {m}（合并批准事项 #{n}）", m)
-    revert = None
+    reset_to = None
     if merged.returncode != 0:
         conflicted = _git(checkout, "diff", "--name-only", "--diff-filter=U").stdout.split()
         _git(checkout, "merge", "--abort")
@@ -185,22 +194,29 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
         result.merge_commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
         reason = _run_check(cfg, checkout)
         if reason:
-            undo = _git(checkout, "revert", "-m", "1", "--no-edit", result.merge_commit)
+            # The merge commit was made just now, locally, and nobody has synced it: drop it rather than revert it,
+            # so the module branch can be merged again later with all of its changes (pilot round 2, problem K).
+            first = reason.splitlines()[0]
+            if _git(checkout, "rev-parse", "HEAD").stdout.strip() != result.merge_commit:
+                return RunResult(4, [f"#{n}（{m}）{first}；集成分支顶端已不是本次合并提交 {result.merge_commit[:7]}，没有撤销",
+                                     "交用户决定"], approval=n, merge_commit=result.merge_commit)
+            reset_to = _git(checkout, "rev-parse", f"{result.merge_commit}^1").stdout.strip()
+            undo = _git(checkout, "reset", "-q", "--hard", reset_to)
             if undo.returncode != 0:
-                return RunResult(4, [f"#{n}（{m}）{reason.splitlines()[0]}；撤销合并失败：{undo.stderr.strip()[:200]}",
-                                     "集成 checkout 处于撤销中途，交用户决定"], approval=n, merge_commit=result.merge_commit)
-            revert = _git(checkout, "rev-parse", "HEAD").stdout.strip()
+                return RunResult(4, [f"#{n}（{m}）{first}；撤销合并失败：{undo.stderr.strip()[:200]}",
+                                     "集成 checkout 状态未知，交用户决定"], approval=n, merge_commit=result.merge_commit)
 
     tick_line = None if reason else _tick(checkout, m, n)[1]
     with db.transaction(actor="coordinator") as tx:
         current = tx.get("item", str(n))
         if reason:
             result.code = 5
-            first = reason.splitlines()[0]
+            first = reason.splitlines()[0] + _failed_lines(reason)
             tx.put("item", str(n), dict(current, state="closed", closedReason="returned", reason=reason,
-                                        mergeCommit=result.merge_commit, revertCommit=revert),
+                                        mergeCommit=result.merge_commit, resetTo=reset_to),
                    action="returned")
-            where = f"已撤销合并提交 {result.merge_commit[:7]}（撤销提交 {revert[:7]}）" if revert else "集成基线未改动"
+            where = (f"已撤销合并：集成分支回到合并前的 {reset_to[:7]}，你的分支原样保留，修好后直接重新交审" if reset_to
+                     else "集成基线未改动")
             _notice(tx, db, result, rec["from"], "returned",
                     basis=f"最终验收的合并批准事项 #{n}；{first}；{where}",
                     todo="同步集成基线、修好后重新发最终验收【交审】")
@@ -216,7 +232,7 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
                     and (v.get("state") == "open" or v.get("closedReason") == "merged")}
             for name, s in sorted(tx.records("session").items()):
                 if (s.get("role") == "dev" and s.get("status") == "active" and name != rec["from"]
-                        and s.get("module") not in busy):
+                        and s.get("module") not in busy and not s.get("suspended")):  # resume sends it later
                     _notice(tx, db, result, name, "sync-baseline",
                             basis=f"模块 {m} 已合入集成基线 {short}（合并批准事项 #{n}）",
                             todo="把集成分支合进你的模块分支，跑完整检查后继续")

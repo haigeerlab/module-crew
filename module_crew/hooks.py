@@ -85,6 +85,7 @@ COMPACT_NOTE = "刚压缩过：先跑 `module-crew status`、读未完成的事�
 STAGE_WRITE = "写 Spec 与 Plan、发【交审】，收到开工通知之前不要构建"
 STAGE_BUILD = "Spec 与 Plan 已批准，可以构建；做完发最终验收【交审】"
 STAGE_WAIT_MERGE = "最终验收已批准，等协调会话合并"
+STAGE_WAIT_FINAL = "最终验收已交审（交审事项 #{n}），等用户批准；不要重做或重发"
 STAGE_MERGED = "已合入集成分支，停止开发，等协调会话收回 worktree"
 
 
@@ -102,6 +103,10 @@ def _stage(items: dict, module: str) -> str:
         return STAGE_MERGED
     if any(v.get("state") == "open" for _, v in merges):
         return STAGE_WAIT_MERGE
+    final = sorted(int(k) for k, v in items.items() if v.get("kind") == "review" and v.get("module") == module
+                   and v.get("node") == "final" and v.get("state") == "open")
+    if final:
+        return STAGE_WAIT_FINAL.format(n=final[-1])
     if {"spec", "plan"} <= approved:
         last = merges[-1][1] if merges else None
         if last and last.get("closedReason") == "returned":

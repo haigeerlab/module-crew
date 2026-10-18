@@ -10,7 +10,7 @@ from pathlib import Path
 
 from module_crew import protocol
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "session-protocol" / "v1.7"
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "session-protocol" / "v1.8"
 
 # Types this plugin parses / generates (spec 假设 2、3). Everything else is skipped and listed.
 PARSED = {"review-request", "shared-change-request", "coordination-notice", "wait-user", "wait-session", "resumed", "withdraw", "user-reply", "owner-handoff", "unknown"}
@@ -56,11 +56,11 @@ def diff(expected, actual, path="parse"):
 class FingerprintTest(unittest.TestCase):
     def test_pinned_fixtures_match_sums(self):
         self.assertEqual(verify_sums(FIXTURES), [])
-        self.assertIn("commit: 1e14a49", (FIXTURES / "SOURCE").read_text())
+        self.assertIn("commit: c982bc3", (FIXTURES / "SOURCE").read_text())
 
     def test_one_changed_byte_is_caught(self):
         with tempfile.TemporaryDirectory() as tmp:
-            copy = Path(tmp) / "v1.7"
+            copy = Path(tmp) / "v1.8"
             shutil.copytree(FIXTURES, copy)
             target = copy / "withdraw" / "basic.txt"
             data = bytearray(target.read_bytes())
@@ -88,7 +88,7 @@ class ConformanceTest(unittest.TestCase):
                 problems = diff(doc["parse"], actual)
                 self.assertEqual(problems, [], "\n".join(problems))
         print(f"\n  parse checked: {checked}; skipped: {', '.join(skipped) or 'none'}", file=sys.stderr)
-        self.assertEqual(checked, 59)
+        self.assertEqual(checked, 64)
 
 
 class GenerateConformanceTest(unittest.TestCase):

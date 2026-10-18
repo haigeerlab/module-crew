@@ -94,7 +94,9 @@ class TextTest(MergeCase):
             self.assertIn(words, text)
         self.approve_spec_plan("b", 100)
         self.assertIn("可以构建", self.stage("b"))
-        from module_crew import merge
+        from module_crew import merge, review
+        n = review.add(self.db, self.finish("b", path="src/b0.py"), "shop-b", 150).number
+        self.assertIn(f"最终验收已交审（交审事项 #{n}），等用户批准；不要重做或重发", self.stage("b"))
         self.approve_final("b", 200)
         self.assertIn("等协调会话合并", self.stage("b"))
         self.assertEqual(merge.run(self.repo, check_command="python3 -c pass").code, 0)

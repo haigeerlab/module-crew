@@ -124,14 +124,50 @@ class MergeTest(RunCase):
         self.assertIn("重新发最终验收【交审】", msg.fields["要你做什么"])
         return rec, msg
 
-    def test_check_fails_reverted(self):
+    def test_check_fails_reset(self):
         n = self.approve_final("b", 1)
-        before = tree(self.repo)
+        before = git(self.repo, "rev-parse", "HEAD").strip()
         res = merge.run(self.repo, check_command=self.check_script(fail_if="src/b.py"))
         rec, msg = self.assert_returned(res, n, "检查失败")
-        self.assertEqual(tree(self.repo), before)
-        self.assertEqual(rec["revertCommit"], git(self.repo, "rev-parse", "HEAD").strip())
-        self.assertIn(rec["revertCommit"][:7], msg.fields["依据"])
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD").strip(), before)   # no merge, no revert commit (pilot K)
+        self.assertEqual((rec["resetTo"], rec.get("revertCommit")), (before, None))
+        self.assertIn(before[:7], msg.fields["依据"])
+
+    def test_failed_lines_in_notice(self):
+        n = self.approve_final("b", 1)
+        script = self.tmp / "fail.py"
+        script.write_text("import sys\nprint('..F.')\nprint('FAIL: test_gate (tests.test_gate.T)', file=sys.stderr)\n"
+                          "print('ERROR: test_io (tests.test_io.T)', file=sys.stderr)\nsys.exit(1)\n", encoding="utf-8")
+        res = merge.run(self.repo, check_command=f"python3 {script}")
+        _, msg = self.assert_returned(res, n, "检查失败")
+        self.assertIn("FAIL: test_gate", msg.fields["依据"])
+        self.assertIn("ERROR: test_io", msg.fields["依据"])
+
+    def test_remerge_after_return_brings_changes(self):
+        flag = self.tmp / "gate.flag"
+        flag.write_text("x")
+        script = self.tmp / "gate.py"
+        script.write_text(f"import os, sys\nsys.exit(1 if os.path.exists({str(flag)!r}) else 0)\n", encoding="utf-8")
+        n = self.approve_final("b", 1)
+        self.assertEqual(merge.run(self.repo, check_command=f"python3 {script}").code, 5)
+        git(self.wt["b"], "merge", "-q", "--no-edit", "main")                   # module syncs the baseline
+        self.assertTrue((self.wt["b"] / "src" / "b.py").exists())               # sync did not delete its own file
+        flag.unlink()
+        out = review.add(self.db, self.finish("b", path="src/b2.py"), "shop-b", 2)
+        merge.approve(self.db, out.number, "再验收")
+        self.assertEqual(merge.run(self.repo).code, 0)
+        self.assertTrue((self.repo / "src" / "b.py").exists())
+        self.assertTrue((self.repo / "src" / "b2.py").exists())
+
+    def test_head_moved_during_check_not_reset(self):
+        n = self.approve_final("b", 1)
+        script = self.tmp / "move.py"
+        script.write_text("import subprocess, sys\nsubprocess.run(['git', 'commit', '-q', '--allow-empty', '-m', 'moved'])\n"
+                          "sys.exit(1)\n", encoding="utf-8")
+        res = merge.run(self.repo, check_command=f"python3 {script}")
+        self.assertEqual(res.code, 4, res.lines)
+        self.assertEqual(git(self.repo, "log", "-1", "--format=%s").strip(), "moved")
+        self.assertEqual(store.get(self.db, "item", str(n))["state"], "open")
 
     def test_check_timeout_reverted(self):
         n = self.approve_final("b", 1)
@@ -150,6 +186,6 @@ class MergeTest(RunCase):
         res = merge.run(self.repo, check_command="python3 -c pass")
         rec, msg = self.assert_returned(res, n, "冲突")
         self.assertIn("README.md", msg.fields["依据"])
-        self.assertIsNone(rec["revertCommit"])
+        self.assertIsNone(rec["resetTo"])
         self.assertEqual(git(self.repo, "rev-parse", "HEAD"), head)
         self.assertEqual(git(self.repo, "status", "--porcelain"), "")

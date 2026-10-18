@@ -1,4 +1,4 @@
-"""Parse and render session-protocol v1.7 messages (see spec/crew-protocol.md).
+"""Parse and render session-protocol v1.8 messages (see spec/crew-protocol.md).
 
 Pure functions only: no file, git or agent-relay access. Field names, tags and
 problem codes follow the contract text in session-protocol PROTOCOL.md.
@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-CONTRACT_VERSION = "1.7"
+CONTRACT_VERSION = "1.8"
 
 KIND_TAGS = {
     "等待用户": "wait-user",
@@ -41,7 +41,7 @@ FIELDS = {
     "answer-notice": ("事项", "用户原话", "答复时间", "说明"),
     "review-request": ("模块", "节点", "文件", "要点", "改动统计", "越界检查"),
     "shared-change-request": ("来自", "文件", "改什么", "为什么", "是否完全停住"),
-    "coordination-notice": ("类型", "依据", "要你做什么"),
+    "coordination-notice": ("类型", "原因", "依据", "要你做什么"),
     "unknown": (),
 }
 TERMINAL = {"原事项全文"}  # takes every remaining line
@@ -58,7 +58,9 @@ _SCOPE_RE = re.compile(rf"^[-*•·]?\s*([^\s：:]+)\s*{_COLON}\s*(.*)$")
 _SESSION_SEP = re.compile(r"[、,，+＋\s]+")
 _FILE_LINE_RE = re.compile(r"^(?:-\s+)?(\S.*?)\s+(sha256:[0-9a-f]{12,64})$")
 REVIEW_NODES = {"Spec": "spec", "Plan": "plan", "接口提案": "interface", "最终验收": "final"}
-NOTICE_KINDS = {"开工": "start", "同步基线": "sync-baseline", "接口变更": "interface-change", "收尾": "wrap-up", "退回": "returned"}
+NOTICE_KINDS = {"开工": "start", "同步基线": "sync-baseline", "接口变更": "interface-change", "收尾": "wrap-up", "退回": "returned",
+                "挂起": "suspend", "恢复": "resume"}
+NEED_REF = ("start", "returned", "suspend", "resume")   # notices whose 依据 must cite the user's approval
 _THIN_WORDS = ("详见", "已明确", "同上")
 # v1.6 「转自」: only these two wordings (contract section 3)
 _RELAY_HUB_RE = re.compile(r"^收件枢纽\s*[，,]\s*消息\s*#\s*(\d+)$")
@@ -379,7 +381,9 @@ def parse(text: str) -> Message:
         if raw_kind and notice_kind is None:
             problems.append("bad-notice-kind")
         refs = [int(x) for x in _NUM_RE.findall(fields.get("依据", ""))]
-        if notice_kind in ("start", "returned") and not refs:
+        if notice_kind == "suspend":
+            _require(fields, ("原因",), problems)
+        if notice_kind in NEED_REF and not refs:
             problems.append("missing-approval-ref")
         extra = {"notice": {"kind": notice_kind, "refs": refs}}
     elif kind == "wait-session":
@@ -485,7 +489,7 @@ def render_resumed(items: list[int], note: str) -> str:
     return text
 
 
-def render_coordination_notice(kind: str, basis: str, todo: str) -> str:
+def render_coordination_notice(kind: str, basis: str, todo: str, reason: str | None = None) -> str:
     """【协调通知】 from the coordinator; not an approval, never asks for a reply."""
     labels = {code: label for label, code in NOTICE_KINDS.items()}
     if kind not in labels:
@@ -493,7 +497,11 @@ def render_coordination_notice(kind: str, basis: str, todo: str) -> str:
     for name, value in (("依据", basis), ("要你做什么", todo)):
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"「{name}」不能为空")
-    if kind in ("start", "returned") and not _NUM_RE.search(basis):
-        raise ValueError("开工类与退回类通知的「依据」必须写明批准事项编号（#N）")
-    text = "\n".join(["【协调通知】", f"类型：{labels[kind]}", f"依据：{basis}", f"要你做什么：{todo}"]) + "\n"
-    return _self_check(text, "coordination-notice", {"依据": basis, "要你做什么": todo})
+    if kind in NEED_REF and not _NUM_RE.search(basis):
+        raise ValueError("开工、退回、挂起、恢复类通知的「依据」必须写明批准事项编号（#N）")
+    if (kind == "suspend") != bool(reason and reason.strip()):
+        raise ValueError("「原因」只用于挂起类，且挂起类必填")
+    head = ["【协调通知】", f"类型：{labels[kind]}"] + ([f"原因：{reason}"] if kind == "suspend" else [])
+    text = "\n".join(head + [f"依据：{basis}", f"要你做什么：{todo}"]) + "\n"
+    expected = {"依据": basis, "要你做什么": todo, **({"原因": reason} if kind == "suspend" else {})}
+    return _self_check(text, "coordination-notice", expected)

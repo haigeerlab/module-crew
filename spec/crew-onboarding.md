@@ -29,7 +29,7 @@
 2. 协调会话用记账命令：`inbox add` 解析【等待用户】【等待其他会话】【已恢复】【撤回】并记账或给出退回原因，【等待用户】按契约默认取代；`answer` 生成【用户答复】正文、写进状态库、打印正文路径、记事项已答；【交审】【公共变更请求】只解析不记账。
 3. 用户原话真实性靠 skill 规则（只转达用户在本会话亲手输入的话）；命令原样保存传入的原话。
 4. 模块会话核对答复靠 skill 规则：`protocol check`、发件人是登记的在用协调会话、原消息号是自己发过的（用 `bridge_outbox` 核对）、执行前回显。
-5. 权限弹窗：协调会话醒来时看 agent-relay 在线状态里的「等待审批」，提醒用户去那个会话点。
+5. 权限弹窗：协调会话醒来时看 agent-relay 在线状态里的「等待审批」，提醒用户去那个会话点。（2026-10-18 补充）醒来时还核对各模块会话的权限模式，比本会话宽（plan < default < acceptEdits < auto < bypassPermissions）就告诉用户、由用户决定，协调会话不自己改。
 6. 被挡住必须发【等待其他会话】；模块做完发节点为最终验收的【交审】。
 7. 邮箱身份 `<项目简称>-coord`／`<项目简称>-<模块 id>`、`wake: "auto"`，注册归 crew-start，skill 只写换会话后按状态库登记重新注册；`takeover` 归 crew-recovery-hooks。
 
@@ -140,6 +140,8 @@ python3 -m unittest discover -s tests -v
 12. `ticket close <编号> --reason happened --original-file <说明>`：开着的等待单关为原因 3（所等的事已发生）并记下说明；`--reason user` 关为原因 4（用户关闭）并记下用户原话；
     不存在、已关闭或说明为空：退出码 3，状态库不变。协调会话 skill 有「等待单」一节：模块还在时办好它等的事、请它发【已恢复】自己关；模块已收回或用户说关时用 `ticket close`。（2026-10-18 修订）
 
+13. 两份 skill 写明叫醒：`bridge_send` 结果的 `wake.pendingReason` 为 `offline`（或 queued 且带 not running 警告、`presence.state` 为 `stopped`）时，Claude 会话用桌面版跨会话消息发一句不带正文的「去读 agent-relay 收件箱」；Codex 会话做不到，交用户打开对方会话。协调会话 skill 写明权限模式核对与合并队列按 Build order 排。
+
 ## 未决问题
 
 无。
@@ -151,3 +153,4 @@ README 的「一次完整流程」里引用两份 skill 的要点；本模块不
 ## 变更记录
 
 - 2026-10-18：增加 `ticket close`，按契约第 11 节原因 3（所等的事已发生）或 4（用户关闭）由协调会话关等待单；协调会话 skill 加「等待单」一节；增加验收 12。原因：试点中发单的模块已收回、无法再发【已恢复】，等待单 #25 关不掉（问题 I）；来源：第 7 关试点收尾（`docs/pilot-report.md`），用户 2026-10-18 批准。
+- 2026-10-18：skill 增加空闲会话的叫醒做法（agent-relay 负责人确认为宿主限制 H1／H4，判断条件 `pendingReason == "offline"`）、协调会话醒来核对模块会话权限模式、合并队列按 Build order；补充假设 5，增加验收 13。原因：试点问题 G 与权限模式漂移；来源：第二轮试点（`docs/pilot-report.md` 第二轮一节），用户 2026-10-18 批准修法。

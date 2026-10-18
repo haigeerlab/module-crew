@@ -3,7 +3,7 @@
 让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个协调会话统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在协调会话里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.0.1。尚未做实地验证（第 7 关），见文末「尚未验证」。
+> 版本 0.0.1。已在试点项目上跑过两轮实地验证（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
 ## 前提
 
@@ -15,7 +15,7 @@
 | 项目 | git 仓库，能建 worktree；有一条能在本地跑完的完整检查命令，合并后用它判断集成是否通过 |
 | 运行环境 | Python 3（只用标准库） |
 
-消息格式以 [session-protocol](../session-protocol) 契约为准（现钉住 v1.7）。
+消息格式以 [session-protocol](../session-protocol) 契约为准（现钉住 v1.8）。
 
 ## 安装
 
@@ -60,7 +60,7 @@ bin/module-crew status
 5. **合并**
    - 模块做完发最终验收【交审】，用户批准后 `module-crew merge approve <交审编号> --original-file <原话文件>`。
    - `module-crew merge run`（第一次带 `--check-command "<完整检查命令>"`）：按 Build order 一次只合一个，`--no-ff` 合入本地集成分支后跑完整检查；
-     不过就撤销并退回该模块，冲突就中止并退回。
+     不过就把集成分支重置回合并前（模块分支原样保留）并退回该模块，冲突就中止并退回。
    - 合并成功：该模块收到收尾通知，其他在用模块收到同步基线通知。
 6. **收尾与推送**
    - 用户同意后 `module-crew merge cleanup <模块> --original-file <原话文件>` 收回 worktree（分支保留）。
@@ -74,12 +74,13 @@ bin/module-crew status
 | 情况 | 做法 |
 |---|---|
 | 不知道哪个会话停下了 | `module-crew sessions` 列出每个模块会话的最后动静、未关的等待单与事项、当前档位、挂起原因；只列事实，结合 agent-relay 在线状态自己判断 |
-| 某个模块会话在「等待审批」 | 权限弹窗只能用户去那个会话亲手点；协调会话醒来时会提醒 |
-| 模块在等外部条件（设计稿、别人交付） | 用户同意后 `module-crew suspend <模块> --reason "<原因>" --original-file <原话文件>`，不再占名额；模块会话在自己的 worktree 里用 spec-guard 挂起。条件满足后 `module-crew resume <模块>` |
+| 某个模块会话在「等待审批」 | 权限弹窗只能用户去那个会话亲手点；协调会话醒来时会提醒，并核对各模块会话的权限模式有没有变宽 |
+| 消息发出去对方没反应 | 桌面版会停掉空闲会话，agent-relay 叫不醒（`pendingReason: offline`）；用桌面版跨会话消息发一句「去读 agent-relay 收件箱」 |
+| 模块在等外部条件（设计稿、别人交付） | 用户同意后 `module-crew suspend <模块> --reason "<原因>" --original-file <原话文件>`，不再占名额；按输出把挂起正文发给模块会话，它在自己的 worktree 里用 spec-guard 挂起。条件满足、用户同意后 `module-crew resume <模块> --original-file <原话文件>` |
 | 会话崩溃或要换新会话 | `module-crew resume-kit <模块>` 生成恢复说明；用户同意后 `module-crew takeover <邮箱名> --original-file <原话文件>`，在原 worktree 开新会话，第一条消息用恢复说明，新会话用同一个邮箱名重新注册 |
 | 会话被压缩 | 钩子会提醒先跑 `module-crew status`、以状态库为准，不按压缩前的记忆重做 |
 | 想收手、不再并行 | `module-crew serial --original-file <原话文件>`：不再开新模块，已开的模块照常交审、合并、收尾；再用 `/spec-guard:config` 关掉 `moduleConcurrency`。恢复用 `serial --off` |
-| 合并被退回 | 模块会话同步集成基线、修好后重新发最终验收【交审】 |
+| 合并被退回 | 集成分支已回到合并前、模块分支不动；模块修好后重新发最终验收【交审】（不用撤销任何提交） |
 | 同一个 gate 再次挡住、异常停点、要改能力图 | 按 spec-guard 的规则办，把选项与代价交用户决定 |
 
 一个模块挂起、退回或崩溃，不影响其他模块的交审、合并与通知。
@@ -128,7 +129,9 @@ python3 -m unittest discover -s tests -v
 
 ## 尚未验证
 
-- 用真实的 spec-guard 0.68.0 跑通（现在用夹具模拟 `interface.json` 1.1 与 `/map --json`）。
-- 会话之间真实收发消息、「等待审批」在线状态、真实远端与 `gh` 开 PR。
-- 预配项目工具许可能否消除模块会话的大部分权限弹窗。
-- 已按 interface 1.1 定稿接入 `reviewMark`、`checkoutRole`（开工时设角色标记，钩子以它为准），待 0.68.0 发版后用真实安装副本核对。
+两轮试点（第一轮 auto 权限、第二轮默认权限）已经实地验证：真实 spec-guard 0.68.0、会话间真实收发、开工、批量审批、合并与退回、
+挂起与恢复、换协调会话与换模块会话、退回串行、收尾与推送到本机远端。还没验证的：
+
+- 用 `gh` 真正开 PR（试点远端是本机裸仓库，只打印 PR 正文）。
+- 预配项目工具许可能否减少模块会话的权限弹窗。
+- 挂起、恢复类【协调通知】（契约 v1.8）在真实会话之间收发。

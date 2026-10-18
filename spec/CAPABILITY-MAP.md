@@ -36,7 +36,7 @@ Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → cr
 ## 说明
 
 - 逗号组只表示「可以同时做」；本仓库自己串行开发（第 4 关不拿未完成的能力开发它自己）。
-- crew-protocol 依据 session-protocol v1.1（提交 78da46f，2026-10-18 批准）；现钉住 v1.7（1e14a49；v1.2～v1.7 只增不改：修正样例、补写现行做法、新增「退回」通知类型、转交答复的「转自」与【负责人转交】、【取代】只认枢纽事项号）。
+- crew-protocol 依据 session-protocol v1.1（提交 78da46f，2026-10-18 批准）；现钉住 v1.8（c982bc3；v1.2～v1.8 只增不改：修正样例、补写现行做法、新增「退回」「挂起」「恢复」通知类型、转交答复的「转自」与【负责人转交】、【取代】只认枢纽事项号）。
 - crew-start 起依赖 spec-guard 规划层发版（`moduleConcurrency`、`/map --json` 新字段、`interface.json` 1.1）；发版前用夹具推进，
   第 7 关实地验证必须用真实版本。
 - 防线 L1–L5（需求记录第 9 节）：出现「要改 spec-guard 阶段判断核心」「要在 spec-guard 里管会话」就停下复盘。
@@ -61,3 +61,4 @@ Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → cr
 - 2026-10-18：「说明」改为 crew-protocol 现钉住 session-protocol v1.4（e33c077）。来源：用户批准升级。模块、依赖与顺序不变。
 - 2026-10-18：「说明」改为 crew-protocol 现钉住 session-protocol v1.5（246e138）。来源：用户批准升级。模块、依赖与顺序不变。
 - 2026-10-18：「说明」改为 crew-protocol 现钉住 session-protocol v1.7（1e14a49）。原因：crew-hub-bridge 需要 v1.6 的转交条文；来源：用户批准的契约版本。模块、依赖与顺序不变。
+- 2026-10-18：「说明」改为 crew-protocol 现钉住 session-protocol v1.8（c982bc3）。原因：crew-failure 需要挂起、恢复通知（第二轮试点问题 I）；来源：第二轮试点修法，用户 2026-10-18 批准。模块、依赖与顺序不变。
