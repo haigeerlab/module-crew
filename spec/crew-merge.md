@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved 29089f4052df -->
+<!-- spec-guard: review approved 1b1a9052b52c -->
 # Spec: crew-merge
 
 > 能力图模块 `crew-merge`。需求来源：`docs/requirements-record.md` B5（两层合并）、假设 6（完整检查命令）、假设 9（远端合并由用户做）、第 5 节规则措辞（模块合入本地集成分支可在用户批准最终验收后由协调会话执行）。

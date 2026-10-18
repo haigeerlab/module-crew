@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved 20ecf128cd5b -->
+<!-- spec-guard: review approved 2f13bc03e836 -->
 # Spec: crew-shared-changes
 
 > 能力图模块 `crew-shared-changes`。需求来源：`docs/requirements-record.md` B3（公共文件变更）、B1（协调会话管集成基线与公共文件）、上游 Boundaries 的 Ask first；
