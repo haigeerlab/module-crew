@@ -6,7 +6,7 @@
   - 验收：Spec 验收 1；验收 3 的校验部分
   - 文件：`module_crew/sources.py`、`module_crew/__main__.py`、`tests/test_sources.py`
 
-- [ ] Task 2：批准入口接来源、`source map`
+- [x] Task 2：批准入口接来源、`source map`
   - 验收：Spec 验收 2、3、4
   - 文件：`module_crew/__main__.py`、`review.py`、`merge.py`、`start.py`、`changes.py`、`failure.py`、`inbox.py`、`hooks.py`、`sources.py`、`tests/test_sources.py`
 

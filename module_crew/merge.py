@@ -53,13 +53,13 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
     tx.put("item", str(approval), {
         "state": "open", "kind": "merge-approval", "module": rec["module"], "review": review_no,
         "commit": rec["commit"], "from": rec["from"], "relayId": rec["relayId"],
-        "answer": {"original": original, "answeredAt": answered_at},
+        "answer": {"original": original, "answeredAt": answered_at, **store.source_field()},
         "closedReason": None, "mergeCommit": None, "revertCommit": None, "reason": None,
     }, action="merge-approved")
     body = tx.allocate_number()
     meta = tx.write_body(body, text)
     tx.put("item", str(review_no), dict(rec, state="closed", closedReason="answered",
-                                        answer={"original": original, "answeredAt": answered_at, "body": body,
+                                        answer={"original": original, "answeredAt": answered_at, **store.source_field(), "body": body,
                                                 "approval": approval}),
            action="answered", data={"body": body})
     return Approved(approval, Reply(rec["from"], rec["relayId"], body, db.path / meta["path"]))
@@ -410,7 +410,7 @@ def push(project: str | os.PathLike, original: str) -> PushResult:
         meta = tx.write_body(body_no, plan.body)
         rec = {"state": "closed", "kind": "push", "closedReason": "pushed", "remoteBranch": plan.branch, "base": plan.base,
                "commits": plan.commits, "mergeCommits": [m["mergeCommit"] for m in plan.modules], "pr": None,
-               "body": body_no, "answer": {"original": original, "answeredAt": store.now()}}
+               "body": body_no, "answer": {"original": original, "answeredAt": store.now(), **store.source_field()}}
         tx.put("item", str(number), rec, action="pushed")
     body_path = db.path / meta["path"]
     gh = _gh()

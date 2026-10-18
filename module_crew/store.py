@@ -7,6 +7,8 @@ is a cache that can always be recomputed from the log.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import fcntl
 import hashlib
 import json
@@ -328,6 +330,25 @@ def _validate_session(key: str, rec: dict, others: dict) -> None:
             raise bad(f"模块 {rec.get('module')} 已有在用的模块会话 {other_key}")
 
 
+_SOURCE: contextvars.ContextVar[dict | None] = contextvars.ContextVar("approval_source", default=None)
+
+
+@contextlib.contextmanager
+def approval_source(source: dict | None):
+    """While active, every event written carries data.source, and answers record it (crew-hub-bridge)."""
+    token = _SOURCE.set(source)
+    try:
+        yield
+    finally:
+        _SOURCE.reset(token)
+
+
+def source_field() -> dict:
+    """{"source": ...} to merge into an answer record, or {} when no approval source is active."""
+    src = _SOURCE.get()
+    return {"source": src} if src else {}
+
+
 class Transaction:
     """Holds the store lock; on a clean exit writes bodies, then events, then snapshots."""
 
@@ -406,8 +427,9 @@ class Transaction:
             body = json.loads(json.dumps(record, ensure_ascii=False))
         except (TypeError, ValueError) as exc:
             raise InvalidRecord("record 不能序列化为 JSON") from exc
+        extra = {"source": _SOURCE.get()} if _SOURCE.get() else {}
         event = {"v": VERSION, "seq": self._next_seq, "at": now(), "type": f"{kind}.{action}",
-                 "key": key, "actor": self.actor, "data": {**(data or {}), "record": body}}
+                 "key": key, "actor": self.actor, "data": {**extra, **(data or {}), "record": body}}
         self._next_seq += 1
         if kind in NUMBERED:
             self._next_number = max(self._next_number, int(key) + 1)

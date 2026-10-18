@@ -113,7 +113,7 @@ def answer(db: store.Store, number: int, original: str) -> Reply:
         body = tx.allocate_number()
         meta = tx.write_body(body, text)
         tx.put("request", str(number), dict(rec, state="closed", closedReason="declined",
-                                            answer={"original": original, "answeredAt": answered_at, "body": body}),
+                                            answer={"original": original, "answeredAt": answered_at, **store.source_field(), "body": body}),
                action="declined", data={"body": body})
         _close_ticket(tx, rec)
     return Reply(rec["from"], rec["relayId"], body, db.path / meta["path"])
@@ -176,7 +176,7 @@ def land(project: str | os.PathLike, number: int, original: str | None = None) -
     basis = f"公共变更请求 #{number} 已在集成基线提交 {commit[:7]}"
     todo = "把集成分支合进你的模块分支，跑完整检查后继续"
     with db.transaction(actor="coordinator") as tx:
-        answer_rec = {"original": original, "answeredAt": store.now()} if original is not None else None
+        answer_rec = {"original": original, "answeredAt": store.now(), **store.source_field()} if original is not None else None
         tx.put("request", str(number), dict(rec, state="closed", closedReason="landed", commit=commit, answer=answer_rec),
                action="landed", data={"commit": commit})
         _close_ticket(tx, rec)

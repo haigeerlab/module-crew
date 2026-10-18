@@ -175,7 +175,7 @@ def answer(db: store.Store, number: int, original: str, option: str | None = Non
         body = tx.allocate_number()
         meta = tx.write_body(body, text)
         closed = dict(item, state="closed", closedReason="answered",
-                      answer={"original": original, "option": option_text[0] if option_text else None,
+                      answer={"original": original, **store.source_field(), "option": option_text[0] if option_text else None,
                               "answeredAt": answered_at, "body": body})
         tx.put("item", str(number), closed, action="answered", data={"body": body})
     return Reply(item["from"], item["relayId"], body, db.path / meta["path"])

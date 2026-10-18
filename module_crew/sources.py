@@ -77,3 +77,27 @@ def check(db: store.Store, name: str, item: int, relay_id: int, text: str | None
     if msg.item != item:
         raise SourceRefused(f"来源消息的事项是 #{msg.item}，不是 --source-item 给的 #{item}")
     return SourceInfo(msg.fields["用户原话"], {"name": name, "kind": row["kind"], "item": item, "relayId": relay_id})
+
+
+def map_item(db: store.Store, item: int) -> list[dict]:
+    """crew records approved through source item H (one H can cover several crew numbers)."""
+    rows, seen = [], set()
+    for e in store.events(db):
+        src = (e.get("data") or {}).get("source") or {}
+        if src.get("item") != item or e["type"].split(".")[0] != "item" or e["key"] in seen:
+            continue
+        seen.add(e["key"])
+        rec = (e.get("data") or {}).get("record") or {}
+        rows.append({"number": int(e["key"]), "kind": rec.get("kind"), "module": rec.get("module"),
+                     "node": rec.get("node"), "source": src})
+    return rows
+
+
+def map_crew(db: store.Store, number: int) -> dict | None:
+    """The source a crew record was approved through, or None when it was the user in this session."""
+    for e in reversed(store.events(db, key=str(number), kind="item")):
+        src = (e.get("data") or {}).get("source")
+        if src:
+            return src
+    return None
+

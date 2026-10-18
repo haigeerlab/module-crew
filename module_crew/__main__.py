@@ -458,6 +458,9 @@ def main(argv: list[str] | None = None) -> int:
         g.add_argument("--original")
         g.add_argument("--original-file")
     sos.add_parser("list").add_argument("--json", action="store_true")
+    som = sos.add_parser("map")
+    som.add_argument("ref", help="枢纽事项号 H，或 #crew 编号")
+    som.add_argument("--json", action="store_true")
     tc = sub.add_parser("ticket", help="等待单")
     tcs = tc.add_subparsers(dest="action", required=True)
     tcc = tcs.add_parser("close", help="协调会话关等待单（所等的事已发生／用户关闭）")
@@ -485,7 +488,44 @@ def main(argv: list[str] | None = None) -> int:
     seg = se.add_mutually_exclusive_group(required=True)
     seg.add_argument("--original")
     seg.add_argument("--original-file")
+    _add_source_options(parser)
     args = parser.parse_args(argv)
+    src = None
+    if getattr(args, "source", None):
+        if args.source_item is None or args.source_relay_id is None:
+            print("❌ 带 --source 时必须同时给 --source-item 与 --source-relay-id", file=sys.stderr)
+            return 2
+        text = _original(getattr(args, "original", None), getattr(args, "original_file", None))
+        if text is None:
+            return 2
+        try:
+            info = sources.check(store.open_store(), args.source, args.source_item, args.source_relay_id, text)
+        except sources.SourceRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
+        args.original, args.original_file, src = info.original, None, info.source
+        print(f"批准来源：{info.source['name']}（{info.source['kind']}）事项 #{info.source['item']}；用户原话：{info.original}")
+    with store.approval_source(src):
+        return _run(args)
+
+
+def _add_source_options(parser: argparse.ArgumentParser) -> None:
+    """Every command that takes the user's words can instead take a whitelisted source's message."""
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for sub in action.choices.values():
+                _add_source_options(sub)
+    if any("--original" in a.option_strings for a in parser._actions) and parser.prog.split()[1:2] != ["source"]:
+        g = parser.add_argument_group("批准来源（收件枢纽或指定负责人转来的决定）")
+        g.add_argument("--source", help="登记过的来源邮箱名；此时 --original(-file) 放对方消息全文")
+        g.add_argument("--source-item", type=int, help="来源的事项号 H")
+        g.add_argument("--source-relay-id", type=int, help="来源消息的邮箱消息号")
+
+
+def _run(args) -> int:
     if args.group in ("suspend", "resume", "sessions", "resume-kit", "serial"):
         try:
             return _failure(args)
@@ -506,6 +546,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.group == "source":
         try:
             db = store.open_store()
+            if args.action == "map":
+                ref = args.ref.lstrip("#")
+                if not ref.isdigit():
+                    print("❌ 编号要写数字：H，或 #crew 编号", file=sys.stderr)
+                    return 2
+                if args.ref.startswith("#"):
+                    found = sources.map_crew(db, int(ref))
+                    out = found if args.json else (f"#{ref} 的批准来源：{found['name']}（{found['kind']}）事项 #{found['item']}"
+                                                   if found else f"#{ref} 没有外部来源（用户在本会话批准或尚未批准）")
+                else:
+                    rows = sources.map_item(db, int(ref))
+                    out = rows if args.json else ("\n".join(f"#{r['number']} {r['kind']} {r['module'] or ''} {r['node'] or ''}".rstrip()
+                                                             for r in rows) or f"没有经事项 #{ref} 批准的记录")
+                print(json.dumps(out, ensure_ascii=False, indent=2) if args.json else out)
+                return 0
             if args.action == "list":
                 rows = sources.listing(db)
                 if args.json:

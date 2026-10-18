@@ -154,7 +154,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
         approval = tx.allocate_number()
         tx.put("item", str(approval), {
             "state": "closed", "kind": "start", "from": coord, "relayId": None, "modules": list(modules),
-            "closedReason": "answered", "answer": {"original": original, "answeredAt": store.now()},
+            "closedReason": "answered", "answer": {"original": original, "answeredAt": store.now(), **store.source_field()},
         }, action="start-approved")
     result = PrepareResult(0, approval=approval)
     result.lines.append(f"开工批准事项 #{approval}：{'、'.join(modules)}")

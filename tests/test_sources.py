@@ -1,6 +1,6 @@
 import unittest
 
-from helpers import RepoCase, seed_sessions
+from helpers import ReviewCase, RepoCase, git, seed_sessions
 
 from module_crew import protocol, sources, store
 
@@ -69,6 +69,59 @@ class CheckTest(SourceCase):
         out = self.run_cli("source", "add", "other-hub", "--kind", "hub", "--original", "登记", cwd=self.repo)
         self.assertEqual(out.returncode, 3)
         self.assertEqual(self.run_cli("source", "remove", "other-hub", "--original", "撤", cwd=self.repo).returncode, 0)
+
+
+
+class ApproveWithSourceTest(ReviewCase):
+    def setUp(self):
+        super().setUp()
+        from module_crew import review
+        self.db = store.open_store(self.repo)
+        sources.add(self.db, "live-saas-hub", "hub", "登记收件枢纽")
+        self.spec = review.add(self.db, self.spec_review("b"), "shop-b", 4001).number
+        self.plan = review.add(self.db, self.plan_review("b"), "shop-b", 4002).number
+        self.msg = self.tmp / "hub.txt"
+        self.msg.write_text(hub_reply(120, "两个都批准"), encoding="utf-8")
+
+    def test_one_hub_item_approves_two_reviews(self):
+        out = self.run_cli("review", "approve", str(self.spec), str(self.plan), "--source", "live-saas-hub",
+                           "--source-item", "120", "--source-relay-id", "6100", "--original-file", str(self.msg), cwd=self.repo)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        want = {"name": "live-saas-hub", "kind": "hub", "item": 120, "relayId": 6100}
+        for n in (self.spec, self.plan):
+            ans = store.get(self.db, "item", str(n))["answer"]
+            self.assertEqual((ans["original"], ans["source"]), ("两个都批准", want))
+        numbers = {r["number"] for r in sources.map_item(self.db, 120)}
+        self.assertTrue({self.spec, self.plan} <= numbers)
+        self.assertEqual(sources.map_crew(self.db, self.spec), want)
+        listed = self.run_cli("source", "map", "120", cwd=self.repo).stdout
+        self.assertIn(f"#{self.spec}", listed)
+        self.assertIn("live-saas-hub", self.run_cli("source", "map", f"#{self.plan}", cwd=self.repo).stdout)
+
+    def test_bad_source_changes_nothing(self):
+        before = (store.events(self.db), git(self.repo, "rev-parse", "HEAD"))
+        for extra in (["--source", "nobody", "--source-item", "120", "--source-relay-id", "1"],
+                      ["--source", "live-saas-hub", "--source-item", "121", "--source-relay-id", "1"]):
+            out = self.run_cli("review", "approve", str(self.spec), *extra, "--original-file", str(self.msg), cwd=self.repo)
+            self.assertEqual(out.returncode, 3, out.stdout)
+        out = self.run_cli("review", "approve", str(self.spec), "--source", "live-saas-hub", "--original-file", str(self.msg),
+                           cwd=self.repo)
+        self.assertEqual(out.returncode, 2)
+        self.assertEqual((store.events(self.db), git(self.repo, "rev-parse", "HEAD")), before)
+
+    def test_self_approval_has_no_source(self):
+        from module_crew import review
+        self.assertEqual(review.approve(self.repo, [self.spec], "批准").code, 0)
+        self.assertNotIn("source", store.get(self.db, "item", str(self.spec))["answer"])
+        self.assertIsNone(sources.map_crew(self.db, self.spec))
+
+    def test_other_commands_take_source(self):
+        out = self.run_cli("suspend", "c", "--reason", "等设计稿", "--source", "live-saas-hub", "--source-item", "120",
+                           "--source-relay-id", "6100", "--original-file", str(self.msg), cwd=self.repo)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        rec = store.get(self.db, "session", "shop-c")
+        self.assertEqual(rec["suspended"]["original"], "两个都批准")
+        self.assertEqual(store.events(self.db, key="shop-c")[-1]["data"]["source"]["item"], 120)
 
 
 if __name__ == "__main__":

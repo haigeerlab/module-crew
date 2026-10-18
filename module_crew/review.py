@@ -142,7 +142,7 @@ def answer(db: store.Store, number: int, original: str) -> Reply:
         body = tx.allocate_number()
         meta = tx.write_body(body, text)
         tx.put("item", str(number), dict(rec, state="closed", closedReason="answered",
-                                         answer={"original": original, "answeredAt": answered_at, "body": body}),
+                                         answer={"original": original, "answeredAt": answered_at, **store.source_field(), "body": body}),
                action="answered", data={"body": body})
     return Reply(rec["from"], rec["relayId"], body, db.path / meta["path"])
 
@@ -262,12 +262,12 @@ def approve(project: str | os.PathLike, numbers: list[int], original: str) -> Ap
         tx.put("item", str(approval), {
             "state": "closed", "kind": "review-approval", "closedReason": "answered", "relayId": None,
             "from": "coordinator", "reviews": [n for n, _ in picked], "baselineCommit": commit,
-            "answer": {"original": original, "answeredAt": answered_at}}, action="review-approved")
+            "answer": {"original": original, "answeredAt": answered_at, **store.source_field()}}, action="review-approved")
         for n, rec in picked:
             body = tx.allocate_number()
             meta = tx.write_body(body, _reply_text(n, rec, original, answered_at))
             tx.put("item", str(n), dict(rec, state="closed", closedReason="answered",
-                                        answer={"original": original, "answeredAt": answered_at, "body": body,
+                                        answer={"original": original, "answeredAt": answered_at, **store.source_field(), "body": body,
                                                 "approval": approval}), action="answered", data={"body": body})
             result.sends.append({"kind": "user-reply", "to": rec["from"], "replyTo": rec["relayId"], "body": body,
                                  "path": db.path / meta["path"]})
