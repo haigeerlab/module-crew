@@ -6,11 +6,11 @@
   - 验收：Spec 验收 4
   - 文件：`module_crew/store.py`、`tests/test_codex_host.py`
 
-- [ ] Task 2：`start prepare --host codex` 与开工说明 Codex 段
+- [x] Task 2：`start prepare --host codex` 与开工说明 Codex 段
   - 验收：Spec 验收 1、2、3
   - 文件：`module_crew/start.py`、`module_crew/__main__.py`、`tests/test_codex_host.py`
 
-- [ ] Checkpoint 1（report）：Phase 1 全绿、Claude 开工说明逐字比较通过
+- [x] Checkpoint 1（report）：Phase 1 全绿、Claude 开工说明逐字比较通过（test_claude_path_unchanged；test_start* 全绿，2026-10-18）
 
 - [ ] Task 3：`module-crew host-check`
   - 验收：Spec 验收 5

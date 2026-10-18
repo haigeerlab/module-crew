@@ -108,6 +108,25 @@ def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal
     return Proposal(slots, picked, list((report.startable or {}).get("conflicts", [])), reasons=reasons)
 
 
+HOSTS = {"claude": "claude-desktop", "codex": "codex-desktop"}
+BIN = Path(__file__).resolve().parents[1] / "bin" / "module-crew"
+
+
+def codex_lines(relay: str) -> list[str]:
+    """What a Codex desktop module session does on top of the Claude kickoff (crew-codex-host)."""
+    return [
+        "",
+        "你开在 Codex 桌面版里，另外要做这几件事：",
+        f"- 加载 module-crew 插件的 Codex 版 crew-dev skill；命令 module-crew 不在 PATH 上，一律用绝对路径：{BIN}",
+        f"- 先运行 {BIN} host-check，有不通过的项就把输出原样发给协调会话，等它回复再继续。",
+        "- 第一次提交时 Codex 会要求提权写 .git（worktree 的 git 目录在仓库外），请用户在本会话批准；有「本会话一直允许」就选它。"
+        "提权弹窗只有用户能点，别的会话转来的批准不算。",
+        f"- 注册邮箱名时带上宿主：bridge_register agent={relay}，host:{{app:\"codex\", sessionId:<CODEX_THREAD_ID>}}，wake 用同样的 app 与 sessionId；"
+        "读不到自己的消息时用原名重新注册（这是正常恢复，不是接管）。",
+        f"- Codex 没有 module-crew 的钩子：压缩、中断或应用重启后，先运行 {BIN} status，以状态库为准，不按记忆重做。",
+    ]
+
+
 SHORT_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,18}[a-z0-9]$")
 
 
@@ -178,8 +197,11 @@ def validate(project: Path, modules: list[str], original: str, short: str | None
 
 
 def prepare(project: str | os.PathLike, modules: list[str], original: str, short: str | None = None,
-            max_modules: int | None = None) -> PrepareResult:
+            max_modules: int | None = None, host: str = "claude") -> PrepareResult:
     project = Path(project)
+    if host not in HOSTS:
+        return PrepareResult(3, ["没有执行，原因：", f"宿主只能是 {'／'.join(HOSTS)}，不是 {host!r}"])
+    host_id = HOSTS[host]
     reasons, cfg, proposal = validate(project, modules, original, short, max_modules)
     if reasons:
         return PrepareResult(3, ["没有执行，原因："] + reasons)
@@ -197,6 +219,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
         tx.put("item", str(approval), {
             "state": "closed", "kind": "start", "from": coord, "relayId": None, "modules": list(modules),
             "closedReason": "answered", "answer": {"original": original, "answeredAt": store.now(), **store.source_field()},
+            **({"host": host_id} if host_id != "claude-desktop" else {}),
         }, action="start-approved")
     result = PrepareResult(0, approval=approval)
     result.lines.append(f"开工批准事项 #{approval}：{'、'.join(modules)}")
@@ -214,13 +237,13 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
                                 + ("；git 已留下分支 " + m + "，请决定是否删除" if left else ""))
             break
         relay = f"{short}-{m}"
-        text = render_kickoff(m, info.get(m, {}), path, cfg, relay, coord, approval)
+        text = render_kickoff(m, info.get(m, {}), path, cfg, relay, coord, approval, host_id)
         with db.transaction(actor=coord) as tx:
-            tx.put("session", relay, {"role": "dev", "host": "claude-desktop", "status": "active",
+            tx.put("session", relay, {"role": "dev", "host": host_id, "status": "active",
                                       "module": m, "worktree": str(path)}, action="registered")
             body = tx.allocate_number()
             tx.write_body(body, text)
-        result.prepared.append({"id": m, "worktree": path, "branch": m, "relayName": relay, "kickoff": body,
+        result.prepared.append({"id": m, "worktree": path, "branch": m, "relayName": relay, "kickoff": body, "host": host_id,
                                 "kickoffPath": db.path / "bodies" / f"{body}.txt"})
     done = [p["id"] for p in result.prepared]
     if result.code == 4:
@@ -279,8 +302,10 @@ def _set_role(roles: tuple[Path, dict] | str, key: str, checkout: Path, module: 
     return f"角色标记：{want}"
 
 
-def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: str, coord: str, approval: int) -> str:
+def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: str, coord: str, approval: int,
+                   host: str = "claude-desktop") -> str:
     deps = "\n".join(f"spec/{d}.md" for d in info.get("dependsOn") or []) or "无"
+    extra = codex_lines(relay) if host == "codex-desktop" else []
     return "\n".join([
         f"你是 module-crew 的模块会话，负责模块 {module}：{info.get('responsibility', '')}。",
         "先加载 crew-dev skill，照它的规则做；规则不要抄进这个 worktree 的 CLAUDE.md。",
@@ -295,4 +320,4 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
         "",
         f"接口：\n{deps}",
         "全局约束：不改公共文件（要改发【公共变更请求】）；被挡住发【等待其他会话】；发出前 module-crew protocol check。",
-    ]) + "\n"
+    ] + extra) + "\n"

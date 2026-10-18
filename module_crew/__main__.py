@@ -153,12 +153,12 @@ def _start_plan(as_json: bool) -> int:
 
 
 def _start_prepare(modules: list[str], original: str | None, original_file: str | None, short: str | None,
-                   max_modules: int | None, as_json: bool) -> int:
+                   max_modules: int | None, as_json: bool, host: str = "claude") -> int:
     if original_file is not None:
         original = _read(original_file)
         if original is None:
             return 2
-    res = start.prepare(".", modules, original, short, max_modules)
+    res = start.prepare(".", modules, original, short, max_modules, host)
     if as_json:
         print(json.dumps({"code": res.code, "approval": res.approval, "lines": res.lines,
                           "prepared": [{k: str(v) if isinstance(v, Path) else v for k, v in p.items()}
@@ -168,6 +168,8 @@ def _start_prepare(modules: list[str], original: str | None, original_file: str 
         print(line)
     for p in res.prepared:
         print(f"{p['id']}：worktree {p['worktree']}（分支 {p['branch']}），邮箱名 {p['relayName']}，开工说明 {p['kickoffPath']}，{p.get('role', '角色标记未设')}")
+        if p.get("host") == "codex-desktop":
+            print(f"  宿主：Codex 桌面版（用户手动在 Codex 里开任务，工作目录选 {p['worktree']}，第一条消息用开工说明全文）")
     return res.code
 
 
@@ -430,6 +432,7 @@ def main(argv: list[str] | None = None) -> int:
     orig.add_argument("--original-file")
     spr.add_argument("--project-short")
     spr.add_argument("--max", type=int)
+    spr.add_argument("--host", choices=("claude", "codex"), default="claude")
     spr.add_argument("--json", action="store_true")
     rv = sub.add_parser("review", help="交审与批量批准")
     rvs = rv.add_subparsers(dest="action", required=True)
@@ -679,7 +682,8 @@ def _run(args) -> int:
         try:
             if args.action == "plan":
                 return _start_plan(args.json)
-            return _start_prepare(args.modules, args.original, args.original_file, args.project_short, args.max, args.json)
+            return _start_prepare(args.modules, args.original, args.original_file, args.project_short, args.max, args.json,
+                                  args.host)
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 2
