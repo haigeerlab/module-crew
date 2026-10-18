@@ -3,7 +3,7 @@
 让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个协调会话统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在协调会话里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.2.2。已在试点项目上跑过两轮实地验证（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.3.0。已在试点项目上跑过两轮实地验证（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
 ## 前提
 
@@ -96,17 +96,34 @@ bin/module-crew status
 
 一个模块挂起、退回或崩溃，不影响其他模块的交审、合并与通知。
 
-## 接入收件枢纽
+## 审查就近与决策收件箱
 
-有收件枢纽（如 decision-inbox）时，用户可以在枢纽里给决定：
+> 用词按 LIVE-SAAS 接入的术语表 v1.1（`livesaas-integration/GLOSSARY.md`）：模块协调＝原来的协调会话，提请批准＝原来的合批，决策收件箱＝原来的收件枢纽；
+> 全面改名放下一版，旧文字里两种叫法都会出现。
 
-1. 在协调会话里由用户亲口登记来源：`module-crew source add <枢纽邮箱名> --kind hub --original-file <原话>`；审查会话登记为 `--kind lead`。
-2. `module-crew review batch --for-hub` 把一批交审合成一条【等待用户】交给枢纽；审查会话的结论用 `review note` 记下，正文里带审查行。
-3. 枢纽转来【用户答复】后，批准命令带 `--source <枢纽> --source-item <H> --source-relay-id <消息号> --source-from <实际发件人> --original-file <那条消息>`，用户原话从消息里读出；实际发件人不是来源本身或是模块会话时拒收。
-4. `module-crew source map <H>` 查一个枢纽事项批准了哪些 crew 编号。
-5. 外部插件读 `module-crew sessions --json`（`schemaVersion` 1：module、relayName、worktree、stage、stageText、suspended、lastActivity），出口与契约版本登记在根目录 `interface.json`。
+**审查就近**（登记了审查者时）：审查改在模块协调这一层就近来回，用户只看要拍板的事。
 
-指定负责人用【负责人转交】转来的决定登记为 `--kind lead`；lead 来源的 Spec／Plan 批准只记账、不写评审标记（spec-guard 只认用户亲手与收件枢纽转来的批准），hub 来源批准的提交说明带 #H；带来源批准时，给模块的【用户答复】按契约 v1.6 带「转自」，命令同时给出发回枢纽的【已恢复】「结束：#H」。
+1. 模块会话按项目的评审节奏交审（spec-guard 项目配置 `reviewCadence`：`separate` 默认先只交 Spec，`combined` 一起交）；最终验收的「要点」里要有「验收标准与证据」一节。
+2. `review add` 收下交审，输出把【交审】原样转给审查者的送审发送项。
+3. 审查者回【审查结论】，`review note [<C号>] … [--then-batch [--for-hub]]` 记下（一条消息几段也行）：
+   「有须修改项N条」时输出返工通知，模块改完重交、再送审，不问用户；返工满 3 次、模块写了「不同意」、或送审 15 分钟没结论，都变成待用户决定的问题。
+4. 只有审查通过（或带待用户决定的问题）的交审才提请批准：`review batch --for-hub` **一个模块一条**【等待用户】，
+   带交审要点全文、「批准会发生什么」、「产物」（路径 ＠ 提交，重交带上一版）、「交审原文」「审查原文」（`<状态库>/originals/` 下的原文文件）和「待用户决定」。
+5. 用户答复要答到每个 D（如「A；D1 B」）；没答全批准命令退出码 3、什么都不做。退回、等审查这类答案分别让交审退回或保持未答。
+6. 最终验收批准后、合并前可以 `merge revoke <C号>` 撤回；`status` 与 `sessions --json` 显示返工轮次（`review` 字段）。
+
+**接入决策收件箱**：
+
+1. 在模块协调里由用户亲口登记来源：`module-crew source add <决策收件箱邮箱名> --kind hub --original-file <原话>`；审查者登记为 `--kind lead`。
+2. 提请批准的正文逐条用 bodyFile 原样发给决策收件箱；要用户决定的事只在那里问，会话里不放可以点的决定按钮。
+3. 决策收件箱转来【用户答复】后，批准命令带 `--source <决策收件箱> --source-item <H> --source-relay-id <消息号> --source-from <实际发件人> --original-file <那条消息>`，用户原话从消息里读出；实际发件人不是来源本身或是模块会话时拒收。
+4. `module-crew source map <H>` 查一个待决事项批准了哪些 C 编号。
+5. 外部插件读 `module-crew sessions --json`（`schemaVersion` 1：module、relayName、worktree、stage、stageText、suspended、lastActivity、review），出口与契约版本登记在根目录 `interface.json`。
+
+**不配决策收件箱、不配审查者时**：一切照常在模块协调里由用户亲手批准；没有审查者就不送审、不返工，提请批准里写「未审查」；待用户决定的问题由模块协调直接问用户。
+
+module-crew 自己的编号对外一律写 C 前缀（如 C15），`#数字` 只表示决策收件箱的待决事项号；命令参数写 `15` 或 `C15` 都行。
+审查者用【负责人转交】转来的批准只记账、不写批准标记（spec-guard 只认用户亲手与决策收件箱转来的批准）；带来源批准时，给模块的【用户答复】按契约带「转自」，命令同时给出发回决策收件箱的【已恢复】「结束：#H」。
 
 ## 命令一览
 
@@ -119,11 +136,11 @@ module-crew answer <编号> --original(-file)      转达用户答复
 module-crew start plan|prepare                   开工
 module-crew review add|batch|approve|answer      交审与批量批准
 module-crew change add|list|land|answer          公共变更请求
-module-crew merge approve|queue|run|cleanup|push-plan|push
+module-crew merge approve|revoke|queue|run|cleanup|push-plan|push
 module-crew suspend|resume|sessions|resume-kit|serial
 module-crew takeover <邮箱名> --original(-file)  换会话接管
 module-crew source add|remove|list|map           批准来源（收件枢纽、负责人）与对照
-module-crew review note|batch --for-hub          审查行、交枢纽正文
+module-crew review note [--then-batch]|batch --for-hub   审查结论、返工、提请批准正文（一个模块一条）
 module-crew ticket close <编号> --reason …        协调会话关等待单
 module-crew hook session-start|prompt            插件钩子入口（只读，永远退出码 0）
 ```

@@ -56,7 +56,7 @@
   - 验收：Spec 验收 17
   - 文件：`module_crew/failure.py`、`module_crew/probe.py`、`tests/test_review_nearby.py`
 
-- [ ] Task 13：skill、README、版本号 0.3.0
+- [x] Task 13：skill、README、版本号 0.3.0
   - 验收：Spec 验收 19
   - 文件：`skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`codex-skills/crew-dev/SKILL.md`、`README.md`、`tests/test_skills.py`、版本文件
 
