@@ -75,8 +75,8 @@ class SkillsTest(unittest.TestCase):
 
     def test_dev_sync_section(self):
         _, text = read("crew-dev")
-        section = text.split("## 同步集成基线", 1)[1].split("\n## ", 1)[0]
-        for words in ("git merge", "取集成分支的版本", "--theirs", "评审标记"):
+        section = text.split("## 同步集成分支", 1)[1].split("\n## ", 1)[0]
+        for words in ("git merge", "取集成分支的版本", "--theirs", "批准标记"):
             self.assertIn(words, section)
 
     def test_dev_rules(self):
@@ -123,7 +123,7 @@ class PilotFixesTest(unittest.TestCase):
 class PilotCloseoutTest(unittest.TestCase):
     def test_tickets_and_retire(self):
         _, text = read("crew-coordinator")
-        section = text.split("## 等待单", 1)[1].split("\n## ", 1)[0]
+        section = text.split("## 等待记录", 1)[1].split("\n## ", 1)[0]
         for words in ("【已恢复】", "ticket close", "--reason happened", "--reason user"):
             self.assertIn(words, section)
         merge_section = text.split("## 合并与收尾", 1)[1].split("\n## ", 1)[0]
@@ -134,7 +134,7 @@ class PilotCloseoutTest(unittest.TestCase):
 class HubBridgeSkillTest(unittest.TestCase):
     def test_coordinator_hub_section(self):
         _, text = read("crew-coordinator")
-        section = text.split("## 接入收件枢纽", 1)[1].split("\n## ", 1)[0]
+        section = text.split("## 接入决策收件箱", 1)[1].split("\n## ", 1)[0]
         for words in ("source add", "--for-hub", "review note", "--source-item", "【已恢复】", "source map", "【取代 #N】",
                       "【答复告知】只记录", "直连 API 线", "后台方式", "module-crew status"):
             self.assertIn(words, section)
@@ -184,7 +184,7 @@ class PilotRound2SkillTest(unittest.TestCase):
 
 
 class CodexPackageTest(unittest.TestCase):
-    COMMON = ("只认协调会话发来的【用户答复】", "`tasks/<模块>/todo.md`", "验收标准与证据", "不同意", "撤销批准通知",
+    COMMON = ("只认模块协调发来的【用户答复】", "`tasks/<模块>/todo.md`", "验收标准与证据", "不同意", "撤销批准通知",
               "按项目的评审节奏交审", "不放可以点的决定按钮", "与你的代码无关」时**不改代码**", "**必须**发【等待其他会话】", "不改公共文件", "不要自己勾 todo 末项",
               "一律取集成分支的版本", "不要**撤销任何提交")
 
@@ -227,9 +227,9 @@ class CodexCoordinatorSkillTest(unittest.TestCase):
 class WithdrawRuleTest(unittest.TestCase):
     def test_withdraw_uses_hub_item_number(self):
         _, text = read("crew-coordinator")
-        section = text.split("## 接入收件枢纽", 1)[1].split("\n## ", 1)[0]
+        section = text.split("## 接入决策收件箱", 1)[1].split("\n## ", 1)[0]
         self.assertIn("【撤回】", section)
-        self.assertIn("枢纽回执给的事项号（契约 v1.9）", section)
+        self.assertIn("决策收件箱回执给的事项号（契约 v1.9）", section)
 
 
 class PermissionWordsTest(unittest.TestCase):
@@ -245,4 +245,14 @@ class PermissionWordsTest(unittest.TestCase):
         codex = (PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
         for text in (read("crew-dev")[1], codex):
             for words in ("不推送", "pre-push 钩子", "权限实测清单", "本会话都允许"):
+                self.assertIn(words, text)
+
+
+class GlossaryWordsTest(unittest.TestCase):
+    """crew-glossary-rename acceptance 4, 5."""
+
+    def test_every_skill_says_who_you_are_and_keeps_contract_tags(self):
+        codex = (PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
+        for text in (read("crew-coordinator")[1], read("crew-dev")[1], codex):
+            for words in ("## 名称", "「你」指本会话", "已结项（契约标签【已恢复】）", "等待记录写 W<号>", "契约标签与字段名照契约原样发"):
                 self.assertIn(words, text)
