@@ -131,7 +131,7 @@ def _disagree_reasons(db: store.Store, worktree: Path, sub: dict) -> list[str]:
 
 def _rounds(db: store.Store, module: str, node: str) -> int:
     """Rework notices already sent for this module and node."""
-    return sum(1 for e in store.events(db, kind="item") if e.get("action") == "rework-sent"
+    return sum(1 for e in store.events(db, kind="item") if e.get("type") == "item.rework-sent"
                and (e.get("data") or {}).get("module") == module and (e.get("data") or {}).get("node") == node)
 
 
@@ -211,26 +211,96 @@ class NoteRefused(Exception):
     """The review conclusion cannot be recorded; nothing was written."""
 
 
-def note(db: store.Store, number: int, sender: str, text: str) -> dict:
-    """Record a whitelisted reviewer's 【审查结论】 on an open review (shown in batch; never blocks approval)."""
+REWORK_LIMIT = 3
+
+
+@dataclass
+class NoteResult:
+    rows: list[dict] = field(default_factory=list)
+    sends: list[dict] = field(default_factory=list)    # rework notices for the coordinator to send
+    lines: list[str] = field(default_factory=list)
+
+
+def note(db: store.Store, number: int | None, sender: str, text: str) -> NoteResult:
+    """Record a whitelisted reviewer's 【审查结论】 (one or several sections) and turn 「有须修改项」 into rework.
+
+    Every section is checked before anything is written; one bad section refuses the whole message.
+    A section matches `number` when it is the only one, otherwise the open review of its module and node."""
     from module_crew import sources
     if not any(r.get("name") == sender and r.get("kind") == "lead" for r in sources.listing(db)):
         raise NoteRefused(f"{sender} 没有登记为审查会话（先请用户 source add {sender} --kind lead）")
-    msg = protocol.parse(text or "")
-    if msg.kind != "review-conclusion" or not msg.ok:
-        raise NoteRefused("不是合格的【审查结论】：" + ("、".join(msg.problems) or msg.kind))
-    with db.transaction(actor="coordinator") as tx:
-        rec = tx.get("item", str(number))
+    sections = protocol.split_sections(text or "")
+    items = store.records(db, "item")
+    picked: list[tuple[int, protocol.Message]] = []
+    for i, section in enumerate(sections, 1):
+        where = f"第 {i} 段：" if len(sections) > 1 else ""
+        msg = protocol.parse(section)
+        if msg.kind != "review-conclusion" or not msg.ok:
+            raise NoteRefused(f"{where}不是合格的【审查结论】：" + ("、".join(msg.problems) or msg.kind))
+        c = msg.contract()["conclusion"]
+        if number is not None and len(sections) == 1:
+            n = number
+        else:
+            hits = [int(k) for k, v in items.items() if v.get("kind") == "review" and v.get("state") == "open"
+                    and v.get("module") == c["module"] and v.get("node") == c["node"]]
+            if len(hits) != 1:
+                raise NoteRefused(f"{where}{c['module']} 的 {NODE_NAME.get(c['node'], c['node'])} 没有唯一一条未答的交审")
+            n = hits[0]
+        rec = items.get(str(n))
         if rec is None or rec.get("kind") != "review" or rec.get("state") != "open":
-            raise NoteRefused(f"C{number} 不是未答的交审")
-        node = protocol.REVIEW_NODES.get(msg.fields.get("节点", "").strip())
-        if msg.fields.get("模块", "").strip() != rec["module"] or node != rec["node"]:
-            raise NoteRefused(f"审查结论说的是 {msg.fields.get('模块')} 的 {msg.fields.get('节点')}，"
-                              f"对不上 C{number}（{rec['module']} 的 {NODE_NAME.get(rec['node'], rec['node'])}）")
-        row = {"from": sender, "ref": msg.fields.get("审查编号"), "verdict": msg.fields.get("结论"), "at": store.now(),
-               "points": (msg.fields.get("要点") or "").strip()}
-        tx.put("item", str(number), dict(rec, reviews=list(rec.get("reviews") or []) + [row]), action="review-noted")
-    return row
+            raise NoteRefused(f"{where}C{n} 不是未答的交审")
+        if c["module"] != rec["module"] or c["node"] != rec["node"]:
+            raise NoteRefused(f"{where}审查结论说的是 {msg.fields.get('模块')} 的 {msg.fields.get('节点')}，"
+                              f"对不上 C{n}（{rec['module']} 的 {NODE_NAME.get(rec['node'], rec['node'])}）")
+        picked.append((n, msg))
+    res = NoteResult()
+    with db.transaction(actor="coordinator") as tx:
+        for n, msg in picked:
+            c = msg.contract()["conclusion"]
+            rec = tx.get("item", str(n))
+            row = {"from": sender, "ref": c["ref"], "verdict": msg.fields.get("结论"), "at": store.now(),
+                   "points": (msg.fields.get("要点") or "").strip()}
+            if c.get("decisions"):
+                row["decisions"] = c["decisions"]
+            if c.get("changes"):
+                row["changes"] = c["changes"]
+            rec = dict(rec, reviews=list(rec.get("reviews") or []) + [row])
+            tx.put("item", str(n), rec, action="review-noted")
+            res.rows.append(row)
+            res.lines.append(f"已记下 C{n} 的审查结论：{sender} {row['verdict']}")
+            if c["verdict"] != "changes-required":
+                continue
+            done = _rounds(db, rec["module"], rec["node"])
+            if done >= REWORK_LIMIT:
+                tx.put("item", str(n), dict(rec, overLimit=True), action="rework-over-limit")
+                res.lines.append(f"C{n} 返工已满 {REWORK_LIMIT} 次：不再返工，作为待用户决定的问题进合批")
+                continue
+            todo = "\n".join(f"{i}. {x}" for i, x in enumerate(c.get("changes") or [], 1)) or row["points"] or "按审查意见修改"
+            body = tx.allocate_number()
+            meta = tx.write_body(body, protocol.render_coordination_notice(
+                "rework", f"审查 {c['ref']}（交审 C{n}）", todo + "\n改完重新发【交审】；不同意就在【交审】里写「不同意：<审查编号>：<理由>」",
+                round=done + 1))
+            tx.put("item", str(n), rec, action="rework-sent",
+                   data={"module": rec["module"], "node": rec["node"], "round": done + 1, "body": body})
+            res.sends.append({"kind": "rework", "to": rec["from"], "replyTo": None, "body": body, "path": db.path / meta["path"]})
+            res.lines.append(f"C{n} 返工第 {done + 1} 轮：通知 {rec['from']} 按审查意见修改")
+    return res
+
+
+def waiting(project: str | os.PathLike) -> list[str]:
+    """Open reviews a batch still waits for: under review (not timed out) or in rework."""
+    db = store.open_store(Path(project))
+    out = []
+    for k, v in sorted(store.records(db, "item").items(), key=lambda kv: int(kv[0])):
+        if v.get("kind") == "review" and v.get("state") == "open":
+            state = review_state(db, int(k))
+            if state in ("reviewing", "rework"):
+                out.append(f"C{k}（{v['module']} 的 {NODE_NAME.get(v['node'], v['node'])}，{STATE_TEXT[state]}）")
+    return out
+
+
+STATE_TEXT = {"reviewing": "审查中", "rework": "返工中", "timeout": "审查者无响应", "passed": "审查通过",
+              "decide": "待你决定", "none": "未审查"}
 
 
 def _advice(row: dict) -> str:

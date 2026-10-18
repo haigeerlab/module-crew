@@ -177,6 +177,82 @@ class ForwardTest(NearbyCase):
         self.assertEqual(review.add(self.db, text, "shop-b", 4001).code, 3)
 
 
+class NoteTest(NearbyCase):
+    """Task 4: conclusions drive rework close to the coordinator; several sections in one message."""
+
+    def submit(self, node="Spec", relay=None):
+        text = self.spec_review("b") if node == "Spec" else self.plan_review("b")
+        self.relay = getattr(self, "relay", 5000) + 1
+        return review.add(self.db, text, "shop-b", relay or self.relay).number
+
+    def test_rework_loop(self):
+        head = git(self.repo, "rev-parse", "HEAD")
+        n = self.submit()
+        res = review.note(self.db, n, "arch", conclusion("有须修改项2条", CHANGES))
+        [send] = res.sends
+        self.assertEqual((send["kind"], send["to"]), ("rework", "shop-b"))
+        msg = protocol.parse(send["path"].read_text(encoding="utf-8"))
+        self.assertTrue(msg.ok, msg.problems)
+        self.assertEqual(msg.contract()["notice"]["round"], 1)
+        self.assertIn("R-7", msg.fields["依据"])
+        self.assertIn(f"C{n}", msg.fields["依据"])
+        self.assertIn("错误码表缺两项", msg.fields["要你做什么"])
+        self.assertIn("超时没写", msg.fields["要你做什么"])
+        self.assertEqual(self.state(n), "rework")
+        self.assertEqual(store.get(self.db, "item", str(n))["state"], "open")
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), head)               # nothing pushed forward
+        again = self.submit()
+        self.assertEqual(self.state(again), "reviewing")
+        self.assertEqual(review._rounds(self.db, "b", "spec"), 1)
+        self.assertFalse(review.note(self.db, again, "arch", conclusion("通过")).sends)
+        self.assertEqual(self.state(again), "passed")
+
+    def test_limit_three(self):
+        n = self.submit()
+        for i in range(3):
+            self.assertEqual(len(review.note(self.db, n, "arch", conclusion("有须修改项2条", CHANGES)).sends), 1)
+            n = self.submit()
+        res = review.note(self.db, n, "arch", conclusion("有须修改项2条", CHANGES))
+        self.assertEqual(res.sends, [])
+        self.assertTrue(store.get(self.db, "item", str(n))["overLimit"])
+        self.assertEqual(self.state(n), "decide")
+        self.assertIn("已满 3 次", " ".join(res.lines))
+
+    def test_decisions_recorded(self):
+        n = self.submit()
+        review.note(self.db, n, "arch", conclusion("通过", DECISIONS))
+        self.assertEqual(self.state(n), "decide")
+        self.assertEqual([d["id"] for d in store.get(self.db, "item", str(n))["reviews"][-1]["decisions"]], ["D1", "D2"])
+
+    def test_multi_sections(self):
+        spec, plan = self.submit(), self.submit("Plan")
+        two = conclusion("通过") + "\n" + conclusion("有须修改项2条", CHANGES, ref="R-8", node="Plan")
+        res = review.note(self.db, None, "arch", two)
+        self.assertEqual([r["ref"] for r in res.rows], ["R-7", "R-8"])
+        self.assertEqual((self.state(spec), self.state(plan)), ("passed", "rework"))
+        before = store.events(self.db)
+        bad = conclusion("通过") + "\n" + conclusion("差不多", ref="R-9", node="Plan")
+        with self.assertRaises(review.NoteRefused) as ctx:
+            review.note(self.db, None, "arch", bad)
+        self.assertIn("第 2 段", str(ctx.exception))
+        self.assertEqual(store.events(self.db), before)
+
+    def test_then_batch(self):
+        spec, plan = self.submit(), self.submit("Plan")
+        f = self.tmp / "c1.txt"
+        f.write_text(conclusion("通过"), encoding="utf-8")
+        out = self.run_cli("review", "note", f"C{spec}", "--from", "arch", "--file", str(f), "--then-batch", "--for-hub",
+                           cwd=self.repo)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn(f"还在等：C{plan}", out.stdout)
+        self.assertNotIn("正文文件", out.stdout)
+        f.write_text(conclusion("通过", node="Plan", ref="R-8"), encoding="utf-8")
+        out = self.run_cli("review", "note", f"C{plan}", "--from", "arch", "--file", str(f), "--then-batch", "--for-hub",
+                           cwd=self.repo)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("正文文件", out.stdout)
+
+
 class NoReviewerTest(NearbyCase):
     with_lead = False
 

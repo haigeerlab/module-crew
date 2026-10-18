@@ -16,7 +16,7 @@
   - 验收：Spec 验收 1、4、5
   - 文件：`module_crew/review.py`、`tests/test_review_nearby.py`
 
-- [ ] Task 4：`review note` 多段、返工、上限、`--then-batch`
+- [x] Task 4：`review note` 多段、返工、上限、`--then-batch`
   - 验收：Spec 验收 2、3、4、9、10
   - 文件：`module_crew/review.py`、`module_crew/__main__.py`、`tests/test_review_nearby.py`
 

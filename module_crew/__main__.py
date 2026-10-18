@@ -232,11 +232,23 @@ def _review(args) -> int:
         if text is None:
             return 2
         try:
-            row = review.note(db, args.number, args.sender, text)
+            res = review.note(db, args.number, args.sender, text)
         except review.NoteRefused as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
-        print(f"已记下 C{args.number} 的审查结论：{row['from']} {row['verdict']}")
+        for line in res.lines:
+            print(line)
+        for x in res.sends:
+            print(f"发送 【协调通知】（返工） → {x['to']}，正文文件：{x['path']}")
+        if args.then_batch:
+            wait = review.waiting(".")
+            if wait:
+                print("还在等：" + "、".join(wait) + "；合批正文等它们有结论后再生成")
+            elif args.for_hub:
+                made = review.for_hub(".")
+                print("没有未答的交审" if made is None else f"正文文件（正文 C{made[0]}）：{made[1]}")
+            else:
+                print("都有结论了：运行 module-crew review batch 交用户审")
         return 0
     if args.action == "batch" and args.for_hub:
         made = review.for_hub(".", args.parallel_with)
@@ -453,7 +465,9 @@ def main(argv: list[str] | None = None) -> int:
     rb.add_argument("--for-hub", action="store_true", help="生成交给收件枢纽的【等待用户】正文")
     rb.add_argument("--parallel-with", type=int, help="与枢纽事项 #H 并行")
     rn = rvs.add_parser("note", help="记下审查会话的【审查结论】")
-    rn.add_argument("number", type=refs.parse)
+    rn.add_argument("number", type=refs.parse, nargs="?", help="交审编号；一条消息有多段时可省略，按模块与节点对上")
+    rn.add_argument("--then-batch", action="store_true", help="记完后接着看能不能合批")
+    rn.add_argument("--for-hub", action="store_true", help="和 --then-batch 一起用：都有结论时直接生成交给收件枢纽的正文")
     rn.add_argument("--from", dest="sender", required=True)
     rn.add_argument("--file", required=True)
     for name in ("approve", "answer"):
