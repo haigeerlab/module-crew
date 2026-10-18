@@ -126,6 +126,8 @@ python3 -m unittest discover -s tests -v
 10. `inbox add` 收到合格【交审】仍返回 4；协调会话 skill 写明「4 → 【交审】用 `review add`，【公共变更请求】用 crew-shared-changes 的命令」，并有「交审与批准」一节：`review batch` → 交用户审（要点写在正文里）→ `review approve`／`review answer` → 按输出逐条 `bridge_send`。
 - 集成 checkout 装只认 `类型(范围): ` 开头的 commit-msg 钩子时 `review approve` 照常提交；钩子拒绝时退出码 4、状态库不变、输出含「提交钩子拒绝」。（2026-10-18 修订）
 
+- 交审按模块分组（2026-10-18 修订）：c 先交 Spec、b 再交 Plan、c 再交 Plan、b 最后交 Spec 时，`review batch` 的条目按 Build order 与节点排成 b Spec、b Plan、c Spec、c Plan，`--json` 带 `groups`，文字输出每个模块一节（`## <模块>（职责）`）。
+
 
 ## 未决问题
 
@@ -142,3 +144,4 @@ README「一次完整流程」接着写：交审 → `review batch` → 用户�
 - 2026-10-18：`review batch` 在依赖与冲突都没有问题时也明确输出「依赖：全部就绪」「并行边界重叠：无」。原因：试点发现「没有冲突」与「不输出」分不清（问题 G）；来源：第 7 关试点（`docs/pilot-report.md`），用户 2026-10-18 批准。
 - 2026-10-18：批准提交的信息加 `chore(crew): ` 前缀，提交钩子拒绝时单独标原因；增加对应验收。原因：module-crew 的提交过不了前端的 commitlint；来源：联合演练批 2 准备（前端 husky 跑 `@commitlint/config-conventional`，lint-staged 对全部暂存文件跑 `oxfmt --check`），用户 2026-10-18 批准先修再发 0.1.1。
 - 2026-10-18：`review approve` 带负责人转交（lead）来源时只记账、不写标记不开工，带收件枢纽来源时提交说明写 #H（细则见 crew-hub-bridge 关键决策 9）。来源：用户 2026-10-18 确认 0.1.1 范围；spec-guard 0.70.0（PR haigeerlab/spec-guard-plugin#352）最终措辞：负责人转交不算写标记的来源，收件枢纽转来的批准写标记时在提交说明记 #H。
+- 2026-10-18：批量交审按模块分组——条目按「模块在 Build order 的位置 → 节点（Spec、接口提案、Plan、最终验收）→ 编号」排序，`--json` 增加 `groups`，文字输出每个模块一节；协调会话 skill 写明按模块分节交用户审；增加对应验收。来源：用户 2026-10-18 经 spec-guard 负责人会话提出（交审给人看要一个模块一个模块地出现），本会话 2026-10-18 批准修法。

@@ -96,6 +96,9 @@ def _approved_nodes(db: store.Store) -> dict[str, set[str]]:
     return approved
 
 
+NODE_RANK = {"spec": 0, "interface": 1, "plan": 2, "final": 3}
+
+
 def batch(project: str | os.PathLike) -> dict:
     """Read-only view of the open reviews, their dependency check and relevant conflicts."""
     project = Path(project)
@@ -116,10 +119,20 @@ def batch(project: str | os.PathLike) -> dict:
     batch_mods = {v["module"] for _, v in open_items}
     conflicts = [c for c in (report.map or {}).get("startable", {}).get("conflicts", [])
                  if batch_mods & set(c.get("modules", []))]
+    # Present module by module in Build order, and within a module Spec → interface → Plan (user request, 2026-10-18).
+    order = [m for group in (report.map or {}).get("buildOrderGroups") or [] for m in group] or list(modules)
+    rank = {m: i for i, m in enumerate(order)}
+    open_items.sort(key=lambda kv: (rank.get(kv[1]["module"], len(rank)), NODE_RANK.get(kv[1]["node"], 9), kv[0]))
+    groups: list[dict] = []
+    for n, v in open_items:
+        if not groups or groups[-1]["module"] != v["module"]:
+            groups.append({"module": v["module"], "responsibility": modules.get(v["module"], {}).get("responsibility", ""),
+                           "items": []})
+        groups[-1]["items"].append(n)
     return {"items": [{"number": n, "module": v["module"], "node": v["node"], "from": v["from"],
                        "files": v["files"], "points": _points(v["text"]), "reviews": list(v.get("reviews") or [])}
                       for n, v in open_items],
-            "dependencyIssues": issues, "conflicts": conflicts}
+            "groups": groups, "dependencyIssues": issues, "conflicts": conflicts}
 
 
 class NoteRefused(Exception):
@@ -164,9 +177,13 @@ def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> tup
                   if s.get("role") == "coordinator" and s.get("status") == "active"), "协调会话")
     numbers = "、".join(f"#{i['number']}" for i in b["items"])
     points = []
-    for i in b["items"]:
-        head = (i["points"].splitlines() or [""])[0].lstrip("- ").strip()
-        points.append(f"- #{i['number']} {i['module']} 的 {NODE_NAME.get(i['node'], i['node'])}：{head}（审查：{_review_text(i)}）")
+    by_number = {i["number"]: i for i in b["items"]}
+    for g in b["groups"]:
+        points.append(f"- {g['module']}（{g['responsibility']}）：" if g["responsibility"] else f"- {g['module']}：")
+        for n in g["items"]:
+            i = by_number[n]
+            head = (i["points"].splitlines() or [""])[0].lstrip("- ").strip()
+            points.append(f"  #{n} {i['module']} 的 {NODE_NAME.get(i['node'], i['node'])}：{head}（审查：{_review_text(i)}）")
     for d in b["dependencyIssues"]:
         points.append(f"- 依赖未就绪：{d['module']} 依赖的 {'、'.join(d['missing'])}")
     for c in b["conflicts"]:

@@ -252,11 +252,15 @@ def _review(args) -> int:
         if not b["items"]:
             print("没有未答的交审")
             return 3
-        for i in b["items"]:
-            print(f"#{i['number']} {i['module']} 的 {review.NODE_NAME.get(i['node'], i['node'])}（{i['from']}）："
-                  + "、".join(f["path"] for f in i["files"]))
-            print("  要点：" + i["points"].replace("\n", "\n        "))
-            print("  审查：" + review._review_text(i))
+        by_number = {i["number"]: i for i in b["items"]}
+        for g in b["groups"]:
+            print(f"## {g['module']}（{g['responsibility']}）" if g["responsibility"] else f"## {g['module']}")
+            for num in g["items"]:
+                i = by_number[num]
+                print(f"#{i['number']} {i['module']} 的 {review.NODE_NAME.get(i['node'], i['node'])}（{i['from']}）："
+                      + "、".join(f["path"] for f in i["files"]))
+                print("  要点：" + i["points"].replace("\n", "\n        "))
+                print("  审查：" + review._review_text(i))
         if not b["dependencyIssues"]:
             print("依赖：全部就绪")
         if not b["conflicts"]:
