@@ -1,6 +1,6 @@
 # Implementation Plan: crew-glossary-rename
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-glossary-rename.md`（用户 2026-10-19 批准）。任务清单：`tasks/crew-glossary-rename/todo.md`。
 
