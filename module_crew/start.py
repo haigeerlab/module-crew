@@ -211,7 +211,8 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
     coord = f"{short}-coord"
     with db.transaction(actor=coord) as tx:
         if not tx.get("config", "main"):
-            tx.put("config", "main", cfg, action="set")
+            from module_crew.hostcheck import plugin_version
+            tx.put("config", "main", {**cfg, "pluginVersion": plugin_version()}, action="set")
         if not any(v.get("role") == "coordinator" and v.get("status") == "active" for v in tx.records("session").values()):
             tx.put("session", coord, {"role": "coordinator", "host": "claude-desktop", "status": "active"},
                    action="registered")

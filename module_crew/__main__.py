@@ -528,6 +528,7 @@ def main(argv: list[str] | None = None) -> int:
     rg.add_argument("--original")
     rg.add_argument("--original-file")
     sub.add_parser("sessions", help="列出模块会话的事实（只读）").add_argument("--json", action="store_true")
+    sub.add_parser("host-check", help="在模块 worktree 里预检宿主能否完成工作（Codex 必跑）").add_argument("--json", action="store_true")
     sub.add_parser("resume-kit", help="生成换会话恢复说明").add_argument("module")
     se = sub.add_parser("serial", help="退回串行／恢复并行")
     se.add_argument("--off", action="store_true")
@@ -581,6 +582,14 @@ def _run(args) -> int:
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 2
+    if args.group == "host-check":
+        from module_crew import hostcheck
+        rep = hostcheck.run(".")
+        if args.json:
+            print(json.dumps({"checks": rep.checks, "module": rep.module, "host": rep.host}, ensure_ascii=False, indent=2))
+        else:
+            print("\n".join(hostcheck.render(rep)))
+        return rep.code
     if args.group == "hook":
         try:
             out = hooks.run_hook(args.event, sys.stdin.read() if not sys.stdin.isatty() else "")

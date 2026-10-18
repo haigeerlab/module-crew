@@ -12,7 +12,7 @@
 
 - [x] Checkpoint 1（report）：Phase 1 全绿、Claude 开工说明逐字比较通过（test_claude_path_unchanged；test_start* 全绿，2026-10-18）
 
-- [ ] Task 3：`module-crew host-check`
+- [x] Task 3：`module-crew host-check`
   - 验收：Spec 验收 5
   - 文件：`module_crew/hostcheck.py`、`module_crew/__main__.py`、`module_crew/start.py`（记 `pluginVersion`）、`tests/test_codex_host.py`
 
