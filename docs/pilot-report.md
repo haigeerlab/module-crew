@@ -163,3 +163,5 @@ Spec 修订 ce26d8b（crew-merge、crew-start、crew-review-batch），实现 79
 - 2026-10-18 用户批准：0.2.1（bc5cd26）验收通过——修复联合演练批 2 第 3 步报来的缺陷：先 `source add` 再第一次 `start prepare` 崩溃（KeyError: crewDir）；运行配置是否写定改按 `crewDir` 判断，首次写入保留已登记的来源，退回串行同样改按 `crewDir` 判断；Spec 未改；演练现有状态库可直接继续。
 
 - 2026-10-18 用户批准：0.2.2（2c2fbe1）验收通过——联合演练 T1／T16③ 报来的四项：Plan 交审必须列出 todo.md（Spec 交审列 spec/<id>.md），缺了拒收；交枢纽【等待用户】补「项目：」、要点前 3 行、审查建议摘要、「你该回：A 全部批准」；合成【用户答复】输出 alsoAnswers；带来源批准必填 `--source-from`，不是来源本身或是登记的模块会话就拒收。crew-review-batch、crew-hub-bridge 的修订复审通过。
+
+- 2026-10-19 用户批准：0.3.0（3f0068e）crew-review-nearby 最终验收通过——审查就近（送审、返工上限 3 次、不同意、超时 15 分钟）、待用户决定与漏答追问、多段审查结论、最终验收写真实后果、merge revoke、C 编号、--then-batch、一个模块一项原样展示（产物与原文文件）、评审节奏、只在决策收件箱问、验收标准与证据、退回分原因与 merge renotice、提交钩子输出、改钉契约 v2.1；crew-review-nearby、crew-protocol、crew-start、crew-hub-bridge、crew-review-batch、crew-merge、crew-onboarding 的修订复审通过。R14、R16 放下一版。

@@ -1,4 +1,5 @@
-<!-- spec-guard: review approved d2fca94c3809 -->
+<!-- spec-guard: review approved e0241ca063f1 -->
+
 # Spec: crew-onboarding
 
 > 能力图模块 `crew-onboarding`。需求来源：`docs/requirements-record.md` B1（角色与职责、权限弹窗）、B4（消息、答复有效性、被挡住必须报、规则不写进 worktree）、

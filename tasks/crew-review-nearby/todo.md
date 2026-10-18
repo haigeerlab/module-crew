@@ -64,7 +64,7 @@
   - 验收：Spec 验收 20、21
   - 文件：`module_crew/merge.py`、`module_crew/commits.py`、`module_crew/__main__.py`、`skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`codex-skills/crew-dev/SKILL.md`、`tests/test_review_nearby.py`
 
-- [ ] Checkpoint 3（gate）：模块最终验收——全部测试全绿、21 条验收逐条对应测试、列出实际改动文件、冻结前按需求文档 R1–R20 逐项勾清单
+- [x] Checkpoint 3（gate）：模块最终验收——全部测试全绿、21 条验收逐条对应测试、列出实际改动文件、冻结前按需求文档 R1–R20 逐项勾清单（用户 2026-10-19 批准，含 7 份 Spec 修订）
 
 ## 外部审查意见
 
