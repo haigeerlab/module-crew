@@ -28,8 +28,9 @@
 | crew-recovery-hooks | 启动／恢复／压缩与每轮的按角色注入；压缩后「先核对再动手」；换会话的 `takeover` 接管流程 | crew-store, crew-probe |
 | crew-failure | 挂起释放名额、识别悄悄停下、崩溃在原 worktree 换会话、退回串行 | crew-merge, crew-recovery-hooks |
 | crew-hub-bridge | 接入收件枢纽：批准来源登记与校验（self／hub／lead）、枢纽事项号与 crew 编号一对多对照、审查行、交枢纽的【等待用户】正文、只读线状态出口（sessions --json 契约与 interface.json）、skill 措辞与协调会话规则 | crew-review-batch, crew-merge, crew-failure |
+| crew-codex-host | 第二版：Codex 桌面版模块会话——Codex 插件包与 crew-dev 的 Codex 版、start prepare --host codex 与开工说明的 Codex 段、host-check 只读预检（.git 可写、命令可用、agent-relay）、身份重登与未加载提示；协调会话仍为 Claude | crew-start, crew-onboarding, crew-recovery-hooks |
 
-Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge
+Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host
 
 <!-- Spec Guard 按严格串行推进。为兼容上游格式，逗号分组会按左到右顺序展开为单模块步骤，不代表并行授权。 -->
 
@@ -62,3 +63,4 @@ Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → cr
 - 2026-10-18：「说明」改为 crew-protocol 现钉住 session-protocol v1.5（246e138）。来源：用户批准升级。模块、依赖与顺序不变。
 - 2026-10-18：「说明」改为 crew-protocol 现钉住 session-protocol v1.7（1e14a49）。原因：crew-hub-bridge 需要 v1.6 的转交条文；来源：用户批准的契约版本。模块、依赖与顺序不变。
 - 2026-10-18：「说明」改为 crew-protocol 现钉住 session-protocol v1.8（c982bc3）。原因：crew-failure 需要挂起、恢复通知（第二轮试点问题 I）；来源：第二轮试点修法，用户 2026-10-18 批准。模块、依赖与顺序不变。
+- 2026-10-18：插入第二版模块 crew-codex-host（依赖 crew-start、crew-onboarding、crew-recovery-hooks，排在 crew-hub-bridge 之后）。原因：需求记录第 13 节「Codex 模块会话」；来源：用户 2026-10-18 确认 14 条假设并批准插入。
