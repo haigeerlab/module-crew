@@ -62,8 +62,17 @@ def listing(db: store.Store) -> list[dict]:
     return list((store.get(db, "config", "main") or {}).get("sources") or [])
 
 
-def check(db: store.Store, name: str, item: int, relay_id: int, text: str | None) -> SourceInfo:
-    """Validate a decision carried by a whitelisted source and read the user's words out of its message."""
+def check(db: store.Store, name: str, item: int, relay_id: int, text: str | None, *, sender: str) -> SourceInfo:
+    """Validate a decision carried by a whitelisted source and read the user's words out of its message.
+
+    `sender` is the mailbox the message actually came from (copied from bridge_inbox): it must be the source itself
+    and never a registered module session, so a module session cannot pass off a 【用户答复】 as the hub's.
+    """
+    dev = store.get(db, "session", sender)
+    if dev is not None and dev.get("role") == "dev":
+        raise SourceRefused(f"{sender} 是登记的模块会话，它发来的消息不能当作用户的决定")
+    if sender != name:
+        raise SourceRefused(f"这条消息的发件人是 {sender}，不是来源 {name}：只认来源自己发来的消息")
     row = next((r for r in listing(db) if r.get("name") == name), None)
     if row is None:
         raise SourceRefused(f"{name} 不是登记过的来源（先请用户在本会话 source add）")

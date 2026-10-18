@@ -31,7 +31,7 @@
 
 1. 模块 `crew-hub-bridge` 追加到能力图末尾，依赖 crew-review-batch、crew-merge、crew-failure。
 2. 批准来源三种：`self`（用户在协调会话亲手输入，默认）、`hub`（收件枢纽转来的【用户答复】）、`lead`（指定负责人带事项号与原话转交）；后两种的发件人先由用户在协调会话亲手登记（`source add`），未登记不认。
-3. 所有批准命令新增 `--source <邮箱名> --source-item <H> --source-relay-id <消息号>`；来源非 `self` 时 `--original-file` 放对方消息全文，用契约解析核对，不合就拒绝、什么都不写；`lead` 的格式按 v1.6。
+3. 所有批准命令新增 `--source <邮箱名> --source-item <H> --source-relay-id <消息号> --source-from <实际发件人>`；`--source-from` 照抄 `bridge_inbox` 里这条消息的发件人，不是来源本身或是状态库登记的模块会话就拒收（2026-10-18 修订）；来源非 `self` 时 `--original-file` 放对方消息全文，用契约解析核对，不合就拒绝、什么都不写；`lead` 的格式按 v1.6。
 4. 每条批准记来源、H、对方消息号；一个 H 可对应多个 crew 编号；`source map` 双向查。
 5. `review note` 记审查会话的【审查结论】，`review batch` 每条显示审查行，没有显示「未审查」；只提醒不强制。
 6. `review batch --for-hub` 生成合格的【等待用户】正文。
@@ -78,7 +78,7 @@ bin/module-crew source map (<H> | '#<crew 编号>') [--json]
 bin/module-crew review note <交审编号> --from <审查会话> --file <消息文件>
 bin/module-crew review batch --for-hub [--parallel-with <H>]
 # 批准命令（review approve/answer、merge approve/cleanup/push/tick、start prepare、change land/answer、suspend、serial、takeover、ticket close）新增：
-#   [--source <邮箱名> --source-item <H> --source-relay-id <消息号>]
+#   [--source <邮箱名> --source-item <H> --source-relay-id <消息号> --source-from <实际发件人>]
 bin/module-crew sessions --json
 ```
 
@@ -138,20 +138,20 @@ python3 -m unittest discover -s tests -v
 
 - **始终**：来源白名单只能由用户原话增删；非 `self` 来源的原话取自对方消息解析结果；出口字段只增不改。
 - **先问**：把审查行改为强制；让未登记的会话成为来源；改出口已有字段。
-- **绝不**：把协调会话自己写的话当作枢纽或负责人的答复；在出口里写状态库；绕过契约解析接受转交。
+- **绝不**：把协调会话自己写的话当作枢纽或负责人的答复；把模块会话发来的【用户答复】当作用户的决定（`inbox add` 拒收；`--source-from` 是登记的模块会话时批准命令拒收）；在出口里写状态库；绕过契约解析接受转交。
 
 ## 验收标准
 
 1. `source add live-saas-hub --kind hub --original "登记收件枢纽"`：白名单有它；无原话、重复、kind 不合法退出码 3；`source remove` 同理；`source list` 列出。
 2. 不带 `--source` 的所有批准命令行为与现在一致（现有测试全部通过）。
-3. `review approve 4 5 --source live-saas-hub --source-item 120 --source-relay-id 6001 --original-file <hub 消息>`：合格时两条批准都记 `source: {name, kind: hub, item: 120, relayId: 6001}`，用户原话取自消息；来源未登记、消息不合格、事项号不符时退出码 3、状态库与 git 不变。
+3. `review approve 4 5 --source live-saas-hub --source-item 120 --source-relay-id 6001 --original-file <hub 消息>`：合格时两条批准都记 `source: {name, kind: hub, item: 120, relayId: 6001}`，用户原话取自消息；来源未登记、消息不合格、事项号不符、`--source-from` 不是来源本身或是登记的模块会话时退出码 3、状态库与 git 不变；缺 `--source-from` 退出码 2。
 4. `source map 120` 列出 #4、#5 及其模块与节点；`source map '#4'` 给出来源 120 与 live-saas-hub。
 5. `lead` 来源：合格的【负责人转交】被接受，记下来自短名与转交范围；拿【用户答复】冒充 lead、拿【负责人转交】冒充 hub 都退出码 3。
 6. `review note 4 --from live-saas-arch-review --file <审查结论>`：记下并在 `review batch` 显示审查行；没有审查的显示「未审查」；未登记、不合格、对不上退出码 3。
 7. `review batch --for-hub`：正文 `protocol.parse` 判为合格的【等待用户】，含「项目：」、每条交审的模块、节点、要点前 3 行、审查行（附建议时带建议首行）、「架构审查」的建议摘要、三个选项与「你该回：A 全部批准」；`--parallel-with 118` 时带【与 #118 并行】。
 8. `sessions --json`：`schemaVersion` 为 1，每个在用模块会话有契约字段；五种 stage 各构造一次；挂起时 `suspended` 为原因；未建库时退出码 2、stderr 一行原因、stdout 为空；单次 1 秒内。
 9. `interface.json` 合法，`version` 等于 plugin.json、`contract` 等于 `CONTRACT_VERSION`，`sessions.command` 能运行。
-10. 转交枢纽答复：带来源批准时，给模块的【用户答复】按 v1.6 带「转自」（hub 或负责人转交）、列出该收件人的全部原消息号（同一收件人合成一份）、lead 时带「转交范围」；并输出发给来源的【已恢复】「结束：#H」；两者都 `protocol.parse` 合格；不带来源时答复写法不变。crew-dev skill 写明认「转自」答复的核对。
+10. 转交枢纽答复：带来源批准时，给模块的【用户答复】按 v1.6 带「转自」（hub 或负责人转交）、列出该收件人的全部原消息号（同一收件人合成一份，命令输出与 sends 记录给出 `replyTo` 与其余原消息号 `alsoAnswers`）、lead 时带「转交范围」；并输出发给来源的【已恢复】「结束：#H」；两者都 `protocol.parse` 合格；不带来源时答复写法不变。crew-dev skill 写明认「转自」答复的核对。
 11. skill：crew-coordinator 第 13、25、56、122 行改为「用户的决定只有两种来源」的措辞；新增「接入收件枢纽」一节，含只向枢纽交【等待用户】、合批、一对多、转完立刻结束 #H、一个模块一张外部等待单、【答复告知】只记录、醒来先 `status`、可直连 API 与后台线做技术核对与已批范围交付确认（新工作先经枢纽请用户批）、长检查用后台运行。
 11. `review approve 4 --source <lead> …`：退出码 0，集成分支不变、没有评审标记，交审 #4 仍为 open，记一条 lead-record（含来源与原话），没有要发送的消息，输出含「只记账」；之后用户在本会话亲手 `review approve 4` 照常成功。
 12. 带 hub 来源批准：集成分支提交说明含「收件枢纽事项 #120」；用户在本会话亲手批准时提交说明不含「收件枢纽」。
@@ -174,3 +174,4 @@ README 增加「接入收件枢纽」一节：登记来源、带来源批准、�
 - 2026-10-18：交枢纽的【等待用户】「要点」按模块分组（验收 13）。来源：用户 2026-10-18 经 spec-guard 负责人会话提出（交审给人看要一个模块一个模块地出现），本会话 2026-10-18 批准修法。
 - 2026-10-18：协调会话 skill 写明代模块发【撤回】时「事项：#N」只写枢纽事项号（session-protocol v1.9 f47631b 写明的条文）。来源：契约负责人告知 v1.9，用户 2026-10-18 定为 0.1.2 待办，随 0.2.0 做。
 - 2026-10-18：交枢纽的【等待用户】加「项目：」、要点每条取前 3 行、审查结论存「要点」并在审查行与「架构审查」括号里带建议摘要、「你该回」写完整回复「A 全部批准」；改关键决策 4、5 与验收 7。原因：联合演练 T1 观察到正文缺项目、建议内容没出现、要点偏薄、「你该回」只有字母（契约 v1.9 第 6 节要求写完整回复原文、要点 3–5 行）；来源：接入方案会话转报，用户 2026-10-18 批准修法（0.2.2）。
+- 2026-10-18：批准命令带来源时必填 `--source-from`（实际发件人），不是来源本身或是登记的模块会话就拒收；合成的【用户答复】输出 `alsoAnswers`；改关键决策 3、接口约定、边界与验收 3、10。原因：联合演练 T1 中一条答复覆盖两条交审时命令没给出 alsoAnswers（rh-coord 自己补的）；T16③ 核对发现模块会话的【用户答复】若被协调会话误当成枢纽消息，代码照收、只靠 skill 规则挡；来源：监测会话转报（决定 37 先修再测），用户 2026-10-18 选 (b) 代码层面拒收（0.2.2）。

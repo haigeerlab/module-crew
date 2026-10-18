@@ -482,7 +482,9 @@ def approve(project: str | os.PathLike, numbers: list[int], original: str) -> Ap
                 tx.put("item", str(n), dict(rec, state="closed", closedReason="answered",
                                             answer={"original": original, "answeredAt": answered_at, **store.source_field(),
                                                     "body": body, "approval": approval}), action="answered", data={"body": body})
+            relays = [rec["relayId"] for _, rec in group if rec.get("relayId") is not None]
             result.sends.append({"kind": "user-reply", "to": group[0][1]["from"], "replyTo": group[0][1]["relayId"],
+                                 "alsoAnswers": relays[1:],     # one reply answering several requests (agent-relay)
                                  "body": body, "path": db.path / meta["path"]})
         _closing_send(tx, db, result.sends, modules)
         for m in modules:

@@ -65,7 +65,7 @@ module-crew review approve <交审事项编号>… --original-file <原话文件
 module-crew review answer <交审事项编号> --original-file <原话文件>   # 要求修改，不碰集成基线
 ```
 
-4. 按输出逐条 `bridge_send`：【用户答复】带 `replyTo`，【协调通知】不带；正文都用 `bodyFile`，不改一字。
+4. 按输出逐条 `bridge_send`：【用户答复】带 `replyTo`，输出里有 `alsoAnswers` 就一并带上（一条答复同时答了几条交审）；【协调通知】不带；正文都用 `bodyFile`，不改一字。
 5. `review approve` 退出码 3：什么都没变，把原因告诉用户；4：中途停下，输出列出集成 checkout 里已改未提交的文件，交用户决定，不要自己清理。
 
 ## 公共变更请求
@@ -148,7 +148,8 @@ module-crew ticket close <编号> --reason user --original-file <用户原话文
   代模块向枢纽发【撤回】时同理：「事项：#N」只写枢纽回执给的事项号（契约 v1.9），写成自己那条【等待用户】的邮箱号会被整条退回。
 - **审查行**：审查会话发来【审查结论】时 `module-crew review note <交审编号> --from <审查会话> --file <消息文件>`；只提醒不拦截，没审过也能批，但要在给用户的正文里如实写「未审查」。
 - **枢纽转来答复时**：把那条【用户答复】全文存成文件，批准命令带
-  `--source <枢纽> --source-item <H> --source-relay-id <消息号> --original-file <消息文件>`；命令从消息里读出用户原话，你不要转写。
+  `--source <枢纽> --source-item <H> --source-relay-id <消息号> --source-from <发件人> --original-file <消息文件>`；命令从消息里读出用户原话，你不要转写。
+  `--source-from` 照抄 `bridge_inbox` 里这条消息的实际发件人；它不是来源本身、或是登记的模块会话时命令拒收——模块会话发来的【用户答复】一律不算。
   转给模块的【用户答复】照命令输出发；转完立刻给枢纽发【已恢复】「结束：#H」。
 - `module-crew source map <H>`／`source map '#<编号>'` 查枢纽事项与 crew 编号的对照。
 - 【答复告知】只记录，不当作批准；一个模块等外部线时只开一张外部等待单。

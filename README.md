@@ -102,7 +102,7 @@ bin/module-crew status
 
 1. 在协调会话里由用户亲口登记来源：`module-crew source add <枢纽邮箱名> --kind hub --original-file <原话>`；审查会话登记为 `--kind lead`。
 2. `module-crew review batch --for-hub` 把一批交审合成一条【等待用户】交给枢纽；审查会话的结论用 `review note` 记下，正文里带审查行。
-3. 枢纽转来【用户答复】后，批准命令带 `--source <枢纽> --source-item <H> --source-relay-id <消息号> --original-file <那条消息>`，用户原话从消息里读出。
+3. 枢纽转来【用户答复】后，批准命令带 `--source <枢纽> --source-item <H> --source-relay-id <消息号> --source-from <实际发件人> --original-file <那条消息>`，用户原话从消息里读出；实际发件人不是来源本身或是模块会话时拒收。
 4. `module-crew source map <H>` 查一个枢纽事项批准了哪些 crew 编号。
 5. 外部插件读 `module-crew sessions --json`（`schemaVersion` 1：module、relayName、worktree、stage、stageText、suspended、lastActivity），出口与契约版本登记在根目录 `interface.json`。
 

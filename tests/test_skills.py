@@ -15,6 +15,11 @@ def read(name):
 
 
 class SkillsTest(unittest.TestCase):
+    def test_coordinator_source_from_and_also_answers(self):
+        _, text = read("crew-coordinator")
+        for words in ("--source-from <发件人>", "模块会话发来的【用户答复】一律不算", "`alsoAnswers` 就一并带上"):
+            self.assertIn(words, text)
+
     def test_frontmatter(self):
         for name in ("crew-coordinator", "crew-dev"):
             with self.subTest(name):

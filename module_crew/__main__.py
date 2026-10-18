@@ -290,7 +290,8 @@ def _review(args) -> int:
     for x in res.sends:
         kind = {"user-reply": "【用户答复】", "resumed": "【已恢复】"}.get(x["kind"], "【协调通知】")
         reply_to = f"，replyTo：{x['replyTo']}" if x["replyTo"] is not None else ""
-        print(f"发送 {kind} → {x['to']}{reply_to}，正文文件：{x['path']}")
+        also = f"，alsoAnswers：{'、'.join(map(str, x['alsoAnswers']))}" if x.get("alsoAnswers") else ""
+        print(f"发送 {kind} → {x['to']}{reply_to}{also}，正文文件：{x['path']}")
     return res.code
 
 
@@ -544,14 +545,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     src = None
     if getattr(args, "source", None):
-        if args.source_item is None or args.source_relay_id is None:
-            print("❌ 带 --source 时必须同时给 --source-item 与 --source-relay-id", file=sys.stderr)
+        if args.source_item is None or args.source_relay_id is None or not args.source_from:
+            print("❌ 带 --source 时必须同时给 --source-item、--source-relay-id 与 --source-from", file=sys.stderr)
             return 2
         text = _original(getattr(args, "original", None), getattr(args, "original_file", None))
         if text is None:
             return 2
         try:
-            info = sources.check(store.open_store(), args.source, args.source_item, args.source_relay_id, text)
+            info = sources.check(store.open_store(), args.source, args.source_item, args.source_relay_id, text,
+                                 sender=args.source_from)
         except sources.SourceRefused as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
@@ -575,6 +577,7 @@ def _add_source_options(parser: argparse.ArgumentParser) -> None:
         g.add_argument("--source", help="登记过的来源邮箱名；此时 --original(-file) 放对方消息全文")
         g.add_argument("--source-item", type=int, help="来源的事项号 H")
         g.add_argument("--source-relay-id", type=int, help="来源消息的邮箱消息号")
+        g.add_argument("--source-from", help="这条消息实际的发件邮箱名（照抄 bridge_inbox）；必须就是来源本身")
 
 
 def _run(args) -> int:
