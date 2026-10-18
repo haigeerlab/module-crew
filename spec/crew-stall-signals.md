@@ -62,15 +62,16 @@
  "sessions": [{"module": "b", "relayName": "shop-b", "...": "现有字段不变",
    "startedAt": "2026-10-19T09:00:00+08:00",
    "commits": {"ahead": 3, "last": {"commit": "<40 位>", "at": "2026-10-19T11:20:05+08:00"}, "error": null},
-   "asks": [{"node": "spec", "count": 1, "refs": ["C12"], "lastAt": "2026-10-19T09:40:00+08:00"},
-            {"node": "final", "count": 3, "refs": ["C20", "C26", "C31"], "lastAt": "2026-10-19T15:02:00+08:00"}],
+   "asks": [{"node": "spec", "count": 1, "refs": ["C12"], "ats": ["2026-10-19T09:40:00+08:00"], "lastAt": "2026-10-19T09:40:00+08:00"},
+            {"node": "final", "count": 3, "refs": ["C20", "C26", "C31"],
+             "ats": ["2026-10-19T10:05:00+08:00", "2026-10-19T13:30:00+08:00", "2026-10-19T15:02:00+08:00"], "lastAt": "2026-10-19T15:02:00+08:00"}],
    "returns": [{"ref": "C22", "returnKind": "env", "at": "2026-10-19T13:10:00+08:00"}],
    "waitUser": [{"ref": "C24", "state": "open", "closedReason": null, "decide": "要不要再试一次", "at": "2026-10-19T14:00:00+08:00"}]}]}
 ```
 
 - `startedAt`：没有登记事件时 null。
 - `commits.ahead` 为 0 时 `last` 为 null（开工以来没有提交）；读不到时 `ahead`、`last` 都为 null，`error` 一行原因。
-- `asks`：只列计过数的节点，按 Spec、Plan、接口、最终验收排；`node` 用现有节点代码（`spec`／`plan`／`interface`／`final`），`refs` 按编号升序；`lastAt` 为这些交审最近一次进提请批准或被答复的时间。
+- `asks`：只列计过数的节点，按 Spec、Plan、接口、最终验收排；`node` 用现有节点代码（`spec`／`plan`／`interface`／`final`），`refs` 按编号升序；`ats` 与 `refs` 一一对应，`ats[i]` 是 `refs[i]` 那次交审进提请批准或被答复的时间（两者都有取较晚的），供决策收件箱按时间窗口计数；`lastAt` 为 `ats` 中最晚的一个。
 - `returns`、`waitUser`：按编号升序；没有为 `[]`。
 - 时间一律 ISO 8601 带时区，与现有 `lastActivity` 同格式。
 
@@ -128,7 +129,7 @@ python3 -m unittest discover -s tests -v
 1. 模块 worktree 有 2 个不在集成分支里的提交：`commits.ahead` 为 2，`last.commit`、`last.at` 是最新那个的提交号与提交时间；没有提交时 `ahead` 0、`last` null。
 2. worktree 不存在或集成分支不存在：该模块 `commits.error` 写明原因、`ahead`／`last` 为 null，其他模块与其他字段正常，退出码 0。
 3. `startedAt` 等于这个会话 `registered` 事件的时间；`takeover` 之后不变。
-4. 同一模块同一节点：进过提请批准的、被用户答复的各计一次，只经返工又被取代的不计；`refs`、`count`、`lastAt` 正确，节点顺序 Spec、Plan、接口、最终验收。
+4. 同一模块同一节点：进过提请批准的、被用户答复的各计一次，只经返工又被取代的不计；`refs`、`ats`（与 `refs` 一一对应）、`count`、`lastAt` 正确，节点顺序 Spec、Plan、接口、最终验收。
 5. 没配决策收件箱时，用户在模块协调亲手批准的交审计入 `asks`。
 6. 合并退回进 `returns` 并带 `returnKind`；重交的新 C 号到用户面前时在 `asks` 再计一次。
 7. `waitUser` 列出模块发来的全部【等待用户】（开着与关了的），`decide` 为「要你决定」第一行。
@@ -144,3 +145,7 @@ python3 -m unittest discover -s tests -v
 
 README 里说明 `sessions --json` 字段的那一条（现第 121 行）补上新字段并链接本 Spec；不在本模块改其他 README 文字（全面改名在 crew-glossary-rename）。
 回告：本模块发版后告诉 decision-inbox 插件会话新字段可用（随最终验收列出）。
+
+## 变更记录
+
+- 2026-10-19：`asks` 每项加 `ats`（与 `refs` 一一对应的时间），接口约定与验收 4 随之补一句；老字段不变。原因：decision-inbox 的停滞触发条件「同一件事 24 小时内报了 3 次」需要每次的时间，累计次数与最后时间不够；来源：decision-inbox 插件会话回复（选 B），用户 2026-10-19 批准修订。

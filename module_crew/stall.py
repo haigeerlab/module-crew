@@ -71,8 +71,13 @@ def asks(events: list[dict], items: dict, module: str) -> list[dict]:
                              if v.get("closedReason") == "answered" else None) if t]
         if times:
             seen.setdefault(v["node"], []).append((int(key), max(times)))
-    return [{"node": node, "count": len(seen[node]), "refs": [f"C{n}" for n, _ in sorted(seen[node])],
-             "lastAt": max(t for _, t in seen[node])} for node in NODES if node in seen]
+    out = []
+    for node in NODES:
+        if node in seen:
+            ordered = sorted(seen[node])
+            out.append({"node": node, "count": len(ordered), "refs": [f"C{n}" for n, _ in ordered],
+                        "ats": [t for _, t in ordered], "lastAt": max(t for _, t in ordered)})
+    return out
 
 
 def returns(events: list[dict], items: dict, module: str) -> list[dict]:

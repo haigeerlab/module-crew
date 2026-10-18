@@ -75,6 +75,8 @@ class AsksTest(StallCase):
         self.assertEqual([(a["node"], a["count"], a["refs"]) for a in asks], [("spec", 2, [f"C{hub}", f"C{direct}"])])
         answered = store.get(self.db, "item", str(direct))["answer"]["answeredAt"]
         self.assertEqual(asks[0]["lastAt"], answered)
+        hub_at = store.get(self.db, "item", str(hub))["answer"]["answeredAt"]   # answered after its hub batch
+        self.assertEqual(asks[0]["ats"], [hub_at, answered])
         self.assertEqual(self.rows()["c"]["asks"], [])
 
     def test_node_order(self):
@@ -83,6 +85,14 @@ class AsksTest(StallCase):
         spec = review.add(self.db, self.spec_review("b"), "shop-b", 7102).number
         review.answer(self.db, spec, "Spec 改")
         self.assertEqual([a["node"] for a in self.rows()["b"]["asks"]], ["spec", "plan"])
+
+    def test_ats_is_the_hub_batch_time_when_not_answered(self):
+        n = review.add(self.db, self.spec_review("b"), "shop-b", 7401).number
+        review.for_hub(self.repo)
+        batch = [k for k, v in store.records(self.db, "item").items() if v.get("kind") == "hub-batch"][-1]
+        at = [e["at"] for e in store.events(self.db, key=batch) if e["type"] == "item.hub-batch"][0]
+        ask = self.rows()["b"]["asks"][0]
+        self.assertEqual((ask["refs"], ask["ats"], ask["lastAt"]), ([f"C{n}"], [at], at))
 
 
 class ReturnsTest(StallCase):

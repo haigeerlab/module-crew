@@ -20,6 +20,11 @@
 
 - [x] 回告：把 sessions --json 新字段说明发给 decision-inbox 插件会话确认字段名（用户 2026-10-19 要求）——2026-10-19 已用桌面版跨会话消息发给「Decision-inbox 插件第 3 阶段能力图」，请它回 A 照用或 B 改名；等回复，要改名就在发版前给本模块追加任务。发版后再告知新字段可用
 
+- [x] Task 4（追加）：`asks` 每项加 `ats`（与 `refs` 一一对应的时间）
+  - 验收：Spec 验收 4（修订后）
+  - 来源：decision-inbox 回复选 B，用户 2026-10-19 批准修订
+  - 文件：`module_crew/stall.py`、`tests/test_stall_signals.py`
+
 ## 外部审查意见
 
 <!-- spec-guard: external-review declined -->
