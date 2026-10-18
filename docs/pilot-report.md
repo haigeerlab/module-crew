@@ -159,3 +159,5 @@ Spec 修订 ce26d8b（crew-merge、crew-start、crew-review-batch），实现 79
 - 2026-10-18 用户批准：0.1.1（b70ac3b）验收通过——提交过 commitlint、钩子拒绝单独标原因、负责人转交只记账、收件枢纽批准记 #H；crew-hub-bridge、crew-merge、crew-review-batch、crew-shared-changes 的修订复审通过。
 
 - 2026-10-18 用户批准：0.2.0（4145e8b）验收通过——Codex 模块会话（crew-codex-host）、批量交审按模块分组、【撤回】规则、status 措辞、改钉契约 v1.9；crew-review-batch、crew-hub-bridge、crew-probe、crew-protocol 的修订复审通过；联合演练第一波用 0.2.0。
+
+- 2026-10-18 用户批准：0.2.1（bc5cd26）验收通过——修复联合演练批 2 第 3 步报来的缺陷：先 `source add` 再第一次 `start prepare` 崩溃（KeyError: crewDir）；运行配置是否写定改按 `crewDir` 判断，首次写入保留已登记的来源，退回串行同样改按 `crewDir` 判断；Spec 未改；演练现有状态库可直接继续。
