@@ -175,8 +175,19 @@ def _mark_command(project: Path) -> tuple[Path, dict] | str:
         return doc
     if "reviewMark" not in doc:
         return "spec-guard 的 interface.json 没有 reviewMark 入口（需要 interface 1.1）"
-    probe_cmd = probe.safe_command(found.root, doc, "reviewMark", {})
-    return probe_cmd if isinstance(probe_cmd, str) else (found.root, doc)
+    probe_cmd = probe.safe_command(found.root, doc, "reviewMark", _mark_fill(Path("."), "m", "spec"))
+    if isinstance(probe_cmd, str):
+        return probe_cmd
+    left = [x for x in probe_cmd if x.startswith("<") and x.endswith(">")]
+    if left:
+        return f"reviewMark.command 有不认识的占位符 {'、'.join(left)}（按 interface 1.1 应为 <spec|plan|both>、<pending|approved>），没有运行"
+    return found.root, doc
+
+
+def _mark_fill(checkout: Path, module: str, target: str) -> dict[str, str]:
+    """Placeholders of interface 1.1 reviewMark.command."""
+    return {"<project-root>": str(checkout), "<module-id>": module,
+            "<spec|plan|both>": target, "<pending|approved>": "approved"}
 
 
 def approve(project: str | os.PathLike, numbers: list[int], original: str) -> ApproveResult:
@@ -228,9 +239,7 @@ def approve(project: str | os.PathLike, numbers: list[int], original: str) -> Ap
         target.write_bytes(data)
         written.append(path)
     for n, rec in picked:
-        cmd = probe.safe_command(root, doc, "reviewMark", {
-            "<project-root>": str(checkout), "<module-id>": rec["module"],
-            "<target>": MARK_TARGET[rec["node"]], "<state>": "approved"}) + ["--confirm"]
+        cmd = probe.safe_command(root, doc, "reviewMark", _mark_fill(checkout, rec["module"], MARK_TARGET[rec["node"]])) + ["--confirm"]
         ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
         if ran.returncode != 0:
             return ApproveResult(4, [f"#{n}（{rec['module']}）写评审标记失败，已停下：{ran.stderr.strip()[:200]}",

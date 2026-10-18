@@ -115,6 +115,11 @@ class ApproveTest(ReviewCase):
         self.plugins.entries.pop("spec-guard@m")
         self.plugins.install("spec-guard", spec_guard_interface("1.1", review_mark=["sh", "-c", "true"]), map_script=True)
         self.assert_refused([s2], "不安全")
+        self.plugins.entries.pop("spec-guard@m")
+        old_style = ["python3", "-B", "hooks/review_mark.py", "--project", "<project-root>", "--module", "<module-id>",
+                     "--target", "<target>", "--state", "<state>"]
+        self.plugins.install("spec-guard", spec_guard_interface("1.1", review_mark=old_style), map_script=True)
+        self.assert_refused([s2], "不认识的占位符")
 
     def test_failure_part_way(self):
         import os

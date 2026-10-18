@@ -151,7 +151,7 @@ class FakePlugins:
 
 
 REVIEW_MARK_COMMAND = ["python3", "-B", "hooks/review_mark.py", "--project", "<project-root>", "--module", "<module-id>",
-                       "--target", "<target>", "--state", "<state>"]
+                       "--target", "<spec|plan|both>", "--state", "<pending|approved>"]
 
 
 def spec_guard_interface(version: str = "1.0", command: list | None = None, review_mark: list | None = None) -> dict:
