@@ -24,13 +24,13 @@
 **范围外**
 
 - 发消息、收消息、等待单、事项编号（crew-onboarding 及之后的模块；本模块不碰状态库与 agent-relay）。
-- 生成多线【用户答复】、【答复告知】，解析【审查结论】【答复告知】（第一版用不到，见关键决策 2）。
+- 生成多线【用户答复】、【答复告知】，解析【答复告知】（第一版用不到，见关键决策 2）。【审查结论】自 crew-review-nearby 起校验（2026-10-19 修订）。
 - 判断答复是否有效（原消息号是不是收到方自己发的）：需要状态库，归 crew-onboarding。
 
 ## 假设（用户 2026-10-18 已确认）
 
 1. 钉住 v1.5：复制 `fixtures/` 到 `tests/fixtures/session-protocol/v1.5/`，记来源提交 246e138；先核对 `SHA256SUMS`，再逐份对照期望结果，只比期望结果里出现的键。
-2. 解析：【等待用户】【等待其他会话】【已恢复】【撤回】【交审】【公共变更请求】（协调会话收）、【用户答复】【协调通知】（模块会话收）、认不出的消息；【审查结论】【答复告知】跳过并在一致性说明里写明。
+2. 解析：【等待用户】【等待其他会话】【已恢复】【撤回】【交审】【公共变更请求】（协调会话收）、【用户答复】【协调通知】（模块会话收）、【审查结论】（协调会话收，2026-10-19 修订）、认不出的消息；【答复告知】跳过并在一致性说明里写明。
 3. 生成：只生成协调会话发出的单线【用户答复】与【协调通知】；【协调通知】用「生成后再解析与输入一致」测；模块会话的消息由会话自己写、发送前用解析器自检。
 4. 独立实现，不复制、不依赖 decision-inbox 的代码；契约第 2 节的切分规则照契约写。
 5. 纯函数无 I/O；只读命令 `module-crew protocol check <文件>`，退出码 0 合格、3 不合格、2 参数错。
@@ -40,7 +40,7 @@
 1. **一个通用的「契约视图」作为测试与调用方的共同语言。** `Message.contract()` 返回契约第 12 节定义的那个字典
    （`type`、`valid`、`replyTo`、`end`、`markers`、`item`、`fields`……以及 v1.1 的 `submission`、`changeRequest`、`notice`）。
    一致性测试直接拿它和期望结果比；其他模块也用它的字段，不另设一套属性名。代价是字段名是契约里的 camelCase，与 Python 习惯不一致，换来的是「契约怎么写、代码就怎么读」。
-2. **认得全部 10 种标签，但只对支持的 8 种做校验。** 【审查结论】【答复告知】解析为对应类型代码、`supported` 为假、只做通用字段切分、
+2. **认得全部 10 种标签，但只对支持的 9 种做校验。** 【答复告知】解析为对应类型代码、`supported` 为假、只做通用字段切分、
    不给问题代码；调用方见到 `supported` 为假就当「第一版不处理」。这样不会把它们误判成 `unknown-kind`，也不用自造契约外的问题代码。
 3. **生成函数在输入不合法时直接抛 `ValueError`，不生成带问题的消息。** 例如开工类【协调通知】的依据里没有 `#N`、类型不是四种之一、
    用户原话为空、选项原文不以字母开头。生成结果出门前再用 `parse` 自检一次，不合格也抛错——协调会话发出的消息永远合格。
@@ -54,7 +54,7 @@ from module_crew import protocol
 
 msg = protocol.parse(text)
 msg.kind          # "review-request"；认不出为 "unknown"
-msg.supported     # 本插件是否校验这种类型（review-conclusion、answer-notice 为 False）
+msg.supported     # 本插件是否校验这种类型（answer-notice 为 False）
 msg.ok            # 没有问题代码
 msg.problems      # ("missing-end", "missing-field:要点", ...) 问题代码，按契约顺序
 msg.hints         # ("brief-thin", ...)
@@ -141,11 +141,11 @@ class Message:
 
 1. `tests/fixtures/session-protocol/v1.5/` 与 session-protocol 246e138 的 `fixtures/` 逐字节相同；`SHA256SUMS` 全部核对通过；改动任一样例一个字节，一致性测试失败。
 2. 支持的 8 种类型及 `unknown` 的全部 `parse` 期望结果（v1.0 的 wait-user 12 份、user-reply 4 份、wait-session 2 份、resumed 3 份、withdraw 1 份、unknown 1 份，v1.1 的 15 份，v1.3 新增的 wait-user 3 份，v1.4 新增的 wait-user 6 份与 user-reply 1 份，v1.5 新增的 coordination-notice 3 份，共 51 份）逐键一致。
-3. `user-reply` 的 3 份单线生成样例（`single`、`free-text`、`original-whitespace`）逐字相同；`multiline-user-reply`、`answer-notice` 的生成样例与 `review-conclusion` 的解析样例被跳过，测试输出列出跳过项。
+3. `user-reply` 的 3 份单线生成样例（`single`、`free-text`、`original-whitespace`）逐字相同；`multiline-user-reply`、`answer-notice` 的生成样例被跳过，测试输出列出跳过项；`review-conclusion` 的 4 份解析样例自 2026-10-19 起参与比对（解析计数 68）。
 4. 【协调通知】四种类型 `render` 后再 `parse`：合格，`notice.kind` 与入参一致，三个字段的值与入参相同。
 5. `render_coordination_notice` 在类型不认识、开工类依据无 `#N`、任一字段为空时抛 `ValueError`；`render_user_reply` 在原话为空、编号不是正整数、选项原文不以字母开头时抛 `ValueError`。
 6. 含换行与首尾空格的用户原话经 `render_user_reply` 再 `parse`，`fields["用户原话"]` 与原话逐字相同（首行首部空格按契约规则去掉的情况在测试里写明）。
-7. 【审查结论】【答复告知】解析得到对应类型代码、`supported` 为假、没有问题代码。
+7. 【答复告知】解析得到对应类型代码、`supported` 为假、没有问题代码；【审查结论】按契约校验（结论三种写法、节点、必填字段），见 crew-review-nearby。
 8. `protocol check`：合格样例退出码 0；`review-request/bad-file-line.txt` 退出码 3 并打印 `bad-file-line`；`unknown-kind.txt` 退出码 3；文件不存在退出码 2。
 9. `protocol.py` 不 import `module_crew.store`、`subprocess`，不调用 `open`（测试扫描断言）。
 10. session-protocol `conformance/README.md` 的 module-crew 一行写明钉住 v1.5、解析与生成的类型及跳过项（交 session-protocol 契约负责人落地，用户 2026-10-18 选 A）。
@@ -166,3 +166,4 @@ class Message:
 - 2026-10-18：钉住的契约由 v1.4（e33c077）改为 v1.5（246e138），解析样例 48→51 份；【协调通知】增加「退回」类型（`returned`），解析与生成都要求退回类「依据」带 #编号。原因：crew-merge 需要退回通知，契约负责人按 module-crew 的需求新增；来源：用户 2026-10-18 批准（选 A）。
 - 2026-10-18：改钉 session-protocol v1.8（c982bc3）：样例换为 `tests/fixtures/session-protocol/v1.8/`，【协调通知】类型增加挂起（suspend）、恢复（resume），挂起类必填「原因」，挂起、恢复类的「依据」必须有 #编号；生成函数加 `reason` 参数；解析计数 64。原因：crew-failure 需要挂起、恢复通知（第二轮试点问题 I）；来源：契约负责人发布 v1.8，第二轮试点修法用户 2026-10-18 批准。
 - 2026-10-18：改钉 session-protocol v1.9（f47631b）：样例换为 `tests/fixtures/session-protocol/v1.9/`（与 v1.8 逐文件相同），`CONTRACT_VERSION` 改 1.9；解析 64、生成 3 不变。来源：契约负责人告知 v1.9，用户 2026-10-18 定为 0.1.2 待办，随 0.2.0 做。
+- 2026-10-19：【审查结论】改为校验（`supported` 为真、解析出 `conclusion`，4 份样例参与比对，解析计数 68）；按契约 v2.0 对齐初稿增加「须修改」「待用户决定」字段、【交审】「不同意」、【协调通知】返工与撤销批准类型、`C<N>` 编号与多段切分 `split_sections`，标「待契约 v2.0 定稿」。改范围、关键决策 2、接口说明与验收 3、7。原因：crew-review-nearby 要据审查结论自动返工；来源：用户 2026-10-19 批准 crew-review-nearby 的 Spec 与 Plan（Task 1）。

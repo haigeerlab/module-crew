@@ -2,7 +2,7 @@
 
 测试命令：`python3 -m unittest discover -s tests -v`
 
-- [ ] Task 1：协议层（须修改、待用户决定、不同意、返工、撤销批准、多段切分、C 编号开工依据）
+- [x] Task 1：协议层（须修改、待用户决定、不同意、返工、撤销批准、多段切分、C 编号开工依据）
   - 验收：Spec 验收 2、4、6、9（协议部分）
   - 文件：`module_crew/protocol.py`、`tests/test_review_nearby.py`
 

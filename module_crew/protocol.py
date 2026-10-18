@@ -26,7 +26,7 @@ KIND_TAGS = {
     "协调通知": "coordination-notice",
     "负责人转交": "owner-handoff",
 }
-UNSUPPORTED = ("review-conclusion", "answer-notice")
+UNSUPPORTED = ("answer-notice",)
 
 # Field names each kind knows (contract section 3).
 FIELDS = {
@@ -37,11 +37,11 @@ FIELDS = {
     "wait-session": ("在等谁", "等什么"),
     "resumed": (),
     "withdraw": ("事项", "原因"),
-    "review-conclusion": ("审查编号", "节点", "模块", "送审方", "结论", "来自", "要点"),
+    "review-conclusion": ("审查编号", "节点", "模块", "送审方", "结论", "来自", "要点", "须修改", "待用户决定"),
     "answer-notice": ("事项", "用户原话", "答复时间", "说明"),
-    "review-request": ("模块", "节点", "文件", "要点", "改动统计", "越界检查"),
+    "review-request": ("模块", "节点", "文件", "要点", "改动统计", "越界检查", "不同意"),
     "shared-change-request": ("来自", "文件", "改什么", "为什么", "是否完全停住"),
-    "coordination-notice": ("类型", "原因", "依据", "要你做什么"),
+    "coordination-notice": ("类型", "原因", "依据", "轮次", "要你做什么"),
     "unknown": (),
 }
 TERMINAL = {"原事项全文"}  # takes every remaining line
@@ -59,8 +59,20 @@ _SESSION_SEP = re.compile(r"[、,，+＋\s]+")
 _FILE_LINE_RE = re.compile(r"^(?:-\s+)?(\S.*?)\s+(sha256:[0-9a-f]{12,64})$")
 REVIEW_NODES = {"Spec": "spec", "Plan": "plan", "接口提案": "interface", "最终验收": "final"}
 NOTICE_KINDS = {"开工": "start", "同步基线": "sync-baseline", "接口变更": "interface-change", "收尾": "wrap-up", "退回": "returned",
-                "挂起": "suspend", "恢复": "resume"}
-NEED_REF = ("start", "returned", "suspend", "resume")   # notices whose 依据 must cite the user's approval
+                "挂起": "suspend", "恢复": "resume", "返工": "rework", "撤销批准": "revoke"}
+# notices whose 依据 must cite the user's approval: a hub item #N, or the coordinator's own approval C<N> (v2.0 draft)
+NEED_REF = ("start", "returned", "suspend", "resume", "revoke")
+_CREW_RE = re.compile(r"(?<![A-Za-z])C\s*(\d+)")
+_REVIEW_ID_RE = re.compile(r"(?<![A-Za-z])R-?\d+")
+_VERDICT_FORMS = (
+    (re.compile(r"^通过$"), "passed"),
+    (re.compile(r"^通过[，,]\s*附建议(\d+)条"), "passed-with-advice"),
+    (re.compile(r"^有须修改项(?:(\d+)条)?$"), "changes-required"),
+)
+_DECISION_HEAD_RE = re.compile(rf"^(D\d+)\s*{_COLON}\s*(.+)$")
+_DECISION_OPTION_RE = re.compile(r"^([A-Z])\s*[.．、：:)）]\s*(.+)$")
+_DECISION_LEAN_RE = re.compile(rf"^倾向\s*{_COLON}\s*([A-Z])")
+_DISAGREE_RE = re.compile(rf"^(#?[A-Za-z]+-?\d+)\s*{_COLON}\s*(.+)$")
 _THIN_WORDS = ("详见", "已明确", "同上")
 # v1.6 「转自」: only these two wordings (contract section 3)
 _RELAY_HUB_RE = re.compile(r"^收件枢纽\s*[，,]\s*消息\s*#\s*(\d+)$")
@@ -295,6 +307,93 @@ def _require(fields: dict, names, problems: list[str]) -> None:
             problems.append(f"missing-field:{name}")
 
 
+def _numbered(block: str | None) -> list[str]:
+    """「1. …」「2. …」 items of 须修改; a line without a number continues the previous item."""
+    items: list[str] = []
+    for line in _lines(block):
+        m = re.match(r"^\d+\s*[.．、)）]\s*(.*)$", line)
+        if m:
+            items.append(m.group(1).strip())
+        elif items:
+            items[-1] += "\n" + line
+        else:
+            items.append(line)
+    return items
+
+
+def _decisions(block: str) -> list[dict] | None:
+    """待用户决定: 「D1：问题」 then lettered options and 「倾向：X」; None when any item is malformed."""
+    out: list[dict] = []
+    for line in _lines(block):
+        head, opt, lean = _DECISION_HEAD_RE.match(line), _DECISION_OPTION_RE.match(line), _DECISION_LEAN_RE.match(line)
+        if head:
+            out.append({"id": head.group(1), "question": head.group(2).strip(), "options": [], "lean": None})
+        elif not out:
+            return None
+        elif lean:
+            out[-1]["lean"] = lean.group(1)
+        elif opt:
+            out[-1]["options"].append({"letter": opt.group(1), "text": opt.group(2).strip()})
+        else:
+            return None
+    if not out or any(len(d["options"]) < 2 or d["lean"] not in {o["letter"] for o in d["options"]} for d in out):
+        return None
+    return out
+
+
+def _conclusion(fields: dict, problems: list[str], hints: list[str]) -> dict | None:
+    _require(fields, ("审查编号", "节点", "送审方", "结论"), problems)
+    raw_node = fields.get("节点", "").strip()
+    node = REVIEW_NODES.get(raw_node)
+    if raw_node and node is None:
+        problems.append("bad-node")
+    raw = fields.get("结论", "").strip()
+    verdict, number = None, None
+    for pattern, code in _VERDICT_FORMS:
+        m = pattern.match(raw)
+        if m:
+            verdict, number = code, (int(m.group(1)) if m.groups() and m.group(1) else None)
+            break
+    if raw and verdict is None:
+        problems.append("bad-verdict")
+    out = {"ref": fields.get("审查编号", "").strip() or None, "node": node,
+           "submitter": fields.get("送审方", "").strip() or None, "verdict": verdict,
+           "adviceCount": number if verdict == "passed-with-advice" else None,
+           "module": fields.get("模块", "").strip() or None}
+    if verdict == "changes-required" and (number is not None or "须修改" in fields):
+        changes = _numbered(fields.get("须修改"))
+        if not changes:
+            problems.append("missing-field:须修改")
+        elif number is None:
+            hints.append("change-count-missing")
+        elif number != len(changes):
+            problems.append("change-count-mismatch")
+        out.update(changeCount=number, changes=changes)
+    if "待用户决定" in fields:
+        decisions = _decisions(fields["待用户决定"])
+        if decisions is None:
+            problems.append("bad-decision-item")
+        else:
+            out["decisions"] = decisions
+    return None if problems else out
+
+
+def _item_ref(value: str | None) -> int | None:
+    """事项：#N (hub item) or C<N> (the coordinator's own item when there is no hub, v2.0 draft)."""
+    m = _CREW_RE.match((value or "").strip())
+    return int(m.group(1)) if m else _number(value)
+
+
+def split_sections(text: str) -> list[str]:
+    """One message holding several 【审查结论】 sections, cut at each bare tag line; one section stays whole."""
+    lines = (text or "").replace("\r\n", "\n").split("\n")
+    starts = [i for i, line in enumerate(lines) if line.strip() == "【审查结论】"]
+    if len(starts) <= 1:
+        return [text]
+    cut = [0] + starts[1:] + [len(lines)]
+    return ["\n".join(lines[a:b]).rstrip("\n") + "\n" for a, b in zip(cut, cut[1:])]
+
+
 def parse(text: str) -> Message:
     tags, end, reply_to, body = _split(text or "")
     kind = "unknown"
@@ -368,6 +467,12 @@ def parse(text: str) -> Message:
         if fields.get("要点", "").strip() and _brief_thin(fields["要点"]):
             hints.append("brief-thin")
         extra = {"submission": {"module": fields.get("模块", "").strip() or None, "node": node, "files": files}}
+        if "不同意" in fields:
+            m = _DISAGREE_RE.match(fields["不同意"].strip())
+            if m:
+                extra["submission"]["disagree"] = {"ref": m.group(1), "reason": m.group(2).strip()}
+            else:
+                problems.append("bad-disagree")
     elif kind == "shared-change-request":
         if not end.present:
             problems.append("missing-end")
@@ -380,12 +485,23 @@ def parse(text: str) -> Message:
         notice_kind = NOTICE_KINDS.get(raw_kind)
         if raw_kind and notice_kind is None:
             problems.append("bad-notice-kind")
-        refs = [int(x) for x in _NUM_RE.findall(fields.get("依据", ""))]
+        basis = fields.get("依据", "")
+        refs = [int(x) for x in _NUM_RE.findall(basis)]
         if notice_kind == "suspend":
             _require(fields, ("原因",), problems)
-        if notice_kind in NEED_REF and not refs:
+        if notice_kind in NEED_REF and not (refs or _CREW_RE.search(basis)):
             problems.append("missing-approval-ref")
         extra = {"notice": {"kind": notice_kind, "refs": refs}}
+        if notice_kind == "rework":
+            if basis.strip() and not _REVIEW_ID_RE.search(basis):
+                problems.append("missing-review-ref")
+            raw_round = fields.get("轮次", "").strip()
+            if not raw_round:
+                problems.append("missing-field:轮次")
+            elif not raw_round.isdigit() or int(raw_round) < 1:
+                problems.append("bad-round")
+            else:
+                extra["notice"]["round"] = int(raw_round)
     elif kind == "wait-session":
         if not end.present:
             problems.append("missing-end")
@@ -397,8 +513,10 @@ def parse(text: str) -> Message:
         item = _number(fields.get("事项"))
         if item is None:
             problems.append("missing-field:事项")
+    elif kind == "review-conclusion":
+        extra = {"conclusion": _conclusion(fields, problems, hints)}
     elif kind == "user-reply":
-        item = _number(fields.get("事项"))
+        item = _item_ref(fields.get("事项"))
         if item is None:
             problems.append("missing-field:事项")
         _require(fields, ("用户原话", "答复时间"), problems)
@@ -489,7 +607,7 @@ def render_resumed(items: list[int], note: str) -> str:
     return text
 
 
-def render_coordination_notice(kind: str, basis: str, todo: str, reason: str | None = None) -> str:
+def render_coordination_notice(kind: str, basis: str, todo: str, reason: str | None = None, round: int | None = None) -> str:
     """【协调通知】 from the coordinator; not an approval, never asks for a reply."""
     labels = {code: label for label, code in NOTICE_KINDS.items()}
     if kind not in labels:
@@ -497,11 +615,16 @@ def render_coordination_notice(kind: str, basis: str, todo: str, reason: str | N
     for name, value in (("依据", basis), ("要你做什么", todo)):
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"「{name}」不能为空")
-    if kind in NEED_REF and not _NUM_RE.search(basis):
-        raise ValueError("开工、退回、挂起、恢复类通知的「依据」必须写明批准事项编号（#N）")
+    if kind in NEED_REF and not (_NUM_RE.search(basis) or _CREW_RE.search(basis)):
+        raise ValueError("开工、退回、挂起、恢复、撤销批准类通知的「依据」必须写明批准事项编号（#N 或 C<N>）")
+    if (kind == "rework") != (round is not None):
+        raise ValueError("「轮次」只用于返工类，且返工类必填")
+    if kind == "rework" and (not isinstance(round, int) or round < 1 or not _REVIEW_ID_RE.search(basis)):
+        raise ValueError("返工类的「轮次」必须是正整数，「依据」必须写审查编号（R-N）")
     if (kind == "suspend") != bool(reason and reason.strip()):
         raise ValueError("「原因」只用于挂起类，且挂起类必填")
     head = ["【协调通知】", f"类型：{labels[kind]}"] + ([f"原因：{reason}"] if kind == "suspend" else [])
-    text = "\n".join(head + [f"依据：{basis}", f"要你做什么：{todo}"]) + "\n"
+    text = "\n".join(head + [f"依据：{basis}"] + ([f"轮次：{round}"] if kind == "rework" else [])
+                     + [f"要你做什么：{todo}"]) + "\n"
     expected = {"依据": basis, "要你做什么": todo, **({"原因": reason} if kind == "suspend" else {})}
     return _self_check(text, "coordination-notice", expected)

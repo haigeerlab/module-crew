@@ -13,7 +13,7 @@ from module_crew import protocol
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "session-protocol" / "v1.9"
 
 # Types this plugin parses / generates (spec 假设 2、3). Everything else is skipped and listed.
-PARSED = {"review-request", "shared-change-request", "coordination-notice", "wait-user", "wait-session", "resumed", "withdraw", "user-reply", "owner-handoff", "unknown"}
+PARSED = {"review-conclusion", "review-request", "shared-change-request", "coordination-notice", "wait-user", "wait-session", "resumed", "withdraw", "user-reply", "owner-handoff", "unknown"}
 GENERATED = {"user-reply"}
 # Fixtures whose expectation the contract itself must fix; skipped with a reason, never silently.
 CONTRACT_DEFECTS: dict[str, str] = {}
@@ -88,7 +88,7 @@ class ConformanceTest(unittest.TestCase):
                 problems = diff(doc["parse"], actual)
                 self.assertEqual(problems, [], "\n".join(problems))
         print(f"\n  parse checked: {checked}; skipped: {', '.join(skipped) or 'none'}", file=sys.stderr)
-        self.assertEqual(checked, 64)
+        self.assertEqual(checked, 68)   # +4 review-conclusion samples (crew-review-nearby)
 
 
 class GenerateConformanceTest(unittest.TestCase):
@@ -112,8 +112,9 @@ class GenerateConformanceTest(unittest.TestCase):
 
 
 class UnsupportedKindsTest(unittest.TestCase):
-    def test_review_conclusion_and_answer_notice_are_recognised_not_judged(self):
-        for name in ("review-conclusion/bad-node", "review-conclusion/basic", "answer-notice/basic"):
+    def test_answer_notice_is_recognised_not_judged(self):
+        # 【审查结论】 is judged since crew-review-nearby (it drives rework); 【答复告知】 is still only recognised
+        for name in ("answer-notice/basic",):
             with self.subTest(name):
                 msg = protocol.parse((FIXTURES / f"{name}.txt").read_text(encoding="utf-8"))
                 self.assertEqual(msg.kind, name.split("/")[0])

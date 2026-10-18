@@ -33,7 +33,7 @@ class ProtocolCheckTest(RepoCase):
         self.assertIn("unknown-kind", r.stdout)
 
     def test_unsupported_kind_exit_3(self):
-        r = self.check(FIXTURES / "review-conclusion" / "basic.txt")
+        r = self.check(FIXTURES / "answer-notice" / "basic.txt")
         self.assertEqual(r.returncode, 3)
         self.assertIn("第一版不处理", r.stdout)
 
