@@ -24,4 +24,4 @@
   - 验收：Spec 验收 1、6
   - 文件：`README.md`、`module_crew/__main__.py`、`.claude-plugin/plugin.json`、`.codex-plugin/plugin.json`、`interface.json`
 
-- [ ] Checkpoint 2（gate）：模块最终验收（0.4.0）——全量测试、验收逐条证据、改动文件清单、需求逐项勾清单
+- [x] Checkpoint 2（gate）：模块最终验收（0.4.0）——全量测试、验收逐条证据、改动文件清单、需求逐项勾清单（2026-10-19 用户批准；全量 403 个测试通过；提交 11181c1…0a2367b；R16 验收 11 宿主未实测，冻结前交接入方案会话）
