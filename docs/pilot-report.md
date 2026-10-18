@@ -41,9 +41,22 @@
 | E | `merge approve` 只收一个编号，`review approve` 收多个；skill 没写 | 退出码 2，逐个重跑 | 不一致（crew-merge） |
 | F | 开会话工具 fresh 模式强制附 ≥80 字背景，第一条消息做不到「只有开工说明」 | 无实际影响，协调会话把背景标成「不是开工说明」 | 宿主限制（写进 skill） |
 | G | `review batch` 没有冲突段落，「没有冲突」与「不输出」分不清 | 审批时少一条明确信息 | 小改进（crew-review-batch） |
-| H | 加载 skill 时显示的目录是开发源目录，不是插件安装副本 | 本次两份内容相同，无影响 | 宿主行为（本地目录市场），只记录 |
+| H | 加载 skill 时显示的目录是开发源目录，不是插件安装副本 | 本次两份内容相同，无影响 | 宿主行为：本地目录市场的插件直接从源目录读（`claude plugin update` 明说「read from its folder」），缓存副本只在安装时复制一次，只记录 |
 
 已核对、不算问题：palindrome 用 12 位指纹被接受——session-protocol 规定指纹取 12～64 位。
+
+## 修复（2026-10-18，用户批准）
+
+Spec 修订 ce26d8b（crew-merge、crew-start、crew-review-batch），实现 79daaf5，全量 233 个测试通过，插件已重装（缓存副本也是 79daaf5）。
+
+| # | 修法 |
+|---|---|
+| A、C | 同步基线只发给还在开发的模块：跳过已合入的、仍在合并队列里的 |
+| B | `merge run` 合入通过检查后，在集成分支勾上模块 todo 唯一的未勾项（单独提交）；crew-dev 改为获批后不自己勾；`merge tick` 补救修订前漏勾的数据 |
+| D | `start prepare` 输出与协调会话 skill 提醒先注册 `<简称>-coord` |
+| E | `merge approve` 一次可收多个编号，任一不合格什么都不写 |
+| F | 协调会话 skill 写明强制背景要标明「不是开工说明的一部分」 |
+| G | `review batch` 明确输出「依赖：全部就绪」「并行边界重叠：无」 |
 
 ## 还没做
 
