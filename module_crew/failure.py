@@ -70,6 +70,21 @@ def _ago(at: str, now: datetime) -> str:
     return f"{minutes // (60 * 24)} 天前"
 
 
+SESSIONS_SCHEMA = 1  # sessions --json export (spec/crew-hub-bridge.md): fields only ever added
+
+
+def stage_code(text: str) -> str:
+    """The export's stage enum, derived from the hook's stage sentence."""
+    from module_crew import hooks
+    if text == hooks.STAGE_WRITE:
+        return "spec-plan"
+    if text == hooks.STAGE_WAIT_MERGE:
+        return "wait-merge"
+    if text == hooks.STAGE_MERGED:
+        return "merged"
+    return "returned" if "上次最终验收被退回" in text else "build"
+
+
 def sessions(db: store.Store, now: datetime | None = None) -> list[dict]:
     """Facts about each active module session; no thresholds, no verdicts."""
     from module_crew import hooks
@@ -83,13 +98,14 @@ def sessions(db: store.Store, now: datetime | None = None) -> list[dict]:
             continue
         module = rec.get("module")
         last = next((e["at"] for e in reversed(events) if _related(e, name, module)), None)
+        text = hooks._stage(items, module)
         rows.append({
-            "name": name, "module": module, "worktree": rec.get("worktree"),
+            "name": name, "relayName": name, "module": module, "worktree": rec.get("worktree"),
+            "stage": stage_code(text), "stageText": text,
             "lastActivity": last, "ago": _ago(last, now) if last else None,
             "openTickets": sorted(int(k) for k, v in tickets.items() if v.get("from") == name and v.get("state") != "closed"),
             "openItems": sorted(int(k) for k, v in items.items()
                                 if v.get("state") != "closed" and (v.get("from") == name or v.get("module") == module)),
-            "stage": hooks._stage(items, module),
             "suspended": (rec.get("suspended") or {}).get("reason"),
         })
     return rows
@@ -104,7 +120,7 @@ def render_sessions(rows: list[dict]) -> list[str]:
         lines.append(f"  最后动静：{r['lastActivity'] or '无记录'}" + (f"（{r['ago']}）" if r["ago"] else ""))
         lines.append("  未关等待单：" + ("、".join(f"#{n}" for n in r["openTickets"]) or "无")
                      + "；未关事项：" + ("、".join(f"#{n}" for n in r["openItems"]) or "无"))
-        lines.append(f"  当前：{r['stage']}")
+        lines.append(f"  当前：{r['stageText']}")
     return lines
 
 

@@ -175,7 +175,7 @@ def _failure(args) -> int:
     if args.group == "sessions":
         rows = failure.sessions(db)
         if args.json:
-            print(json.dumps(rows, ensure_ascii=False, indent=2))
+            print(json.dumps({"schemaVersion": failure.SESSIONS_SCHEMA, "sessions": rows}, ensure_ascii=False, indent=2))
         else:
             print("\n".join(failure.render_sessions(rows)))
         return 0

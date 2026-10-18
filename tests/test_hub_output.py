@@ -73,5 +73,60 @@ class ForHubTest(HubCase):
         self.assertIn("正文文件", out.stdout)
 
 
+
+class SessionsExportTest(HubCase):
+    CONTRACT = ("module", "relayName", "worktree", "stage", "stageText", "suspended", "lastActivity")
+
+    def export(self):
+        import json
+        out = self.run_cli("sessions", "--json", cwd=self.repo)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def test_contract_fields(self):
+        import time
+        from module_crew import failure
+        failure.suspend(self.db, "c", "等设计稿", "先挂起 c")
+        start = time.monotonic()
+        doc = self.export()
+        elapsed = time.monotonic() - start
+        self.assertLess(elapsed, 1.0)
+        self.assertEqual(doc["schemaVersion"], 1)
+        rows = {r["module"]: r for r in doc["sessions"]}
+        for r in rows.values():
+            self.assertTrue(set(self.CONTRACT) <= set(r))
+            self.assertEqual(r["relayName"], f"shop-{r['module']}")
+        self.assertEqual(rows["b"]["stage"], "spec-plan")
+        self.assertEqual(rows["c"]["suspended"], "等设计稿")
+
+    def test_stage_codes(self):
+        from module_crew import failure, hooks
+        cases = {hooks.STAGE_WRITE: "spec-plan", hooks.STAGE_BUILD: "build",
+                 hooks.STAGE_BUILD + "（上次最终验收被退回：检查失败）": "returned",
+                 hooks.STAGE_WAIT_MERGE: "wait-merge", hooks.STAGE_MERGED: "merged"}
+        for text, code in cases.items():
+            self.assertEqual(failure.stage_code(text), code)
+
+    def test_unreadable_exits_2_with_reason(self):
+        outside = self.tmp / "plain"
+        outside.mkdir()
+        out = self.run_cli("sessions", "--json", cwd=outside)
+        self.assertEqual(out.returncode, 2)
+        self.assertEqual(out.stdout, "")
+        self.assertTrue(out.stderr.strip())
+
+    def test_interface_json(self):
+        import json
+        from helpers import PLUGIN_ROOT
+        from module_crew import failure
+        doc = json.loads((PLUGIN_ROOT / "interface.json").read_text(encoding="utf-8"))
+        plugin = json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(doc["version"], plugin["version"])
+        self.assertEqual(doc["contract"], protocol.CONTRACT_VERSION)
+        self.assertEqual(doc["sessions"]["schemaVersion"], failure.SESSIONS_SCHEMA)
+        self.assertEqual(doc["sessions"]["command"][1:], ["sessions", "--json"])
+        self.assertTrue((PLUGIN_ROOT / doc["sessions"]["command"][0]).exists())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,15 @@
+{
+  "interface": "1.0",
+  "plugin": "module-crew",
+  "version": "0.0.1",
+  "contract": "1.5",
+  "sessions": {
+    "command": [
+      "bin/module-crew",
+      "sessions",
+      "--json"
+    ],
+    "schemaVersion": 1,
+    "contract": "spec/crew-hub-bridge.md"
+  }
+}

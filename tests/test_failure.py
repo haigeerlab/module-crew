@@ -77,7 +77,7 @@ class SessionsTest(FailureCase):
         self.assertEqual(rows["c"]["openTickets"], [t])
         self.assertIn(item, rows["c"]["openItems"])
         self.assertEqual(rows["b"]["openTickets"], [])
-        self.assertEqual(rows["b"]["stage"], hooks.STAGE_WRITE)
+        self.assertEqual(rows["b"]["stageText"], hooks.STAGE_WRITE)
         self.assertTrue(rows["b"]["lastActivity"] and rows["c"]["ago"].endswith("前"))
         text = "\n".join(failure.render_sessions(failure.sessions(self.db)))
         for word in ("停下", "卡住", "超时", "异常"):
@@ -174,7 +174,7 @@ class IsolationTest(FailureCase):
         self.assertEqual(self.session("shop-d")["status"], "active")
         rows = {r["module"]: r for r in failure.sessions(self.db)}
         self.assertEqual(rows["b"]["suspended"], "等设计稿")
-        self.assertEqual(rows["c"]["stage"], hooks.STAGE_MERGED)
+        self.assertEqual(rows["c"]["stageText"], hooks.STAGE_MERGED)
 
 
 class CliTest(FailureCase):
@@ -184,7 +184,7 @@ class CliTest(FailureCase):
         out = run("suspend", "b", "--reason", "等设计稿", "--original", "先挂起 b")
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertEqual(run("suspend", "b", "--reason", "再挂", "--original", "再挂").returncode, 3)
-        rows = json.loads(run("sessions", "--json").stdout)
+        rows = json.loads(run("sessions", "--json").stdout)["sessions"]
         self.assertEqual({r["module"]: r["suspended"] for r in rows}, {"b": "等设计稿", "c": None})
         self.assertIn("挂起：等设计稿", run("sessions").stdout)
         self.assertEqual(run("resume", "b").returncode, 0)

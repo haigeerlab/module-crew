@@ -21,7 +21,7 @@
 - [x] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
   - 记录：`python3 -m unittest discover -s tests -v` → Ran 254 tests in 155.381s OK（2026-10-18）；Task 3、4 同改 review.py 与 __main__.py，合一次提交
 
-- [ ] Task 5：`sessions --json` 契约与 `interface.json`
+- [x] Task 5：`sessions --json` 契约与 `interface.json`
   - 验收：Spec 验收 8、9
   - 文件：`module_crew/failure.py`、`module_crew/__main__.py`、`interface.json`、`tests/test_hub_output.py`、`tests/test_failure.py`
 
