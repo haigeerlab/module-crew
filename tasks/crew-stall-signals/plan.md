@@ -1,6 +1,6 @@
 # Implementation Plan: crew-stall-signals
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-stall-signals.md`（用户 2026-10-19 批准，指纹 02a28c5161a1）。任务清单：`tasks/crew-stall-signals/todo.md`。
 

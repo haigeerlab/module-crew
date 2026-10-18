@@ -139,8 +139,9 @@ def sessions(db: store.Store, now: datetime | None = None) -> list[dict]:
     events = store.events(db)
     items = store.records(db, "item")
     tickets = store.records(db, "ticket")
-    from module_crew import review
+    from module_crew import review, stall
     nearby = review.progress(db)
+    integration = (store.get(db, "config", "main") or {}).get("integrationBranch")
     rows = []
     for name, rec in sorted(store.records(db, "session").items()):
         if rec.get("role") != "dev" or rec.get("status") != "active":
@@ -157,6 +158,9 @@ def sessions(db: store.Store, now: datetime | None = None) -> list[dict]:
                                 if v.get("state") != "closed" and (v.get("from") == name or v.get("module") == module)),
             "suspended": (rec.get("suspended") or {}).get("reason"),
             "review": nearby.get(module),       # crew-review-nearby: rework visible to the decision inbox
+            # crew-stall-signals: facts only, the decision inbox judges
+            "startedAt": stall.started_at(events, name),
+            "commits": stall.commit_facts(rec.get("worktree"), integration),
         })
     return rows
 

@@ -2,7 +2,7 @@
 
 测试命令：`python3 -m unittest discover -s tests -v`
 
-- [ ] Task 1：提交事实与开工时间（`startedAt`、`commits`）
+- [x] Task 1：提交事实与开工时间（`startedAt`、`commits`）
   - 验收：Spec 验收 1、2、3
   - 文件：`module_crew/stall.py`、`module_crew/failure.py`、`tests/test_stall_signals.py`
 
