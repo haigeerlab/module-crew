@@ -35,4 +35,5 @@
   - 验证：`python3 -m unittest discover -s tests -v`
   - 文件：`module_crew/__main__.py`、`skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`tests/test_skills.py`、`tests/test_failure.py`、`spec/crew-start.md`
 
-- [ ] Checkpoint 2（gate）：模块最终验收——全部测试全绿、9 条验收标准逐条对应测试、附 `sessions` 与恢复说明样例、附 crew-start 变更记录复审、列出实际改动文件；停下等用户确认
+- [x] Checkpoint 2（gate）：模块最终验收——全部测试全绿、9 条验收标准逐条对应测试、附 `sessions` 与恢复说明样例、附 crew-start 变更记录复审、列出实际改动文件；停下等用户确认
+  - 记录：213 个测试全绿；9 个文件 +472/−10（da7b5cd..6235644）；用户 2026-10-18 验收通过，同时批准 crew-start Spec 变更记录
