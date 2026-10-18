@@ -40,6 +40,38 @@ class DetectTest(MergeCase):
         self.assertIsNone(hooks.detect(self.wt["c"]))
 
 
+class RoleMarkerTest(MergeCase):
+    def set_marker(self, checkout, text):
+        from module_crew import role
+        path = role.marker_path(checkout)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def test_marker_wins_over_registered_path(self):
+        moved = self.tmp / "moved-b"
+        git(self.repo, "worktree", "move", str(self.wt["b"]), str(moved))
+        role = hooks.detect(moved)
+        self.assertEqual((role.kind, role.name, role.module), ("dev", "shop-b", "b"))
+
+    def test_coordinator_marker(self):
+        role = hooks.detect(self.repo)
+        self.assertEqual((role.kind, role.name), ("coordinator", "shop-coord"))
+
+    def test_marker_without_session_is_silent(self):
+        self.set_marker(self.wt["c"], "module x\n")
+        self.assertIsNone(hooks.detect(self.wt["c"]))
+        self.assertIsNone(hooks.session_start(self.wt["c"], "startup"))
+
+    def test_no_or_invalid_marker_falls_back_to_path(self):
+        from module_crew import role
+        role.marker_path(self.wt["b"]).unlink()
+        self.set_marker(self.wt["c"], "module c\nmodule b\n")
+        for m in ("b", "c"):
+            with self.subTest(m=m):
+                found = hooks.detect(self.wt[m])
+                self.assertEqual((found.kind, found.module), ("dev", m))
+
+
 class TextTest(MergeCase):
     def setUp(self):
         super().setUp()
@@ -157,9 +189,9 @@ class HookCommandTest(MergeCase):
             self.assertIn(arg, cmd)
             self.assertIn("|| true", cmd)
             self.assertTrue(cmd.rstrip().endswith("exit 0"))
-        tree = ast.parse((PLUGIN_ROOT / "module_crew" / "hooks.py").read_text())
         imported = set()
-        for node in ast.walk(tree):
+        for node in (n for f in ("hooks.py", "role.py")
+                     for n in ast.walk(ast.parse((PLUGIN_ROOT / "module_crew" / f).read_text()))):
             if isinstance(node, ast.Import):
                 imported |= {a.name for a in node.names}
             elif isinstance(node, ast.ImportFrom):

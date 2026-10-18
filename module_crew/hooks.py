@@ -10,6 +10,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from module_crew import role as marker
 from module_crew import store
 
 
@@ -56,6 +57,16 @@ def detect(cwd: str | os.PathLike) -> Role | None:
         return None
     here = os.path.realpath(cwd)
     sessions = store.records(db, "session")
+    root = marker.checkout_root(here)
+    kind, module = marker.read(root) if root else ("none", None)
+    if kind == "module":  # spec-guard's checkout role marker wins over the registered path
+        name = next((n for n, s in sorted(sessions.items()) if s.get("role") == "dev"
+                     and s.get("status") == "active" and s.get("module") == module), None)
+        return Role("dev", name, module, db) if name else None
+    if kind == "coordinator":
+        name = next((n for n, s in sorted(sessions.items())
+                     if s.get("role") == "coordinator" and s.get("status") == "active"), None)
+        return Role("coordinator", name, None, db) if name else None
     for name, s in sorted(sessions.items()):
         if s.get("role") == "dev" and s.get("status") == "active" and s.get("worktree"):
             if _inside(here, os.path.realpath(s["worktree"])):
