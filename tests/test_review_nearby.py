@@ -3,7 +3,7 @@
 import unittest
 from datetime import datetime, timedelta
 
-from helpers import ReviewCase, git, review_text
+from helpers import MergeCase, ReviewCase, git, review_text
 
 from module_crew import protocol, review, sources, store
 
@@ -251,6 +251,85 @@ class NoteTest(NearbyCase):
                            cwd=self.repo)
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("正文文件", out.stdout)
+
+
+class BatchTest(NearbyCase):
+    """Task 5: what goes into the batch for the user, and how the body reads."""
+    submit = NoteTest.submit
+
+    def body(self):
+        made = review.for_hub(self.repo)
+        self.assertIsNotNone(made)
+        msg = protocol.parse(made[2])
+        self.assertTrue(msg.ok, msg.problems)
+        return made[2], msg
+
+    def test_only_ready_reviews(self):
+        spec, plan = self.submit(), self.submit("Plan")
+        review.note(self.db, spec, "arch", conclusion("通过"))
+        text, msg = self.body()
+        self.assertIn(f"C{spec}", msg.fields["要你决定"])
+        self.assertNotIn(f"C{plan}", msg.fields["要你决定"])                       # still under review
+        review.note(self.db, plan, "arch", conclusion("有须修改项2条", CHANGES, node="Plan", ref="R-8"))
+        self.assertNotIn(f"C{plan}", self.body()[1].fields["要你决定"])          # in rework
+
+    def test_rounds_line_and_summary(self):
+        n = self.submit()
+        review.note(self.db, n, "arch", conclusion("有须修改项2条", CHANGES))
+        n = self.submit()
+        review.note(self.db, n, "arch", conclusion("通过"))
+        text, msg = self.body()
+        self.assertIn("经 1 轮审查修改：错误码表缺两项", text)
+        points = msg.fields["要点"].split("\n\n")[0].splitlines()
+        self.assertLessEqual(len(points), 5)
+        self.assertEqual(points[0], "- b：Spec（审查通过，经 1 轮修改）")
+        self.assertEqual(points[-1], "- 待你决定的问题：无")
+
+    def test_decisions_in_body(self):
+        n = self.submit()
+        review.note(self.db, n, "arch", conclusion("通过", DECISIONS))
+        text, msg = self.body()
+        self.assertIn("D1：alpha 首字母要不要大写？", msg.fields["要你决定"])
+        self.assertIn("倾向：B", msg.fields["要你决定"])
+        self.assertEqual(msg.fields["你该回"].strip(), "A 全部批准；D1 选 B；D2 选 A")
+        self.assertIn("- 待你决定的问题：2 个（D1、D2）", text)
+        rec = [v for v in store.records(self.db, "item").values() if v.get("kind") == "hub-batch"][-1]
+        self.assertEqual(rec["decisions"]["D2"]["review"], n)
+
+    def test_timeout_and_disagree_questions(self):
+        n = self.submit()
+        with self.db.transaction(actor="t") as tx:
+            rec = tx.get("item", str(n))
+            tx.put("item", str(n), dict(rec, sentAt="2026-01-01T00:00:00+08:00"), action="aged")
+        text, msg = self.body()
+        self.assertIn("未审查（审查者无响应）", text)
+        self.assertIn("不等审查直接批", msg.fields["要你决定"])
+        review.note(self.db, n, "arch", conclusion("有须修改项2条", CHANGES))
+        same = self.spec_review("b").replace("要点：", "不同意：R-7：错误码已在接口提案里定\n要点：")
+        review.add(self.db, same, "shop-b", 6001)
+        text, msg = self.body()
+        self.assertIn("按模块现版本批准", msg.fields["要你决定"])
+        self.assertIn("错误码已在接口提案里定", msg.fields["要你决定"])
+
+    def test_points_list_not_cut_silently(self):
+        long = self.plan_review("b").replace("要点：\n- 做：页面与接口\n- 不做：后台",
+                                              "要点：\n假设：\n1. 一\n2. 二\n3. 三\n4. 四\n5. 五")
+        n = review.add(self.db, long, "shop-b", 7001).number
+        review.note(self.db, n, "arch", conclusion("通过", node="Plan"))
+        text, _ = self.body()
+        self.assertIn("…（共 5 条，回『详情』看全文）", text)
+        out = self.run_cli("review", "batch", cwd=self.repo).stdout
+        self.assertIn("5. 五", out)                                                 # the coordinator sees everything
+
+
+class FinalOptionsTest(MergeCase):
+    def test_final_consequence_and_chinese_node(self):
+        db = store.open_store(self.repo)
+        review.add(db, self.finish("b"), "shop-b", 8001)
+        text = review.for_hub(self.repo)[2]
+        self.assertIn("合并进集成分支", text)
+        self.assertIn("b 的 最终验收", text)
+        self.assertNotIn("final", text)
 
 
 class NoReviewerTest(NearbyCase):

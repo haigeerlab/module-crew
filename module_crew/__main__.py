@@ -276,6 +276,14 @@ def _review(args) -> int:
                       + "、".join(f["path"] for f in i["files"]))
                 print("  要点：" + i["points"].replace("\n", "\n        "))
                 print("  审查：" + review._review_text(i))
+                if not i["ready"]:
+                    print(f"  审查状态：{review.STATE_TEXT[i['reviewState']]}（不进合批，等它有结论）")
+                elif i["round"]:
+                    print(f"  经 {i['round']} 轮审查修改：{'；'.join(x for x in i['reworked'] if x)}")
+        questions = review.question_lines(review.numbered_decisions(b))
+        if questions:
+            print("待用户决定（没有收件枢纽时直接问用户；批准时每个 D 都要答到）：")
+            print("\n".join(questions))
         if not b["dependencyIssues"]:
             print("依赖：全部就绪")
         if not b["conflicts"]:

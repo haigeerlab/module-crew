@@ -52,9 +52,11 @@ class ForHubTest(HubCase):
         n, path, text = review.for_hub(self.repo)
         msg = protocol.parse(path.read_text(encoding="utf-8"))
         self.assertEqual((msg.kind, msg.ok), ("wait-user", True), msg.problems)
-        for want in (f"C{self.spec}", f"C{self.plan}", "b 的 Spec", "b 的 Plan", "审查：live-saas-arch-review 通过",
-                     "审查：未审查", "架构审查：进行中，请勿先批", "推荐 A：全部批准", "B：只批准部分", "C：都退回修改"):
+        for want in (f"C{self.spec}", "b 的 Spec", "审查：live-saas-arch-review 通过", "架构审查：通过",
+                     "推荐 A：全部批准", "B：只批准部分", "C：都退回修改"):
             self.assertIn(want, text)
+        # crew-review-nearby: with a reviewer registered, a review still under review stays out of the batch
+        self.assertNotIn(f"C{self.plan}", msg.fields["要你决定"])
         self.assertEqual(store.read_body(self.db, n), text)
         # rehearsal T1: project line, up to three lines of each review's points, full suggested reply
         self.assertEqual(msg.fields["项目"].strip(), self.repo.name)
@@ -74,6 +76,7 @@ class ForHubTest(HubCase):
         self.assertEqual((line["status"], line["adviceCount"]), ("passed-with-advice", 2))
 
     def test_cli(self):
+        review.note(self.db, self.spec, "live-saas-arch-review", conclusion())
         out = self.run_cli("review", "batch", "--for-hub", "--parallel-with", "7", cwd=self.repo)
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("【与 #7 并行】", out.stdout)

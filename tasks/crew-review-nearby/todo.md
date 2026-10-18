@@ -20,7 +20,7 @@
   - 验收：Spec 验收 2、3、4、9、10
   - 文件：`module_crew/review.py`、`module_crew/__main__.py`、`tests/test_review_nearby.py`
 
-- [ ] Task 5：合批（进合批条件、D 编号、经 N 轮、摘要、要点列表、选项后果）
+- [x] Task 5：合批（进合批条件、D 编号、经 N 轮、摘要、要点列表、选项后果）
   - 验收：Spec 验收 3、5、6、11、14、15
   - 文件：`module_crew/review.py`、`tests/test_review_nearby.py`、`tests/test_hub_output.py`
 
