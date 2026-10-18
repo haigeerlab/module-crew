@@ -22,7 +22,7 @@ VERSION = 1
 KINDS = ("config", "session", "item", "request", "ticket", "body")
 NUMBERED = ("item", "request", "ticket", "body")
 ROLES = ("coordinator", "dev")
-HOSTS = ("claude-desktop",)
+HOSTS = ("claude-desktop", "codex-desktop")   # coordinators are Claude desktop only (crew-codex-host)
 SESSION_STATUSES = ("active", "retired")
 _ACTION_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _NUMBER_RE = re.compile(r"^[1-9][0-9]*$")
@@ -311,6 +311,8 @@ def _validate_session(key: str, rec: dict, others: dict) -> None:
         raise bad(f"role 只能是 {'／'.join(ROLES)}")
     if host not in HOSTS:
         raise bad(f"host 只能是 {'／'.join(HOSTS)}")
+    if role == "coordinator" and host != "claude-desktop":
+        raise bad("协调会话只能是 claude-desktop")
     if status not in SESSION_STATUSES:
         raise bad(f"status 只能是 {'／'.join(SESSION_STATUSES)}")
     if role == "dev":

@@ -2,7 +2,7 @@
 
 测试命令：`python3 -m unittest discover -s tests -v`
 
-- [ ] Task 1：状态库认 `codex-desktop`，协调会话仍只许 Claude
+- [x] Task 1：状态库认 `codex-desktop`，协调会话仍只许 Claude
   - 验收：Spec 验收 4
   - 文件：`module_crew/store.py`、`tests/test_codex_host.py`
 
