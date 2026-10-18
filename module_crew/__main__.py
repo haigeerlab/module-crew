@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from module_crew import changes, failure, hooks, inbox, merge, probe, protocol, review, start, store
+from module_crew import changes, failure, hooks, inbox, merge, probe, protocol, review, sources, start, store
 
 
 def _store_init() -> int:
@@ -446,6 +446,18 @@ def main(argv: list[str] | None = None) -> int:
         g.add_argument("--original-file")
     hk = sub.add_parser("hook", help="插件钩子入口（只读，永远退出码 0）")
     hk.add_argument("event", choices=("session-start", "prompt"))
+    so = sub.add_parser("source", help="批准来源白名单（收件枢纽、指定负责人）")
+    sos = so.add_subparsers(dest="action", required=True)
+    soa = sos.add_parser("add")
+    soa.add_argument("name")
+    soa.add_argument("--kind", required=True, choices=sources.KINDS)
+    sor = sos.add_parser("remove")
+    sor.add_argument("name")
+    for c in (soa, sor):
+        g = c.add_mutually_exclusive_group(required=True)
+        g.add_argument("--original")
+        g.add_argument("--original-file")
+    sos.add_parser("list").add_argument("--json", action="store_true")
     tc = sub.add_parser("ticket", help="等待单")
     tcs = tc.add_subparsers(dest="action", required=True)
     tcc = tcs.add_parser("close", help="协调会话关等待单（所等的事已发生／用户关闭）")
@@ -491,6 +503,35 @@ def main(argv: list[str] | None = None) -> int:
         if out:
             print(out)
         return 0
+    if args.group == "source":
+        try:
+            db = store.open_store()
+            if args.action == "list":
+                rows = sources.listing(db)
+                if args.json:
+                    print(json.dumps(rows, ensure_ascii=False, indent=2))
+                else:
+                    for r in rows:
+                        print(f"{r['name']}（{r['kind']}）登记于 {r['addedAt']}")
+                    if not rows:
+                        print("没有登记的来源")
+                return 0
+            original = _original(args.original, args.original_file)
+            if original is None:
+                return 2
+            if args.action == "add":
+                sources.add(db, args.name, args.kind, original)
+                print(f"已登记来源 {args.name}（{args.kind}）")
+            else:
+                sources.remove(db, args.name, original)
+                print(f"已撤掉来源 {args.name}")
+            return 0
+        except sources.SourceRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
     if args.group == "ticket":
         original = _original(args.original, args.original_file)
         if original is None:

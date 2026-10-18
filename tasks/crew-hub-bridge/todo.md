@@ -2,7 +2,7 @@
 
 测试命令：`python3 -m unittest discover -s tests -v`
 
-- [ ] Task 1：来源白名单与 `sources.check`
+- [x] Task 1：来源白名单与 `sources.check`
   - 验收：Spec 验收 1；验收 3 的校验部分
   - 文件：`module_crew/sources.py`、`module_crew/__main__.py`、`tests/test_sources.py`
 
