@@ -1,6 +1,6 @@
 # Implementation Plan: crew-review-nearby
 
-<!-- spec-guard: review approved -->
+<!-- spec-guard: review pending -->
 
 > 依据：`spec/crew-review-nearby.md`（用户 2026-10-19 批准，同日修订待复审）。任务清单：`tasks/crew-review-nearby/todo.md`。
 
@@ -46,9 +46,11 @@ Task 1–5 已按修订前的 Spec 做完并提交（协议层、C 编号、送�
 - [ ] Task 12：`status` 与 `sessions --json` 返工轮次（验收 17）
 - [ ] Task 13：skill 与 README——送审与返工、「有须修改项」范围、「不同意」、待决问题必须答全、合并前复述、按节奏交审、「验收标准与证据」、有决策收件箱时只在那里问；README 按文档建议；版本号 0.3.0（验收 19）
 
+- [ ] Task 14：R20——合并检查失败的退回分「模块需要修改」「检查环境出了问题」两种、`merge renotice`、`merge run` 输出提交钩子退出码与最后 10 行；skill 写明两种退回怎么处理（验收 20、21）
+
 ### Checkpoint 3（gate）：模块最终验收
 
-- [ ] 全部测试全绿；19 条验收逐条对应测试；列出实际改动文件；附 Spec 与 crew-protocol Spec 的修订差异
+- [ ] 全部测试全绿；21 条验收逐条对应测试；列出实际改动文件；附 Spec 与 crew-protocol Spec 的修订差异；冻结前按需求文档 R1–R20 逐项勾清单给用户看
 - [ ] 本 Plan 获批即授权：每个任务完成后在 `main` 本地提交；不推送；不冻结、不动 `module-crew-release/`；冻结 0.3.0 与通知各方要用户在最终验收后另行批准
 
 ## Risks and Mitigations
@@ -59,3 +61,7 @@ Task 1–5 已按修订前的 Spec 做完并提交（协议层、C 编号、送�
 | 原文文件与正文记录不一致（写了文件但事务失败） | 中 | 文件按内容寻址、可重复写；记录在事务里写，失败时文件只是多余、不被引用 |
 | 契约 v2.1 样例与已有实现的键名不同 | 中 | Task 6 先改钉，逐份对照，对不上的报给契约负责人 |
 | 赶不上批 2 阶段丙 | 中 | Task 6–9 优先；Task 11、12 可后移 |
+
+## 变更记录
+
+- 2026-10-19：加 Task 14（R20 两项小修），最终验收改为 21 条验收并在冻结前按需求文档逐项勾清单。原因：用户决定 51；来源：用户 2026-10-19 在本会话选做法 A。
