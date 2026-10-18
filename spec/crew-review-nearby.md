@@ -1,6 +1,6 @@
 # Spec: crew-review-nearby
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved f795881fd3a0 -->
 
 > 能力图模块 `crew-review-nearby`（第三版）。需求来源：`livesaas-integration/REQ-REVIEW-NEARBY.md`（用户决定 41–43 审查就近、决策集中；
 > 46 原样展示；47 一次一个模块、遵守评审节奏；49 只在一处问、按证据审；R4–R6、R9 为批 2 暴露的问题）。
