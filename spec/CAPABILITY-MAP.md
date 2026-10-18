@@ -29,8 +29,9 @@
 | crew-failure | 挂起释放名额、识别悄悄停下、崩溃在原 worktree 换会话、退回串行 | crew-merge, crew-recovery-hooks |
 | crew-hub-bridge | 接入收件枢纽：批准来源登记与校验（self／hub／lead）、枢纽事项号与 crew 编号一对多对照、审查行、交枢纽的【等待用户】正文、只读线状态出口（sessions --json 契约与 interface.json）、skill 措辞与协调会话规则 | crew-review-batch, crew-merge, crew-failure |
 | crew-codex-host | 第二版：Codex 桌面版模块会话——Codex 插件包与 crew-dev 的 Codex 版、start prepare --host codex 与开工说明的 Codex 段、host-check 只读预检（.git 可写、命令可用、agent-relay）、身份重登与未加载提示；协调会话仍为 Claude | crew-start, crew-onboarding, crew-recovery-hooks |
+| crew-review-nearby | 第三版：审查就近与决策集中——审查结论就近退回返工（上限 3 次、不同意并排交用户、超时照常送审）、送审、待用户决定问题单列与追问、多段审查结论、合并批准撤回窗口、交审编号前缀 C、合批正文摘要与要点不截断、最终验收选项写真实后果；不配收件枢纽或审查者时照常可用 | crew-protocol, crew-review-batch, crew-merge, crew-hub-bridge |
 
-Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host
+Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby
 
 <!-- Spec Guard 按严格串行推进。为兼容上游格式，逗号分组会按左到右顺序展开为单模块步骤，不代表并行授权。 -->
 
@@ -65,3 +66,4 @@ Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → cr
 - 2026-10-18：「说明」改为 crew-protocol 现钉住 session-protocol v1.8（c982bc3）。原因：crew-failure 需要挂起、恢复通知（第二轮试点问题 I）；来源：第二轮试点修法，用户 2026-10-18 批准。模块、依赖与顺序不变。
 - 2026-10-18：插入第二版模块 crew-codex-host（依赖 crew-start、crew-onboarding、crew-recovery-hooks，排在 crew-hub-bridge 之后）。原因：需求记录第 13 节「Codex 模块会话」；来源：用户 2026-10-18 确认 14 条假设并批准插入。
 - 2026-10-18：「说明」改为 crew-protocol 现钉住 session-protocol v1.9（f47631b）。原因：v1.9 写明【撤回】只认枢纽事项号；来源：用户 2026-10-18 定为 0.1.2 待办，随 0.2.0 做。模块、依赖与顺序不变。
+- 2026-10-19：插入第三版模块 crew-review-nearby（依赖 crew-protocol、crew-review-batch、crew-merge、crew-hub-bridge，排在 crew-codex-host 之后）。原因：用户决定 41–43「审查就近、决策集中」与批 2 暴露的问题（livesaas-integration/REQ-REVIEW-NEARBY.md 的 R1–R9）；来源：用户 2026-10-19 确认 21 条假设并批准插入。
