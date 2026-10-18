@@ -77,7 +77,7 @@ class ApproveTest(ReviewCase):
         self.assertEqual(len(notices), 1)
         notice = protocol.parse(store.read_body(self.db, notices[0]["body"]))
         self.assertTrue(notice.ok, notice.problems)
-        self.assertEqual(notice.contract()["notice"], {"kind": "start", "refs": []})   # refs: hub items only
+        self.assertEqual(notice.contract()["notice"], {"kind": "start", "refs": [], "localRefs": [f"C{res.approval}"]})
         self.assertIn(f"C{res.approval}", notice.fields["依据"])                          # the coordinator's own approval
         self.assertEqual(notices[0]["to"], "shop-b")
         reply = protocol.parse(store.read_body(self.db, replies[0]["body"]))

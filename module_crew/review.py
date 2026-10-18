@@ -65,7 +65,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         return Outcome(msg.kind, 3, lines=[f"交审的模块 {sub['module']} 不是 {sender} 负责的模块 {session.get('module')}"])
     worktree = Path(session["worktree"])
     reasons = _missing_files(sub["module"], sub["node"], sub["files"]) + _check_files(worktree, sub["files"])
-    if not reasons and sub.get("disagree"):
+    if not reasons and sub.get("disputes"):
         reasons = _disagree_reasons(db, worktree, sub)
     if reasons:
         return Outcome(msg.kind, 3, lines=["拒收，请退回："] + reasons)
@@ -85,9 +85,9 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         rec = {"state": "open", "kind": "review", "from": sender, "relayId": relay_id, "text": text,
                "module": sub["module"], "node": sub["node"], "files": sub["files"], "commit": commit,
                "closedReason": None, "answer": None}
-        reviewers = [] if sub.get("disagree") else _reviewers(db)
-        if sub.get("disagree"):
-            rec["disagree"] = sub["disagree"]
+        reviewers = [] if sub.get("disputes") else _reviewers(db)
+        if sub.get("disputes"):
+            rec["disputes"] = sub["disputes"]
         if reviewers:                      # 送审: the 【交审】 goes to every registered reviewer unchanged
             body = tx.allocate_number()
             meta = tx.write_body(body, text)
@@ -97,8 +97,9 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         tx.put("item", str(n), rec, action="created", data={"relayId": relay_id})
         out.number = n
         out.lines.append(f"已记为交审事项 C{n}（{sub['module']} 的 {msg.fields.get('节点', '').strip()}）")
-        if sub.get("disagree"):
-            out.lines.append(f"模块不同意审查 {sub['disagree']['ref']}：不再返工，作为待用户决定的问题进合批")
+        if sub.get("disputes"):
+            refs = "、".join(d["review"] for d in sub["disputes"])
+            out.lines.append(f"模块不同意审查 {refs}：不再返工，作为待用户决定的问题提请批准")
         if out.closed:
             out.lines.append("取代了 " + "、".join(f"C{k}" for k in out.closed))
         return out
@@ -138,7 +139,7 @@ def _rounds(db: store.Store, module: str, node: str) -> int:
 def review_state(db: store.Store, number: int, now: datetime | None = None) -> str:
     """none / reviewing / timeout / rework / passed / decide (spec/crew-review-nearby.md key decision 1)."""
     rec = store.get(db, "item", str(number)) or {}
-    if rec.get("disagree") or rec.get("overLimit"):
+    if rec.get("disputes") or rec.get("overLimit"):
         return "decide"
     rows = rec.get("reviews") or []
     if rows:
@@ -235,10 +236,10 @@ def _item_decisions(n: int, v: dict, state: str) -> list[dict]:
     rows = v.get("reviews") or []
     last = rows[-1] if rows else {}
     asked = (last.get("changes") or [last.get("points", "")])
-    if v.get("disagree"):
+    if v.get("disputes"):
+        reasons = "；".join(f"{d['review']}：{d['reason']}" for d in v["disputes"])
         return [{"source": "coordinator", "kind": "disagree", "lean": None, "options": CHOOSE_CURRENT,
-                 "question": f"{what}：模块不同意审查 {v['disagree']['ref']}——审查要求：{'；'.join(asked) or '见审查结论'}；"
-                             f"模块理由：{v['disagree']['reason']}"}]
+                 "question": f"{what}：模块不同意审查——审查要求：{'；'.join(asked) or '见审查结论'}；模块理由：{reasons}"}]
     if v.get("overLimit"):
         return [{"source": "coordinator", "kind": "over-limit", "lean": None, "options": CHOOSE_CURRENT,
                  "question": f"{what}：返工 {REWORK_LIMIT} 轮后审查仍要求修改——{'；'.join(asked)}"}]
@@ -335,8 +336,8 @@ def note(db: store.Store, number: int | None, sender: str, text: str) -> NoteRes
             rec = tx.get("item", str(n))
             row = {"from": sender, "ref": c["ref"], "verdict": msg.fields.get("结论"), "at": store.now(),
                    "points": (msg.fields.get("要点") or "").strip()}
-            if c.get("decisions"):
-                row["decisions"] = c["decisions"]
+            if msg.contract().get("decisions"):
+                row["decisions"] = msg.contract()["decisions"]
             if c.get("changes"):
                 row["changes"] = c["changes"]
             rec = dict(rec, reviews=list(rec.get("reviews") or []) + [row])

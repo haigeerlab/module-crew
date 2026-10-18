@@ -52,15 +52,15 @@ class ConclusionParseTest(unittest.TestCase):
     def test_decisions(self):
         msg = protocol.parse(conclusion("通过", DECISIONS))
         self.assertTrue(msg.ok, msg.problems)
-        d = msg.contract()["conclusion"]["decisions"]
+        d = msg.contract()["decisions"]
         self.assertEqual([x["id"] for x in d], ["D1", "D2"])
         self.assertEqual(d[0]["question"], "alpha 首字母要不要大写？")
         self.assertEqual(d[0]["options"], [{"letter": "A", "text": "大写"}, {"letter": "B", "text": "保持小写"}])
         self.assertEqual(d[0]["lean"], "B")
         bad = "待用户决定：\nD1：要不要？\n  A. 要\n  倾向：A\n"           # only one option
-        self.assertIn("bad-decision-item", protocol.parse(conclusion("通过", bad)).problems)
+        self.assertIn("bad-decision-item:D1", protocol.parse(conclusion("通过", bad)).problems)
         no_lean = "待用户决定：\nD1：要不要？\n  A. 要\n  B. 不要\n"
-        self.assertIn("bad-decision-item", protocol.parse(conclusion("通过", no_lean)).problems)
+        self.assertIn("bad-decision-item:D1", protocol.parse(conclusion("通过", no_lean)).problems)
 
 
 class SplitTest(unittest.TestCase):
@@ -80,10 +80,10 @@ class DisagreeTest(unittest.TestCase):
     def test_disagree_field(self):
         msg = protocol.parse(self.review("不同意：R-7：错误码表已在接口提案里定，不该在 Spec 里重复\n"))
         self.assertTrue(msg.ok, msg.problems)
-        self.assertEqual(msg.contract()["submission"]["disagree"],
-                         {"ref": "R-7", "reason": "错误码表已在接口提案里定，不该在 Spec 里重复"})
-        self.assertIn("bad-disagree", protocol.parse(self.review("不同意：就是不同意\n")).problems)
-        self.assertNotIn("disagree", protocol.parse(self.review()).contract()["submission"])
+        self.assertEqual(msg.contract()["submission"]["disputes"],
+                         [{"review": "R-7", "reason": "错误码表已在接口提案里定，不该在 Spec 里重复"}])
+        self.assertIn("bad-dispute-line", protocol.parse(self.review("不同意：就是不同意\n")).problems)
+        self.assertNotIn("disputes", protocol.parse(self.review()).contract()["submission"])
 
 
 class NoticeTest(unittest.TestCase):
@@ -101,9 +101,9 @@ class NoticeTest(unittest.TestCase):
 
     def test_revoke_and_crew_refs(self):
         msg = protocol.parse(protocol.render_coordination_notice(
-            "revoke", "C40（用户撤回答复 C52）", "停在当前停点，等新的答复"))
+            "approval-revoked", "C40（用户撤回答复 C52）", "停在当前停点，等新的答复"))
         self.assertTrue(msg.ok, msg.problems)
-        self.assertEqual(msg.contract()["notice"]["kind"], "revoke")
+        self.assertEqual(msg.contract()["notice"]["kind"], "approval-revoked")
         # single use: the start notice cites the coordinator's local approval C40
         start = protocol.parse("【协调通知】\n类型：开工\n依据：C40（用户在协调会话批准；交审 C15）\n要你做什么：开始构建\n")
         self.assertTrue(start.ok, start.problems)
@@ -114,7 +114,7 @@ class NoticeTest(unittest.TestCase):
     def test_user_reply_crew_item(self):
         msg = protocol.parse("【用户答复】\n事项：C20（你的原消息 #4001）\n用户原话：A\n答复时间：2026-10-19T10:00:00+08:00\n")
         self.assertTrue(msg.ok, msg.problems)
-        self.assertEqual(msg.item, 20)
+        self.assertEqual((msg.item, msg.contract()["localItem"]), (None, "C20"))
 
 
 class NearbyCase(ReviewCase):
@@ -163,7 +163,7 @@ class ForwardTest(NearbyCase):
         self.assertEqual(out.closed, [first])
         self.assertEqual(out.sends, [])                                            # not sent back to the reviewer
         self.assertEqual(self.state(out.number), "decide")
-        self.assertEqual(store.get(self.db, "item", str(out.number))["disagree"]["ref"], "R-7")
+        self.assertEqual(store.get(self.db, "item", str(out.number))["disputes"][0]["review"], "R-7")
         spec = self.wt["b"] / "spec" / "b.md"
         spec.write_text(spec.read_text() + "改了\n")
         git(self.wt["b"], "commit", "-qam", "change")

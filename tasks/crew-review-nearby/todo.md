@@ -26,7 +26,7 @@
 
 - [x] Task 5 注：2026-10-19 Spec 修订后，摘要（R8）与要点截断（R7）作废，合批正文由 Task 7 重写
 
-- [ ] Task 6：钉契约 v2.1、协议字段名对齐定稿、解析登记回执与【等待用户】新字段
+- [x] Task 6：钉契约 v2.1、协议字段名对齐定稿、解析登记回执与【等待用户】新字段
   - 验收：Spec 验收 18
   - 文件：`tests/fixtures/session-protocol/v2.1/`、`module_crew/protocol.py`、`module_crew/review.py`、`tests/test_protocol_conformance.py`、`tests/test_review_nearby.py`
 
