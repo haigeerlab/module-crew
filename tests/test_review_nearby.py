@@ -410,6 +410,14 @@ class DecisionTest(NearbyCase):
         self.assertEqual(review.approve(self.repo, [n], "A；D1 A").code, 0)
         self.assertNotEqual(git(self.repo, "rev-parse", "HEAD"), head)                # approved as it is
 
+    def test_batch_text_lists_questions_for_the_coordinator(self):
+        n = self.submit()
+        review.note(self.db, n, "arch", conclusion("通过", DECISIONS))
+        out = self.run_cli("review", "batch", cwd=self.repo).stdout
+        self.assertIn("待用户决定（没有收件枢纽时直接问用户；批准时每个 D 都要答到）", out)
+        self.assertIn("D1：alpha 首字母要不要大写？", out)
+        self.assertIn("- 不做：后台", out)                                        # points in full
+
     def test_timeout_hold(self):
         n = self.submit()
         self.age(n)
