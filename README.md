@@ -19,7 +19,13 @@
 
 ## 安装
 
-1. 把本仓库作为 Claude Code 插件装上（目前以本地插件目录使用，尚未发布到插件市场），同时装好 agent-relay 与 spec-guard。
+1. 本仓库自带本地插件市场清单（`.claude-plugin/marketplace.json`，市场名 `module-crew-local`），用本机路径装上，同时装好 agent-relay 与 spec-guard：
+
+   ```bash
+   claude plugin marketplace add /path/to/module-crew
+   claude plugin install module-crew@module-crew-local
+   ```
+
 2. **信任 module-crew 的钩子**：首次使用时 Claude Code 会询问是否信任插件钩子，要同意；否则压缩、换会话后不会注入角色提示。
 3. **插件更新后要开新会话**才生效：已开着的会话还在用旧版本的钩子与 skill。
 
