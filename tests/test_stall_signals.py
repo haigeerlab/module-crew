@@ -37,6 +37,23 @@ class CommitFactsTest(StallCase):
         git(self.wt["b"], "reset", "-q", "--hard", "main")
         self.assertEqual(self.rows()["b"]["commits"], {"ahead": 0, "last": None, "error": None})
 
+    def test_last_survives_the_merge_into_the_integration_branch(self):
+        self.approve_final("b", 8301)
+        assert merge.run(self.repo, check_command="python3 -c pass").code == 0
+        own = git(self.wt["b"], "rev-parse", "HEAD").strip()
+        commits = self.rows()["b"]["commits"]
+        self.assertEqual(commits["ahead"], 0)
+        self.assertEqual(commits["last"]["commit"], own)
+
+    def test_fast_forward_sync_is_not_module_output(self):
+        start = git(self.repo, "rev-parse", "main").strip()
+        (self.repo / "other.txt").write_text("x\n")
+        git(self.repo, "add", "other.txt")
+        git(self.repo, "commit", "-q", "-m", "other module merged")
+        git(self.wt["c"], "reset", "-q", "--hard", start)
+        git(self.wt["c"], "merge", "-q", "--ff-only", "main")
+        self.assertEqual(self.rows()["c"]["commits"], {"ahead": 0, "last": None, "error": None})
+
     def test_missing_worktree_only_affects_that_module(self):
         shutil.rmtree(self.wt["c"])
         rows = self.rows()
@@ -128,7 +145,7 @@ class HumanTextTest(StallCase):
         git(self.wt["c"], "reset", "-q", "--hard", "main")
         text = "\n".join(failure.render_sessions(failure.sessions(self.db)))
         at = datetime.fromisoformat(git(self.wt["b"], "log", "-1", "--format=%cI").strip()).strftime("%Y-%m-%d %H:%M")
-        self.assertIn(f"  最近提交：{at}（0 分钟前），开工以来 1 个提交", text)
+        self.assertIn(f"  最近提交：{at}（0 分钟前），未合入集成分支 1 个", text)
         self.assertIn(f"  问过你：Plan 1 次（C{plan}）", text)
         self.assertIn("  最近提交：开工以来没有提交（开工 0 分钟前）", text)
         self.assertIn("  问过你：无", text)

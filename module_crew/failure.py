@@ -161,8 +161,8 @@ def sessions(db: store.Store, now: datetime | None = None) -> list[dict]:
             "suspended": (rec.get("suspended") or {}).get("reason"),
             "review": nearby.get(module),       # crew-review-nearby: rework visible to the decision inbox
             # crew-stall-signals: facts only, the decision inbox judges
-            "startedAt": stall.started_at(events, name),
-            "commits": stall.commit_facts(rec.get("worktree"), integration),
+            "startedAt": (started := stall.started_at(events, name)),
+            "commits": stall.commit_facts(rec.get("worktree"), integration, started),
             "asks": stall.asks(events, items, module),
             "returns": stall.returns(events, items, module),
             "waitUser": stall.wait_user(events, items, name),
@@ -178,7 +178,7 @@ def _commit_line(r: dict, now: datetime) -> str:
     if c["last"] is None:
         return "  最近提交：开工以来没有提交" + (f"（开工 {_ago(r['startedAt'], now)}）" if r["startedAt"] else "")
     at = datetime.fromisoformat(c["last"]["at"])
-    return f"  最近提交：{at.strftime('%Y-%m-%d %H:%M')}（{_ago(c['last']['at'], now)}），开工以来 {c['ahead']} 个提交"
+    return f"  最近提交：{at.strftime('%Y-%m-%d %H:%M')}（{_ago(c['last']['at'], now)}），未合入集成分支 {c['ahead']} 个"
 
 
 def _asks_line(r: dict) -> str:

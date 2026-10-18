@@ -35,7 +35,9 @@
 ## 关键决策与取舍（请重点审）
 
 1. **提交事实以 worktree 的 HEAD 对集成分支为准**：`git -C <worktree> rev-list --count <集成分支>..HEAD` 得 `ahead`，
-   `git -C <worktree> log -1 --format=%H%x00%cI <集成分支>..HEAD` 得最新提交与提交时间（committer date，带时区）。
+   最新提交 `last` 取「开工以来 HEAD 第一父链上、又不在集成分支第一父链上的最新一个提交」：
+   `git -C <worktree> rev-list --first-parent --since=<startedAt> HEAD` 依次取，跳过 `rev-list --first-parent --since=<startedAt> <集成分支>` 里出现过的，第一个就是 `last`（提交号与 committer date，带时区）。
+   这样模块合进集成分支之后（`ahead` 变 0）`last` 仍是模块自己的最后一次提交，不会被当成「开工以来没有提交」；同步时快进到集成分支的提交不算模块产出；没有 `startedAt` 时退回 `<集成分支>..HEAD` 的最新一个。
    用 HEAD 而不是分支名，因为模块会话就在这个 worktree 里提交；集成分支名取运行配置 `integrationBranch`。
    模块按同步通知把集成分支合进来产生的合并提交也算产出——它确实是模块会话的动作；不另行区分，Spec 写明。
 2. **开工时间取会话登记事件**：`startedAt` = 事件日志里这个会话名最近一次 `registered` 事件的时间（`start prepare` 写入；换会话 `takeover` 不改它）。
@@ -70,7 +72,7 @@
 ```
 
 - `startedAt`：没有登记事件时 null。
-- `commits.ahead` 为 0 时 `last` 为 null（开工以来没有提交）；读不到时 `ahead`、`last` 都为 null，`error` 一行原因。
+- `commits.ahead` 是还没合进集成分支的提交数；`last` 与 `ahead` 无关，开工以来模块自己一次都没提交时才为 null（合入集成分支后 `ahead` 为 0、`last` 仍有值）；读不到时 `ahead`、`last` 都为 null，`error` 一行原因。
 - `asks`：只列计过数的节点，按 Spec、Plan、接口、最终验收排；`node` 用现有节点代码（`spec`／`plan`／`interface`／`final`），`refs` 按编号升序；`ats` 与 `refs` 一一对应，`ats[i]` 是 `refs[i]` 那次交审进提请批准或被答复的时间（两者都有取较晚的），供决策收件箱按时间窗口计数；`lastAt` 为 `ats` 中最晚的一个。
 - `returns`、`waitUser`：按编号升序；没有为 `[]`。
 - 时间一律 ISO 8601 带时区，与现有 `lastActivity` 同格式。
@@ -80,7 +82,7 @@
 `module-crew sessions` 每个模块在现有四行后加：
 
 ```
-  最近提交：2026-10-19 11:20（2 小时前），开工以来 3 个提交        # 没有：开工以来没有提交（开工 5 小时前）；读不到：最近提交读不到：<原因>
+  最近提交：2026-10-19 11:20（2 小时前），未合入集成分支 3 个        # 没有：开工以来没有提交（开工 5 小时前）；读不到：最近提交读不到：<原因>
   问过你：Spec 1 次、最终验收 3 次（C20、C26、C31）；合并退回 1 次   # 都没有：问过你：无
 ```
 
@@ -126,7 +128,7 @@ python3 -m unittest discover -s tests -v
 
 ## 验收标准
 
-1. 模块 worktree 有 2 个不在集成分支里的提交：`commits.ahead` 为 2，`last.commit`、`last.at` 是最新那个的提交号与提交时间；没有提交时 `ahead` 0、`last` null。
+1. 模块 worktree 有 2 个不在集成分支里的提交：`commits.ahead` 为 2，`last.commit`、`last.at` 是最新那个的提交号与提交时间；没有提交时 `ahead` 0、`last` null；模块合入集成分支后 `ahead` 0、`last` 仍是模块自己的最后一次提交；同步时快进到集成分支不产生 `last`。
 2. worktree 不存在或集成分支不存在：该模块 `commits.error` 写明原因、`ahead`／`last` 为 null，其他模块与其他字段正常，退出码 0。
 3. `startedAt` 等于这个会话 `registered` 事件的时间；`takeover` 之后不变。
 4. 同一模块同一节点：进过提请批准的、被用户答复的各计一次，只经返工又被取代的不计；`refs`、`ats`（与 `refs` 一一对应）、`count`、`lastAt` 正确，节点顺序 Spec、Plan、接口、最终验收。
@@ -149,3 +151,4 @@ README 里说明 `sessions --json` 字段的那一条（现第 121 行）补上�
 ## 变更记录
 
 - 2026-10-19：`asks` 每项加 `ats`（与 `refs` 一一对应的时间），接口约定与验收 4 随之补一句；老字段不变。原因：decision-inbox 的停滞触发条件「同一件事 24 小时内报了 3 次」需要每次的时间，累计次数与最后时间不够；来源：decision-inbox 插件会话回复（选 B），用户 2026-10-19 批准修订。
+- 2026-10-19：`commits.last` 改为「开工以来 HEAD 第一父链上、不在集成分支第一父链上的最新提交」，与 `ahead` 脱钩；人看的文字「开工以来 N 个提交」改为「未合入集成分支 N 个」；验收 1 补两种情况。原因：验收 11 实地测试时发现已合入的模块 alpha（8a2fe79 已合入 main）显示「开工以来没有提交」，决策收件箱会据此误报停滞；来源：接入方案会话报告疑点，用户 2026-10-19 选「冻结前先修」。

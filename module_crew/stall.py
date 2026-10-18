@@ -17,8 +17,12 @@ def _error(out: subprocess.CompletedProcess) -> str:
     return (out.stderr.strip().splitlines() or [f"git 退出码 {out.returncode}"])[0]
 
 
-def commit_facts(worktree: str | None, integration: str | None) -> dict:
-    """Commits on the worktree's HEAD that are not on the integration branch: how many, and the latest one."""
+def commit_facts(worktree: str | None, integration: str | None, since: str | None = None) -> dict:
+    """How many commits are not merged yet (`ahead`), and the module's own latest commit since it started (`last`).
+
+    `last` walks HEAD's first-parent chain since `since`, skipping what is on the integration branch's first-parent
+    chain: it survives the module's merge into the integration branch, and a fast-forward sync is not module output.
+    """
     failed = {"ahead": None, "last": None}
     if not integration:
         return {**failed, "error": "运行配置没有集成分支"}
@@ -30,13 +34,21 @@ def commit_facts(worktree: str | None, integration: str | None) -> dict:
     if count.returncode != 0:
         return {**failed, "error": _error(count)}
     ahead = int(count.stdout.strip())
-    if ahead == 0:
-        return {"ahead": 0, "last": None, "error": None}
-    log = _git(path, "log", "-1", "--format=%H%x00%cI", span)
-    if log.returncode != 0:
-        return {**failed, "error": _error(log)}
-    commit, at = log.stdout.strip().split("\0")
-    return {"ahead": ahead, "last": {"commit": commit, "at": at}, "error": None}
+    if since:
+        own = _git(path, "rev-list", "--first-parent", f"--since={since}", "HEAD")
+        theirs = _git(path, "rev-list", "--first-parent", f"--since={since}", integration)
+        if own.returncode != 0 or theirs.returncode != 0:
+            return {**failed, "error": _error(own if own.returncode != 0 else theirs)}
+        skip = set(theirs.stdout.split())
+        commit = next((c for c in own.stdout.split() if c not in skip), None)
+    else:
+        commit = _git(path, "rev-list", "-1", span).stdout.strip() or None
+    if commit is None:
+        return {"ahead": ahead, "last": None, "error": None}
+    at = _git(path, "log", "-1", "--format=%cI", commit)
+    if at.returncode != 0:
+        return {**failed, "error": _error(at)}
+    return {"ahead": ahead, "last": {"commit": commit, "at": at.stdout.strip()}, "error": None}
 
 
 def started_at(events: list[dict], name: str) -> str | None:

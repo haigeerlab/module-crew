@@ -25,6 +25,11 @@
   - 来源：decision-inbox 回复选 B，用户 2026-10-19 批准修订
   - 文件：`module_crew/stall.py`、`tests/test_stall_signals.py`
 
+- [x] Task 5（追加）：`commits.last` 改为开工以来第一父链上的最新提交，合入后不再显示「开工以来没有提交」
+  - 验收：Spec 验收 1（修订后）、9
+  - 来源：验收 11 实测时接入方案会话发现，用户 2026-10-19 批准冻结前先修
+  - 文件：`module_crew/stall.py`、`module_crew/failure.py`、`tests/test_stall_signals.py`
+
 ## 外部审查意见
 
 <!-- spec-guard: external-review declined -->
