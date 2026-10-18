@@ -20,7 +20,7 @@
   - 验收：Spec 验收 5、6、9（钩子部分）
   - 文件：`module_crew/prepush.py`、`module_crew/permissions.py`、`module_crew/merge.py`、`tests/test_prepush.py`
 
-- [ ] Task 5：prepare 跟随、实测清单与记录、status 显示
+- [x] Task 5：prepare 跟随、实测清单与记录、status 显示
   - 验收：Spec 验收 7、8
   - 文件：`module_crew/start.py`、`module_crew/permissions.py`、`module_crew/__main__.py`、`tests/test_permissions.py`
 

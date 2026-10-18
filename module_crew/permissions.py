@@ -350,3 +350,107 @@ def uninstall_hook(project: Path) -> str:
         prepush.disable(path)
         return f"推送守门：已停用 {path}（文件改为空操作，可手动删除）"
     return "推送守门：没有 module-crew 装的钩子"
+
+
+def follow(project: str | os.PathLike, name: str) -> str | None:
+    """After `start prepare`: when rules were applied, write them for this new worktree too; a failure never blocks."""
+    project = Path(project)
+    db, cfg, found = checkouts(project)
+    record = cfg.get("permissions") or {}
+    if not record.get("applied"):
+        return None
+    t = next((x for x in found if x["name"] == name), None)
+    target = _target(t, cfg, project) if t else None
+    problem = (target or {}).get("problem") or (None if target and target["ignored"] else "文件没有被 git 忽略")
+    if target is None:
+        problem = f"没有在用的会话 {name}"
+    files = dict(record.get("files") or {})
+    codex_files = set(record.get("codexFiles") or [])
+    failed = dict(record.get("followFailed") or {})
+    if problem:
+        failed[name] = problem
+        line = f"⚠️ 没给 {name} 写权限规则：{problem}（不影响开工；处理后重跑 permissions apply）"
+    else:
+        failed.pop(name, None)
+        path = Path(target["file"])
+        if "rules" in target:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(render_codex(target["rules"]), encoding="utf-8")
+            codex_files.add(str(path))
+        else:
+            doc, _ = _read_settings(path)
+            perms = doc.setdefault("permissions", {})
+            added = files.setdefault(str(path), {"allow": [], "deny": []})
+            for key in ("allow", "deny"):
+                perms.setdefault(key, []).extend(target[key])
+                added[key] += [e for e in target[key] if e not in added[key]]
+            _write_json(path, doc)
+        line = f"已写权限规则：{path}"
+    with db.transaction(actor="coordinator") as tx:
+        _put(tx, {**record, "files": files, "codexFiles": sorted(codex_files), "followFailed": failed})
+    return line
+
+
+ALLOWED_PROBES = [("module-crew status", f"{CREW_BIN} status"), ("git status", "git status"),
+                  ("git add --dry-run .", "git add --dry-run ."), ("bridge_agents", "mcp__agent-relay__bridge_agents（工具调用）")]
+DENIED_PROBE = "git push --dry-run module-crew-probe HEAD"
+
+
+def verify_list(project: str | os.PathLike, host: str = "claude") -> list[str]:
+    """What the coordinator asks a new module session to run, and what to watch for (key decision 6)."""
+    lines = ["请模块会话在自己的 worktree 里依次运行下面五条，模块协调同时看它的在线状态有没有出现「等待审批」：",
+             *[f"  {i}. {cmd}　——应直接运行、不弹确认" for i, (_, cmd) in enumerate(ALLOWED_PROBES, 1)],
+             f"  5. {DENIED_PROBE}　——应被宿主拒绝；就算宿主没拦，这个远端名也不存在，推不出去",
+             "看完记下：module-crew permissions verify --record <会话名> --allowed ok|prompted --denied ok|ran"]
+    if host == "codex":
+        lines += _codex_static(project)
+    return lines
+
+
+def _codex_static(project: str | os.PathLike) -> list[str]:
+    import shutil
+    codex = shutil.which("codex")
+    _, cfg, found = checkouts(Path(project))
+    files = [Path(t["checkout"]) / CODEX_FILE for t in found if t["host"] == "codex-desktop"]
+    if not codex:
+        return ["本机没有 codex 命令，跳过 Codex 规则的静态核对"]
+    out = []
+    for f in files:
+        if not f.exists():
+            out.append(f"{f} 不存在：先运行 permissions apply")
+            continue
+        for cmd in ["git status", "git commit -m x", "git push origin main", "rm -rf build"]:
+            res = subprocess.run([codex, "execpolicy", "check", "--rules", str(f), *cmd.split()],
+                                 capture_output=True, text=True, stdin=subprocess.DEVNULL)
+            try:
+                decision = json.loads(res.stdout).get("decision") or "无匹配"
+            except ValueError:
+                decision = f"读不出结果（退出码 {res.returncode}）"
+            out.append(f"Codex 静态核对 {f.parent.parent.parent.name}：{cmd} → {decision}")
+    return out
+
+
+def record_verify(project: str | os.PathLike, name: str, allowed: str, denied: str) -> str:
+    db = store.open_store(Path(project))
+    rec = store.get(db, "session", name)
+    if not rec or rec.get("status") != "active":
+        raise Refused(f"{name} 不是状态库里在用的会话")
+    with db.transaction(actor="coordinator") as tx:
+        record = ((tx.get("config", "main") or {}).get("permissions") or {})
+        verified = dict(record.get("verified") or {})
+        verified[name] = {"allowed": allowed, "denied": denied, "at": store.now()}
+        _put(tx, {**record, "verified": verified})
+    return f"已记下 {name} 的权限实测：放行 {VERIFY_TEXT[allowed]}，拒绝 {VERIFY_TEXT[denied]}"
+
+
+VERIFY_TEXT = {"ok": "如预期", "prompted": "弹了确认", "ran": "没拦住"}
+
+
+def status_fact(record: dict, name: str) -> str:
+    """One status-line fact per session: last field test, or that it was never tested."""
+    if name in (record.get("followFailed") or {}):
+        return f"权限规则没写上：{record['followFailed'][name]}"
+    v = (record.get("verified") or {}).get(name)
+    if not v:
+        return "权限未实测"
+    return f"权限实测 {v['at'][:16].replace('T', ' ')}：放行{VERIFY_TEXT[v['allowed']]}、拒绝{VERIFY_TEXT[v['denied']]}"

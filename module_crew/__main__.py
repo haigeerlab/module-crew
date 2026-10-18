@@ -89,10 +89,13 @@ def _status(as_json: bool) -> int:
     if report.store is None:
         print("  未建库")
     else:
+        from module_crew import permissions
         facts = {r["name"]: r for r in failure.sessions(store.open_store())}
+        perm = permissions.read_record(store.open_store())
         for s in report.store["sessions"] or [{"name": "（没有在用的会话）"}]:
             extra = f"（{s.get('role')}{'，' + s['module'] if s.get('module') else ''}）" if s.get("role") else ""
-            print(f"  {s['name']}{extra}{_stall_facts(facts.get(s['name']))}")
+            perm_fact = ("　" + permissions.status_fact(perm, s["name"])) if s.get("role") == "dev" else ""
+            print(f"  {s['name']}{extra}{_stall_facts(facts.get(s['name']))}{perm_fact}")
         print("  未关：" + "、".join(f"{_KIND_NAME[k]} {n}" for k, n in report.store["open"].items()))
         for mod, r in review.progress(store.open_store()).items():
             print(f"  {mod} " + (f"返工中（审查第 {r['round']} 轮）" if r["state"] == "rework" else
@@ -622,6 +625,11 @@ def main(argv: list[str] | None = None) -> int:
     pm = sub.add_parser("permissions", help="宿主权限预配：预览、凭用户原话写入、实测、撤销")
     pm_sub = pm.add_subparsers(dest="action", required=True)
     pm_sub.add_parser("plan", help="只读：每个 checkout 要写什么、能不能写").add_argument("--json", action="store_true")
+    pv = pm_sub.add_parser("verify", help="实测清单；--record 记下模块协调看到的结果")
+    pv.add_argument("--host", choices=("claude", "codex"), default="claude")
+    pv.add_argument("--record", metavar="会话名")
+    pv.add_argument("--allowed", choices=("ok", "prompted"))
+    pv.add_argument("--denied", choices=("ok", "ran"))
     for name, text in (("apply", "凭用户原话写规则、装推送守门"), ("remove", "凭用户原话撤掉 module-crew 写的规则与钩子")):
         pa = pm_sub.add_parser(name, help=text)
         pg = pa.add_mutually_exclusive_group(required=True)
@@ -679,6 +687,15 @@ def _permissions(args) -> int:
         if args.action == "plan":
             p = permissions.plan(".")
             print(json.dumps(p, ensure_ascii=False, indent=2) if args.json else "\n".join(permissions.render_plan(p)))
+            return 0
+        if args.action == "verify":
+            if args.record:
+                if not (args.allowed and args.denied):
+                    print("❌ --record 要同时给 --allowed 与 --denied", file=sys.stderr)
+                    return 3
+                print(permissions.record_verify(".", args.record, args.allowed, args.denied))
+            else:
+                print("\n".join(permissions.verify_list(".", args.host)))
             return 0
         if args.action in ("apply", "remove"):
             original = _original(args.original, args.original_file)

@@ -263,6 +263,10 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             tx.write_body(body, text)
         result.prepared.append({"id": m, "worktree": path, "branch": m, "relayName": relay, "kickoff": body, "host": host_id,
                                 "kickoffPath": db.path / "bodies" / f"{body}.txt"})
+        from module_crew import permissions
+        line = permissions.follow(project, relay)       # crew-host-permissions: same rules for a new worktree
+        if line:
+            result.lines.append(line)
     done = [p["id"] for p in result.prepared]
     if result.code == 4:
         result.lines.append(f"已完成：{'、'.join(done) or '无'}；未完成的模块请处理原因后单独重跑")

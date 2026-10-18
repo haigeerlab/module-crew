@@ -183,5 +183,55 @@ class CodexRulesTest(PermCase):
         self.assertNotIn("prefix_rule(", text)
 
 
+class FollowAndVerifyTest(PermCase):
+    def test_prepare_follows_after_apply(self):
+        permissions.apply(self.repo, "预配")
+        res = start.prepare(self.repo, ["d"], "开 d")
+        self.assertEqual(res.code, 0, res.lines)
+        d = Path(res.prepared[0]["worktree"])
+        self.assertIn("Bash(git push *)", self.settings(d)["permissions"]["deny"])
+        self.assertTrue(any("已写权限规则" in l for l in res.lines))
+        self.assertIn(str(d / ".claude" / "settings.local.json"), permissions.read_record(self.db)["files"])
+
+    def test_prepare_does_not_write_before_apply(self):
+        res = start.prepare(self.repo, ["d"], "开 d")
+        self.assertFalse((Path(res.prepared[0]["worktree"]) / ".claude" / "settings.local.json").exists())
+
+    def test_follow_failure_does_not_block_and_shows_in_status(self):
+        from unittest import mock
+        permissions.apply(self.repo, "预配")
+        real = permissions._ignored
+        with mock.patch.object(permissions, "_ignored", lambda c, rel: c.name != "d" and real(c, rel)):
+            res = start.prepare(self.repo, ["d"], "开 d")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertTrue(any("没给 shop-d 写权限规则" in l for l in res.lines))
+        line = next(l for l in self.run_cli("status").stdout.splitlines() if l.startswith("  shop-d"))
+        self.assertIn("权限规则没写上", line)
+
+    def test_verify_list_and_record(self):
+        text = "\n".join(permissions.verify_list(self.repo))
+        self.assertIn(permissions.DENIED_PROBE, text)
+        self.assertIn("--record", text)
+        line = next(l for l in self.run_cli("status").stdout.splitlines() if l.startswith("  shop-b"))
+        self.assertIn("权限未实测", line)
+        out = self.run_cli("permissions", "verify", "--record", "shop-b", "--allowed", "ok", "--denied", "ok")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        line = next(l for l in self.run_cli("status").stdout.splitlines() if l.startswith("  shop-b"))
+        self.assertIn("放行如预期、拒绝如预期", line)
+        self.assertEqual(self.run_cli("permissions", "verify", "--record", "shop-x", "--allowed", "ok",
+                                      "--denied", "ok").returncode, 3)
+        self.assertEqual(self.run_cli("permissions", "verify", "--record", "shop-b").returncode, 3)
+
+
+class CodexStaticTest(PermCase):
+    @unittest.skipUnless(__import__("shutil").which("codex"), "本机没有 codex 命令")
+    def test_execpolicy_check_on_the_written_rules(self):
+        permissions.apply(self.repo, "预配")
+        text = "\n".join(permissions.verify_list(self.repo, "codex"))
+        self.assertIn("git push origin main → forbidden", text)
+        self.assertIn("rm -rf build → forbidden", text)
+        self.assertIn("git commit -m x → allow", text)
+
+
 if __name__ == "__main__":
     unittest.main()
