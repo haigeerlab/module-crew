@@ -1,9 +1,9 @@
-# 第 7 关试点报告（中期）
+# 第 7 关试点报告
 
 > 2026-10-18。试点项目 `/Users/vilin/Documents/haigeerlab/crew-pilot`（本机裸仓库远端 `crew-pilot-remote.git`），
 > module-crew 以本地插件 `module-crew@module-crew-local`（a93dd6e）安装，spec-guard 0.68.0，agent-relay 0.8.2。
 > 原始时间线：`/Users/vilin/Documents/haigeerlab/crew-pilot-notes.md`（协调会话记录）。
-> **中期**：推送与收回 worktree 尚未做（用户决定先修缺陷）。
+> 两轮：第一轮跑到合入本地 main 后停下修缺陷 A–G；修好后用新版收尾（补勾、推送、收回、退役），又发现 I–K 并修复。
 
 ## 跑了什么
 
@@ -18,7 +18,10 @@
 | 11:15 | 用户批准 → `review approve 4 5 6 7` | 集成分支提交带评审标记的 6 个文件；4 条【用户答复】+ 2 条开工通知经 agent-relay 发出 |
 | 11:16 | 两条最终验收【交审】 | 开工通知后约 1 分钟交回 |
 | 11:18 | 用户批准 → `merge approve` ×2、`merge run` ×2 | 两个模块 `--no-ff` 合入本地 main（71cf0b6），完整检查 14 个测试通过 |
-| 11:19 | `merge push-plan` | 预告推到 `crew/batch-25`，10 个提交；未推送 |
+| 11:19 | `merge push-plan` | 预告推到 `crew/batch-25`，10 个提交；用户决定先修缺陷，未推送 |
+| 11:3x | 修复后 `merge tick` ×2 | 集成分支补勾两个模块的最终验收（1c34665、3e96819） |
+| 11:40 | 用户授权 → `merge push` | 推到本机远端 `crew/batch-26`，远端 main 未动；开 PR 一步报错（问题 J） |
+| 11:41 | 用户同意 → `merge cleanup` ×2、退役两个邮箱名 | worktree 收回、分支保留；邮箱名用 agent-relay 运维脚本退役（问题 K） |
 
 从开工到两个模块合入本地集成分支约 8 分钟。
 
@@ -43,6 +46,10 @@
 | G | `review batch` 没有冲突段落，「没有冲突」与「不输出」分不清 | 审批时少一条明确信息 | 小改进（crew-review-batch） |
 | H | 加载 skill 时显示的目录是开发源目录，不是插件安装副本 | 本次两份内容相同，无影响 | 宿主行为：本地目录市场的插件直接从源目录读（`claude plugin update` 明说「read from its folder」），缓存副本只在安装时复制一次，只记录 |
 
+| I | 等待单 #25 关不掉：发单的模块已收回、不能再发【已恢复】，module-crew 也没有关单命令 | 等待单永远开着 | 缺口（crew-onboarding） |
+| J | `merge push` 推送成功却退出码 4：事务提交前就调 `gh`，正文文件还没落盘；远端不是 GitHub 时也去开 PR | 误报失败 | 缺陷（crew-merge） |
+| K | skill 写「用 agent-relay 退役邮箱名」，但 agent-relay 0.8.2 没有退役工具，只有运维脚本，且未登记在 interface.json | 协调会话自己找脚本 | 过时（crew-merge、skill）；agent-relay 负责人确认接口保持 2.5、由用户经 `/agent-relay:collaboration` 退役 |
+
 已核对、不算问题：palindrome 用 12 位指纹被接受——session-protocol 规定指纹取 12～64 位。
 
 ## 修复（2026-10-18，用户批准）
@@ -57,9 +64,15 @@ Spec 修订 ce26d8b（crew-merge、crew-start、crew-review-batch），实现 79
 | E | `merge approve` 一次可收多个编号，任一不合格什么都不写 |
 | F | 协调会话 skill 写明强制背景要标明「不是开工说明的一部分」 |
 | G | `review batch` 明确输出「依赖：全部就绪」「并行边界重叠：无」 |
+| I | 新增 `ticket close --reason happened|user`（契约第 11 节理由 3、4）；`merge cleanup` 列出模块开着的等待单；skill 加「等待单」一节（Spec 6633a88，实现 3a14189） |
+| J | `merge push` 先提交推送记录与正文再调 `gh`，开好后另记 PR 链接；只对 github.com 远端开 PR，其他远端打印正文、退出码 0 |
+| K | `merge cleanup` 列出「待退役的邮箱名」，由用户同意后经 `/agent-relay:collaboration` 退役；module-crew 不定位、不运行 agent-relay 脚本 |
+
+第二轮修复后全量 239 个测试通过，插件重装为 3a14189。
 
 ## 还没做
 
-- 推送到本机远端、`merge cleanup` 收回 worktree、退役邮箱名（用户决定先修缺陷）。
+- 等待单 #25 仍开着（用户决定挂着；现在可以用 `ticket close 25 --reason happened` 关）。
+- `gh` 真正开 PR（远端是本机裸仓库，按修复后的规则只打印正文）。
 - 换会话恢复（`resume-kit`、`takeover`）、挂起、退回串行、合并失败退回：这次都没遇到，未实地验证。
 - 默认权限模式下的弹窗次数；预配工具许可的效果。
