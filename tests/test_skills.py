@@ -200,3 +200,12 @@ class CodexPackageTest(unittest.TestCase):
             self.assertIn(words, codex)
         self.assertNotIn("SendMessage", codex)
         self.assertNotIn("CLAUDE.md", codex)
+
+
+class CodexCoordinatorSkillTest(unittest.TestCase):
+    def test_coordinator_codex_section(self):
+        _, text = read("crew-coordinator")
+        section = text.split("## Codex 模块会话", 1)[1].split("\n## ", 1)[0]
+        for words in ("--host codex", "用户手动", "host-check", "提权", "交给 agent-relay", "not-loaded", "原名重新注册",
+                      "read-only < workspace-write"):
+            self.assertIn(words, section)

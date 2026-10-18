@@ -24,7 +24,7 @@
   - 验收：Spec 验收 8
   - 文件：`.codex-plugin/plugin.json`、`codex-skills/crew-dev/SKILL.md`、`tests/test_skills.py`
 
-- [ ] Task 6：协调会话 skill「Codex 模块会话」一节、`status` 提示、README
+- [x] Task 6：协调会话 skill「Codex 模块会话」一节、`status` 提示、README
   - 验收：Spec 验收 9、10
   - 文件：`skills/crew-coordinator/SKILL.md`、`module_crew/probe.py`、`module_crew/__main__.py`、`README.md`、`tests/test_skills.py`
 

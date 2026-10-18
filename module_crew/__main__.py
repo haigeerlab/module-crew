@@ -83,7 +83,7 @@ def _status(as_json: bool) -> int:
         print("  读不出（见体检 spec-guard 一项）")
     else:
         print(f"  模块 {m['done']}/{m['total']} 完成；当前：{m['activeModule'] or '无'}；进行中：{'、'.join(m['inProgress']) or '无'}")
-    print("第一版只支持 Claude 桌面版")
+    print("协调会话：Claude 桌面版；模块会话：Claude 或 Codex 桌面版")
     return 3 if report.blocked else 0
 
 

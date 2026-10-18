@@ -71,7 +71,7 @@ class CliTest(StatusCase):
         r = self.run_cli("status")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         for words in ("spec-guard-planning", "shop-coord", "事项 1", "等待单 1", "模块 1/3", "进行中：b",
-                      "第一版只支持 Claude 桌面版"):
+                      "模块会话：Claude 或 Codex 桌面版"):
             self.assertIn(words, r.stdout)
 
     def test_json_output(self):

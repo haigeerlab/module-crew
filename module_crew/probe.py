@@ -307,7 +307,7 @@ class Report:
         return {"schemaVersion": 1, "blocked": self.blocked,
                 "checks": [{"id": c.id, "state": c.state, "reason": c.reason, "fix": c.fix} for c in self.checks.values()],
                 "store": self.store, "map": summarize_map(self.map), "startable": self.startable,
-                "host": "第一版只支持 Claude 桌面版"}
+                "host": "协调会话：Claude 桌面版；模块会话：Claude 或 Codex 桌面版"}
 
 
 def run(project: str | os.PathLike | None = None, timeout: float = MAP_TIMEOUT) -> Report:

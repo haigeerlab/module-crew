@@ -125,6 +125,17 @@ module-crew ticket close <编号> --reason happened --original-file <说明文�
 module-crew ticket close <编号> --reason user --original-file <用户原话文件>    # 用户关闭
 ```
 
+## Codex 模块会话
+
+模块会话也可以开在 Codex 桌面版里；**协调会话只能在 Claude 桌面版**。
+- **开工**：用户同意哪几个模块放 Codex 后，`module-crew start prepare <模块>… --host codex --original-file <原话文件>`；要混用就按宿主分两次 prepare。
+  Codex 会话由**用户手动**开：在 Codex 里新建任务、工作目录选那个 worktree、第一条消息贴开工说明全文。你在正文里把 worktree 路径与开工说明文件路径列给用户。
+- **预检**：Codex 会话会先跑 `host-check`；它发来不通过的项时，按「怎么办」处理，要用户做的事（多半是批准提权）交给用户。
+- **提权**：Codex 每次提交都可能要提权写 `.git`，弹窗只有用户能在那个 Codex 会话里点；你看不到、也不能替用户点。把「去某某 Codex 会话点允许」作为等用户的事项写清楚。
+- **叫醒**：Codex 空闲会话交给 agent-relay 叫醒（`bridge_send` 照常 wake），不用桌面版的跨会话消息。`bridge_agents` 显示它 `not-loaded` 时，是 ChatGPT 应用重启后没点开，请用户去点开那个会话。
+- **身份**：Codex 会话读不到自己的消息时会用原名重新注册（正常恢复，不用 `takeover`）；换成新会话接替崩溃的会话才走 `resume-kit` 与 `takeover`。
+- **权限核对**：Codex 按沙箱档位比宽窄（read-only < workspace-write < 完全放开），你看不到档位，醒来核对时请用户确认 Codex 会话的档位不比本会话宽。
+
 ## 接入收件枢纽
 
 接了收件枢纽（decision-inbox 等）时：

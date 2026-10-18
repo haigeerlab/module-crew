@@ -148,5 +148,14 @@ class RecoveryHostTest(StartCase):
         self.assertEqual({r["module"]: r["host"] for r in doc["sessions"]}, {"b": "codex-desktop", "c": "claude-desktop"})
 
 
+class StatusHostTest(StartCase):
+    def test_status_no_longer_claude_only(self):
+        out = self.run_cli("status")
+        self.assertNotIn("第一版只支持 Claude 桌面版", out.stdout)
+        self.assertIn("模块会话：Claude 或 Codex 桌面版", out.stdout)
+        doc = json.loads(self.run_cli("status", "--json").stdout)
+        self.assertIn("Codex", doc["host"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,7 @@
 
 | 依赖 | 要求 |
 |---|---|
-| 宿主 | Claude 桌面版（Code 标签）；协调会话与模块会话都在同一台 Mac 上。第一版不支持 Codex 模块会话 |
+| 宿主 | 协调会话：Claude 桌面版（Code 标签）；模块会话：Claude 桌面版或 Codex 桌面版。都在同一台 Mac 上 |
 | agent-relay | **必需**，接口主版本 2。会话之间用它收发消息（`bridge_send` 的 `bodyFile`、`replyTo`、`expectsReply`） |
 | spec-guard | 项目已启用本地多 Spec 约定（`spec/CAPABILITY-MAP.md`）。开工、批量审批、合并依赖 spec-guard 0.68.0（`interface.json` 1.1、`/map --json` 的 `moduleConcurrency`、`startable`） |
 | 项目 | git 仓库，能建 worktree；有一条能在本地跑完的完整检查命令，合并后用它判断集成是否通过 |
@@ -68,6 +68,17 @@ bin/module-crew status
    - **远端合并始终由用户做**；不开自动合并，不推集成分支本身。
 
 每条要发的消息，命令都会生成正文文件；协调会话用 `bridge_send` 的 `bodyFile` 原样发出，不改一字。
+
+## Codex 模块会话
+
+模块会话可以开在 Codex 桌面版里，协调会话仍在 Claude 桌面版。
+
+1. 在 Codex 里装同一版本的 module-crew（`.codex-plugin/plugin.json`，只提供 Codex 版 `crew-dev` skill）；Codex 插件更新后要完全退出 ChatGPT 应用再打开。
+2. 协调会话用 `module-crew start prepare <模块>… --host codex --original-file <原话文件>` 开工；要混用就按宿主分两次。
+3. 用户在 Codex 里新建任务，工作目录选那个模块的 worktree，第一条消息贴开工说明全文。
+4. Codex 会话先跑 `module-crew host-check`（开工说明里有绝对路径）：检查登记、版本、能否写 git 目录、能否读状态库。
+5. Codex 默认沙箱不让写 `.git`：第一次提交会弹提权，用户在那个 Codex 会话里批准（有「本会话一直允许」就选）。
+6. ChatGPT 应用重启后 Codex 会话不会自动加载，要用户逐个点开；Codex 会话掉了联调身份时用原名重新注册即可。
 
 ## 出状况时怎么办
 
