@@ -30,8 +30,11 @@
 | crew-hub-bridge | 接入收件枢纽：批准来源登记与校验（self／hub／lead）、枢纽事项号与 crew 编号一对多对照、审查行、交枢纽的【等待用户】正文、只读线状态出口（sessions --json 契约与 interface.json）、skill 措辞与协调会话规则 | crew-review-batch, crew-merge, crew-failure |
 | crew-codex-host | 第二版：Codex 桌面版模块会话——Codex 插件包与 crew-dev 的 Codex 版、start prepare --host codex 与开工说明的 Codex 段、host-check 只读预检（.git 可写、命令可用、agent-relay）、身份重登与未加载提示；协调会话仍为 Claude | crew-start, crew-onboarding, crew-recovery-hooks |
 | crew-review-nearby | 第三版：审查就近与决策集中——审查结论就近退回返工（上限 3 次、不同意并排交用户、超时照常送审）、送审、待用户决定问题单列与追问、多段审查结论、合并批准撤回窗口、交审编号前缀 C、合批正文摘要与要点不截断、最终验收选项写真实后果；不配收件枢纽或审查者时照常可用 | crew-protocol, crew-review-batch, crew-merge, crew-hub-bridge |
+| crew-stall-signals | 第四版：停滞事实只读出口——sessions --json 加模块最近提交、开工时间、领先提交数与同一节点问过用户几次、模块发来的【等待用户】首行；只给事实不设阈值，判断与提问归决策收件箱 | crew-hub-bridge, crew-review-nearby |
+| crew-host-permissions | 第四版：宿主权限预配与推送守门——permissions plan／apply／verify 把第 44 条范围内的常规操作写进集成 checkout 与模块 worktree 的 .claude/settings.local.json（推送、删除写 deny）、开会话后实测放行；pre-push 钩子拦模块 worktree 推送与无 merge push 放行凭证的推送 | crew-start, crew-merge |
+| crew-glossary-rename | 第四版：术语表 v1.1 全面改名——README、命令说明、两份 skill、命令输出与生成正文里的自由文字换成新名称，等待记录显示 W 前缀，旧称扫描测试；代码标识符、命令选项、状态库字段与契约标签不动 | crew-stall-signals, crew-host-permissions |
 
-Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby
+Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby → crew-stall-signals → crew-host-permissions → crew-glossary-rename
 
 <!-- Spec Guard 按严格串行推进。为兼容上游格式，逗号分组会按左到右顺序展开为单模块步骤，不代表并行授权。 -->
 
@@ -67,3 +70,4 @@ Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → cr
 - 2026-10-18：插入第二版模块 crew-codex-host（依赖 crew-start、crew-onboarding、crew-recovery-hooks，排在 crew-hub-bridge 之后）。原因：需求记录第 13 节「Codex 模块会话」；来源：用户 2026-10-18 确认 14 条假设并批准插入。
 - 2026-10-18：「说明」改为 crew-protocol 现钉住 session-protocol v1.9（f47631b）。原因：v1.9 写明【撤回】只认枢纽事项号；来源：用户 2026-10-18 定为 0.1.2 待办，随 0.2.0 做。模块、依赖与顺序不变。
 - 2026-10-19：插入第三版模块 crew-review-nearby（依赖 crew-protocol、crew-review-batch、crew-merge、crew-hub-bridge，排在 crew-codex-host 之后）。原因：用户决定 41–43「审查就近、决策集中」与批 2 暴露的问题（livesaas-integration/REQ-REVIEW-NEARBY.md 的 R1–R9）；来源：用户 2026-10-19 确认 21 条假设并批准插入。
+- 2026-10-19：插入第四版三个模块 crew-stall-signals（依赖 crew-hub-bridge、crew-review-nearby）、crew-host-permissions（依赖 crew-start、crew-merge）、crew-glossary-rename（依赖前两个），依次排在 crew-review-nearby 之后。原因：0.3.0 放到下一版的 R14 停滞检测、R16 宿主权限与术语表 v1.1 全面改名（livesaas-integration/REQ-REVIEW-NEARBY.md、GLOSSARY.md）；来源：用户 2026-10-19 确认 19 条假设并批准插入。
