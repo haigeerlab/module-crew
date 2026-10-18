@@ -42,3 +42,54 @@ def commit_facts(worktree: str | None, integration: str | None) -> dict:
 def started_at(events: list[dict], name: str) -> str | None:
     """When `start prepare` registered this session; a takeover does not move it."""
     return next((e["at"] for e in reversed(events) if e["type"] == "session.registered" and e["key"] == name), None)
+
+
+NODES = ("spec", "plan", "interface", "final")      # display order of the spec; not review.NODE_RANK
+
+
+def _event_at(events: list[dict]) -> dict[tuple[str, str], str]:
+    """(type, key) -> time of the first such event."""
+    at: dict[tuple[str, str], str] = {}
+    for e in events:
+        at.setdefault((e["type"], e["key"]), e["at"])
+    return at
+
+
+def asks(events: list[dict], items: dict, module: str) -> list[dict]:
+    """Per node, the reviews that reached the user: put into a hub batch, or answered by the user."""
+    at = _event_at(events)
+    hub: dict[str, str] = {}
+    for key, v in items.items():
+        if v.get("kind") == "hub-batch" and (when := at.get(("item.hub-batch", key))):
+            for n in v.get("reviews", []):
+                hub[str(n)] = max(hub.get(str(n), when), when)
+    seen: dict[str, list[tuple[int, str]]] = {}
+    for key, v in items.items():
+        if v.get("kind") != "review" or v.get("module") != module:
+            continue
+        times = [t for t in (hub.get(key), (v.get("answer") or {}).get("answeredAt")
+                             if v.get("closedReason") == "answered" else None) if t]
+        if times:
+            seen.setdefault(v["node"], []).append((int(key), max(times)))
+    return [{"node": node, "count": len(seen[node]), "refs": [f"C{n}" for n, _ in sorted(seen[node])],
+             "lastAt": max(t for _, t in seen[node])} for node in NODES if node in seen]
+
+
+def returns(events: list[dict], items: dict, module: str) -> list[dict]:
+    """Final acceptances approved by the user and then returned by the merge check."""
+    at = _event_at(events)
+    return [{"ref": f"C{n}", "returnKind": v.get("returnKind"), "at": at.get(("item.returned", str(n)))}
+            for n, v in sorted((int(k), v) for k, v in items.items())
+            if v.get("kind") == "merge-approval" and v.get("module") == module and v.get("closedReason") == "returned"]
+
+
+def wait_user(events: list[dict], items: dict, name: str) -> list[dict]:
+    """Every 【等待用户】 this module session sent, open or closed; whether two are the same question is the inbox's call."""
+    first: dict[str, str] = {}
+    for e in events:
+        if e["type"].startswith("item."):
+            first.setdefault(e["key"], e["at"])
+    return [{"ref": f"C{n}", "state": v.get("state"), "closedReason": v.get("closedReason"),
+             "decide": (v.get("decide") or "").strip().split("\n")[0], "at": first.get(str(n))}
+            for n, v in sorted((int(k), v) for k, v in items.items())
+            if v.get("kind") == "wait-user" and v.get("from") == name]

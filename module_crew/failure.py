@@ -161,6 +161,9 @@ def sessions(db: store.Store, now: datetime | None = None) -> list[dict]:
             # crew-stall-signals: facts only, the decision inbox judges
             "startedAt": stall.started_at(events, name),
             "commits": stall.commit_facts(rec.get("worktree"), integration),
+            "asks": stall.asks(events, items, module),
+            "returns": stall.returns(events, items, module),
+            "waitUser": stall.wait_user(events, items, name),
         })
     return rows
 

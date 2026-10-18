@@ -6,11 +6,11 @@
   - 验收：Spec 验收 1、2、3
   - 文件：`module_crew/stall.py`、`module_crew/failure.py`、`tests/test_stall_signals.py`
 
-- [ ] Task 2：问过你、合并退回、等待用户（`asks`、`returns`、`waitUser`）
+- [x] Task 2：问过你、合并退回、等待用户（`asks`、`returns`、`waitUser`）
   - 验收：Spec 验收 4、5、6、7
   - 文件：`module_crew/stall.py`、`module_crew/failure.py`、`tests/test_stall_signals.py`
 
-- [ ] Checkpoint 1（report）：新字段齐全；现有 sessions 契约测试原样通过、状态库读不到仍退出 2（验收 8）
+- [x] Checkpoint 1（report）：新字段齐全；现有 sessions 契约测试原样通过、状态库读不到仍退出 2（验收 8）（2026-10-19，全量 361 个测试通过；`tests/test_hub_output.py` 的契约与 `test_unreadable_exits_2_with_reason` 未改动照常通过）
 
 - [ ] Task 3：人看的 `sessions` 与 `status`；crew-hub-bridge 契约一句与变更记录；README 第 121 行
   - 验收：Spec 验收 9

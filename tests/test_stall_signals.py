@@ -1,13 +1,14 @@
 """crew-stall-signals: read-only facts in sessions --json for the decision inbox (spec/crew-stall-signals.md)."""
 
 import shutil
-import subprocess
 import unittest
 from datetime import datetime
 
 from helpers import MergeCase, git
 
-from module_crew import failure, hooks, store
+from module_crew import failure, hooks, inbox, merge, review, store
+
+from helpers import wait_user
 
 
 class StallCase(MergeCase):
@@ -59,6 +60,55 @@ class StartedAtTest(StallCase):
         self.assertEqual(self.rows()["b"]["startedAt"], reg["at"])
         hooks.takeover(self.db, "shop-b", "让新会话接管 b")
         self.assertEqual(self.rows()["b"]["startedAt"], reg["at"])
+
+
+class AsksTest(StallCase):
+    def test_only_reviews_that_reached_the_user_count(self):
+        never = review.add(self.db, self.spec_review("b"), "shop-b", 7001).number
+        hub = review.add(self.db, self.spec_review("b"), "shop-b", 7002).number      # supersedes `never`
+        self.assertEqual(store.get(self.db, "item", str(never))["closedReason"], "superseded")
+        review.for_hub(self.repo)
+        review.answer(self.db, hub, "Spec 再改一下")                               # same review: still one ask
+        direct = review.add(self.db, self.spec_review("b"), "shop-b", 7003).number
+        review.answer(self.db, direct, "Spec 还要改")                              # no decision inbox: answered counts
+        asks = self.rows()["b"]["asks"]
+        self.assertEqual([(a["node"], a["count"], a["refs"]) for a in asks], [("spec", 2, [f"C{hub}", f"C{direct}"])])
+        answered = store.get(self.db, "item", str(direct))["answer"]["answeredAt"]
+        self.assertEqual(asks[0]["lastAt"], answered)
+        self.assertEqual(self.rows()["c"]["asks"], [])
+
+    def test_node_order(self):
+        plan = review.add(self.db, self.plan_review("b"), "shop-b", 7101).number
+        review.answer(self.db, plan, "Plan 改")
+        spec = review.add(self.db, self.spec_review("b"), "shop-b", 7102).number
+        review.answer(self.db, spec, "Spec 改")
+        self.assertEqual([a["node"] for a in self.rows()["b"]["asks"]], ["spec", "plan"])
+
+
+class ReturnsTest(StallCase):
+    def test_merge_returns_and_the_resubmission_counts_again(self):
+        first = self.approve_final("b", 8001)
+        res = merge.run(self.repo, self.check_script(fail_if="src/b.py"))
+        self.assertEqual(store.get(self.db, "item", str(first))["closedReason"], "returned")
+        row = self.rows()["b"]
+        self.assertEqual([(r["ref"], r["returnKind"]) for r in row["returns"]], [(f"C{first}", "module")])
+        datetime.fromisoformat(row["returns"][0]["at"])
+        self.approve_final("b", 8002, path="src/b2.py")
+        final = [a for a in self.rows()["b"]["asks"] if a["node"] == "final"][0]
+        self.assertEqual(final["count"], 2)
+        self.assertIsNotNone(res)
+
+
+class WaitUserTest(StallCase):
+    def test_lists_every_wait_user_with_its_first_line(self):
+        old = inbox.add(self.db, wait_user(decide="要不要再试一次\n第二行", sender="shop-b"), "shop-b", 900).number
+        new = inbox.add(self.db, wait_user(decide="换个做法", sender="shop-b"), "shop-b", 901).number
+        rows = self.rows()
+        got = [(w["ref"], w["state"], w["closedReason"], w["decide"]) for w in rows["b"]["waitUser"]]
+        self.assertEqual(got, [(f"C{old}", "closed", "superseded", "要不要再试一次"), (f"C{new}", "open", None, "换个做法")])
+        datetime.fromisoformat(rows["b"]["waitUser"][0]["at"])
+        self.assertEqual(rows["c"]["waitUser"], [])
+        self.assertEqual(rows["c"]["returns"], [])
 
 
 if __name__ == "__main__":
