@@ -41,6 +41,7 @@ module-crew protocol check <消息文件>
 | Spec、Plan、接口提案写好要审 | 【交审】 |
 | 模块做完 | 节点为「最终验收」的【交审】，附改动统计与越界检查 |
 
+- Plan 交审的「文件」**同时列出** `tasks/<模块>/plan.md` 和 `tasks/<模块>/todo.md`，Spec 交审列出 `spec/<模块>.md`：批准时只把列出的文件搬进集成分支，少列会被拒收。
 - 写 Spec、Plan 时**不要手写评审标记**（`<!-- spec-guard: review … -->`），由 spec-guard 的 review-mark 操作插入；一定要手写时放在标题下面、隔一个空行。标记紧贴标题会被项目的格式检查（如 oxfmt）拒掉，事后补空行又会改变指纹、要重新交审。
 
 - **协调会话空闲时叫不醒**：`bridge_send` 结果里 `wake.pendingReason` 是 `offline`（或 queued 且带「not running」警告），说明 Claude 桌面版停掉了协调会话。Codex 没有桌面版的跨会话消息工具，

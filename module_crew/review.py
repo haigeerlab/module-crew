@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,6 +39,16 @@ def _check_files(worktree: Path, files: list[dict]) -> list[str]:
     return reasons
 
 
+REQUIRED_FILES = {"spec": ("spec/{m}.md",), "plan": ("tasks/{m}/plan.md", "tasks/{m}/todo.md")}
+
+
+def _missing_files(module: str, node: str, files: list[dict]) -> list[str]:
+    """Files a Spec or Plan review must list; approval only copies listed files to the integration branch."""
+    listed = {f["path"] for f in files}
+    return [f"{node_file} 没有列在「文件」里（{NODE_NAME[node]} 交审必须列出：{'、'.join(r.format(m=module) for r in REQUIRED_FILES[node])}）"
+            for node_file in (r.format(m=module) for r in REQUIRED_FILES.get(node, ())) if node_file not in listed]
+
+
 def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
     """Judge one 【交审】 and record it; nothing is written unless the code is 0."""
     msg = protocol.parse(text)
@@ -52,7 +63,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
     if sub["module"] != session.get("module"):
         return Outcome(msg.kind, 3, lines=[f"交审的模块 {sub['module']} 不是 {sender} 负责的模块 {session.get('module')}"])
     worktree = Path(session["worktree"])
-    reasons = _check_files(worktree, sub["files"])
+    reasons = _missing_files(sub["module"], sub["node"], sub["files"]) + _check_files(worktree, sub["files"])
     if reasons:
         return Outcome(msg.kind, 3, lines=["拒收，请退回："] + reasons)
     commit = _git(worktree, "rev-parse", "HEAD").stdout.strip()
@@ -155,14 +166,29 @@ def note(db: store.Store, number: int, sender: str, text: str) -> dict:
         if msg.fields.get("模块", "").strip() != rec["module"] or node != rec["node"]:
             raise NoteRefused(f"审查结论说的是 {msg.fields.get('模块')} 的 {msg.fields.get('节点')}，"
                               f"对不上 #{number}（{rec['module']} 的 {NODE_NAME.get(rec['node'], rec['node'])}）")
-        row = {"from": sender, "ref": msg.fields.get("审查编号"), "verdict": msg.fields.get("结论"), "at": store.now()}
+        row = {"from": sender, "ref": msg.fields.get("审查编号"), "verdict": msg.fields.get("结论"), "at": store.now(),
+               "points": (msg.fields.get("要点") or "").strip()}
         tx.put("item", str(number), dict(rec, reviews=list(rec.get("reviews") or []) + [row]), action="review-noted")
     return row
 
 
+def _advice(row: dict) -> str:
+    """First line of a passed-with-advice conclusion's points ('' otherwise)."""
+    if protocol._review_line(row.get("verdict") or "")["status"] != "passed-with-advice":
+        return ""
+    return ((row.get("points") or "").splitlines() or [""])[0].lstrip("- ").strip()
+
+
 def _review_text(item: dict) -> str:
     rows = item.get("reviews") or []
-    return "未审查" if not rows else f"{rows[-1]['from']} {rows[-1]['verdict']}"
+    if not rows:
+        return "未审查"
+    advice = _advice(rows[-1])
+    return f"{rows[-1]['from']} {rows[-1]['verdict']}" + (f"：{advice}" if advice else "")
+
+
+POINT_LINES = 3      # contract §6: 3–5 lines of points; per review in a batch, keep up to three
+SUMMARY_MAX = 60
 
 
 def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> tuple[int, Path, str] | None:
@@ -182,8 +208,10 @@ def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> tup
         points.append(f"- {g['module']}（{g['responsibility']}）：" if g["responsibility"] else f"- {g['module']}：")
         for n in g["items"]:
             i = by_number[n]
-            head = (i["points"].splitlines() or [""])[0].lstrip("- ").strip()
-            points.append(f"  #{n} {i['module']} 的 {NODE_NAME.get(i['node'], i['node'])}：{head}（审查：{_review_text(i)}）")
+            body = [line.strip() for line in i["points"].splitlines() if line.strip()][:POINT_LINES] or [""]
+            points.append(f"  #{n} {i['module']} 的 {NODE_NAME.get(i['node'], i['node'])}：{body[0].lstrip('- ').strip()}"
+                          f"（审查：{_review_text(i)}）")
+            points += [f"    {line}" for line in body[1:]]
     for d in b["dependencyIssues"]:
         points.append(f"- 依赖未就绪：{d['module']} 依赖的 {'、'.join(d['missing'])}")
     for c in b["conflicts"]:
@@ -191,7 +219,9 @@ def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> tup
     lines = []
     if parallel_with is not None:
         lines.append(f"【与 #{parallel_with} 并行】")
-    lines += ["【等待用户】", "结束：无", f"来自：{coord}", f"要你决定：批准下列交审吗（{numbers}）", "要点："] + points
+    top = Path(probe._git(project, "rev-parse", "--show-toplevel").stdout.strip() or project)
+    lines += ["【等待用户】", "结束：无", f"来自：{coord}", f"项目：{top.name}", f"要你决定：批准下列交审吗（{numbers}）",
+              "要点："] + points
     if any(r.get("kind") == "lead" for r in sources.listing(db)):
         lines.append("架构审查：" + _review_summary(b["items"]))
     lines += ["选项与我的建议：",
@@ -201,7 +231,7 @@ def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> tup
               "  选了会怎样：只有写到的交审开工，其余等修改",
               "C：都退回修改",
               "  选了会怎样：各模块按你的意见改完再交审",
-              "你该回：A",
+              "你该回：A 全部批准",
               "是否完全停住：否"]
     text = "\n".join(lines) + "\n"
     msg = protocol.parse(text)
@@ -224,7 +254,12 @@ def _review_summary(items: list[dict]) -> str:
         if line["status"] not in ("passed", "passed-with-advice"):
             return "进行中，请勿先批"
         advice += line["adviceCount"] or 0
-    return f"通过，附建议{advice}条" if advice else "通过"
+    if not advice:
+        return "通过"
+    summary = "；".join(a for a in (_advice(r) for r in rows) if a)
+    summary = re.sub(r"[（）()]", "", summary)
+    summary = summary if len(summary) <= SUMMARY_MAX else summary[:SUMMARY_MAX - 1] + "…"
+    return f"通过，附建议{advice}条" + (f"（{summary}）" if summary else "")
 
 
 def _reply_groups(picked: list[tuple[int, dict]]) -> list[list[tuple[int, dict]]]:

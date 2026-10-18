@@ -62,7 +62,7 @@ class ApproveTest(ReviewCase):
         self.assertEqual(len(log), 1)
         self.assertIn(f"#{res.approval}", log[0])
         changed = git(self.repo, "diff", "--name-only", before, "HEAD").split()
-        self.assertEqual(sorted(changed), ["spec/b.md", "tasks/b/plan.md"])
+        self.assertEqual(sorted(changed), ["spec/b.md", "tasks/b/plan.md", "tasks/b/todo.md"])   # todo travels with the Plan
         spec = (self.repo / "spec" / "b.md").read_text()
         self.assertTrue(spec.startswith("<!-- spec-guard: review approved fakedigest -->\n# Spec: b"))
         self.assertEqual(git(self.repo, "status", "--porcelain"), "")

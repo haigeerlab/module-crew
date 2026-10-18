@@ -294,6 +294,7 @@ class ReviewCase(StartCase):
             (wt / "tasks" / m).mkdir(parents=True, exist_ok=True)
             (wt / "spec" / f"{m}.md").write_text(f"<!-- spec-guard: review pending -->\n# Spec: {m}\n", encoding="utf-8")
             (wt / "tasks" / m / "plan.md").write_text(f"<!-- spec-guard: review pending -->\n# Plan: {m}\n", encoding="utf-8")
+            (wt / "tasks" / m / "todo.md").write_text(f"# Todo: {m}\n\n- [ ] Task 1\n", encoding="utf-8")
             git(wt, "add", "-A")
             git(wt, "commit", "-q", "-m", f"{m}: spec and plan")
 
@@ -301,7 +302,8 @@ class ReviewCase(StartCase):
         return review_text(m, "Spec", [(f"spec/{m}.md", self.wt[m] / "spec" / f"{m}.md")], **kw)
 
     def plan_review(self, m: str, **kw) -> str:
-        return review_text(m, "Plan", [(f"tasks/{m}/plan.md", self.wt[m] / "tasks" / m / "plan.md")], **kw)
+        return review_text(m, "Plan", [(f"tasks/{m}/{name}", self.wt[m] / "tasks" / m / name)
+                                       for name in ("plan.md", "todo.md")], **kw)
 
 
 class MergeCase(ReviewCase):

@@ -172,7 +172,7 @@ class PilotRound2SkillTest(unittest.TestCase):
 
 
 class CodexPackageTest(unittest.TestCase):
-    COMMON = ("只认协调会话发来的【用户答复】", "**必须**发【等待其他会话】", "不改公共文件", "不要自己勾 todo 末项",
+    COMMON = ("只认协调会话发来的【用户答复】", "`tasks/<模块>/todo.md`", "**必须**发【等待其他会话】", "不改公共文件", "不要自己勾 todo 末项",
               "一律取集成分支的版本", "不要**撤销任何提交")
 
     def codex(self):

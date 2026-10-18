@@ -97,10 +97,11 @@ class MergeTest(RunCase):
         before = git(self.repo, "rev-parse", "HEAD").strip()
         res = merge.run(self.repo, check_command=self.check_script())
         self.assertEqual(res.code, 0, res.lines)
-        parents = git(self.repo, "rev-list", "--parents", "-n", "1", "HEAD").split()
+        parents = git(self.repo, "rev-list", "--parents", "-n", "1", res.merge_commit).split()
         self.assertEqual(len(parents), 3)                       # --no-ff: commit + two parents
         self.assertEqual(parents[1], before)
-        self.assertEqual(git(self.repo, "rev-list", "--count", f"{before}..HEAD").strip(), "3")  # merge + b's two commits
+        # merge + b's two commits + the tick of b's todo (todo.md now reaches the integration branch with the Plan)
+        self.assertEqual(git(self.repo, "rev-list", "--count", f"{before}..HEAD").strip(), "4")
         self.assertTrue((self.repo / "src" / "b.py").exists())
         self.assertFalse((self.repo / "src" / "c.py").exists())  # only the head of the queue
         rec = store.get(self.db, "item", str(n))

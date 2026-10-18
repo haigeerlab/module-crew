@@ -56,6 +56,10 @@ class ForHubTest(HubCase):
                      "审查：未审查", "架构审查：进行中，请勿先批", "推荐 A：全部批准", "B：只批准部分", "C：都退回修改"):
             self.assertIn(want, text)
         self.assertEqual(store.read_body(self.db, n), text)
+        # rehearsal T1: project line, up to three lines of each review's points, full suggested reply
+        self.assertEqual(msg.fields["项目"].strip(), self.repo.name)
+        self.assertIn("    - 不做：后台", text)
+        self.assertEqual(msg.fields["你该回"].strip(), "A 全部批准")
 
     def test_all_reviewed_and_parallel(self):
         review.note(self.db, self.spec, "live-saas-arch-review", conclusion(verdict="通过，附建议2条"))
@@ -64,7 +68,10 @@ class ForHubTest(HubCase):
         msg = protocol.parse(text)
         self.assertTrue(msg.ok, msg.problems)
         self.assertIn(("parallel", 118), msg.markers)
-        self.assertIn("架构审查：通过，附建议2条", text)
+        self.assertIn("架构审查：通过，附建议2条（接口清楚。）", text)
+        self.assertIn("审查：live-saas-arch-review 通过，附建议2条：接口清楚。", text)   # advice text, not just the count
+        line = protocol._review_line(msg.fields["架构审查"].strip())
+        self.assertEqual((line["status"], line["adviceCount"]), ("passed-with-advice", 2))
 
     def test_cli(self):
         out = self.run_cli("review", "batch", "--for-hub", "--parallel-with", "7", cwd=self.repo)

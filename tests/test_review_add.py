@@ -44,6 +44,19 @@ class AddTest(ReviewCase):
         new.write_text("x")
         self.assert_rejected(review_text("b", "Spec", [("spec/extra.md", new)]), words="未提交")
 
+    def test_required_files(self):
+        # Rehearsal T1: a Plan review without todo.md was taken, so todo.md never reached the integration branch.
+        plan_only = review_text("b", "Plan", [("tasks/b/plan.md", self.wt["b"] / "tasks" / "b" / "plan.md")])
+        self.assert_rejected(plan_only, words="tasks/b/todo.md")
+        todo_only = review_text("b", "Plan", [("tasks/b/todo.md", self.wt["b"] / "tasks" / "b" / "todo.md")])
+        self.assert_rejected(todo_only, words="tasks/b/plan.md")
+        other = self.wt["b"] / "spec" / "notes.md"
+        other.write_text("x")
+        git(self.wt["b"], "add", "-A")
+        git(self.wt["b"], "commit", "-q", "-m", "notes")
+        self.assert_rejected(review_text("b", "Spec", [("spec/notes.md", other)]), words="spec/b.md")
+        self.assertEqual(review.add(self.db, self.plan_review("b"), "shop-b", 4800).code, 0)
+
     def test_supersede_same_module_node_and_repeat(self):
         first = review.add(self.db, self.spec_review("b"), "shop-b", 1).number
         plan = review.add(self.db, self.plan_review("b"), "shop-b", 2).number
