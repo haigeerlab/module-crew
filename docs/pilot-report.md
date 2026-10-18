@@ -157,3 +157,5 @@ Spec 修订 ce26d8b（crew-merge、crew-start、crew-review-batch），实现 79
 - 2026-10-18 用户批准：第二轮修复（5715986）最终验收通过，6 份 Spec（crew-merge、crew-start、crew-failure、crew-recovery-hooks、crew-onboarding、crew-protocol）与能力图的修订复审通过；同意回告 LIVE-SAAS 方案会话。
 
 - 2026-10-18 用户批准：0.1.1（b70ac3b）验收通过——提交过 commitlint、钩子拒绝单独标原因、负责人转交只记账、收件枢纽批准记 #H；crew-hub-bridge、crew-merge、crew-review-batch、crew-shared-changes 的修订复审通过。
+
+- 2026-10-18 用户批准：0.2.0（4145e8b）验收通过——Codex 模块会话（crew-codex-host）、批量交审按模块分组、【撤回】规则、status 措辞、改钉契约 v1.9；crew-review-batch、crew-hub-bridge、crew-probe、crew-protocol 的修订复审通过；联合演练第一波用 0.2.0。

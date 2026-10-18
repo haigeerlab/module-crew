@@ -1,4 +1,5 @@
-<!-- spec-guard: review approved c7b1575395cc -->
+<!-- spec-guard: review approved 32c92549b4b3 -->
+
 # Spec: crew-probe
 
 > 能力图模块 `crew-probe`。需求来源：`docs/requirements-record.md` 假设 3～6、第 4 节（分层与依赖）、第 7 节（`status` 随时重建全貌）、B2（开前基线须干净）。

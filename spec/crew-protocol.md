@@ -1,4 +1,5 @@
-<!-- spec-guard: review approved bec2bf245a3f -->
+<!-- spec-guard: review approved 94f3a4e6e7bf -->
+
 # Spec: crew-protocol
 
 > 能力图模块 `crew-protocol`。需求来源：`docs/requirements-record.md` B4（消息）、第 8 节（共用契约）；契约 session-protocol v1.5（提交 246e138）。

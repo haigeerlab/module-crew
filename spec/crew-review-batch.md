@@ -1,4 +1,5 @@
-<!-- spec-guard: review approved 763e033f8cfb -->
+<!-- spec-guard: review approved 82b88c2c2660 -->
+
 # Spec: crew-review-batch
 
 > 能力图模块 `crew-review-batch`。需求来源：`docs/requirements-record.md` B2（批量审批、提交到基线后才开工构建）、A3（扩张点前批量前置审，批准后 Spec 与 Plan 提交到集成基线、同批互相读得到）、

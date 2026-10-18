@@ -1,4 +1,5 @@
-<!-- spec-guard: review approved f085b058524f -->
+<!-- spec-guard: review approved 2ad319a07315 -->
+
 # Spec: crew-hub-bridge
 
 > 能力图模块 `crew-hub-bridge`。需求来源：LIVE-SAAS 接入方案，用户决定 11、28、29（`~/Documents/haigeerlab/livesaas-integration/USER-DECISIONS-2026-10-18.md`），
