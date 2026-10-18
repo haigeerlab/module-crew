@@ -65,6 +65,36 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
     return Approved(approval, Reply(rec["from"], rec["relayId"], body, db.path / meta["path"]))
 
 
+REVOKE_TODO = "最终验收批准已撤回，不会合并：停在当前停点，不要再提交，等新的答复"
+
+
+def revoke(db: store.Store, approval: int, original: str) -> Reply:
+    """Take back a merge approval before `merge run` (R5): close it, reopen the final review, notify the module."""
+    if not original or not original.strip():
+        raise AnswerRefused("用户原话不能为空：撤回批准要用户明确说")
+    with db.transaction(actor="coordinator") as tx:
+        rec = tx.get("item", str(approval))
+        if rec is None or rec.get("kind") != "merge-approval":
+            raise AnswerRefused(f"没有合并批准事项 C{approval}")
+        if rec.get("closedReason") == "merged":
+            raise AnswerRefused(f"C{approval} 已合并进集成分支，撤不回；要回退请另走回退流程")
+        if rec.get("state") != "open":
+            raise AnswerRefused(f"C{approval} 已关闭（{rec.get('closedReason')}），不能撤回")
+        record = tx.allocate_number()
+        tx.put("item", str(record), {"state": "closed", "kind": "revoke", "closedReason": "answered", "approval": approval,
+                                     "module": rec["module"],
+                                     "answer": {"original": original, "answeredAt": store.now(), **store.source_field()}},
+               action="revoke-approved")
+        tx.put("item", str(approval), dict(rec, state="closed", closedReason="revoked", revokedBy=record), action="revoked")
+        review = tx.get("item", str(rec["review"]))
+        tx.put("item", str(rec["review"]), dict(review, state="open", closedReason=None, answer=None), action="reopened",
+               data={"revokedApproval": approval})
+        body = tx.allocate_number()
+        meta = tx.write_body(body, protocol.render_coordination_notice(
+            "approval-revoked", f"C{approval}（用户撤回批准 C{record}；交审 C{rec['review']}）", REVOKE_TODO))
+    return Reply(rec["from"], None, body, db.path / meta["path"])
+
+
 def _build_order(project: Path) -> list[str] | None:
     report = probe.run(project)
     if not report.map:

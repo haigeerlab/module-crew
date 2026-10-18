@@ -48,7 +48,7 @@
   - 验收：Spec 验收 15
   - 文件：`module_crew/start.py`、`module_crew/probe.py`、`tests/test_review_nearby.py`、`tests/test_start_prepare.py`
 
-- [ ] Task 11：`merge revoke`
+- [x] Task 11：`merge revoke`
   - 验收：Spec 验收 12
   - 文件：`module_crew/merge.py`、`module_crew/__main__.py`、`tests/test_review_nearby.py`
 

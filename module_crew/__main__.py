@@ -431,6 +431,15 @@ def _merge(args) -> int:
         if closing:
             print(f"发送 【已恢复】 → {closing['to']}，正文文件：{closing['path']}（这个事项涉及的模块都转完后再发）")
         return 0
+    if args.action == "revoke":
+        try:
+            note = merge.revoke(store.open_store(), args.number, original)
+        except merge.AnswerRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        print(f"已撤回合并批准 C{args.number}：交审重新打开，等用户新的答复")
+        print(f"发送 撤销批准通知 → {note.to}，正文文件：{note.path}")
+        return 0
     if args.action == "tick":
         try:
             print(merge.tick(".", args.module, original))
@@ -527,8 +536,8 @@ def main(argv: list[str] | None = None) -> int:
     mr = mgs.add_parser("run")
     mr.add_argument("--check-command")
     mr.add_argument("--replace-check", action="store_true")
-    for name, positional in (("approve", ("numbers", refs.parse)), ("cleanup", ("module", str)), ("tick", ("module", str)),
-                             ("push", None)):
+    for name, positional in (("approve", ("numbers", refs.parse)), ("revoke", ("number", refs.parse)),
+                             ("cleanup", ("module", str)), ("tick", ("module", str)), ("push", None)):
         c = mgs.add_parser(name)
         if positional:
             c.add_argument(positional[0], type=positional[1], **({"nargs": "+"} if name == "approve" else {}))

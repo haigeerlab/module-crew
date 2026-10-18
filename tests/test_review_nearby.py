@@ -498,3 +498,32 @@ class CadenceTest(StartCase):
         self.assertIn("评审节奏：combined", text)
         self.assertIn("仍先只交 Spec", text)
         self.assertIn("评审节奏：combined", self.run_cli("status", cwd=self.repo).stdout)
+
+
+class RevokeTest(MergeCase):
+    """Task 11: a merge approval can be taken back before the merge (R5)."""
+
+    def test_revoke_before_merge(self):
+        from module_crew import merge
+        db = store.open_store(self.repo)
+        n = self.approve_final("b", 1)
+        review_no = store.get(db, "item", str(n))["review"]
+        res = merge.revoke(db, n, "撤回 b 的验收批准，我答错了")
+        self.assertEqual(store.get(db, "item", str(n))["closedReason"], "revoked")
+        self.assertEqual(store.get(db, "item", str(review_no))["state"], "open")      # the user can answer again
+        msg = protocol.parse(res.path.read_text(encoding="utf-8"))
+        self.assertTrue(msg.ok, msg.problems)
+        self.assertEqual((msg.contract()["notice"]["kind"], res.to), ("approval-revoked", "shop-b"))
+        self.assertIn(f"C{n}", msg.fields["依据"])
+        self.assertEqual(merge.run(self.repo, check_command=self.check_script()).code, 3)   # nothing queued any more
+        cli = self.run_cli("merge", "revoke", f"C{n}", "--original", "再撤", cwd=self.repo)
+        self.assertEqual(cli.returncode, 3)                                           # already revoked
+
+    def test_merged_cannot_be_revoked(self):
+        from module_crew import merge
+        db = store.open_store(self.repo)
+        n = self.approve_final("b", 1)
+        self.assertEqual(merge.run(self.repo, check_command=self.check_script()).code, 0)
+        with self.assertRaises(merge.AnswerRefused) as ctx:
+            merge.revoke(db, n, "撤回")
+        self.assertIn("已合并", str(ctx.exception))
