@@ -101,7 +101,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         out.lines.append(f"已记为交审事项 C{n}（{sub['module']} 的 {msg.fields.get('节点', '').strip()}）")
         if sub.get("disputes"):
             refs = "、".join(d["review"] for d in sub["disputes"])
-            out.lines.append(f"模块不同意审查 {refs}：不再返工，作为待用户决定的问题提请批准")
+            out.lines.append(f"模块不同意审查 {refs}：不再返工，作为待你决定（D 编号）的问题提请批准")
         if out.closed:
             out.lines.append("取代了 " + "、".join(f"C{k}" for k in out.closed))
         return out
@@ -289,7 +289,7 @@ def note(db: store.Store, number: int | None, sender: str, text: str) -> NoteRes
     A section matches `number` when it is the only one, otherwise the open review of its module and node."""
     from module_crew import sources
     if not any(r.get("name") == sender and r.get("kind") == "lead" for r in sources.listing(db)):
-        raise NoteRefused(f"{sender} 没有登记为审查会话（先请用户 source add {sender} --kind lead）")
+        raise NoteRefused(f"{sender} 没有登记为审查者（先请用户 source add {sender} --kind lead）")
     sections = protocol.split_sections(text or "")
     items = store.records(db, "item")
     picked: list[tuple[int, protocol.Message]] = []
@@ -334,7 +334,7 @@ def note(db: store.Store, number: int | None, sender: str, text: str) -> NoteRes
             done = _rounds(db, rec["module"], rec["node"])
             if done >= REWORK_LIMIT:
                 tx.put("item", str(n), dict(rec, overLimit=True), action="rework-over-limit")
-                res.lines.append(f"C{n} 返工已满 {REWORK_LIMIT} 次：不再返工，作为待用户决定的问题进合批")
+                res.lines.append(f"C{n} 返工已满 {REWORK_LIMIT} 次：不再返工，作为待你决定（D 编号）的问题提请批准")
                 continue
             todo = "\n".join(f"{i}. {x}" for i, x in enumerate(c.get("changes") or [], 1)) or row["points"] or "按审查意见修改"
             body = tx.allocate_number()
@@ -553,7 +553,7 @@ def _consequence(ready: list[dict]) -> str:
     """R4: what approving really does for the nodes in this batch."""
     parts = []
     if any(i["node"] != "final" for i in ready):
-        parts.append("Spec、Plan 记评审标记，两份都批了的模块开工")
+        parts.append("Spec、Plan 写批准标记，两份都批了的模块开工")
     if any(i["node"] == "final" for i in ready):
         parts.append("最终验收排进合并队列，检查通过后合并进集成分支")
     return "；".join(parts)
@@ -756,8 +756,8 @@ def _record_lead(db: store.Store, picked: list, original: str, reasons: list[str
                                 "answer": {"original": original, "answeredAt": store.now(), **store.source_field()}},
                action="lead-recorded")
     res = ApproveResult(0, approval=n)
-    res.lines += [f"负责人转交的批准只记账（记录 C{n}）：没有写评审标记、没有提交、没有发答复与开工通知，交审事项保持未关",
-                  "原因：spec-guard 不认负责人转交为写评审标记的来源；请用户在本会话亲手批准，或经收件枢纽再批准一次"]
+    res.lines += [f"审查者转交的批准只记账（记录 C{n}）：没有写批准标记、没有提交、没有发答复与开工通知，交审保持未答",
+                  "原因：spec-guard 不认审查者转交为写批准标记的来源；请用户在本会话亲手批准，或经决策收件箱再批准一次"]
     return res
 
 
@@ -837,14 +837,14 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
         cmd = probe.safe_command(root, doc, "reviewMark", _mark_fill(checkout, rec["module"], MARK_TARGET[rec["node"]])) + ["--confirm"]
         ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
         if ran.returncode != 0:
-            return ApproveResult(4, [f"C{n}（{rec['module']}）写评审标记失败，已停下：{ran.stderr.strip()[:200]}",
+            return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{ran.stderr.strip()[:200]}",
                                      "集成 checkout 里已改、未提交的文件：" + "、".join(written),
                                      "状态库与集成分支都没有变化；这些文件留着，交用户决定"])
     approval_no = _next_number(db)
     modules = list(dict.fromkeys(rec["module"] for _, rec in picked))
     nodes = "、".join(f"{rec['module']} 的 {NODE_NAME[rec['node']]}" for _, rec in picked)
     _git(checkout, "add", "--", *written)
-    hub = f"（收件枢纽事项 #{src['item']}）" if src.get("kind") == "hub" else ""
+    hub = f"（待决事项 #{src['item']}）" if src.get("kind") == "hub" else ""
     commit_run = _git(checkout, "commit", "-q", "-m", commits.message(f"用户批准事项 C{approval_no}{hub}：批准 {nodes}"))
     if commit_run.returncode != 0:
         return ApproveResult(4, [commits.failure(checkout, commit_run, "集成分支提交失败"),
@@ -877,15 +877,15 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
                 continue
             sender = next(rec["from"] for _, rec in picked if rec["module"] == m)
             text = protocol.render_coordination_notice(
-                kind="start", basis=f"用户批准事项 C{approval}（{m} 的 Spec 与 Plan），已提交到集成基线 {commit[:7]}",
-                todo=(f"把集成分支合进你的模块分支（spec/{m}.md、tasks/{m}/ 冲突时取集成分支的版本，它带评审标记），"
+                kind="start", basis=f"用户批准事项 C{approval}（{m} 的 Spec 与 Plan），已提交到集成分支 {commit[:7]}",
+                todo=(f"把集成分支合进你的模块分支（spec/{m}.md、tasks/{m}/ 冲突时取集成分支的版本，它带批准标记），"
                       f"然后按 tasks/{m}/plan.md 开始构建；公共文件只能经【公共变更请求】改"))
             body = tx.allocate_number()
             meta = tx.write_body(body, text)
             result.sends.append({"kind": "coordination-notice", "to": sender, "replyTo": None, "body": body,
                                  "path": db.path / meta["path"]})
     result.approval = approval
-    result.lines.append(f"批准事项 C{approval}；集成基线提交 {commit[:7]}")
+    result.lines.append(f"批准记录 C{approval}；集成分支提交 {commit[:7]}")
     if approval != approval_no:
         result.lines.append(f"注意：提交信息里写的是 C{approval_no}，实际批准事项是 C{approval}（期间有其他写入）")
     return result

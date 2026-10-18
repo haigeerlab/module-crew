@@ -110,7 +110,7 @@ class ApproveTest(ReviewCase):
         self.assert_refused([f], "最终验收")
         s2 = self.add(self.spec_review("b"), "shop-b", 12)
         (self.repo / "dirty.txt").write_text("x")
-        self.assert_refused([s2], "集成基线不干净")
+        self.assert_refused([s2], "集成分支所在的 checkout 不干净")
         (self.repo / "dirty.txt").unlink()
         from helpers import spec_guard_interface
         self.plugins.entries.pop("spec-guard@m")

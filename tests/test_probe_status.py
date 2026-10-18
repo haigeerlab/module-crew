@@ -86,7 +86,7 @@ class CliTest(StatusCase):
         (self.repo / "dirty.txt").write_text("x")
         r = self.run_cli("status")
         self.assertEqual(r.returncode, 3)
-        self.assertIn("集成基线不干净", r.stdout)
+        self.assertIn("集成分支所在的 checkout 不干净", r.stdout)
 
     def test_outside_repo_exit_2(self):
         outside = self.tmp / "plain"

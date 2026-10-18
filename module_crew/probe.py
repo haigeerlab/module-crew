@@ -255,7 +255,7 @@ def check_baseline(project: str | os.PathLike) -> Check:
                      f"在某个 checkout 里 git switch {branch}")
     changed = [x for x in _git(checkout, "--no-optional-locks", "status", "--porcelain").stdout.splitlines() if x.strip()]
     if changed:
-        return Check("baseline", "blocker", f"集成基线不干净：{checkout}（{branch}）有 {len(changed)} 个文件未提交或未跟踪",
+        return Check("baseline", "blocker", f"集成分支所在的 checkout 不干净：{checkout}（{branch}）有 {len(changed)} 个文件未提交或未跟踪",
                      "提交或清理这些改动后再开工")
     return Check("baseline", "ok", f"集成分支 {branch}，在 {checkout}，工作区干净")
 
@@ -307,7 +307,7 @@ class Report:
         return {"schemaVersion": 1, "blocked": self.blocked,
                 "checks": [{"id": c.id, "state": c.state, "reason": c.reason, "fix": c.fix} for c in self.checks.values()],
                 "store": self.store, "map": summarize_map(self.map), "startable": self.startable,
-                "host": "协调会话：Claude 桌面版；模块会话：Claude 或 Codex 桌面版"}
+                "host": "模块协调：Claude 桌面版；模块会话：Claude 或 Codex 桌面版"}
 
 
 def run(project: str | os.PathLike | None = None, timeout: float = MAP_TIMEOUT) -> Report:

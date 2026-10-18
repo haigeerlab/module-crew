@@ -203,9 +203,9 @@ def render_sessions(rows: list[dict], now: datetime | None = None) -> list[str]:
 
 
 RECOVERY_NOTE = ("这是换会话后的恢复：上一个会话已经不在了，你在原 worktree 里接着做。"
-                 "先请用户在协调会话里同意接管（协调会话运行 `module-crew takeover {name}`），"
+                 "先请用户在模块协调里同意接管（模块协调运行 `module-crew takeover {name}`），"
                  "再用 agent-relay 的 bridge_register 以同一个名字 {name} 重新注册（wake: \"auto\"；提示名字被占用或已退役时按提示传接管／恢复参数），"
-                 "然后跑 `module-crew status`、读自己未关的等待单，以状态库为准，不按记忆重做。")
+                 "然后跑 `module-crew status`、读自己未关的等待记录，以状态库为准，不按记忆重做。")
 
 
 @dataclass(frozen=True)

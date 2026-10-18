@@ -171,7 +171,7 @@ def _run_check(cfg: dict, checkout: Path) -> str | None:
 
 _FAILED = re.compile(r"^(FAIL|ERROR|FAILED)\b")
 ENV_TODO = "失败与你的代码无关，不用改代码；等模块协调告诉你检查环境恢复后，用原提交重新发最终验收【交审】"
-MODULE_TODO = "同步集成基线、修好后重新发最终验收【交审】"
+MODULE_TODO = "同步集成分支、修好后重新发最终验收【交审】"
 
 
 def _return_kind(reason: str) -> str:
@@ -216,7 +216,7 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
     if not worktree.is_dir() or not _clean(worktree):
         problems.append(f"模块 {m} 的 worktree 不干净或不存在：{worktree}")
     if checkout is None or not _clean(checkout):
-        problems.append("集成基线不干净或集成分支没有被检出")
+        problems.append("集成分支所在的 checkout 不干净或集成分支没有被检出")
     if problems:
         return RunResult(3, [f"C{n}（{m}）没有合并："] + problems, approval=n)
     if pending_write:
@@ -234,7 +234,7 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
             return RunResult(4, [commits.failure(checkout, merged, f"C{n}（{m}）的合并提交没有做成")]
                              + commits.hook_lines(checkout, merged)
                              + ["已中止合并，集成分支未变；合并批准仍开着，交用户决定"], approval=n)
-        reason = f"与集成基线冲突：{'、'.join(conflicted)}"
+        reason = f"与集成分支冲突：{'、'.join(conflicted)}"
     else:
         result.merge_commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
         result.lines += commits.hook_lines(checkout, merged)
@@ -271,14 +271,14 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
             short = result.merge_commit[:7]
             _notice(tx, db, result, rec["from"], "wrap-up",
                     basis=f"最终验收的合并批准事项 C{n}；已合入集成分支 {short}",
-                    todo="停止在本 worktree 开发，等协调会话收回 worktree")
+                    todo="停止在本 worktree 开发，等模块协调收回 worktree")
             busy = {v.get("module") for v in tx.records("item").values() if v.get("kind") == "merge-approval"
                     and (v.get("state") == "open" or v.get("closedReason") == "merged")}
             for name, s in sorted(tx.records("session").items()):
                 if (s.get("role") == "dev" and s.get("status") == "active" and name != rec["from"]
                         and s.get("module") not in busy and not s.get("suspended")):  # resume sends it later
                     _notice(tx, db, result, name, "sync-baseline",
-                            basis=f"模块 {m} 已合入集成基线 {short}（合并批准事项 C{n}）",
+                            basis=f"模块 {m} 已合入集成分支 {short}（合并批准记录 C{n}）",
                             todo="把集成分支合进你的模块分支，跑完整检查后继续")
             result.lines.append(f"C{n}（{m}）已合入集成分支 {short}")
             if tick_line:
@@ -291,7 +291,7 @@ _UNCHECKED = re.compile(r"^(\s*[-*] )\[ \]( .*)$")
 
 
 def _return_basis(n: int, first: str, reset_to: str | None) -> str:
-    where = (f"已撤销合并：集成分支回到合并前的 {reset_to[:7]}，你的分支原样保留" if reset_to else "集成基线未改动")
+    where = (f"已撤销合并：集成分支回到合并前的 {reset_to[:7]}，你的分支原样保留" if reset_to else "集成分支未改动")
     return f"最终验收的合并批准事项 C{n}；{first}；{where}"
 
 
@@ -352,7 +352,7 @@ def tick(project: str | os.PathLike, module: str, original: str) -> str:
     cfg = store.get(db, "config", "main") or {}
     checkout = probe._checkout_of(project, cfg.get("integrationBranch", ""))
     if checkout is None or not _clean(checkout):
-        raise AnswerRefused("集成基线不干净或集成分支没有被检出")
+        raise AnswerRefused("集成分支所在的 checkout 不干净或集成分支没有被检出")
     n = merged[-1]
     commit, line, _ = _tick(checkout, module, n)
     if commit is None:
@@ -399,7 +399,7 @@ def cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
              "一次一个名字，有未确认的消息时会被拒绝）"]
     if tickets:
         lines.append("这个模块还开着的等待记录：" + "、".join(f"W{n}" for n in tickets)
-                     + "（它已不能再发【已恢复】：所等的事已办好就 ticket close --reason happened，用户说关就 --reason user）")
+                     + "（它已不能再发已结项（契约标签【已恢复】）：所等的事已办好就 ticket close --reason happened，用户说关就 --reason user）")
     return Simple(0, lines)
 
 
@@ -451,7 +451,7 @@ def push_plan(project: str | os.PathLike) -> PushPlan:
     title = f"module-crew：合入 {names}"
     module_lines = [f"- {m['module']}：合并批准事项 C{m['approval']}，合并提交 {m['mergeCommit'][:7]}"
                     for m in modules] or ["- （无）"]
-    body = "\n".join(["本批由 module-crew 协调会话在本地集成分支合入，远端合并请由你决定。", "",
+    body = "\n".join(["本批由 module-crew 的模块协调在本地集成分支合入，远端合并请由你决定。", "",
                       "## 合入的模块", *module_lines, "", "## 提交", *[f"- {c}" for c in commits]]) + "\n"
     lines = [f"远端 {remote}，新分支 {branch} → PR 开向 {base}", f"{len(commits)} 个提交"] + ([note] if note else [])
     return PushPlan(0, lines, remote, branch, base, commits, title, body, modules)

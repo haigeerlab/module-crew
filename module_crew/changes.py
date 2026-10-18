@@ -79,7 +79,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         out.lines.append(f"已记为公共变更请求 C{n}" + (f"，等待记录 W{ticket}" if ticket else ""))
         if hints:
             out.lines.append("提示：" + "、".join(hints))
-        out.lines.append("要问用户" if _asks_user(hints) else "可由协调会话判断是否在已批准 Spec 范围内直接办")
+        out.lines.append("要问用户" if _asks_user(hints) else "可由模块协调判断是否在已批准 Spec 范围内直接办")
         return out
 
 
@@ -171,10 +171,10 @@ def land(project: str | os.PathLike, number: int, original: str | None = None) -
         return LandResult(4, [commits.failure(checkout, done, "集成分支提交失败"), "已暂存的文件：" + "、".join(changed)])
     commit = probe._git(checkout, "rev-parse", "HEAD").stdout.strip()
     result = LandResult(0, commit=commit)
-    result.lines.append(f"公共变更请求 C{number} 已在集成基线提交 {commit[:7]}")
+    result.lines.append(f"公共变更请求 C{number} 已在集成分支提交 {commit[:7]}")
     if original is None and _asks_user(rec.get("hints", [])):
         result.lines.append("提醒：这条请求带「要问用户」提示，但没有记下用户原话")
-    basis = f"公共变更请求 C{number} 已在集成基线提交 {commit[:7]}"
+    basis = f"公共变更请求 C{number} 已在集成分支提交 {commit[:7]}"
     todo = "把集成分支合进你的模块分支，跑完整检查后继续"
     with db.transaction(actor="coordinator") as tx:
         answer_rec = {"original": original, "answeredAt": store.now(), **store.source_field()} if original is not None else None

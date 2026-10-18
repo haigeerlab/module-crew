@@ -10,11 +10,11 @@
   - 验收：Spec 验收 3
   - 文件：`module_crew/refs.py`、显示等待记录编号的模块、`module_crew/__main__.py`、`tests/test_refs.py`
 
-- [ ] Task 3：代码字符串改名
+- [x] Task 3：代码字符串改名
   - 验收：Spec 验收 1（代码部分）、2、5
   - 文件：`module_crew/*.py`（不含 `protocol.py`）、受影响的现有测试
 
-- [ ] Checkpoint 1（report）：代码部分扫描通过、契约一致性测试通过、`protocol.py` 无改动、全量测试通过
+- [x] Checkpoint 1（report）：代码部分扫描通过、契约一致性测试通过、`protocol.py` 无改动、全量测试通过（2026-10-19：代码部分命中 0；`git diff 8ba90d7 -- module_crew/protocol.py` 为空；全量 402 个测试通过；豁免新增两条：契约「转自」字段的两种取值、宿主状态名「等待审批」；「已恢复：<会话>（重新占名额）」实为取消挂起，改为「已取消挂起」而非「已结项」）
 
 - [ ] Task 4：三份 SKILL.md 改名
   - 验收：Spec 验收 1（skill 部分）、4、5

@@ -312,7 +312,7 @@ def _validate_session(key: str, rec: dict, others: dict) -> None:
     if host not in HOSTS:
         raise bad(f"host 只能是 {'／'.join(HOSTS)}")
     if role == "coordinator" and host != "claude-desktop":
-        raise bad("协调会话只能是 claude-desktop")
+        raise bad("模块协调只能是 claude-desktop")
     if status not in SESSION_STATUSES:
         raise bad(f"status 只能是 {'／'.join(SESSION_STATUSES)}")
     if role == "dev":
@@ -327,7 +327,7 @@ def _validate_session(key: str, rec: dict, others: dict) -> None:
         if other_key == key or other.get("status") != "active" or other.get("role") != role:
             continue
         if role == "coordinator":
-            raise bad(f"已有在用的协调会话 {other_key}")
+            raise bad(f"已有在用的模块协调 {other_key}")
         if other.get("module") == rec.get("module"):
             raise bad(f"模块 {rec.get('module')} 已有在用的模块会话 {other_key}")
 

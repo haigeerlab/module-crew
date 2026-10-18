@@ -107,7 +107,7 @@ def _status(as_json: bool) -> int:
     else:
         print(f"  模块 {m['done']}/{m['total']} 完成；spec-guard 当前：{m['activeModule'] or '无'}；spec-guard 进行中：{'、'.join(m['inProgress']) or '无'}")
         print("  （这是 spec-guard 按能力图算出的进度；由 module-crew 开工的模块见上面的「会话与待办」）")
-    print("协调会话：Claude 桌面版；模块会话：Claude 或 Codex 桌面版")
+    print("模块协调：Claude 桌面版；模块会话：Claude 或 Codex 桌面版")
     cadence = start.review_cadence(".")
     try:
         set_ = "reviewCadence" in json.loads((start._toplevel(Path(".")) / ".agent" / "config.json").read_text(encoding="utf-8"))
@@ -233,12 +233,12 @@ def _failure(args) -> int:
             print(f"已挂起：{out.name}（不占名额；spec-guard 的挂起由模块会话在自己的 worktree 里做）")
         else:
             out = failure.resume(db, args.module, original)
-            print(f"已恢复：{out.name}（重新占名额）")
+            print(f"已取消挂起：{out.name}（重新占名额）")
         for x in out.sends:
             print(f"发送 【协调通知】 → {x['to']}：bridge_send bodyFile={x['path']}")
         return 0
     failure.set_mode(db, not args.off, original)
-    print("已恢复并行：可以再开新模块" if args.off
+    print("已改回并行：可以再开新模块" if args.off
           else "已退回串行：不再开新模块，已开的模块照常推进；提醒用户用 /spec-guard:config 关掉 moduleConcurrency")
     return 0
 
@@ -310,12 +310,12 @@ def _review(args) -> int:
                 print("  要点：" + i["points"].replace("\n", "\n        "))
                 print("  审查：" + review._review_text(i))
                 if not i["ready"]:
-                    print(f"  审查状态：{review.STATE_TEXT[i['reviewState']]}（不进合批，等它有结论）")
+                    print(f"  审查状态：{review.STATE_TEXT[i['reviewState']]}（不进提请批准，等它有结论）")
                 elif i["round"]:
                     print(f"  经 {i['round']} 轮审查修改：{'；'.join(x for x in i['reworked'] if x)}")
         questions = review.question_lines(review.numbered_decisions(b))
         if questions:
-            print("待用户决定（没有收件枢纽时直接问用户；批准时每个 D 都要答到）：")
+            print("待你决定（没有决策收件箱时直接问你；批准时每个 D 都要答到）：")
             print("\n".join(questions))
         if not b["dependencyIssues"]:
             print("依赖：全部就绪")
@@ -497,12 +497,12 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("file")
     stp = sub.add_parser("status", help="体检与全貌（只读）")
     stp.add_argument("--json", action="store_true")
-    ib = sub.add_parser("inbox", help="协调会话收件记账")
+    ib = sub.add_parser("inbox", help="模块协调收件记账")
     ib.add_argument("action", choices=("add",))
     ib.add_argument("file")
     ib.add_argument("--from", dest="sender", required=True)
     ib.add_argument("--relay-id", type=int, required=True)
-    an = sub.add_parser("answer", help="转达用户答复")
+    an = sub.add_parser("answer", help="转达你的答复")
     an.add_argument("number", type=refs.parse)
     src = an.add_mutually_exclusive_group(required=True)
     src.add_argument("--original")
@@ -529,12 +529,12 @@ def main(argv: list[str] | None = None) -> int:
     ra.add_argument("--relay-id", type=int, required=True)
     rb = rvs.add_parser("batch")
     rb.add_argument("--json", action="store_true")
-    rb.add_argument("--for-hub", action="store_true", help="生成交给收件枢纽的【等待用户】正文")
-    rb.add_argument("--parallel-with", type=int, help="与枢纽事项 #H 并行")
-    rn = rvs.add_parser("note", help="记下审查会话的【审查结论】")
+    rb.add_argument("--for-hub", action="store_true", help="生成交给决策收件箱的【等待用户】正文（提请批准）")
+    rb.add_argument("--parallel-with", type=int, help="与待决事项 #H 并行")
+    rn = rvs.add_parser("note", help="记下审查者的【审查结论】")
     rn.add_argument("number", type=refs.parse, nargs="?", help="交审编号；一条消息有多段时可省略，按模块与节点对上")
-    rn.add_argument("--then-batch", action="store_true", help="记完后接着看能不能合批")
-    rn.add_argument("--for-hub", action="store_true", help="和 --then-batch 一起用：都有结论时直接生成交给收件枢纽的正文")
+    rn.add_argument("--then-batch", action="store_true", help="记完后接着看能不能提请批准")
+    rn.add_argument("--for-hub", action="store_true", help="和 --then-batch 一起用：都有结论时直接生成交给决策收件箱的正文")
     rn.add_argument("--from", dest="sender", required=True)
     rn.add_argument("--file", required=True)
     for name in ("approve", "answer"):
@@ -582,7 +582,7 @@ def main(argv: list[str] | None = None) -> int:
         g.add_argument("--original-file")
     hk = sub.add_parser("hook", help="插件钩子入口（只读，永远退出码 0）")
     hk.add_argument("event", choices=("session-start", "prompt"))
-    so = sub.add_parser("source", help="批准来源白名单（收件枢纽、指定负责人）")
+    so = sub.add_parser("source", help="可信批准来源白名单（决策收件箱、指定审查者）")
     sos = so.add_subparsers(dest="action", required=True)
     soa = sos.add_parser("add")
     soa.add_argument("name")
@@ -595,11 +595,11 @@ def main(argv: list[str] | None = None) -> int:
         g.add_argument("--original-file")
     sos.add_parser("list").add_argument("--json", action="store_true")
     som = sos.add_parser("map")
-    som.add_argument("ref", help="枢纽事项号 H，或 #crew 编号")
+    som.add_argument("ref", help="待决事项号 H，或 #module-crew 编号")
     som.add_argument("--json", action="store_true")
-    tc = sub.add_parser("ticket", help="等待单")
+    tc = sub.add_parser("ticket", help="等待记录（W 编号）")
     tcs = tc.add_subparsers(dest="action", required=True)
-    tcc = tcs.add_parser("close", help="协调会话关等待单（所等的事已发生／用户关闭）")
+    tcc = tcs.add_parser("close", help="模块协调关等待记录（所等的事已发生／你说关）")
     tcc.add_argument("number", type=refs.parse)
     tcc.add_argument("--reason", required=True, choices=tuple(inbox.TICKET_REASONS))
     tcg = tcc.add_mutually_exclusive_group(required=True)
@@ -662,7 +662,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"❌ {exc}", file=sys.stderr)
             return 2
         args.original, args.original_file, src = info.original, None, info.source
-        print(f"批准来源：{info.source['name']}（{info.source['kind']}）事项 #{info.source['item']}；用户原话：{info.original}")
+        print(f"可信批准来源：{info.source['name']}（{info.source['kind']}）待决事项 #{info.source['item']}；用户原话：{info.original}")
     with store.approval_source(src):
         return _run(args)
 
@@ -674,7 +674,7 @@ def _add_source_options(parser: argparse.ArgumentParser) -> None:
             for sub in action.choices.values():
                 _add_source_options(sub)
     if any("--original" in a.option_strings for a in parser._actions) and parser.prog.split()[1:2] != ["source"]:
-        g = parser.add_argument_group("批准来源（收件枢纽或指定负责人转来的决定）")
+        g = parser.add_argument_group("可信批准来源（决策收件箱或指定审查者转来的决定）")
         g.add_argument("--source", help="登记过的来源邮箱名；此时 --original(-file) 放对方消息全文")
         g.add_argument("--source-item", type=int, help="来源的事项号 H")
         g.add_argument("--source-relay-id", type=int, help="来源消息的邮箱消息号")
@@ -747,16 +747,16 @@ def _run(args) -> int:
                 raw = args.ref.strip()
                 ref = raw.lstrip("#Cc")
                 if not ref.isdigit():
-                    print("❌ 编号要写：枢纽事项号 H（或 #H），或 crew 编号 C<N>", file=sys.stderr)
+                    print("❌ 编号要写：待决事项号 H（或 #H），或 module-crew 编号 C<N>", file=sys.stderr)
                     return 2
                 if raw[:1] in ("C", "c"):
                     found = sources.map_crew(db, int(ref))
-                    out = found if args.json else (f"C{ref} 的批准来源：{found['name']}（{found['kind']}）事项 #{found['item']}"
+                    out = found if args.json else (f"C{ref} 的可信批准来源：{found['name']}（{found['kind']}）待决事项 #{found['item']}"
                                                    if found else f"C{ref} 没有外部来源（用户在本会话批准或尚未批准）")
                 else:
                     rows = sources.map_item(db, int(ref))
                     out = rows if args.json else ("\n".join(f"C{r['number']} {r['kind']} {r['module'] or ''} {r['node'] or ''}".rstrip()
-                                                             for r in rows) or f"没有经事项 #{ref} 批准的记录")
+                                                             for r in rows) or f"没有经待决事项 #{ref} 批准的记录")
                 print(json.dumps(out, ensure_ascii=False, indent=2) if args.json else out)
                 return 0
             if args.action == "list":
@@ -774,7 +774,7 @@ def _run(args) -> int:
                 return 2
             if args.action == "add":
                 sources.add(db, args.name, args.kind, original)
-                print(f"已登记来源 {args.name}（{args.kind}）")
+                print(f"已登记可信批准来源 {args.name}（{args.kind}）")
             else:
                 sources.remove(db, args.name, original)
                 print(f"已撤掉来源 {args.name}")

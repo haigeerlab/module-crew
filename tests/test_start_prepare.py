@@ -24,7 +24,7 @@ class ValidateTest(StartCase):
 
     def test_blocked_by_probe_store_not_created(self):
         (self.repo / "dirty.txt").write_text("x")
-        self.assert_refused(["b"], "集成基线不干净")
+        self.assert_refused(["b"], "集成分支所在的 checkout 不干净")
         self.assertFalse((self.repo / ".git" / "module-crew").exists())
 
     def test_not_startable(self):
@@ -145,7 +145,7 @@ class PrepareTest(StartCase):
         self.assertTrue(str(db.path / "bodies" / f"{b['kickoff']}.txt"))
         crew = self.tmp / "repo-crew"
         for words in ("负责模块 b：支付页", "crew-dev skill", f"工作目录：{crew / 'b'}（分支 b，从集成分支 main 切出）",
-                      "邮箱名：shop-b", "wake: \"auto\"", "协调会话：shop-coord", f"用户批准事项 C{res.approval}",
+                      "邮箱名：shop-b", "wake: \"auto\"", "模块协调：shop-coord", f"用户批准事项 C{res.approval}",
                       "spec/b.md", "tasks/b/plan.md", "【交审】", "收到开工类【协调通知】之前不要开始构建",
                       "接口：\nspec/a.md", "不要抄进这个 worktree 的 CLAUDE.md"):
             self.assertIn(words, text)

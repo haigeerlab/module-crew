@@ -54,12 +54,12 @@ def run(cwd: str | Path) -> Report:
         _check(rep, "registered", True, f"登记的模块会话：{role.name}（模块 {role.module}，{rep.host}）")
     else:
         _check(rep, "registered", False, "这里不是登记过的在用模块会话的 worktree",
-               "确认工作目录是开工说明写的 worktree；不对就把输出发给协调会话")
+               "确认工作目录是开工说明写的 worktree；不对就把输出发给模块协调")
     want, have = (store.get(db, "config", "main") or {}).get("pluginVersion"), plugin_version()
     if want is None:
         _check(rep, "version", True, f"module-crew {have} 能运行（状态库没记版本，未比对）")
     else:
-        _check(rep, "version", want == have, f"module-crew {have}，协调会话开工时是 {want}",
+        _check(rep, "version", want == have, f"module-crew {have}，模块协调开工时是 {want}",
                "两边装的 module-crew 版本不同：请用户把两个宿主的插件装成同一版本")
     gitdir = subprocess.run(["git", "-C", str(cwd), "rev-parse", "--absolute-git-dir"], capture_output=True, text=True)
     path = Path(gitdir.stdout.strip()) if gitdir.returncode == 0 else None

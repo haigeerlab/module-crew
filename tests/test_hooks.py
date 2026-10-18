@@ -98,7 +98,7 @@ class TextTest(MergeCase):
         n = review.add(self.db, self.finish("b", path="src/b0.py"), "shop-b", 150).number
         self.assertIn(f"最终验收已交审（交审事项 C{n}），等用户批准；不要重做或重发", self.stage("b"))
         self.approve_final("b", 200)
-        self.assertIn("等协调会话合并", self.stage("b"))
+        self.assertIn("等模块协调合并", self.stage("b"))
         self.assertEqual(merge.run(self.repo, check_command="python3 -c pass").code, 0)
         self.assertIn("已合入集成分支", self.stage("b"))
 
@@ -128,7 +128,7 @@ class TextTest(MergeCase):
     def test_coordinator_text(self):
         self.approve_final("b", 1)
         text = hooks.session_start(self.repo, "resume")
-        for words in ("协调会话", "shop-coord", "待合并 1", "module-crew status", "等待审批", "crew-coordinator"):
+        for words in ("模块协调", "shop-coord", "待合并 1", "module-crew status", "等待审批", "crew-coordinator"):
             self.assertIn(words, text)
 
     def test_compact_adds_check_first(self):

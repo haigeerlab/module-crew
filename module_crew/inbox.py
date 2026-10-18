@@ -66,7 +66,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         elif msg.kind == "resumed":
             _close_tickets(tx, sender, msg.end.items, 1, relay_id, out)
             if msg.end.unnumbered_reason:
-                out.lines.append(f"对方没给编号：{msg.end.unnumbered_reason}；请核对是哪张等待单")
+                out.lines.append(f"对方没给编号：{msg.end.unnumbered_reason}；请核对是哪条等待记录")
         elif msg.kind == "withdraw":
             items = tx.records("item")
             key = _find(items, sender, msg.item)

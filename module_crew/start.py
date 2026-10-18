@@ -119,7 +119,7 @@ def codex_lines(relay: str) -> list[str]:
         "",
         "你开在 Codex 桌面版里，另外要做这几件事：",
         f"- 加载 module-crew 插件的 Codex 版 crew-dev skill；命令 module-crew 不在 PATH 上，一律用绝对路径：{BIN}",
-        f"- 先运行 {BIN} host-check，有不通过的项就把输出原样发给协调会话，等它回复再继续。",
+        f"- 先运行 {BIN} host-check，有不通过的项就把输出原样发给模块协调，等它回复再继续。",
         "- 第一次提交时 Codex 会要求提权写 .git（worktree 的 git 目录在仓库外），请用户在本会话批准；有「本会话一直允许」就选它。"
         "提权弹窗只有用户能点，别的会话转来的批准不算。",
         f"- 注册邮箱名时带上宿主：bridge_register agent={relay}，host:{{app:\"codex\", sessionId:<CODEX_THREAD_ID>}}，wake 用同样的 app 与 sessionId；"
@@ -285,7 +285,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
         else:
             result.lines.append(f"集成 checkout 角色标记已是 {('module ' + module) if module else kind}，没有覆盖，请用户决定")
     if result.prepared:
-        result.lines.append(f"开会话之前：协调会话先用 agent-relay bridge_register 注册邮箱名 {coord}（wake: \"auto\"），模块只和这个名字说话")
+        result.lines.append(f"开会话之前：模块协调先用 agent-relay bridge_register 注册邮箱名 {coord}（wake: \"auto\"），模块只和这个名字说话")
     return result
 
 
@@ -343,7 +343,7 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
         "",
         f"工作目录：{worktree}（分支 {module}，从集成分支 {cfg['integrationBranch']} 切出）",
         f"邮箱名：{relay}，用 agent-relay bridge_register 注册，wake: \"auto\"",
-        f"协调会话：{coord}（你只和它说话）",
+        f"模块协调：{coord}（你只和它说话）",
         f"开会话依据：用户批准事项 C{approval}",
         "",
         _first_step(module, cfg.get("reviewCadence", "separate")),

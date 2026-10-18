@@ -40,7 +40,7 @@ class PlanTest(StartCase):
     def test_blockers_reported(self):
         (self.repo / "dirty.txt").write_text("x")
         p = start.plan(self.repo)
-        self.assertTrue(any("集成基线不干净" in b for b in p.blockers))
+        self.assertTrue(any("集成分支所在的 checkout 不干净" in b for b in p.blockers))
         self.assertEqual(p.modules, [])
 
 
@@ -58,7 +58,7 @@ class PlanCliTest(StartCase):
         (self.repo / "dirty.txt").write_text("x")
         r = self.run_cli("start", "plan")
         self.assertEqual(r.returncode, 3)
-        self.assertIn("集成基线不干净", r.stdout)
+        self.assertIn("集成分支所在的 checkout 不干净", r.stdout)
 
 
 class PilotRound2Test(StartCase):

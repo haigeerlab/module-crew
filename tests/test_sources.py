@@ -155,7 +155,7 @@ class ApproveWithSourceTest(ReviewCase):
         from module_crew import review
         with store.approval_source(sources.check(self.db, "live-saas-hub", 120, 6100, self.msg.read_text(), sender="live-saas-hub").source):
             self.assertEqual(review.approve(self.repo, [self.spec, self.plan], "两个都批准").code, 0)
-        self.assertIn("收件枢纽事项 #120", git(self.repo, "log", "-1", "--format=%s"))
+        self.assertIn("待决事项 #120", git(self.repo, "log", "-1", "--format=%s"))
 
     def test_self_reply_unchanged(self):
         from module_crew import review
