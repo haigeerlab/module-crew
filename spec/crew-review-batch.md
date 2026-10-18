@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved 6a183d345397 -->
+<!-- spec-guard: review approved 230f08bfcc6d -->
 # Spec: crew-review-batch
 
 > 能力图模块 `crew-review-batch`。需求来源：`docs/requirements-record.md` B2（批量审批、提交到基线后才开工构建）、A3（扩张点前批量前置审，批准后 Spec 与 Plan 提交到集成基线、同批互相读得到）、
@@ -72,7 +72,7 @@ bin/module-crew review answer <事项编号> (--original <原话> | --original-f
 ```
 
 - `review add`：`0` 已记账（或已记过）；`3` 拒收（不合格、发件人未登记、模块与发件人登记的不符、文件未提交、指纹不符），什么都不写；`2` 参数错。
-- `review batch`：列出未答交审（编号、模块、节点、文件、要点）、依赖核对结果、冲突；`0` 有未答交审，`3` 没有。
+- `review batch`：列出未答交审（编号、模块、节点、文件、要点）、依赖核对结果、冲突；依赖与冲突没有问题时也各输出一行「依赖：全部就绪」「并行边界重叠：无」（2026-10-18 修订）；`0` 有未答交审，`3` 没有。
 - `review approve`：输出批准事项编号、集成基线提交号、要发送的消息清单（每条：收件人、`replyTo`（答复有，通知无）、正文路径）；`0` 成功；`3` 检查不过什么都没做；`4` 中途停下；`2` 参数错。
 - `review answer`：输出收件人、`replyTo`、正文路径；`0` 成功；`3` 事项不存在或已关闭。
 
@@ -135,3 +135,4 @@ README「一次完整流程」接着写：交审 → `review batch` → 用户�
 
 - 2026-10-18：开工类【协调通知】的「要你做什么」补一句「`spec/<id>.md`、`tasks/<id>/` 冲突时取集成分支的版本（它带评审标记）」，crew-dev skill 增加「同步集成基线」一节，并加回归测试。原因：`review approve` 在集成分支提交带评审标记的副本，模块分支上是同名不带标记的文件，模块同步集成分支时出现 add/add 冲突（crew-recovery-hooks 构建中发现，临时目录已复现）；来源：用户 2026-10-18 选 A。
 - 2026-10-18：`reviewMark.command` 的占位符改为定稿写法 `<spec|plan|both>`、`<pending|approved>`（原按 `<target>`、`<state>` 填），测试夹具同步；不认识的占位符仍按原规则拒绝。原因：interface 1.1 定稿；来源：spec-guard 负责人通知 interface.json 1.1 定稿（spec-guard 分支 `claude/module-concurrency` 提交 6231abc，0.68.0 未发版），用户 2026-10-18 复审批准。
+- 2026-10-18：`review batch` 在依赖与冲突都没有问题时也明确输出「依赖：全部就绪」「并行边界重叠：无」。原因：试点发现「没有冲突」与「不输出」分不清（问题 G）；来源：第 7 关试点（`docs/pilot-report.md`），用户 2026-10-18 批准。

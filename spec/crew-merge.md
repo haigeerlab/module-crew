@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved d798558e5a0e -->
+<!-- spec-guard: review approved b98d73e3996d -->
 # Spec: crew-merge
 
 > 能力图模块 `crew-merge`。需求来源：`docs/requirements-record.md` B5（两层合并）、假设 6（完整检查命令）、假设 9（远端合并由用户做）、第 5 节规则措辞（模块合入本地集成分支可在用户批准最终验收后由协调会话执行）。
@@ -49,6 +49,10 @@
    「要你做什么」写「同步集成基线、修好后重新发最终验收【交审】」。退回不撤销那次最终验收批准的记录，但合并批准事项关为 `returned`，模块须重新交审、重新批准。
 6. **收回 worktree 是删除操作，只在用户原话授权、且模块已合并后执行**；`git worktree remove` 不加 `--force`，模块分支保留不删。
 
+7. **只给还在开发的模块发同步基线**（2026-10-18 修订）：合入成功后，同步基线通知跳过已合入的模块（有关闭为 merged 的合并批准）和仍在合并队列里的模块（有未关闭的合并批准）；
+   后者排到它合并时用 `--no-ff` 一起带上新基线，先同步反而会让它的合并因「交审后又有提交」被拒。
+8. **最终验收由协调会话在集成分支勾选**（2026-10-18 修订）：合入并通过完整检查后，若 `tasks/<模块>/todo.md` 恰好剩一个未勾项，就在集成分支把它勾上并单独提交（「勾选 <模块> 的最终验收（合并批准事项 #N）」）；剩 0 个不动；不止 1 个只报告、不勾。模块会话获批后不再自己勾（crew-dev skill）。
+
 ## 接口约定
 
 ### 记录
@@ -66,7 +70,8 @@
 ### 命令
 
 ```bash
-bin/module-crew merge approve <最终验收交审编号> (--original <原话> | --original-file <文件>)
+bin/module-crew merge approve <最终验收交审编号>… (--original <原话> | --original-file <文件>)
+bin/module-crew merge tick <模块 id> (--original <原话> | --original-file <文件>)
 bin/module-crew merge queue [--json]
 bin/module-crew merge run [--check-command "<命令>" [--replace-check]]
 bin/module-crew merge cleanup <模块 id> (--original <原话> | --original-file <文件>)
@@ -74,7 +79,8 @@ bin/module-crew merge push-plan [--json]
 bin/module-crew merge push (--original <原话> | --original-file <文件>)
 ```
 
-- `approve`：同时为该交审生成【用户答复】（输出发送参数）；`0` 成功；`3` 交审不存在、已关闭或不是最终验收。
+- `approve`：可一次给多个编号，逐个记批准并各生成【用户答复】（输出发送参数）；`0` 成功；`3` 任一交审不存在、已关闭或不是最终验收（什么都不写）。
+- `tick`：补救修订前合并时漏勾的最终验收：在集成分支勾上该模块 todo 唯一的未勾项并单独提交；`0` 成功；`3` 模块没有已合并的合并批准、未勾项不是恰好一个、集成基线不干净或原话为空。
 - `queue`：`0` 队列非空；`3` 空。
 - `run`：`0` 合并成功（输出合并提交与要发送的收尾、同步基线通知）；`5` 检查失败已撤销或冲突已中止（输出要发送的退回通知）；`3` 合并前清单不过（什么都没动）；`2` 没有检查命令或参数错；`4` 撤销本身失败（集成 checkout 状态写明，交用户）。
 - `cleanup`：`0` 成功；`3` 模块未合并、worktree 不干净或不存在。
@@ -126,6 +132,10 @@ python3 -m unittest discover -s tests -v
 8. `merge cleanup`：已合并模块的 worktree 被 `git worktree remove` 移除、分支保留、会话改为退役；未合并或 worktree 不干净时拒绝且不动。
 9. `merge push-plan`：列出远端分支 `crew/batch-<号>`、`prBase`、待推送提交与 PR 正文（含本批合并的模块与批准事项编号）；不推送。
 10. `merge push`：裸仓库远端出现新分支、内容等于集成分支；远端的 `prBase` 分支不变；有假 `gh` 时以 `--base <prBase> --head crew/batch-<号>` 调用且不带自动合并参数；没有 `gh` 时打印 PR 正文；记一条 `kind: "push"` 事项。
+12. 同步基线收件人：b、c 都已批准最终验收，第一次 `merge run` 合入 b 后不给仍在队列里的 c 发同步基线；第二次合入 c 后不给已合入的 b 发；另一个仍在开发的模块 d 两次都收到。
+13. 合入并通过检查后，模块 todo 恰好剩一个未勾项时集成分支多一个勾选提交、该项已勾；剩 0 个时没有勾选提交；不止 1 个时不勾并在输出里报告；检查失败或冲突时不勾。
+14. `merge approve 15 16`：两个都记批准并各生成【用户答复】；其中一个不合格时退出码 3、什么都不写。
+15. `merge tick b`：已合并、todo 剩一个未勾项时在集成分支勾上并提交；未合并、未勾项不是一个、原话为空时退出码 3 且不改动。
 11. 协调会话 skill 有「合并与收尾」一节：`review add`／`merge approve` → `merge run` 一次一个、发通知 → 退回时转告原因 → 用户同意后 `merge cleanup` 并用 agent-relay 退役邮箱 → `merge push-plan` 给用户看 → 用户授权后 `merge push` → 远端 PR 由用户合并。
 
 ## 未决问题
@@ -139,3 +149,4 @@ README「一次完整流程」补上合并、退回、收尾、推送与 PR 一�
 ## 变更记录
 
 - 2026-10-18：契约 v1.5 已新增「退回」类型，删去「发版前不生成退回通知」的过渡做法与对应未决问题；关键决策 5、验收 6、7 改为生成退回类【协调通知】。原因：契约负责人发布 v1.5（246e138）；来源：用户 2026-10-18 批准（选 A）。
+- 2026-10-18：同步基线只发给还在开发的模块（关键决策 7）；合入通过检查后由协调会话在集成分支勾选最终验收（关键决策 8），并加 `merge tick` 补救修订前漏勾的数据；`merge approve` 一次可收多个编号；增加验收 12–15。原因：试点发现缺陷 A、B、C 与不一致 E；来源：第 7 关试点（`docs/pilot-report.md`），用户 2026-10-18 批准。

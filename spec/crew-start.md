@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved 4ba4b2103d45 -->
+<!-- spec-guard: review approved ded2d554679a -->
 # Spec: crew-start
 
 > 能力图模块 `crew-start`。需求来源：`docs/requirements-record.md` B2（开工）、B1（协调会话放 Claude 桌面版）、A5（就绪与排序）、假设 7（上限默认 3）。
@@ -65,6 +65,7 @@ bin/module-crew start prepare <模块 id>… (--original <原话> | --original-f
   角色标记命令取 `checkoutRole.commands`，安全限制与 `/map` 相同（`python3` 开头、脚本在 spec-guard 安装目录内），填 `<module-id>`、`<checkout-root>` 并加 `--confirm`，参数列表、带超时、不经 shell。
   设角色失败（入口缺失、退出码非 0）**不算中途失败**：worktree 与登记照常保留，该模块一段写「角色标记未设」、原因与可手动执行的命令，退出码不变；
   集成 checkout 已有别的角色时不覆盖，只报告。
+  输出另有一行提醒协调会话先用 agent-relay `bridge_register` 注册邮箱名 `<简称>-coord`（wake: "auto"），开工说明里模块只和这个名字说话（2026-10-18 修订）。
   退出码 `0` 全部完成；`3` 校验不过，什么都没写；`4` 中途失败，已完成的模块列出，失败原因写明；`2` 参数错。
 
 ### 开工说明正文（模板）
@@ -143,3 +144,4 @@ README 的「一次完整流程」从这里开始写：`status` → `start plan`
 
 - 2026-10-18：空位计算与名额检查不再数挂起的模块会话（会话登记 `suspended` 非空）；运行配置 `mode` 为 `serial` 时，`start plan` 把「已退回串行」列为阻塞、`start prepare` 退出码 3 拒绝开新模块（沿用原有退出码含义）。原因：crew-failure 要求挂起不占名额、用户可随时退回串行；来源：`spec/crew-failure.md`（用户 2026-10-18 批准），随 crew-failure 最终验收复审。
 - 2026-10-18：`start prepare` 建好 worktree 后用 interface 1.1 的 `checkoutRole.setModule` 设角色标记，集成 checkout 没有角色时用 `setCoordinator`；设角色失败只报告、不算中途失败；删去「角色标记待 spec-guard 0.68.0」提示与对应未决问题，增加验收 9。原因：interface 1.1 定稿 `checkoutRole`；来源：spec-guard 负责人通知 interface.json 1.1 定稿（spec-guard 分支 `claude/module-concurrency` 提交 6231abc，0.68.0 未发版），用户 2026-10-18 复审批准。
+- 2026-10-18：`start prepare` 输出提醒协调会话注册自己的邮箱名 `<简称>-coord`；协调会话 skill「开工」加这一步，并写明开会话工具强制附带的背景要标明「不是开工说明」。原因：试点发现缺口 D 与宿主限制 F；来源：第 7 关试点（`docs/pilot-report.md`），用户 2026-10-18 批准。
