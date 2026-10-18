@@ -407,6 +407,14 @@ def _merge(args) -> int:
         for x in res.sends:
             print(f"发送 【协调通知】（{x['kind']}）→ {x['to']}，正文文件：{x['path']}")
         return res.code
+    if args.action == "renotice":
+        try:
+            note = merge.renotice(store.open_store(), args.number, args.kind)
+        except merge.AnswerRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        print(f"发送 退回通知（{'检查环境出了问题' if args.kind == 'env' else '模块需要修改'}）→ {note.to}，正文文件：{note.path}")
+        return 0
     original = _original(args.original, args.original_file)
     if original is None:
         return 2
@@ -539,6 +547,11 @@ def main(argv: list[str] | None = None) -> int:
     mr = mgs.add_parser("run")
     mr.add_argument("--check-command")
     mr.add_argument("--replace-check", action="store_true")
+    rn2 = mgs.add_parser("renotice", help="按另一种原因重发退回通知（模块协调判断，不需要用户原话）")
+    rn2.add_argument("number", type=refs.parse)
+    kg = rn2.add_mutually_exclusive_group(required=True)
+    kg.add_argument("--env", action="store_const", const="env", dest="kind", help="检查环境出了问题，模块不用改代码")
+    kg.add_argument("--module", action="store_const", const="module", dest="kind", help="模块需要修改")
     for name, positional in (("approve", ("numbers", refs.parse)), ("revoke", ("number", refs.parse)),
                              ("cleanup", ("module", str)), ("tick", ("module", str)), ("push", None)):
         c = mgs.add_parser(name)

@@ -33,6 +33,17 @@ def hooks_active(checkout: Path) -> bool:
     return any((d / name).is_file() and os.access(d / name, os.X_OK) for name in HOOKS)
 
 
+HOOK_TAIL = 10
+
+
+def hook_lines(checkout: Path, run: subprocess.CompletedProcess) -> list[str]:
+    """R20⑥: when commit hooks are active, their exit code and last lines, so a report shows they really ran."""
+    if not hooks_active(checkout):
+        return []
+    out = [line for line in (run.stdout + run.stderr).splitlines() if line.strip()][-HOOK_TAIL:]
+    return [f"提交钩子：退出码 {run.returncode}" + ("；最后几行输出：" if out else "；没有输出")] + [f"  {line}" for line in out]
+
+
 def failure(checkout: Path, run: subprocess.CompletedProcess, what: str) -> str:
     """Reason line for a failed commit or merge commit."""
     out = (run.stderr.strip() or run.stdout.strip()).splitlines()

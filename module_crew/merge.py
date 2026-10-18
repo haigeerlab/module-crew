@@ -170,6 +170,15 @@ def _run_check(cfg: dict, checkout: Path) -> str | None:
 
 
 _FAILED = re.compile(r"^(FAIL|ERROR|FAILED)\b")
+ENV_TODO = "失败与你的代码无关，不用改代码；等模块协调告诉你检查环境恢复后，用原提交重新发最终验收【交审】"
+MODULE_TODO = "同步集成基线、修好后重新发最终验收【交审】"
+
+
+def _return_kind(reason: str) -> str:
+    """R20⑤: `env` when the full check could not run or ran out of time, `module` when it ran and failed or conflicted."""
+    if reason.startswith(("完整检查超时", "完整检查运行不了")) or re.match(r"^完整检查失败（退出码 12[67]）", reason):
+        return "env"
+    return "module"
 
 
 def _failed_lines(reason: str) -> str:
@@ -222,11 +231,13 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
         if not conflicted:
             # No conflicted file: the merge commit itself was refused (usually a commit hook). Not the module's
             # fault, so nothing is sent back and the approval stays open for the user to decide.
-            return RunResult(4, [commits.failure(checkout, merged, f"C{n}（{m}）的合并提交没有做成"),
-                                 "已中止合并，集成分支未变；合并批准仍开着，交用户决定"], approval=n)
+            return RunResult(4, [commits.failure(checkout, merged, f"C{n}（{m}）的合并提交没有做成")]
+                             + commits.hook_lines(checkout, merged)
+                             + ["已中止合并，集成分支未变；合并批准仍开着，交用户决定"], approval=n)
         reason = f"与集成基线冲突：{'、'.join(conflicted)}"
     else:
         result.merge_commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
+        result.lines += commits.hook_lines(checkout, merged)
         reason = _run_check(cfg, checkout)
         if reason:
             # The merge commit was made just now, locally, and nobody has synced it: drop it rather than revert it,
@@ -241,21 +252,19 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
                 return RunResult(4, [f"C{n}（{m}）{first}；撤销合并失败：{undo.stderr.strip()[:200]}",
                                      "集成 checkout 状态未知，交用户决定"], approval=n, merge_commit=result.merge_commit)
 
-    tick_line = None if reason else _tick(checkout, m, n)[1]
+    tick_line, tick_hooks = (None, []) if reason else _tick(checkout, m, n)[1:]
     with db.transaction(actor="coordinator") as tx:
         current = tx.get("item", str(n))
         if reason:
             result.code = 5
             first = reason.splitlines()[0] + _failed_lines(reason)
+            kind = _return_kind(reason)
             tx.put("item", str(n), dict(current, state="closed", closedReason="returned", reason=reason,
-                                        mergeCommit=result.merge_commit, resetTo=reset_to),
+                                        mergeCommit=result.merge_commit, resetTo=reset_to, returnKind=kind),
                    action="returned")
-            where = (f"已撤销合并：集成分支回到合并前的 {reset_to[:7]}，你的分支原样保留，修好后直接重新交审" if reset_to
-                     else "集成基线未改动")
-            _notice(tx, db, result, rec["from"], "returned",
-                    basis=f"最终验收的合并批准事项 C{n}；{first}；{where}",
-                    todo="同步集成基线、修好后重新发最终验收【交审】")
-            result.lines.append(f"#{n}（{m}）已退回：{first}")
+            _notice(tx, db, result, rec["from"], "returned", basis=_return_basis(n, first, reset_to),
+                    todo=ENV_TODO if kind == "env" else MODULE_TODO)
+            result.lines.append(f"C{n}（{m}）已退回（{'检查环境出了问题，模块不用改代码' if kind == 'env' else '模块需要修改'}）：{first}")
         else:
             tx.put("item", str(n), dict(current, state="closed", closedReason="merged", mergeCommit=result.merge_commit),
                    action="merged")
@@ -274,24 +283,47 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
             result.lines.append(f"C{n}（{m}）已合入集成分支 {short}")
             if tick_line:
                 result.lines.append(tick_line)
+            result.lines += tick_hooks
     return result
 
 
 _UNCHECKED = re.compile(r"^(\s*[-*] )\[ \]( .*)$")
 
 
-def _tick(checkout: Path, module: str, approval: int) -> tuple[str | None, str | None]:
+def _return_basis(n: int, first: str, reset_to: str | None) -> str:
+    where = (f"已撤销合并：集成分支回到合并前的 {reset_to[:7]}，你的分支原样保留" if reset_to else "集成基线未改动")
+    return f"最终验收的合并批准事项 C{n}；{first}；{where}"
+
+
+def renotice(db: store.Store, approval: int, kind: str) -> Reply:
+    """R20⑤: re-send a returned module's notice with the other reason, as judged by the coordinator; the branch is untouched."""
+    if kind not in ("env", "module"):
+        raise AnswerRefused("原因只能是 env（检查环境）或 module（模块要改）")
+    with db.transaction(actor="coordinator") as tx:
+        rec = tx.get("item", str(approval))
+        if rec is None or rec.get("kind") != "merge-approval" or rec.get("closedReason") != "returned":
+            raise AnswerRefused(f"C{approval} 不是已退回的合并批准，没有退回通知可以重发")
+        first = (rec.get("reason") or "").splitlines()[0] + _failed_lines(rec.get("reason") or "")
+        body = tx.allocate_number()
+        meta = tx.write_body(body, protocol.render_coordination_notice(
+            "returned", _return_basis(approval, first, rec.get("resetTo")) + "；模块协调改判退回原因",
+            ENV_TODO if kind == "env" else MODULE_TODO))
+        tx.put("item", str(approval), dict(rec, returnKind=kind), action="renoticed", data={"body": body, "returnKind": kind})
+    return Reply(rec["from"], None, body, db.path / meta["path"])
+
+
+def _tick(checkout: Path, module: str, approval: int) -> tuple[str | None, str | None, list[str]]:
     """Tick the module's only unchecked todo item on the integration branch; (commit, report line)."""
     path = checkout / "tasks" / module / "todo.md"
     try:
         lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
     except OSError:
-        return None, None
+        return None, None, []
     open_at = [i for i, line in enumerate(lines) if _UNCHECKED.match(line.rstrip("\n"))]
     if not open_at:
-        return None, None
+        return None, None, []
     if len(open_at) > 1:
-        return None, f"tasks/{module}/todo.md 还有 {len(open_at)} 个未勾项，没有替它勾最终验收"
+        return None, f"tasks/{module}/todo.md 还有 {len(open_at)} 个未勾项，没有替它勾最终验收", []
     i = open_at[0]
     end = lines[i][len(lines[i].rstrip("\n")):]
     lines[i] = _UNCHECKED.sub(r"\1[x]\2", lines[i].rstrip("\n")) + end
@@ -302,9 +334,9 @@ def _tick(checkout: Path, module: str, approval: int) -> tuple[str | None, str |
     if done.returncode != 0:
         _git(checkout, "reset", "-q", "--", rel)
         _git(checkout, "checkout", "--", rel)
-        return None, commits.failure(checkout, done, f"勾选 {rel} 失败")
+        return None, commits.failure(checkout, done, f"勾选 {rel} 失败"), commits.hook_lines(checkout, done)
     commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
-    return commit, f"已在集成分支勾选 {module} 的最终验收 {commit[:7]}"
+    return commit, f"已在集成分支勾选 {module} 的最终验收 {commit[:7]}", commits.hook_lines(checkout, done)
 
 
 def tick(project: str | os.PathLike, module: str, original: str) -> str:
@@ -322,7 +354,7 @@ def tick(project: str | os.PathLike, module: str, original: str) -> str:
     if checkout is None or not _clean(checkout):
         raise AnswerRefused("集成基线不干净或集成分支没有被检出")
     n = merged[-1]
-    commit, line = _tick(checkout, module, n)
+    commit, line, _ = _tick(checkout, module, n)
     if commit is None:
         raise AnswerRefused(line or f"tasks/{module}/todo.md 没有未勾项，不需要补勾")
     with db.transaction(actor="coordinator") as tx:

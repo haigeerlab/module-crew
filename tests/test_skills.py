@@ -18,7 +18,8 @@ class SkillsTest(unittest.TestCase):
     def test_coordinator_review_nearby(self):
         _, text = read("crew-coordinator")
         for words in ("## 审查就近", "**不问用户**", "返工满 3 次", "审查者无响应", "**不要按倾向替用户填**", "提请批准一个模块一条",
-                      "merge revoke", "合并前先复述", "去决策收件箱答 #N", "评审节奏", "批准 C32 C33"):
+                      "merge revoke", "合并前先复述", "去决策收件箱答 #N", "评审节奏", "批准 C32 C33",
+                      "merge renotice", "检查环境出了问题", "提交钩子：退出码 N"):
             self.assertIn(words, text)
 
     def test_coordinator_source_from_and_also_answers(self):
@@ -184,7 +185,7 @@ class PilotRound2SkillTest(unittest.TestCase):
 
 class CodexPackageTest(unittest.TestCase):
     COMMON = ("只认协调会话发来的【用户答复】", "`tasks/<模块>/todo.md`", "验收标准与证据", "不同意", "撤销批准通知",
-              "按项目的评审节奏交审", "不放可以点的决定按钮", "**必须**发【等待其他会话】", "不改公共文件", "不要自己勾 todo 末项",
+              "按项目的评审节奏交审", "不放可以点的决定按钮", "与你的代码无关」时**不改代码**", "**必须**发【等待其他会话】", "不改公共文件", "不要自己勾 todo 末项",
               "一律取集成分支的版本", "不要**撤销任何提交")
 
     def codex(self):

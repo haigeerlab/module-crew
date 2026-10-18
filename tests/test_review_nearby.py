@@ -556,3 +556,63 @@ class ProgressTest(NearbyCase):
         self.assertIn("b 返工中（审查第 1 轮）", self.run_cli("status", cwd=self.repo).stdout)
         review.note(self.db, self.submit(), "arch", conclusion("通过"))
         self.assertIsNone(row()["review"])
+
+
+class ReturnKindTest(MergeCase):
+    """Task 14 (R20⑤): a returned module is told whether it has to change anything."""
+
+    def test_env_failure_and_renotice(self):
+        from module_crew import merge
+        db = store.open_store(self.repo)
+        n = self.approve_final("b", 1)
+        res = merge.run(self.repo, check_command="no-such-check-command-xyz")
+        self.assertEqual(res.code, 5, res.lines)
+        self.assertEqual(store.get(db, "item", str(n))["returnKind"], "env")
+        [note] = [x for x in res.sends if x["to"] == "shop-b"]
+        msg = protocol.parse(store.read_body(db, note["body"]))
+        self.assertTrue(msg.ok, msg.problems)
+        self.assertEqual(msg.contract()["notice"]["kind"], "returned")
+        self.assertIn("与你的代码无关", msg.fields["要你做什么"])
+        self.assertIn("用原提交重新发最终验收【交审】", msg.fields["要你做什么"])
+        head = git(self.repo, "rev-parse", "HEAD")
+        again = merge.renotice(db, n, "module")
+        self.assertIn("修好后重新发最终验收【交审】", protocol.parse(again.path.read_text(encoding="utf-8")).fields["要你做什么"])
+        self.assertEqual(store.get(db, "item", str(n))["returnKind"], "module")
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), head)                   # integration branch untouched
+        out = self.run_cli("merge", "renotice", f"C{n}", "--env", cwd=self.repo)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(store.get(db, "item", str(n))["returnKind"], "env")
+
+    def test_check_failure_is_module(self):
+        from module_crew import merge
+        db = store.open_store(self.repo)
+        n = self.approve_final("b", 1)
+        res = merge.run(self.repo, check_command=self.check_script(fail_if="src/b.py"))
+        self.assertEqual(res.code, 5, res.lines)
+        self.assertEqual(store.get(db, "item", str(n))["returnKind"], "module")
+        with self.assertRaises(merge.AnswerRefused):
+            merge.renotice(db, self.approve_final("c", 2), "env")                     # not returned
+
+
+class HookOutputTest(MergeCase):
+    """Task 14 (R20⑥): merge run shows that the commit hooks ran and what they said."""
+
+    def hook(self, code):
+        path = self.repo / ".git" / "hooks" / "commit-msg"
+        path.write_text(f"#!/bin/sh\necho hook-line-1\necho hook-line-2 >&2\nexit {code}\n")
+        path.chmod(0o755)
+
+    def test_passing_and_refusing_hooks_are_shown(self):
+        from module_crew import merge
+        self.hook(0)
+        self.approve_final("b", 1)
+        res = merge.run(self.repo, check_command=self.check_script())
+        self.assertEqual(res.code, 0, res.lines)
+        text = "\n".join(res.lines)
+        self.assertIn("提交钩子：退出码 0", text)
+        self.assertIn("hook-line-2", text)
+        self.approve_final("c", 2)              # worktrees share the hooks: commit c's code while the hook still passes
+        self.hook(1)
+        res = merge.run(self.repo, check_command=self.check_script())
+        self.assertEqual(res.code, 4, res.lines)
+        self.assertIn("提交钩子：退出码 1", "\n".join(res.lines))

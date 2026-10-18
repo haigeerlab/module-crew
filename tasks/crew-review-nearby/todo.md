@@ -60,7 +60,7 @@
   - 验收：Spec 验收 19
   - 文件：`skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`codex-skills/crew-dev/SKILL.md`、`README.md`、`tests/test_skills.py`、版本文件
 
-- [ ] Task 14：R20 退回分原因、`merge renotice`、提交钩子输出
+- [x] Task 14：R20 退回分原因、`merge renotice`、提交钩子输出
   - 验收：Spec 验收 20、21
   - 文件：`module_crew/merge.py`、`module_crew/commits.py`、`module_crew/__main__.py`、`skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`codex-skills/crew-dev/SKILL.md`、`tests/test_review_nearby.py`
 
