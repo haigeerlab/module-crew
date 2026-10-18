@@ -12,7 +12,7 @@
 
 - [x] Checkpoint 1（report）：新字段齐全；现有 sessions 契约测试原样通过、状态库读不到仍退出 2（验收 8）（2026-10-19，全量 361 个测试通过；`tests/test_hub_output.py` 的契约与 `test_unreadable_exits_2_with_reason` 未改动照常通过）
 
-- [ ] Task 3：人看的 `sessions` 与 `status`；crew-hub-bridge 契约一句与变更记录；README 第 121 行
+- [x] Task 3：人看的 `sessions` 与 `status`；crew-hub-bridge 契约一句与变更记录；README 第 121 行
   - 验收：Spec 验收 9
   - 文件：`module_crew/failure.py`、`module_crew/probe.py`、`spec/crew-hub-bridge.md`、`README.md`、`tests/test_stall_signals.py`
 

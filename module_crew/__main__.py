@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from module_crew import changes, failure, hooks, inbox, merge, probe, protocol, refs, review, sources, start, store
@@ -58,6 +59,21 @@ _STATE_ICON = {"ok": "✅", "warning": "⚠️", "blocker": "❌"}
 _KIND_NAME = {"item": "事项", "request": "请求", "ticket": "等待单"}
 
 
+def _stall_facts(row: dict | None) -> str:
+    """crew-stall-signals: facts on a module session's status line; no thresholds."""
+    if row is None:
+        return ""
+    c, parts = row["commits"], []
+    if c["last"]:
+        parts.append(f"最近提交 {failure._ago(c['last']['at'], datetime.now().astimezone())}")
+    elif c["ahead"] == 0:
+        parts.append("开工以来没有提交")
+    most = max((a["count"] for a in row["asks"]), default=0)
+    if most:
+        parts.append(f"同一节点最多问过你 {most} 次")
+    return "　" + "，".join(parts) if parts else ""
+
+
 def _status(as_json: bool) -> int:
     report = probe.run()
     if as_json:
@@ -73,9 +89,10 @@ def _status(as_json: bool) -> int:
     if report.store is None:
         print("  未建库")
     else:
+        facts = {r["name"]: r for r in failure.sessions(store.open_store())}
         for s in report.store["sessions"] or [{"name": "（没有在用的会话）"}]:
             extra = f"（{s.get('role')}{'，' + s['module'] if s.get('module') else ''}）" if s.get("role") else ""
-            print(f"  {s['name']}{extra}")
+            print(f"  {s['name']}{extra}{_stall_facts(facts.get(s['name']))}")
         print("  未关：" + "、".join(f"{_KIND_NAME[k]} {n}" for k, n in report.store["open"].items()))
         for mod, r in review.progress(store.open_store()).items():
             print(f"  {mod} " + (f"返工中（审查第 {r['round']} 轮）" if r["state"] == "rework" else

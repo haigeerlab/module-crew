@@ -168,9 +168,27 @@ def sessions(db: store.Store, now: datetime | None = None) -> list[dict]:
     return rows
 
 
-def render_sessions(rows: list[dict]) -> list[str]:
+def _commit_line(r: dict, now: datetime) -> str:
+    """crew-stall-signals: the latest commit, as a fact."""
+    c = r["commits"]
+    if c["error"]:
+        return f"  最近提交读不到：{c['error']}"
+    if c["last"] is None:
+        return "  最近提交：开工以来没有提交" + (f"（开工 {_ago(r['startedAt'], now)}）" if r["startedAt"] else "")
+    at = datetime.fromisoformat(c["last"]["at"])
+    return f"  最近提交：{at.strftime('%Y-%m-%d %H:%M')}（{_ago(c['last']['at'], now)}），开工以来 {c['ahead']} 个提交"
+
+
+def _asks_line(r: dict) -> str:
+    from module_crew import review
+    asked = "、".join(f"{review.NODE_NAME[a['node']]} {a['count']} 次（{'、'.join(a['refs'])}）" for a in r["asks"])
+    return "  问过你：" + (asked or "无") + (f"；合并退回 {len(r['returns'])} 次" if r["returns"] else "")
+
+
+def render_sessions(rows: list[dict], now: datetime | None = None) -> list[str]:
     if not rows:
         return ["没有在用的模块会话"]
+    now = now or datetime.now().astimezone()
     lines = []
     for r in rows:
         lines.append(f"{r['module']}（{r['name']}）" + (f"　挂起：{r['suspended']}" if r["suspended"] else ""))
@@ -178,6 +196,7 @@ def render_sessions(rows: list[dict]) -> list[str]:
         lines.append("  未关等待单：" + ("、".join(f"C{n}" for n in r["openTickets"]) or "无")
                      + "；未关事项：" + ("、".join(f"C{n}" for n in r["openItems"]) or "无"))
         lines.append(f"  当前：{r['stageText']}")
+        lines += [_commit_line(r, now), _asks_line(r)]
     return lines
 
 

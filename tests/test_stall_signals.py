@@ -111,5 +111,39 @@ class WaitUserTest(StallCase):
         self.assertEqual(rows["c"]["returns"], [])
 
 
+class HumanTextTest(StallCase):
+    def test_sessions_text(self):
+        plan = review.add(self.db, self.plan_review("b"), "shop-b", 7201).number
+        review.answer(self.db, plan, "Plan 改")
+        git(self.wt["c"], "reset", "-q", "--hard", "main")
+        text = "\n".join(failure.render_sessions(failure.sessions(self.db)))
+        at = datetime.fromisoformat(git(self.wt["b"], "log", "-1", "--format=%cI").strip()).strftime("%Y-%m-%d %H:%M")
+        self.assertIn(f"  最近提交：{at}（0 分钟前），开工以来 1 个提交", text)
+        self.assertIn(f"  问过你：Plan 1 次（C{plan}）", text)
+        self.assertIn("  最近提交：开工以来没有提交（开工 0 分钟前）", text)
+        self.assertIn("  问过你：无", text)
+        for word in ("停下", "卡住", "超时", "异常"):
+            self.assertNotIn(word, text)
+
+    def test_sessions_text_when_git_is_unreadable_and_after_a_return(self):
+        first = self.approve_final("b", 8101)
+        merge.run(self.repo, self.check_script(fail_if="src/b.py"))
+        shutil.rmtree(self.wt["c"])
+        text = "\n".join(failure.render_sessions(failure.sessions(self.db)))
+        self.assertIn(f"  问过你：最终验收 1 次（C{store.get(self.db, 'item', str(first))['review']}）；合并退回 1 次", text)
+        self.assertIn("  最近提交读不到：worktree 不存在", text)
+
+    def test_status_module_lines(self):
+        plan = review.add(self.db, self.plan_review("b"), "shop-b", 7301).number
+        review.answer(self.db, plan, "Plan 改")
+        out = self.run_cli("status").stdout
+        line_b = next(l for l in out.splitlines() if l.startswith("  shop-b"))
+        line_c = next(l for l in out.splitlines() if l.startswith("  shop-c"))
+        self.assertIn("最近提交 0 分钟前", line_b)
+        self.assertIn("同一节点最多问过你 1 次", line_b)
+        self.assertIn("最近提交 0 分钟前", line_c)
+        self.assertNotIn("问过你", line_c)
+
+
 if __name__ == "__main__":
     unittest.main()
