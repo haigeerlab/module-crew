@@ -121,6 +121,9 @@ def _target(t: dict, cfg: dict, project: Path) -> dict:
     if t["host"] == "codex-desktop":
         rel = CODEX_FILE
         out.update(rules=codex_rules(cfg), trust=codex_trust(checkout, project))
+        existing = checkout / rel
+        if existing.exists() and not _codex_is_ours(existing):
+            out["problem"] = f"{existing} 已存在且不是 module-crew 写的，不覆盖"
     else:
         rel = CLAUDE_FILE
         want = claude_entries(cfg)
@@ -192,3 +195,143 @@ def codex_rules(cfg: dict) -> list[dict]:
                "justification": "module-crew：不可逆操作不在会话里做；推送只经模块协调的 module-crew merge push（要用户原话）"}
               for c in IRREVERSIBLE]
     return rules
+
+
+def _codex_is_ours(path: Path) -> bool:
+    try:
+        return path.read_text(encoding="utf-8").splitlines()[:1] == [CODEX_MARK]
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def render_codex(rules: list[dict]) -> str:
+    """Starlark prefix_rule calls; match / not_match let Codex self-check the file when it loads it."""
+    lines = [CODEX_MARK, "# 由 module-crew permissions apply 写入；module-crew permissions remove 会删除本文件。", ""]
+    for r in rules:
+        args = [f"pattern = {json.dumps(r['pattern'], ensure_ascii=False)}", f"decision = {json.dumps(r['decision'])}"]
+        if r.get("justification"):
+            args.append(f"justification = {json.dumps(r['justification'], ensure_ascii=False)}")
+        args.append(f"match = {json.dumps(r['match'], ensure_ascii=False)}")
+        args.append('not_match = ["git status --short"]' if r["pattern"][:2] != ["git", "status"] else 'not_match = ["git stash"]')
+        lines.append("prefix_rule(\n    " + ",\n    ".join(args) + ",\n)\n")
+    return "\n".join(lines)
+
+
+class Refused(Exception):
+    """Nothing was written."""
+
+
+def _need(original: str | None) -> str:
+    if not original or not original.strip():
+        raise Refused("用户原话不能为空：写权限规则要用户明确同意")
+    return original
+
+
+def _blockers(p: dict) -> list[str]:
+    out = []
+    for t in p["targets"]:
+        if t.get("problem"):
+            out.append(t["problem"])
+        elif t["file"] and not t["ignored"]:
+            out.append(f"{t['file']} 没有被 git 忽略")
+    return out
+
+
+def _write_json(path: Path, doc: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def apply(project: str | os.PathLike, original: str | None) -> list[str]:
+    """Write every checkout's rules, all or nothing, and record what was added."""
+    project = Path(project)
+    original = _need(original)
+    db, cfg, _ = checkouts(project)
+    p = plan(project)
+    problems = _blockers(p)
+    if problems:
+        raise Refused("没有写任何文件：" + "；".join(problems))
+    record = cfg.get("permissions") or {}
+    files = dict(record.get("files") or {})
+    codex_files = set(record.get("codexFiles") or [])
+    lines = []
+    for t in p["targets"]:
+        path = Path(t["file"])
+        if "rules" in t:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(render_codex(t["rules"]), encoding="utf-8")
+            codex_files.add(str(path))
+            lines.append(f"已写 Codex 规则：{path}（{TRUST_TEXT[t['trust']]}）")
+            continue
+        doc, _ = _read_settings(path)
+        perms = doc.setdefault("permissions", {})
+        for key in ("allow", "deny"):
+            perms.setdefault(key, []).extend(t[key])
+        _write_json(path, doc)
+        added = files.setdefault(str(path), {"allow": [], "deny": []})
+        for key in ("allow", "deny"):
+            added[key] += [e for e in t[key] if e not in added[key]]
+        lines.append(f"已写 {path}：追加放行 {len(t['allow'])} 条、禁止 {len(t['deny'])} 条")
+    hook = install_hook(project)
+    lines.append(hook["line"])
+    with db.transaction(actor="coordinator") as tx:
+        _put(tx, {**record, "applied": True, "original": original, "at": store.now(),
+                                         **store.source_field(), "files": files, "codexFiles": sorted(codex_files),
+                  "hook": {k: v for k, v in hook.items() if k != "line"}})
+    return lines
+
+
+def remove(project: str | os.PathLike, original: str | None) -> list[str]:
+    """Take out only the entries, rules files and hook module-crew added; everything else stays."""
+    project = Path(project)
+    original = _need(original)
+    db = store.open_store(project)
+    record = read_record(db)
+    files = record.get("files") or {}
+    docs = {}
+    for name in files:
+        path = Path(name)
+        if path.exists():
+            doc, problem = _read_settings(path)
+            if problem:
+                raise Refused("没有改任何文件：" + problem)
+            docs[name] = doc
+    lines = []
+    for name, doc in docs.items():
+        perms = doc.get("permissions") or {}
+        gone = 0
+        for key in ("allow", "deny"):
+            if key in perms:
+                keep = [e for e in perms[key] if e not in files[name].get(key, [])]
+                gone += len(perms[key]) - len(keep)
+                perms[key] = keep
+        _write_json(Path(name), doc)
+        lines.append(f"已从 {name} 删除 module-crew 追加的 {gone} 条")
+    for name in record.get("codexFiles") or []:
+        path = Path(name)
+        if path.exists() and _codex_is_ours(path):
+            path.unlink()
+            lines.append(f"已删除 Codex 规则：{path}")
+    lines.append(uninstall_hook(project))
+    with db.transaction(actor="coordinator") as tx:
+        _put(tx, {**record, "applied": False, "files": {}, "codexFiles": [],
+                  "removed": {"original": original, "at": store.now(), **store.source_field()}})
+    return lines
+
+
+def read_record(db: store.Store) -> dict:
+    """What module-crew wrote, kept in the run configuration (store format unchanged)."""
+    return (store.get(db, "config", "main") or {}).get("permissions") or {}
+
+
+def _put(tx, record: dict) -> None:
+    tx.put("config", "main", {**(tx.get("config", "main") or {}), "permissions": record}, action="set")
+
+
+def install_hook(project: Path) -> dict:
+    """Placeholder until the pre-push guard lands (Task 4)."""
+    return {"installed": False, "path": None, "reason": "推送守门还没实现", "line": "推送守门：还没实现"}
+
+
+def uninstall_hook(project: Path) -> str:
+    return "推送守门：没有要删的"

@@ -622,6 +622,11 @@ def main(argv: list[str] | None = None) -> int:
     pm = sub.add_parser("permissions", help="宿主权限预配：预览、凭用户原话写入、实测、撤销")
     pm_sub = pm.add_subparsers(dest="action", required=True)
     pm_sub.add_parser("plan", help="只读：每个 checkout 要写什么、能不能写").add_argument("--json", action="store_true")
+    for name, text in (("apply", "凭用户原话写规则、装推送守门"), ("remove", "凭用户原话撤掉 module-crew 写的规则与钩子")):
+        pa = pm_sub.add_parser(name, help=text)
+        pg = pa.add_mutually_exclusive_group(required=True)
+        pg.add_argument("--original")
+        pg.add_argument("--original-file")
     sub.add_parser("host-check", help="在模块 worktree 里预检宿主能否完成工作（Codex 必跑）").add_argument("--json", action="store_true")
     sub.add_parser("resume-kit", help="生成换会话恢复说明").add_argument("module")
     se = sub.add_parser("serial", help="退回串行／恢复并行")
@@ -675,6 +680,15 @@ def _permissions(args) -> int:
             p = permissions.plan(".")
             print(json.dumps(p, ensure_ascii=False, indent=2) if args.json else "\n".join(permissions.render_plan(p)))
             return 0
+        if args.action in ("apply", "remove"):
+            original = _original(args.original, args.original_file)
+            if original is None:
+                return 2
+            print("\n".join(getattr(permissions, args.action)(".", original)))
+            return 0
+    except permissions.Refused as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 3
     except store.StoreError as exc:
         print(f"❌ {exc}", file=sys.stderr)
         return 2

@@ -88,5 +88,60 @@ class PlanTest(PermCase):
         self.assertEqual(len(doc["targets"]), 3)
 
 
+class ApplyClaudeTest(PermCase):
+    def test_apply_merges_and_records(self):
+        mine = self.repo / ".claude" / "settings.local.json"
+        mine.parent.mkdir()
+        mine.write_text(json.dumps({"permissions": {"allow": ["Bash(ls *)", "Bash(git add *)"]}, "model": "x"}), encoding="utf-8")
+        permissions.apply(self.repo, "按清单预配权限")
+        doc = self.settings(self.repo)
+        self.assertEqual(doc["model"], "x")
+        self.assertEqual(doc["permissions"]["allow"].count("Bash(git add *)"), 1)
+        self.assertIn("Bash(ls *)", doc["permissions"]["allow"])
+        self.assertIn("Bash(git push *)", doc["permissions"]["deny"])
+        self.assertIn("Bash(git push *)", self.settings(self.wt["b"])["permissions"]["deny"])
+        rec = permissions.read_record(self.db)
+        self.assertTrue(rec["applied"])
+        self.assertEqual(rec["original"], "按清单预配权限")
+        self.assertNotIn("Bash(git add *)", rec["files"][str(mine)]["allow"])     # it was already there
+        self.assertEqual(permissions.plan(self.repo)["targets"][0]["allow"], [])     # nothing left to add
+
+    def test_refuses_all_when_one_file_is_not_ignored(self):
+        git(self.repo, "config", "core.excludesFile", "/dev/null")
+        (self.wt["b"] / ".gitignore").write_text("", encoding="utf-8")
+        with self.assertRaises(permissions.Refused):
+            permissions.apply(self.repo, "预配")
+        self.assertFalse((self.repo / ".claude" / "settings.local.json").exists())
+        self.assertFalse((self.wt["c"] / ".codex").exists())
+        self.assertEqual(permissions.read_record(self.db), {})
+
+    def test_refuses_broken_json_and_empty_words(self):
+        bad = self.wt["b"] / ".claude" / "settings.local.json"
+        bad.parent.mkdir()
+        bad.write_text("{not json", encoding="utf-8")
+        with self.assertRaises(permissions.Refused):
+            permissions.apply(self.repo, "预配")
+        self.assertEqual(bad.read_text(encoding="utf-8"), "{not json")
+        bad.unlink()
+        with self.assertRaises(permissions.Refused):
+            permissions.apply(self.repo, "  ")
+
+    def test_remove_only_takes_out_what_was_added(self):
+        permissions.apply(self.repo, "预配")
+        path = self.repo / ".claude" / "settings.local.json"
+        doc = self.settings(self.repo)
+        doc["permissions"]["allow"].append("Bash(make *)")
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        permissions.remove(self.repo, "撤掉预配")
+        self.assertEqual(self.settings(self.repo)["permissions"], {"allow": ["Bash(make *)"], "deny": []})
+        self.assertFalse(permissions.read_record(self.db)["applied"])
+
+    def test_cli_apply_exit_codes(self):
+        self.assertEqual(self.run_cli("permissions", "apply", "--original", " ").returncode, 3)
+        out = self.run_cli("permissions", "apply", "--original", "预配")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("已写", out.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

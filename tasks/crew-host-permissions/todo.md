@@ -6,7 +6,7 @@
   - 验收：Spec 验收 1
   - 文件：`module_crew/permissions.py`、`module_crew/__main__.py`、`tests/test_permissions.py`
 
-- [ ] Task 2：`permissions apply`／`remove`（Claude 规则）
+- [x] Task 2：`permissions apply`／`remove`（Claude 规则）
   - 验收：Spec 验收 2、3、9（Claude 部分）
   - 文件：`module_crew/permissions.py`、`module_crew/__main__.py`、`tests/test_permissions.py`
 
