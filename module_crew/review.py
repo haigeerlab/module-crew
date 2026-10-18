@@ -65,6 +65,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         return Outcome(msg.kind, 3, lines=[f"交审的模块 {sub['module']} 不是 {sender} 负责的模块 {session.get('module')}"])
     worktree = Path(session["worktree"])
     reasons = _missing_files(sub["module"], sub["node"], sub["files"]) + _check_files(worktree, sub["files"])
+    if sub["node"] == "final" and not _evidence(msg.fields.get("要点", "")):
+        reasons.append(f"最终验收的「要点」里缺「{EVIDENCE}」一节：按 Spec 的验收标准逐条写「<编号或原文>：<证据>」，没有证据写「无」")
     if not reasons and sub.get("disputes"):
         reasons = _disagree_reasons(db, worktree, sub)
     if reasons:
@@ -106,6 +108,21 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
 
 
 REVIEW_TIMEOUT = timedelta(minutes=15)
+EVIDENCE = "验收标准与证据"
+
+
+def _evidence(points: str) -> list[str]:
+    """R17: the 「验收标准与证据」 section of a final review's points — its heading and lines up to the next blank line."""
+    lines = points.splitlines()
+    at = next((k for k, line in enumerate(lines) if line.strip().lstrip("#").strip().startswith(EVIDENCE)), None)
+    if at is None:
+        return []
+    out = [lines[at].strip()]
+    for line in lines[at + 1:]:
+        if not line.strip():
+            break
+        out.append(line)
+    return out
 
 
 def _reviewers(db: store.Store) -> list[str]:
@@ -406,6 +423,9 @@ def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict]
         last = (rec.get("reviews") or [{}])[-1]
         if last.get("text"):
             revs.append(_original_line(db, g["module"], f"C{i['number']}-review-{last['ref']}.txt", last["text"]))
+        evidence = _evidence(i["points"]) if i["node"] == "final" else []
+        if evidence:                                     # R17: evidence per acceptance criterion goes first
+            points[:0] = [_safe(line) for line in evidence] + [""]
         points.append(f"C{i['number']} {g['module']} 的 {NODE_NAME.get(i['node'], i['node'])}（审查：{_review_text(i)}）：")
         points += [_safe(line) for line in i["points"].splitlines()]
         if i["round"]:

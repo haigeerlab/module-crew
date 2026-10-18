@@ -364,6 +364,19 @@ class BatchTest(NearbyCase):
 
 
 class FinalOptionsTest(MergeCase):
+    def test_evidence_required_and_shown_first(self):
+        db = store.open_store(self.repo)
+        text = self.finish("b")
+        bare = text.replace("验收标准与证据：\n1：test_value 通过\n2：无\n\n", "")
+        out = review.add(db, bare, "shop-b", 8000)
+        self.assertEqual(out.code, 3)
+        self.assertIn("验收标准与证据", " ".join(out.lines))
+        self.assertEqual(review.add(db, text, "shop-b", 8001).code, 0)
+        msg = protocol.parse(review.for_hub(self.repo)[0][2])
+        lines = msg.fields["要点"].splitlines()
+        self.assertTrue(lines[0].startswith("验收标准与证据"), lines[:3])
+        self.assertEqual(lines[1:3], ["1：test_value 通过", "2：无"])
+
     def test_final_consequence_and_chinese_node(self):
         db = store.open_store(self.repo)
         review.add(db, self.finish("b"), "shop-b", 8001)

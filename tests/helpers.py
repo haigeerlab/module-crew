@@ -318,6 +318,8 @@ class MergeCase(ReviewCase):
         git(self.wt[m], "add", "-A")
         git(self.wt[m], "commit", "-q", "-m", f"{m}: code")
         head = review_text(m, "最终验收", [(rel, f)])
+        # R17: a final review lists evidence per acceptance criterion (a section of 要点)
+        head = head.replace("要点：\n", "要点：\n验收标准与证据：\n1：test_value 通过\n2：无\n\n", 1)
         return head + "改动统计：1 file changed\n越界检查：无越界\n"
 
     def approve_final(self, m: str, rid: int, **kw) -> int:

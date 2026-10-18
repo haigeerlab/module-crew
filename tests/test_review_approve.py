@@ -105,7 +105,7 @@ class ApproveTest(ReviewCase):
         self.assert_refused([s], "已关闭")
         final = ("【交审】\n结束：无\n模块：b\n节点：最终验收\n文件：\n"
                  + self.spec_review("b").split("文件：\n")[1].split("要点：")[0]
-                 + "要点：\n- 一\n- 二\n改动统计：1 file\n越界检查：无越界\n")
+                 + "要点：\n验收标准与证据：\n1：无\n\n- 一\n- 二\n改动统计：1 file\n越界检查：无越界\n")
         f = self.add(final, "shop-b", 11)
         self.assert_refused([f], "最终验收")
         s2 = self.add(self.spec_review("b"), "shop-b", 12)

@@ -34,7 +34,7 @@
   - 验收：Spec 验收 3、5、6、10、11、14
   - 文件：`module_crew/review.py`、`module_crew/__main__.py`、`tests/test_review_nearby.py`、`tests/test_hub_output.py`、`tests/test_review_grouping.py`
 
-- [ ] Task 8：最终验收「验收标准与证据」
+- [x] Task 8：最终验收「验收标准与证据」
   - 验收：Spec 验收 16
   - 文件：`module_crew/review.py`、`tests/helpers.py`、`tests/test_review_nearby.py`
 
