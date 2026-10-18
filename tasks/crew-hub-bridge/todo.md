@@ -29,7 +29,8 @@
   - 验收：Spec 验收 11
   - 文件：`skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`tests/test_skills.py`、`README.md`
 
-- [ ] Checkpoint 2（gate）：v1.6 前的阶段验收——全部测试全绿、验收 1–4、6–9、11 逐条对应测试、列出实际改动文件；停下等用户确认
+- [x] Checkpoint 2（gate）：v1.6 前的阶段验收——全部测试全绿、验收 1–4、6–9、11 逐条对应测试、列出实际改动文件；停下等用户确认
+  - 记录：260 个测试全绿；18 个文件 +706/−32（821528d..3909ec9）；sessions --json 实测 0.09 秒；用户 2026-10-18 验收通过
 
 - [ ] Task 7：改钉 v1.6、hub 来源对照、lead 来源（v1.6 发版后）
   - 验收：Spec 验收 3、5
