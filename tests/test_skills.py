@@ -117,3 +117,17 @@ class PilotCloseoutTest(unittest.TestCase):
         merge_section = text.split("## 合并与收尾", 1)[1].split("\n## ", 1)[0]
         self.assertIn("/agent-relay:collaboration", merge_section)
         self.assertIn("不要自己去找或猜", merge_section)
+
+
+class HubBridgeSkillTest(unittest.TestCase):
+    def test_coordinator_hub_section(self):
+        _, text = read("crew-coordinator")
+        section = text.split("## 接入收件枢纽", 1)[1].split("\n## ", 1)[0]
+        for words in ("source add", "--for-hub", "review note", "--source-item", "【已恢复】", "source map",
+                      "【答复告知】只记录", "直连 API 线", "后台方式", "module-crew status"):
+            self.assertIn(words, section)
+
+    def test_two_sources_wording(self):
+        _, text = read("crew-coordinator")
+        self.assertIn("用户的决定只有两种来源", text)
+        self.assertNotIn("你是它们与用户之间唯一的通道", text)

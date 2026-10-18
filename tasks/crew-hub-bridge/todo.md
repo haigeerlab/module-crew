@@ -25,7 +25,7 @@
   - 验收：Spec 验收 8、9
   - 文件：`module_crew/failure.py`、`module_crew/__main__.py`、`interface.json`、`tests/test_hub_output.py`、`tests/test_failure.py`
 
-- [ ] Task 6：两份 skill 与 README
+- [x] Task 6：两份 skill 与 README
   - 验收：Spec 验收 11
   - 文件：`skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`tests/test_skills.py`、`README.md`
 

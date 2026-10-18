@@ -84,6 +84,18 @@ bin/module-crew status
 
 一个模块挂起、退回或崩溃，不影响其他模块的交审、合并与通知。
 
+## 接入收件枢纽
+
+有收件枢纽（如 decision-inbox）时，用户可以在枢纽里给决定：
+
+1. 在协调会话里由用户亲口登记来源：`module-crew source add <枢纽邮箱名> --kind hub --original-file <原话>`；审查会话登记为 `--kind lead`。
+2. `module-crew review batch --for-hub` 把一批交审合成一条【等待用户】交给枢纽；审查会话的结论用 `review note` 记下，正文里带审查行。
+3. 枢纽转来【用户答复】后，批准命令带 `--source <枢纽> --source-item <H> --source-relay-id <消息号> --original-file <那条消息>`，用户原话从消息里读出。
+4. `module-crew source map <H>` 查一个枢纽事项批准了哪些 crew 编号。
+5. 外部插件读 `module-crew sessions --json`（`schemaVersion` 1：module、relayName、worktree、stage、stageText、suspended、lastActivity），出口与契约版本登记在根目录 `interface.json`。
+
+负责人转交（lead 来源）与「把枢纽答复转给模块」等 session-protocol v1.6 定稿后接入。
+
 ## 命令一览
 
 ```text
@@ -98,6 +110,9 @@ module-crew change add|list|land|answer          公共变更请求
 module-crew merge approve|queue|run|cleanup|push-plan|push
 module-crew suspend|resume|sessions|resume-kit|serial
 module-crew takeover <邮箱名> --original(-file)  换会话接管
+module-crew source add|remove|list|map           批准来源（收件枢纽、负责人）与对照
+module-crew review note|batch --for-hub          审查行、交枢纽正文
+module-crew ticket close <编号> --reason …        协调会话关等待单
 module-crew hook session-start|prompt            插件钩子入口（只读，永远退出码 0）
 ```
 
