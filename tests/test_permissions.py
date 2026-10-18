@@ -143,5 +143,45 @@ class ApplyClaudeTest(PermCase):
         self.assertIn("已写", out.stdout)
 
 
+def parse_rules(text: str) -> list[tuple[list, str]]:
+    """(pattern, decision) of every prefix_rule in a generated file."""
+    import re
+    return [(json.loads(m.group(1)), json.loads(m.group(2)))
+            for m in re.finditer(r"pattern = (\[.*?\]),\n    decision = (\"\w+\")", text)]
+
+
+class CodexRulesTest(PermCase):
+    def rules_file(self):
+        return self.wt["c"] / ".codex" / "rules" / "module-crew.rules"
+
+    def test_apply_writes_codex_rules_only_for_codex_worktrees(self):
+        lines = permissions.apply(self.repo, "预配")
+        text = self.rules_file().read_text(encoding="utf-8")
+        self.assertEqual(text.splitlines()[0], permissions.CODEX_MARK)
+        rules = dict((" ".join(p), d) for p, d in parse_rules(text))
+        self.assertEqual(rules["git push"], "forbidden")
+        self.assertEqual(rules["rm -rf"], "forbidden")
+        self.assertEqual(rules["git commit"], "allow")
+        self.assertEqual(text.count("prefix_rule("), text.count("\n    match = ["))
+        self.assertEqual(text.count("prefix_rule("), text.count("not_match = ["))
+        self.assertFalse((self.wt["b"] / ".codex").exists())
+        self.assertFalse((self.wt["c"] / ".claude" / "settings.local.json").exists())
+        self.assertTrue(any("规则不会生效" in l for l in lines))
+
+    def test_foreign_rules_file_is_not_overwritten(self):
+        self.rules_file().parent.mkdir(parents=True)
+        self.rules_file().write_text("prefix_rule(pattern=[\"ls\"])\n", encoding="utf-8")
+        with self.assertRaises(permissions.Refused):
+            permissions.apply(self.repo, "预配")
+        self.assertIn("ls", self.rules_file().read_text(encoding="utf-8"))
+
+    def test_remove_empties_the_rules_file(self):
+        permissions.apply(self.repo, "预配")
+        permissions.remove(self.repo, "撤掉")
+        text = self.rules_file().read_text(encoding="utf-8")
+        self.assertEqual(text.splitlines()[0], permissions.CODEX_MARK)
+        self.assertNotIn("prefix_rule(", text)
+
+
 if __name__ == "__main__":
     unittest.main()

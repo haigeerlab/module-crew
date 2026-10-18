@@ -206,7 +206,7 @@ def _codex_is_ours(path: Path) -> bool:
 
 def render_codex(rules: list[dict]) -> str:
     """Starlark prefix_rule calls; match / not_match let Codex self-check the file when it loads it."""
-    lines = [CODEX_MARK, "# 由 module-crew permissions apply 写入；module-crew permissions remove 会删除本文件。", ""]
+    lines = [CODEX_MARK, "# 由 module-crew permissions apply 写入；module-crew permissions remove 会清空本文件的规则。", ""]
     for r in rules:
         args = [f"pattern = {json.dumps(r['pattern'], ensure_ascii=False)}", f"decision = {json.dumps(r['decision'])}"]
         if r.get("justification"):
@@ -310,8 +310,9 @@ def remove(project: str | os.PathLike, original: str | None) -> list[str]:
     for name in record.get("codexFiles") or []:
         path = Path(name)
         if path.exists() and _codex_is_ours(path):
-            path.unlink()
-            lines.append(f"已删除 Codex 规则：{path}")
+            # module-crew never deletes files: the rules are emptied, the file itself may be removed by hand
+            path.write_text(CODEX_MARK + "\n# 已由 module-crew permissions remove 停用：本文件不含任何规则，可以手动删除。\n", encoding="utf-8")
+            lines.append(f"已停用 Codex 规则：{path}（文件只剩说明，可手动删除）")
     lines.append(uninstall_hook(project))
     with db.transaction(actor="coordinator") as tx:
         _put(tx, {**record, "applied": False, "files": {}, "codexFiles": [],
