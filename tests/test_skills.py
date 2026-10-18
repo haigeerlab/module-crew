@@ -169,3 +169,34 @@ class PilotRound2SkillTest(unittest.TestCase):
         section = text.split("## 挂起与异常", 1)[1].split("\n## ", 1)[0]
         for words in ("挂起类【协调通知】", "恢复类【协调通知】", "不要**撤销任何提交"):
             self.assertIn(words, section)
+
+
+class CodexPackageTest(unittest.TestCase):
+    COMMON = ("只认协调会话发来的【用户答复】", "**必须**发【等待其他会话】", "不改公共文件", "不要自己勾 todo 末项",
+              "一律取集成分支的版本", "不要**撤销任何提交")
+
+    def codex(self):
+        text = (PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
+        m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+        return dict(line.split(": ", 1) for line in m.group(1).splitlines()), text
+
+    def test_manifests_agree(self):
+        import json
+        claude = json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        codex = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        iface = json.loads((PLUGIN_ROOT / "interface.json").read_text(encoding="utf-8"))
+        self.assertEqual((codex["name"], codex["skills"]), ("module-crew", "./codex-skills/"))
+        self.assertEqual(claude["version"], codex["version"])
+        self.assertEqual(iface["version"], codex["version"])
+
+    def test_both_crew_dev_share_the_rules(self):
+        meta, codex = self.codex()
+        _, claude = read("crew-dev")
+        self.assertEqual(meta["name"], "crew-dev")
+        for words in self.COMMON:
+            self.assertIn(words, claude)
+            self.assertIn(words, codex)
+        for words in ("提权", "用**原名**重新注册", "host-check", "没有钩子", "绝对路径"):
+            self.assertIn(words, codex)
+        self.assertNotIn("SendMessage", codex)
+        self.assertNotIn("CLAUDE.md", codex)

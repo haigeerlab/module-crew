@@ -20,7 +20,7 @@
   - 验收：Spec 验收 6、7
   - 文件：`module_crew/failure.py`、`tests/test_codex_host.py`
 
-- [ ] Task 5：`.codex-plugin/plugin.json` 与 Codex 版 crew-dev
+- [x] Task 5：`.codex-plugin/plugin.json` 与 Codex 版 crew-dev
   - 验收：Spec 验收 8
   - 文件：`.codex-plugin/plugin.json`、`codex-skills/crew-dev/SKILL.md`、`tests/test_skills.py`
 
