@@ -483,7 +483,13 @@ def push(project: str | os.PathLike, original: str) -> PushResult:
         return PushResult(plan.code, plan.lines)
     db = store.open_store(project)
     cfg = store.get(db, "config", "main")
-    pushed = _git(project, "push", plan.remote, f"{cfg['integrationBranch']}:refs/heads/{plan.branch}")
+    from module_crew import prepush
+    # crew-host-permissions: a one-time pass for the pre-push guard, spent whatever happens
+    prepush.write_token(db.path, f"refs/heads/{plan.branch}")
+    try:
+        pushed = _git(project, "push", plan.remote, f"{cfg['integrationBranch']}:refs/heads/{plan.branch}")
+    finally:
+        prepush.spend_token(db.path)
     if pushed.returncode != 0:
         return PushResult(4, [f"推送失败：{pushed.stderr.strip()[:300]}"])
     result = PushResult(0, [f"已推送到 {plan.remote}/{plan.branch}"], branch=plan.branch)

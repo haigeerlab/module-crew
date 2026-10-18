@@ -98,8 +98,9 @@ def hook_state(project: Path) -> dict:
         return {"installable": False, "installed": False, "path": str(path),
                 "reason": f"仓库设了 core.hooksPath（{hooks_path}），git 不读公共目录的钩子"}
     if path.exists():
+        from module_crew import prepush
         ours = _is_ours(path)
-        return {"installable": ours, "installed": ours, "path": str(path),
+        return {"installable": ours, "installed": ours and prepush.is_active(path), "path": str(path),
                 "reason": None if ours else "已有别的 pre-push 钩子，不覆盖"}
     return {"installable": True, "installed": False, "path": str(path), "reason": None}
 
@@ -330,9 +331,22 @@ def _put(tx, record: dict) -> None:
 
 
 def install_hook(project: Path) -> dict:
-    """Placeholder until the pre-push guard lands (Task 4)."""
-    return {"installed": False, "path": None, "reason": "推送守门还没实现", "line": "推送守门：还没实现"}
+    """Install the pre-push guard when nothing else owns the hook; never overwrite someone else's (key decision 5)."""
+    from module_crew import prepush
+    state = hook_state(project)
+    if not state["installable"]:
+        return {"installed": False, "path": state["path"], "reason": state["reason"],
+                "line": f"推送守门：没装——{state['reason']}；推送只能靠宿主的禁止规则，要不要另想办法请你决定"}
+    db = store.open_store(project)
+    cfg = store.get(db, "config", "main") or {}
+    prepush.install(Path(state["path"]), cfg.get("crewDir", ""), db.path)
+    return {"installed": True, "path": state["path"], "reason": None, "line": f"推送守门：已装 {state['path']}"}
 
 
 def uninstall_hook(project: Path) -> str:
-    return "推送守门：没有要删的"
+    from module_crew import prepush
+    path = Path(hook_state(project)["path"])
+    if path.exists() and _is_ours(path) and prepush.is_active(path):
+        prepush.disable(path)
+        return f"推送守门：已停用 {path}（文件改为空操作，可手动删除）"
+    return "推送守门：没有 module-crew 装的钩子"

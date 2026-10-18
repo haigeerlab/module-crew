@@ -16,7 +16,7 @@
 
 - [x] Checkpoint 1（report）：三种 checkout 下 plan／apply／remove 跑通，全量测试通过（2026-10-19，379 个测试通过；本机 codex-cli 0.162.1 用 `codex execpolicy check` 核对生成的规则：git push、rm -rf、git config --global 为 forbidden，git commit、git status、检查命令为 allow。偏差两处待最终验收复审：① 按项目「不删除文件」约束（tests/test_package.py），`remove` 不删 Codex 规则文件而是清空规则，凭证与钩子同样改为停用而不删除；② 记录放在运行配置 `config/main` 的 `permissions` 字段——状态库 config 只有 main 一个键）
 
-- [ ] Task 4：pre-push 钩子与放行凭证
+- [x] Task 4：pre-push 钩子与放行凭证
   - 验收：Spec 验收 5、6、9（钩子部分）
   - 文件：`module_crew/prepush.py`、`module_crew/permissions.py`、`module_crew/merge.py`、`tests/test_prepush.py`
 
