@@ -1,6 +1,6 @@
 # Implementation Plan: crew-host-permissions
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-host-permissions.md`（用户 2026-10-19 批准）。任务清单：`tasks/crew-host-permissions/todo.md`。
 
