@@ -133,8 +133,19 @@ class ApplyClaudeTest(PermCase):
         doc["permissions"]["allow"].append("Bash(make *)")
         path.write_text(json.dumps(doc), encoding="utf-8")
         permissions.remove(self.repo, "撤掉预配")
-        self.assertEqual(self.settings(self.repo)["permissions"], {"allow": ["Bash(make *)"], "deny": []})
+        self.assertEqual(self.settings(self.repo)["permissions"], {"allow": ["Bash(make *)"]})
         self.assertFalse(permissions.read_record(self.db)["applied"])
+
+    def test_remove_restores_the_original_text_byte_for_byte(self):
+        mine = self.wt["b"] / ".claude" / "settings.local.json"
+        mine.parent.mkdir()
+        original = '{"permissions":{"allow":["Bash(ls *)"]},\n "model":"x"}\n'
+        mine.write_text(original, encoding="utf-8")
+        permissions.apply(self.repo, "预配")
+        self.assertNotEqual(mine.read_text(encoding="utf-8"), original)
+        permissions.remove(self.repo, "撤掉")
+        self.assertEqual(mine.read_text(encoding="utf-8"), original)
+        self.assertEqual(json.loads((self.repo / ".claude" / "settings.local.json").read_text(encoding="utf-8")), {})
 
     def test_cli_apply_exit_codes(self):
         self.assertEqual(self.run_cli("permissions", "apply", "--original", " ").returncode, 3)

@@ -265,11 +265,12 @@ def apply(project: str | os.PathLike, original: str | None) -> list[str]:
             lines.append(f"已写 Codex 规则：{path}（{TRUST_TEXT[t['trust']]}）")
             continue
         doc, _ = _read_settings(path)
+        before = path.read_text(encoding="utf-8") if path.exists() else None
         perms = doc.setdefault("permissions", {})
         for key in ("allow", "deny"):
             perms.setdefault(key, []).extend(t[key])
         _write_json(path, doc)
-        added = files.setdefault(str(path), {"allow": [], "deny": []})
+        added = files.setdefault(str(path), {"allow": [], "deny": [], "original": before})
         for key in ("allow", "deny"):
             added[key] += [e for e in t[key] if e not in added[key]]
         lines.append(f"已写 {path}：追加放行 {len(t['allow'])} 条、禁止 {len(t['deny'])} 条")
@@ -299,15 +300,31 @@ def remove(project: str | os.PathLike, original: str | None) -> list[str]:
             docs[name] = doc
     lines = []
     for name, doc in docs.items():
+        rec = files[name]
+        before = rec.get("original")
+        try:
+            first = json.loads(before) if before else {}
+        except ValueError:
+            first = None
+        had = (first or {}).get("permissions") if isinstance((first or {}).get("permissions"), dict) else {}
         perms = doc.get("permissions") or {}
         gone = 0
         for key in ("allow", "deny"):
             if key in perms:
-                keep = [e for e in perms[key] if e not in files[name].get(key, [])]
+                keep = [e for e in perms[key] if e not in rec.get(key, [])]
                 gone += len(perms[key]) - len(keep)
                 perms[key] = keep
-        _write_json(Path(name), doc)
-        lines.append(f"已从 {name} 删除 module-crew 追加的 {gone} 条")
+                if not keep and key not in (had or {}):
+                    del perms[key]          # the list module-crew created
+        if "permissions" in doc and not perms and "permissions" not in (first or {}):
+            del doc["permissions"]
+        path = Path(name)
+        if before is not None and first == doc:
+            path.write_text(before, encoding="utf-8")       # nothing else changed: the user's own text, byte for byte
+            lines.append(f"已从 {name} 删除 module-crew 追加的 {gone} 条，文件恢复为 apply 之前的原文")
+        else:
+            _write_json(path, doc)
+            lines.append(f"已从 {name} 删除 module-crew 追加的 {gone} 条")
     for name in record.get("codexFiles") or []:
         path = Path(name)
         if path.exists() and _codex_is_ours(path):
@@ -379,8 +396,9 @@ def follow(project: str | os.PathLike, name: str) -> str | None:
             codex_files.add(str(path))
         else:
             doc, _ = _read_settings(path)
+            before = path.read_text(encoding="utf-8") if path.exists() else None
             perms = doc.setdefault("permissions", {})
-            added = files.setdefault(str(path), {"allow": [], "deny": []})
+            added = files.setdefault(str(path), {"allow": [], "deny": [], "original": before})
             for key in ("allow", "deny"):
                 perms.setdefault(key, []).extend(target[key])
                 added[key] += [e for e in target[key] if e not in added[key]]
