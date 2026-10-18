@@ -85,6 +85,12 @@ def _status(as_json: bool) -> int:
         print(f"  模块 {m['done']}/{m['total']} 完成；spec-guard 当前：{m['activeModule'] or '无'}；spec-guard 进行中：{'、'.join(m['inProgress']) or '无'}")
         print("  （这是 spec-guard 按能力图算出的进度；由 module-crew 开工的模块见上面的「会话与待办」）")
     print("协调会话：Claude 桌面版；模块会话：Claude 或 Codex 桌面版")
+    cadence = start.review_cadence(".")
+    try:
+        set_ = "reviewCadence" in json.loads((start._toplevel(Path(".")) / ".agent" / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, AttributeError, TypeError):
+        set_ = False
+    print(f"评审节奏：{cadence}" + ("" if set_ else "（项目没有设置 reviewCadence，按默认）"))
     return 3 if report.blocked else 0
 
 

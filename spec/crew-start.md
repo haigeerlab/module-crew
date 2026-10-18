@@ -14,7 +14,7 @@ worktree、会话登记、开工说明一次准备好，协调会话再用桌面
 **范围内**
 
 - `module_crew/start.py` 与命令 `module-crew start plan`、`module-crew start prepare`。
-- 运行配置（`config/main`）的字段：`projectShort`、`integrationBranch`、`maxModules`、`crewDir`。
+- 运行配置（`config/main`）的字段：`projectShort`、`integrationBranch`、`maxModules`、`crewDir`；第一次 prepare 时另记 `reviewCadence`（2026-10-19 修订，见 crew-review-nearby）。
 - 开工说明正文的生成；开工批准事项（`item`，`kind: "start"`）。
 - `skills/crew-coordinator/SKILL.md` 增加「开工」一节。
 
@@ -82,7 +82,7 @@ bin/module-crew start prepare <模块 id>… (--original <原话> | --original-f
 协调会话：<项目简称>-coord（你只和它说话）
 开会话依据：用户批准事项 #<编号>
 
-这一步只做：用 /spec 写 spec/<id>.md 与 tasks/<id>/plan.md、todo.md，写好后给协调会话发【交审】（节点 Spec、Plan 各一条，或接口提案）。
+这一步只做：（按项目 reviewCadence，2026-10-19 修订）separate（默认）——用 /spec 只写 spec/<id>.md，交审节点 Spec，Spec 批准的【用户答复】到了再写 plan.md、todo.md 交审节点 Plan；combined——Spec 与 Plan 一起写、各发一条【交审】，遇新决策、范围不清或高风险不可逆改动仍先只交 Spec。
 收到开工类【协调通知】之前不要开始构建。
 
 接口：<所依赖模块的 Spec 路径，逐行；没有写「无」>
@@ -153,3 +153,4 @@ README 的「一次完整流程」从这里开始写：`status` → `start plan`
 - 2026-10-18：`start prepare` 建好 worktree 后用 interface 1.1 的 `checkoutRole.setModule` 设角色标记，集成 checkout 没有角色时用 `setCoordinator`；设角色失败只报告、不算中途失败；删去「角色标记待 spec-guard 0.68.0」提示与对应未决问题，增加验收 9。原因：interface 1.1 定稿 `checkoutRole`；来源：spec-guard 负责人通知 interface.json 1.1 定稿（spec-guard 分支 `claude/module-concurrency` 提交 6231abc，0.68.0 未发版），用户 2026-10-18 复审批准。
 - 2026-10-18：`start prepare` 输出提醒协调会话注册自己的邮箱名 `<简称>-coord`；协调会话 skill「开工」加这一步，并写明开会话工具强制附带的背景要标明「不是开工说明」。原因：试点发现缺口 D 与宿主限制 F；来源：第 7 关试点（`docs/pilot-report.md`），用户 2026-10-18 批准。
 - 2026-10-18：`start plan` 不提议已有在用会话（含挂起）的模块；已合入的模块不占名额；没有可开的模块时逐个写原因（关键决策 6、接口约定），增加验收 10–12。原因：试点问题 H、O、P；来源：第二轮试点（`docs/pilot-report.md` 第二轮一节），用户 2026-10-18 批准修法。
+- 2026-10-19：开工说明的「这一步只做」按项目 spec-guard 配置 `reviewCadence` 写（`separate` 默认先只交 Spec，`combined` 一起交）；运行配置另记 `reviewCadence`；`status` 显示生效的评审节奏。原因：用户决定 47（R13，遵守项目评审节奏）；来源：用户 2026-10-19 批准修订后的 crew-review-nearby Spec 与 Plan（Task 10）。

@@ -226,7 +226,8 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
     with db.transaction(actor=coord) as tx:
         if "crewDir" not in (tx.get("config", "main") or {}):
             from module_crew.hostcheck import plugin_version
-            tx.put("config", "main", {**(tx.get("config", "main") or {}), **cfg, "pluginVersion": plugin_version()},
+            tx.put("config", "main", {**(tx.get("config", "main") or {}), **cfg, "pluginVersion": plugin_version(),
+                                      "reviewCadence": review_cadence(project)},
                    action="set")
         if not any(v.get("role") == "coordinator" and v.get("status") == "active" for v in tx.records("session").values()):
             tx.put("session", coord, {"role": "coordinator", "host": "claude-desktop", "status": "active"},
@@ -253,7 +254,8 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
                                 + ("；git 已留下分支 " + m + "，请决定是否删除" if left else ""))
             break
         relay = f"{short}-{m}"
-        text = render_kickoff(m, info.get(m, {}), path, cfg, relay, coord, approval, host_id)
+        text = render_kickoff(m, info.get(m, {}), path, {**cfg, "reviewCadence": review_cadence(project)}, relay, coord,
+                              approval, host_id)
         with db.transaction(actor=coord) as tx:
             tx.put("session", relay, {"role": "dev", "host": host_id, "status": "active",
                                       "module": m, "worktree": str(path)}, action="registered")
@@ -318,6 +320,15 @@ def _set_role(roles: tuple[Path, dict] | str, key: str, checkout: Path, module: 
     return f"角色标记：{want}"
 
 
+def _first_step(module: str, cadence: str) -> str:
+    """R13: what the module does before its first approval, by the project's review cadence."""
+    if cadence == "combined":
+        return (f"这一步只做：用 /spec 写 spec/{module}.md 与 tasks/{module}/plan.md、todo.md，写好后给模块协调发【交审】"
+                "（节点 Spec、Plan 各一条，或接口提案）。项目评审节奏：combined；遇到新决策、范围不清或高风险不可逆改动时仍先只交 Spec。")
+    return (f"这一步只做：用 /spec 只写 spec/{module}.md，写好后给模块协调发【交审】（节点 Spec，或接口提案）；"
+            f"Spec 批准的【用户答复】到了再写 tasks/{module}/plan.md、todo.md 交审（节点 Plan）。项目评审节奏：separate。")
+
+
 def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: str, coord: str, approval: int,
                    host: str = "claude-desktop") -> str:
     deps = "\n".join(f"spec/{d}.md" for d in info.get("dependsOn") or []) or "无"
@@ -331,7 +342,7 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
         f"协调会话：{coord}（你只和它说话）",
         f"开会话依据：用户批准事项 C{approval}",
         "",
-        f"这一步只做：用 /spec 写 spec/{module}.md 与 tasks/{module}/plan.md、todo.md，写好后给协调会话发【交审】（节点 Spec、Plan 各一条，或接口提案）。",
+        _first_step(module, cfg.get("reviewCadence", "separate")),
         "收到开工类【协调通知】之前不要开始构建。",
         "",
         f"接口：\n{deps}",

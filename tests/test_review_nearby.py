@@ -467,3 +467,34 @@ class NoReviewerTest(NearbyCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+from helpers import StartCase  # noqa: E402
+from module_crew import start  # noqa: E402
+
+
+class CadenceTest(StartCase):
+    """Task 10: the module follows the project's review cadence (R13)."""
+
+    def kickoff(self, res, m):
+        db = store.open_store(self.repo)
+        return store.read_body(db, next(p for p in res.prepared if p["id"] == m)["kickoff"])
+
+    def test_separate_by_default_then_combined(self):
+        res = start.prepare(self.repo, ["b"], "开 b", short="shop")
+        text = self.kickoff(res, "b")
+        self.assertIn("只写 spec/b.md", text)
+        self.assertIn("Spec 批准的【用户答复】到了再写 tasks/b/plan.md", text)
+        self.assertIn("评审节奏：separate", text)
+        self.assertIn("评审节奏：separate（项目没有设置 reviewCadence，按默认）", self.run_cli("status", cwd=self.repo).stdout)
+        cfg = self.repo / ".agent" / "config.json"
+        cfg.parent.mkdir(exist_ok=True)
+        cfg.write_text('{"version": 1, "reviewCadence": "combined"}\n', encoding="utf-8")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "combined cadence")
+        res = start.prepare(self.repo, ["c"], "开 c")
+        text = self.kickoff(res, "c")
+        self.assertIn("Spec、Plan 各一条", text)
+        self.assertIn("评审节奏：combined", text)
+        self.assertIn("仍先只交 Spec", text)
+        self.assertIn("评审节奏：combined", self.run_cli("status", cwd=self.repo).stdout)
