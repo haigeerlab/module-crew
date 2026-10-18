@@ -1,6 +1,6 @@
 # Implementation Plan: crew-review-nearby
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-review-nearby.md`（用户 2026-10-19 批准，同日修订待复审）。任务清单：`tasks/crew-review-nearby/todo.md`。
 
