@@ -80,3 +80,62 @@ Spec 修订 ce26d8b（crew-merge、crew-start、crew-review-batch），实现 79
 ## 验收
 
 - 2026-10-18 用户批准：I、J、K 修复验收通过，第 7 关最终验收通过。
+
+---
+
+# 第二轮试点（默认权限）
+
+> 2026-10-18。同一试点项目，搭场提交 637775b（新增 caesar、vowels、acronym 三个模块与检查开关 `tests/test_gate.py`）。
+> 插件 a6226c5，spec-guard 0.68.0。协调会话与三个模块会话**都用默认权限模式**（第一轮是 auto），专门看弹窗对并行流程的影响。
+> 原始时间线：`crew-pilot-notes.md` 的「## 第二轮」一节。
+
+## 场景与结果
+
+| 场景 | 做了什么 | 结果 |
+|---|---|---|
+| 0 换协调会话 | 新会话加载 skill → `status` → 用户同意 → `takeover pilot-coord` | ✅ 状态与接管前一致；agent-relay 重新注册要传接管参数 |
+| 1 开工 | `start plan` 提议三个 → 用户答「3」→ `start prepare` → 三个模块会话各一轮交回 Spec／Plan | ✅ 6 条交审、`review batch` 带「依赖」「并行边界」两段 |
+| 2 挂起与恢复 | 批准 caesar、acronym；`suspend vowels`；后来 `resume vowels` 并批准它的 Spec／Plan | ✅ 挂起不占名额、恢复重新占名额；问题 H、I、L、M |
+| 3 崩溃换会话 | caesar 已交最终验收时归档它的会话 → `resume-kit` → `takeover pilot-caesar` → 原 worktree 开新会话 | ✅ 新会话没有重做、没有重发；问题 J（靠 `status` 自己纠正） |
+| 4 合并失败退回 | 打开检查开关后 `merge run` | ✅ 退出码 5、撤销合并、发退回通知；**问题 K**：模块要自己撤销那次撤销才能重新合入 |
+| 5 退回串行 | vowels 构建中 `serial` → `start plan` 退出码 3；vowels 照常交审、合并；`serial --off` | ✅ 已开模块不受影响；问题 O、P |
+| 收尾 | 三个 `merge cleanup`，列出待退役邮箱名 | ✅ worktree 收回、分支保留 |
+
+最终：本地 main 65e3f1c，33 个测试通过，未推送；状态库未关事项 0，等待单只剩第一轮的 #25。
+第一轮修过的 B（自动勾选）、C（不给排队中的模块发同步）、D（提醒注册协调邮箱名）、E（多编号批准）、G（批次两段）都在实地生效。
+
+## 权限弹窗（默认权限）
+
+| 会话 | 弹窗 | 备注 |
+|---|---|---|
+| 协调会话 | 至少 1 次 | 约 12:57 有一次；往共享笔记目录追加内容的命令疑似也在等确认 |
+| caesar（原会话） | 有，次数未记 | 模式中途变成 acceptEdits |
+| caesar（恢复会话） | 未见 | 模式保持 default |
+| vowels | 至少 2 次 | 构建时、读收尾通知时；模式变成 acceptEdits |
+| acronym | 至少 2 次 | 13:15 一条只读命令被中断（用户说没点拒绝，原因不明），那一轮中止；模式变成 acceptEdits |
+
+结论：默认权限下每个模块会话每轮都可能停在弹窗上，协调会话只能从「需要用户」状态看出来、不能替用户点；
+三个模块会话的权限模式都从 default 抬到了 acceptEdits，skill 只在开会话那一刻核对，之后没人发现。
+
+## 发现的问题
+
+| # | 问题 | 影响 | 性质 |
+|---|---|---|---|
+| G | 空闲的桌面版会话收不到 agent-relay 的叫醒：`bridge_send` 全是 queued，警告「Claude session is not running」 | 全程靠协调会话用桌面版跨会话消息手动叫醒 | 宿主／agent-relay 行为；module-crew skill 没写怎么办 |
+| H | `start plan` 把已开工、已挂起的 vowels 当成新模块提议 | 用户若答应会重复开工 | 缺陷（crew-start） |
+| I | 协调会话挂起或恢复模块时没有协议消息：【协调通知】没有这两种类型，`suspend` 也不生成通知 | 只能发普通消息，`protocol check` 报 unknown-kind | 契约缺口（session-protocol） |
+| J | 恢复说明的「当前」一行写「可以构建」，没提未关的最终验收交审 #45；还带一句「刚压缩过」 | 新会话可能重做或重发 | 缺陷（crew-recovery-hooks） |
+| K | 合并检查失败时用 `git revert` 撤销：模块分支的提交已进入集成分支历史，再合并带不进任何改动，同步基线还会删掉模块自己的文件 | acronym 自己撤销那次撤销才绕过去；通知没提示 | **严重缺陷**（crew-merge） |
+| L | `merge run` 给挂起中的 vowels 发「同步基线…后继续」 | 「继续」与挂起矛盾，它的 Spec／Plan 当时还没批准 | 缺陷（crew-merge） |
+| M | `resume` 不收用户原话，`suspend` 要 | 恢复的同意不进状态库 | 不一致（crew-failure） |
+| N | 请用户给原话时没给可复制的句子 | 用户不知道怎么回 | 已修（a6226c5） |
+| O | 已合入的模块要等 `merge cleanup` 才让出名额 | 串行前 `start plan` 显示「空位：0」 | 不一致（crew-start） |
+| P | `start plan` 退出码 3 却不说原因（能力图上剩下的 wordcount 是 spec-guard 的当前模块、report 等它） | 协调会话没有可以告诉用户的阻塞项 | 缺陷（crew-start） |
+| 漂移 | 模块会话的权限模式中途变宽，skill 没有后续核对 | 违反「模块会话不比协调会话更宽」 | 缺口（crew-coordinator skill） |
+
+小项（不单独修，写进对应修法或文档）：合并队列「队首」按交审事项号排，skill 没写；退回原因只给 unittest 的点阵，不说哪个测试失败；
+`status` 的「进行中：wordcount」其实是 spec-guard 的当前模块，没开工；指纹 16 位与 64 位都被接受（符合契约）。
+
+## 修复
+
+修法 2026-10-18 交用户审中；批准后在这里补修法表与提交号。
