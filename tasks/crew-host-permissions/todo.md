@@ -24,7 +24,7 @@
   - 验收：Spec 验收 7、8
   - 文件：`module_crew/start.py`、`module_crew/permissions.py`、`module_crew/__main__.py`、`tests/test_permissions.py`
 
-- [ ] Task 6：skill 与 README
+- [x] Task 6：skill 与 README
   - 验收：Spec 验收 10
   - 文件：`skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`codex-skills/crew-dev/SKILL.md`、`README.md`、`tests/test_skills.py`
 

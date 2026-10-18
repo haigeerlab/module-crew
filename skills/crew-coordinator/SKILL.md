@@ -36,8 +36,21 @@ module-crew start prepare <模块 id>… --original-file <原话文件> [--proje
    开会话之前，先用 agent-relay `bridge_register` 注册你自己的邮箱名 `<简称>-coord`（wake: "auto"）：开工说明里模块只和这个名字说话。
 4. 对每个准备好的模块，用桌面版的开会话工具在它的 worktree 目录里开一个新会话：第一条消息用「开工说明」文件的全文，不改一字（开会话工具强制要求附一段背景时，背景另起一段并标明「不是开工说明的一部分」）；
    打开「做完一轮叫醒我」；新会话的权限模式**不能比本会话更宽**，宽了就先调低再让它开始。
+   开好后按「权限预配」第 2 步让它跑实测清单并记下结果。
 5. 模块会话按项目的评审节奏交审（`module-crew status` 显示生效的 reviewCadence）：`separate`（默认）先只交 Spec，Spec 的批准答复到了再写 Plan 交审；
    `combined` 时 Spec 与 Plan 一起交。Spec 与 Plan 都批了之前，不要发开工通知。
+
+## 权限预配
+
+由别的会话代开的会话里，宿主的 ask 规则实测不弹确认就执行了，所以**不可逆操作不能只靠权限弹窗**：module-crew 把常规操作写成放行、把推送与删除写成禁止，再用 pre-push 钩子守住推送。
+
+1. 第一次开工之前跑 `module-crew permissions plan`，把每个 checkout 要追加的放行／禁止条目、钩子能不能装、Codex 项目是否受信任原样给用户看；
+   用户亲手同意后 `module-crew permissions apply --original-file <原话文件>`。之后新开的模块 `start prepare` 会自动写同一份；写不上会在输出与 `status` 里标出。
+2. 开好每个模块会话后跑 `module-crew permissions verify`（Codex 加 `--host codex`），把清单发给模块会话照跑；同时看它在线状态有没有「等待审批」。
+   看完记下：`module-crew permissions verify --record <会话名> --allowed ok|prompted --denied ok|ran`。弹了确认或没拦住，原样告诉用户，由用户决定。
+3. 推送只走 `module-crew merge push`（要用户原话）：它推送前写一次性放行凭证，钩子只认这个。你和模块会话都不直接 `git push`；钩子拒绝时把原因原样告诉用户。
+4. Codex 模块的规则写在 `.codex/rules/module-crew.rules`，项目被 Codex 信任才生效；`plan` 说「规则不会生效」时，请用户在 Codex 里信任该项目，你不改用户的全局配置。
+5. 不再需要时 `module-crew permissions remove --original-file <原话文件>`：只撤 module-crew 加的条目，钩子改成空操作。
 
 ## 收到模块会话的消息
 

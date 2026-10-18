@@ -142,6 +142,7 @@ module-crew takeover <邮箱名> --original(-file)  换会话接管
 module-crew source add|remove|list|map           批准来源（收件枢纽、负责人）与对照
 module-crew review note [--then-batch]|batch --for-hub   审查结论、返工、提请批准正文（一个模块一条）
 module-crew ticket close <编号> --reason …        协调会话关等待单
+module-crew permissions plan|apply|verify|remove  宿主权限预配与推送守门
 module-crew hook session-start|prompt            插件钩子入口（只读，永远退出码 0）
 ```
 
@@ -155,11 +156,24 @@ python3 -m unittest discover -s tests -v
 
 需求与设计在 `docs/requirements-record.md`、`spec/CAPABILITY-MAP.md` 与 `spec/<模块>.md`。
 
+## 权限预配
+
+由别的会话代开的会话里，宿主的 ask 规则实测不弹确认就执行了，所以不可逆操作不能只靠权限弹窗。module-crew 把第 44 条范围内的常规操作写成宿主认的放行规则，把推送、删除、联网安装、改全局配置写成禁止，再用 git 的 pre-push 钩子守住推送：
+
+1. `module-crew permissions plan`：只读预览每个 checkout（集成 checkout 与各模块 worktree）要追加什么、文件有没有被 git 忽略、钩子能不能装、Codex 项目是否受信任。
+2. `module-crew permissions apply --original-file <用户原话>`：Claude 写 `.claude/settings.local.json`（只追加条目），Codex 模块写 `.codex/rules/module-crew.rules`；有一个文件不能写就全部不写。之后 `start prepare` 新开的模块自动跟随。
+3. 开好会话后 `module-crew permissions verify`：四条应直接运行、一条应被拒的实测清单；结果用 `verify --record` 记下，`status` 显示每个会话最近一次实测，没测过写「权限未实测」。
+4. 推送只经 `module-crew merge push`：钩子拒绝模块 worktree 的推送，以及集成 checkout 上没有一次性放行凭证的推送。你自己在终端推送可以加 `--no-verify`。仓库设了 `core.hooksPath`（如 husky）或已有 pre-push 钩子时不装，`plan` 会写明。
+5. Codex 的项目级规则只在项目被 Codex 信任后生效；module-crew 不改你的全局配置，只提示。
+6. `module-crew permissions remove --original-file <用户原话>`：只撤 module-crew 加的条目；按「不删文件」的约定，Codex 规则文件清空、钩子改成空操作，可以手动删除。
+
+spec-guard 的命令入口路径带版本号，暂不放进放行清单。细节见 [spec/crew-host-permissions.md](spec/crew-host-permissions.md)。
+
 ## 尚未验证
 
 两轮试点（第一轮 auto 权限、第二轮默认权限）已经实地验证：真实 spec-guard 0.68.0、会话间真实收发、开工、批量审批、合并与退回、
 挂起与恢复、换协调会话与换模块会话、退回串行、收尾与推送到本机远端。还没验证的：
 
 - 用 `gh` 真正开 PR（试点远端是本机裸仓库，只打印 PR 正文）。
-- 预配项目工具许可能否减少模块会话的权限弹窗。
+- 权限预配在真实宿主里的效果（代开的模块会话里放行不弹窗、禁止规则拦得住）：要按 `permissions verify` 实地跑一遍。
 - 挂起、恢复类【协调通知】（契约 v1.8）在真实会话之间收发。

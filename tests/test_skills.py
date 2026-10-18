@@ -230,3 +230,19 @@ class WithdrawRuleTest(unittest.TestCase):
         section = text.split("## 接入收件枢纽", 1)[1].split("\n## ", 1)[0]
         self.assertIn("【撤回】", section)
         self.assertIn("枢纽回执给的事项号（契约 v1.9）", section)
+
+
+class PermissionWordsTest(unittest.TestCase):
+    """crew-host-permissions acceptance 10."""
+
+    def test_coordinator_permissions_section(self):
+        _, text = read("crew-coordinator")
+        for words in ("## 权限预配", "ask 规则实测不弹", "permissions plan", "permissions apply --original-file",
+                      "permissions verify --record", "merge push", "--host codex", "信任该项目", "permissions remove"):
+            self.assertIn(words, text)
+
+    def test_dev_skills_do_not_push_and_run_the_checklist(self):
+        codex = (PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
+        for text in (read("crew-dev")[1], codex):
+            for words in ("不推送", "pre-push 钩子", "权限实测清单", "本会话都允许"):
+                self.assertIn(words, text)
