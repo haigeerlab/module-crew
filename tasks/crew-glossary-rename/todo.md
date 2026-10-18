@@ -2,7 +2,7 @@
 
 测试命令：`python3 -m unittest discover -s tests -v`
 
-- [ ] Task 1：旧称扫描测试（先失败）
+- [x] Task 1：旧称扫描测试（先失败）——改名前命中 255 处（含「收件枢纽」与「枢纽」重复计数），暂标 expectedFailure，Task 5 去掉
   - 验收：Spec 验收 1（护栏）
   - 文件：`tests/test_glossary.py`
 
