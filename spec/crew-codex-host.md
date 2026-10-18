@@ -1,6 +1,6 @@
 # Spec: crew-codex-host
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved ff38203b213d -->
 
 > 能力图模块 `crew-codex-host`（第二版）。需求来源：`docs/requirements-record.md` B7（第二版 Codex 前置核对清单：`.git` 沙箱提权最关键、重启不加载、
 > 身份丢失、只能提供 skill、钩子信任、压缩后重放；协调会话不放 Codex）与第 13 节。宿主事实取自 decision-inbox `docs/host-differences.md`
