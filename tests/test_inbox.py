@@ -60,6 +60,48 @@ class CliTest(InboxCase):
         self.assertEqual(r.returncode, 2)
 
 
+
+class TicketCloseTest(RepoCase):
+    def setUp(self):
+        super().setUp()
+        from module_crew import store
+        self.db, _ = store.init_store(self.repo)
+        seed_sessions(self.db)
+        with self.db.transaction(actor="t") as tx:
+            self.n = tx.allocate_number()
+            tx.put("ticket", str(self.n), {"state": "open", "from": "shop-a", "relayId": 9, "text": "等", "waitingFor": "x",
+                                           "what": "补勾", "closedReason": None, "closedBy": None}, action="opened")
+
+    def test_happened_and_user(self):
+        from module_crew import store
+        inbox.close_ticket(self.db, self.n, "happened", "已在集成分支补勾 1c34665")
+        rec = store.get(self.db, "ticket", str(self.n))
+        self.assertEqual((rec["state"], rec["closedReason"]), ("closed", 3))
+        self.assertEqual(store.events(self.db, key=str(self.n))[-1]["data"]["note"], "已在集成分支补勾 1c34665")
+        with self.db.transaction(actor="t") as tx:
+            m = tx.allocate_number()
+            tx.put("ticket", str(m), dict(rec, state="open", closedReason=None), action="opened")
+        inbox.close_ticket(self.db, m, "user", "关掉 #%d" % m)
+        self.assertEqual(store.get(self.db, "ticket", str(m))["closedReason"], 4)
+
+    def test_refusals(self):
+        from module_crew import store
+        before = store.events(self.db)
+        for args in ((999, "happened", "x"), (self.n, "happened", " "), (self.n, "other", "x")):
+            with self.assertRaises(inbox.AnswerRefused):
+                inbox.close_ticket(self.db, *args)
+        self.assertEqual(store.events(self.db), before)
+        inbox.close_ticket(self.db, self.n, "user", "关掉")
+        with self.assertRaises(inbox.AnswerRefused):
+            inbox.close_ticket(self.db, self.n, "user", "再关")
+
+    def test_cli(self):
+        out = self.run_cli("ticket", "close", str(self.n), "--reason", "happened", "--original", "已补勾", cwd=self.repo)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        out = self.run_cli("ticket", "close", str(self.n), "--reason", "happened", "--original", "已补勾", cwd=self.repo)
+        self.assertEqual(out.returncode, 3)
+
+
 if __name__ == "__main__":
     unittest.main()
 

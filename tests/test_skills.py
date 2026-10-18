@@ -106,3 +106,14 @@ class PilotFixesTest(unittest.TestCase):
     def test_dev_does_not_tick_after_approval(self):
         _, text = read("crew-dev")
         self.assertIn("不要自己勾 todo 末项", text.split("## 收到答复", 1)[1].split("\n## ", 1)[0])
+
+
+class PilotCloseoutTest(unittest.TestCase):
+    def test_tickets_and_retire(self):
+        _, text = read("crew-coordinator")
+        section = text.split("## 等待单", 1)[1].split("\n## ", 1)[0]
+        for words in ("【已恢复】", "ticket close", "--reason happened", "--reason user"):
+            self.assertIn(words, section)
+        merge_section = text.split("## 合并与收尾", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("/agent-relay:collaboration", merge_section)
+        self.assertIn("不要自己去找或猜", merge_section)

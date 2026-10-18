@@ -89,7 +89,9 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 3. `module-crew merge run`（第一次加 `--check-command "<项目 Spec 里的完整检查命令>"`）：一次只合队首一个；按输出逐条发通知，发完再跑下一次。
    - 退出码 5：模块被退回（检查失败已撤销，或冲突已中止），把退回类【协调通知】发给它；3：合并前清单不过，按原因处理；4：撤销本身失败，交用户。
    - 检查命令要改，先问用户，再加 `--replace-check`。
-4. 模块合入后、用户同意收回时：`module-crew merge cleanup <模块> --original-file <原话文件>`，再用 agent-relay 退役那个邮箱名。
+4. 模块合入后、用户同意收回时：`module-crew merge cleanup <模块> --original-file <原话文件>`。输出列出待退役的邮箱名：
+   逐个交给用户确认，用户同意后由用户在 Claude Code 里用 `/agent-relay:collaboration` 退役（Codex 用 collaboration-ops skill，或用户自己运行 agent-relay 的退役脚本）；
+   不要自己去找或猜 agent-relay 脚本的路径。输出里列出的还开着的等待单，按下面「等待单」一节处理。
 5. 一批合完：`module-crew merge push-plan` 把远端、新分支、提交与 PR 正文给用户看；用户明确授权后 `module-crew merge push --original-file <原话文件>`。
    推送去的是新分支 `crew/batch-<号>`，PR 由用户在远端合并；不开自动合并，不推集成分支本身。
 
@@ -104,6 +106,16 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 - **用户想收手**：`module-crew serial --original-file <原话文件>` 退回串行，之后不再开新模块，已开的模块照常交审、合并、收尾；
   提醒用户用 `/spec-guard:config` 关掉 `moduleConcurrency`。用户说恢复时 `module-crew serial --off --original-file <原话文件>`。
 - 异常停点、同一个 gate 再次挡住、要改能力图：按 spec-guard 的规则办，把选项与代价交用户决定，不替用户重试。
+
+## 等待单
+
+- 等待单（模块发的【等待其他会话】）按契约由发单的模块自己关：你办好它等的事之后告诉它，它发【已恢复】并写「结束：#编号」。
+- 模块已经收回、不能再发消息，或用户说「关掉 #编号」时，由你关：
+
+```bash
+module-crew ticket close <编号> --reason happened --original-file <说明文件>   # 所等的事已发生，说明写清怎样发生的
+module-crew ticket close <编号> --reason user --original-file <用户原话文件>    # 用户关闭
+```
 
 ## 转达用户的决定
 

@@ -20,6 +20,22 @@ class CleanupTest(MergeCase):
         self.assertFalse(self.wt["b"].exists())
         self.assertIn("b", git(self.repo, "branch", "--list", "b"))
         self.assertEqual(store.get(self.db, "session", "shop-b")["status"], "retired")
+        text = " ".join(res.lines)
+        self.assertIn("待退役的邮箱名：shop-b", text)
+        self.assertIn("/agent-relay:collaboration", text)
+        self.assertNotIn(".py", text)
+
+    def test_cleanup_lists_open_tickets(self):
+        self.approve_final("b", 1)
+        self.assertEqual(merge.run(self.repo, check_command="python3 -c pass").code, 0)
+        with self.db.transaction(actor="t") as tx:
+            n = tx.allocate_number()
+            tx.put("ticket", str(n), {"state": "open", "from": "shop-b", "relayId": 9, "text": "等", "waitingFor": "x",
+                                      "what": "补勾", "closedReason": None, "closedBy": None}, action="opened")
+        res = merge.cleanup(self.repo, "b", "b 可以收回")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertIn(f"#{n}", " ".join(res.lines))
+        self.assertEqual(store.get(self.db, "ticket", str(n))["state"], "open")
 
     def test_cleanup_refused(self):
         res = merge.cleanup(self.repo, "c", "收回 c")          # not merged
@@ -61,9 +77,15 @@ class PushTest(MergeCase):
         bin_dir.mkdir()
         log = self.tmp / "gh-args.txt"
         gh = bin_dir / "gh"
-        gh.write_text(f"#!/bin/sh\necho \"$@\" > {log}\necho https://example.invalid/pr/1\n")
+        seen = self.tmp / "gh-body-seen.txt"
+        gh.write_text(f"#!/bin/sh\necho \"$@\" > {log}\nprev=\n"
+                      f"for a; do [ \"$prev\" = --body-file ] && [ -f \"$a\" ] && echo yes > {seen}; prev=$a; done\n"
+                      "echo https://example.invalid/pr/1\n")
         gh.chmod(0o755)
         os.environ["MODULE_CREW_GH"] = str(gh)
+        # fetch URL looks like GitHub; pushes still go to the local bare repository
+        git(self.repo, "remote", "set-url", "origin", "https://github.com/acme/shop.git")
+        git(self.repo, "remote", "set-url", "--push", "origin", str(self.remote))
         res = merge.push(self.repo, "推吧")
         self.assertEqual(res.code, 0, res.lines)
         self.assertEqual(git(self.remote, "rev-parse", res.branch).strip(), git(self.repo, "rev-parse", "main").strip())
@@ -71,6 +93,7 @@ class PushTest(MergeCase):
         args = log.read_text()
         self.assertIn(f"--base main --head {res.branch}", args)
         self.assertNotIn("auto", args)
+        self.assertTrue(seen.exists(), "PR body file must exist when gh runs (pilot problem J)")
         rec = store.get(self.db, "item", str(res.record))
         self.assertEqual((rec["kind"], rec["remoteBranch"], rec["pr"]), ("push", res.branch, "https://example.invalid/pr/1"))
         self.assertEqual(rec["answer"]["original"], "推吧")
@@ -81,6 +104,20 @@ class PushTest(MergeCase):
         self.assertEqual(res.code, 0, res.lines)
         self.assertIn("PR 正文", " ".join(res.lines))
         self.assertIsNone(store.get(self.db, "item", str(res.record))["pr"])
+
+    def test_non_github_remote_prints_body_even_with_gh(self):
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        log = self.tmp / "gh-args.txt"
+        gh = bin_dir / "gh"
+        gh.write_text(f"#!/bin/sh\necho called > {log}\nexit 1\n")
+        gh.chmod(0o755)
+        os.environ["MODULE_CREW_GH"] = str(gh)
+        res = merge.push(self.repo, "推吧")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertFalse(log.exists())
+        self.assertIn("PR 正文", " ".join(res.lines))
+        self.assertIn(git(self.repo, "rev-parse", "main").strip(), git(self.remote, "rev-parse", res.branch))
 
     def test_no_remote(self):
         git(self.repo, "remote", "remove", "origin")

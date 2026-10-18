@@ -309,7 +309,14 @@ def cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
     with db.transaction(actor="coordinator") as tx:
         tx.put("session", name, dict(session, status="retired"), action="retired",
                data={"original": original, "reason": "merged"})
-    return Simple(0, [f"已收回 {worktree}（分支 {module} 保留），会话 {name} 改为退役；请用 agent-relay 退役邮箱名 {name}"])
+        tickets = sorted(int(k) for k, v in tx.records("ticket").items() if v.get("from") == name and v.get("state") == "open")
+    lines = [f"已收回 {worktree}（分支 {module} 保留），会话 {name} 改为退役",
+             f"待退役的邮箱名：{name}（列给用户确认；用户同意后由用户在 Claude Code 里用 /agent-relay:collaboration 退役，"
+             "一次一个名字，有未确认的消息时会被拒绝）"]
+    if tickets:
+        lines.append("这个模块还开着的等待单：" + "、".join(f"#{n}" for n in tickets)
+                     + "（它已不能再发【已恢复】：所等的事已办好就 ticket close --reason happened，用户说关就 --reason user）")
+    return Simple(0, lines)
 
 
 @dataclass
@@ -396,29 +403,34 @@ def push(project: str | os.PathLike, original: str) -> PushResult:
     if pushed.returncode != 0:
         return PushResult(4, [f"推送失败：{pushed.stderr.strip()[:300]}"])
     result = PushResult(0, [f"已推送到 {plan.remote}/{plan.branch}"], branch=plan.branch)
-    gh = _gh()
+    # the body has to be on disk before gh reads it, so the push record is committed first
     with db.transaction(actor="coordinator") as tx:
         number = tx.allocate_number()
         body_no = tx.allocate_number()
         meta = tx.write_body(body_no, plan.body)
-        body_path = db.path / meta["path"]
-        pr = None
-        if gh:
-            made = subprocess.run([gh, "pr", "create", "--base", plan.base, "--head", plan.branch, "--title", plan.title,
-                                   "--body-file", str(body_path)], cwd=project, capture_output=True, text=True, timeout=120)
-            if made.returncode == 0:
-                pr = made.stdout.strip().splitlines()[-1] if made.stdout.strip() else None
-                result.lines.append(f"已开 PR：{pr}（请你在远端合并；没有开自动合并）")
-            else:
-                result.code = 4
-                result.lines.append(f"推送成功，但开 PR 失败：{made.stderr.strip()[:300]}；PR 正文在 {body_path}")
+        rec = {"state": "closed", "kind": "push", "closedReason": "pushed", "remoteBranch": plan.branch, "base": plan.base,
+               "commits": plan.commits, "mergeCommits": [m["mergeCommit"] for m in plan.modules], "pr": None,
+               "body": body_no, "answer": {"original": original, "answeredAt": store.now()}}
+        tx.put("item", str(number), rec, action="pushed")
+    body_path = db.path / meta["path"]
+    gh = _gh()
+    url = _git(project, "remote", "get-url", plan.remote).stdout.strip()
+    pr = None
+    if gh and "github.com" in url:
+        made = subprocess.run([gh, "pr", "create", "--base", plan.base, "--head", plan.branch, "--title", plan.title,
+                               "--body-file", str(body_path)], cwd=project, capture_output=True, text=True, timeout=120)
+        if made.returncode == 0:
+            pr = made.stdout.strip().splitlines()[-1] if made.stdout.strip() else None
+            result.lines.append(f"已开 PR：{pr}（请你在远端合并；没有开自动合并）")
+            with db.transaction(actor="coordinator") as tx:
+                tx.put("item", str(number), dict(rec, pr=pr), action="pr-opened")
         else:
-            result.lines.append(f"没有 gh：请你在远端从 {plan.branch} 向 {plan.base} 开 PR。PR 标题：{plan.title}；PR 正文：")
-            result.lines.append(plan.body)
-        tx.put("item", str(number), {
-            "state": "closed", "kind": "push", "closedReason": "pushed", "remoteBranch": plan.branch, "base": plan.base,
-            "commits": plan.commits, "mergeCommits": [m["mergeCommit"] for m in plan.modules], "pr": pr, "body": body_no,
-            "answer": {"original": original, "answeredAt": store.now()}}, action="pushed")
+            result.code = 4
+            result.lines.append(f"推送成功，但开 PR 失败：{made.stderr.strip()[:300]}；PR 正文在 {body_path}")
+    else:
+        why = "远端不是 GitHub" if gh else "没有 gh"
+        result.lines.append(f"{why}：请你在远端从 {plan.branch} 向 {plan.base} 开 PR。PR 标题：{plan.title}；PR 正文：")
+        result.lines.append(plan.body)
     result.record, result.pr = number, pr
     if f"batch-{number}" not in plan.branch:
         result.lines.append(f"注意：分支名用的是 {plan.branch}，推送记录编号是 #{number}（期间有其他写入）")

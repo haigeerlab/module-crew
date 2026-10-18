@@ -446,6 +446,14 @@ def main(argv: list[str] | None = None) -> int:
         g.add_argument("--original-file")
     hk = sub.add_parser("hook", help="插件钩子入口（只读，永远退出码 0）")
     hk.add_argument("event", choices=("session-start", "prompt"))
+    tc = sub.add_parser("ticket", help="等待单")
+    tcs = tc.add_subparsers(dest="action", required=True)
+    tcc = tcs.add_parser("close", help="协调会话关等待单（所等的事已发生／用户关闭）")
+    tcc.add_argument("number", type=int)
+    tcc.add_argument("--reason", required=True, choices=tuple(inbox.TICKET_REASONS))
+    tcg = tcc.add_mutually_exclusive_group(required=True)
+    tcg.add_argument("--original")
+    tcg.add_argument("--original-file")
     tk = sub.add_parser("takeover", help="记录用户同意新会话接管邮箱名")
     tk.add_argument("name")
     tg = tk.add_mutually_exclusive_group(required=True)
@@ -482,6 +490,20 @@ def main(argv: list[str] | None = None) -> int:
             out = ""
         if out:
             print(out)
+        return 0
+    if args.group == "ticket":
+        original = _original(args.original, args.original_file)
+        if original is None:
+            return 2
+        try:
+            code = inbox.close_ticket(store.open_store(), args.number, args.reason, original)
+        except inbox.AnswerRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
+        print(f"已关等待单 #{args.number}（理由 {code}）")
         return 0
     if args.group == "takeover":
         original = _original(args.original, args.original_file)

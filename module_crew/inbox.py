@@ -179,3 +179,24 @@ def answer(db: store.Store, number: int, original: str, option: str | None = Non
                               "answeredAt": answered_at, "body": body})
         tx.put("item", str(number), closed, action="answered", data={"body": body})
     return Reply(item["from"], item["relayId"], body, db.path / meta["path"])
+
+
+TICKET_REASONS = {"happened": 3, "user": 4}  # contract section 11: 3 what was waited for happened, 4 the user closed it
+
+
+def close_ticket(db: store.Store, number: int, reason: str, original: str) -> int:
+    """Close an open waiting ticket on the coordinator's side; returns the contract reason code."""
+    code = TICKET_REASONS.get(reason)
+    if code is None:
+        raise AnswerRefused(f"关单理由只能是 {'／'.join(TICKET_REASONS)}")
+    if not original or not original.strip():
+        raise AnswerRefused("说明不能为空：happened 写清所等的事怎样发生了，user 写用户原话")
+    with db.transaction(actor="coordinator") as tx:
+        rec = tx.get("ticket", str(number))
+        if rec is None:
+            raise AnswerRefused(f"没有等待单 #{number}")
+        if rec.get("state") != "open":
+            raise AnswerRefused(f"等待单 #{number} 已关闭（理由 {rec.get('closedReason')}）")
+        tx.put("ticket", str(number), dict(rec, state="closed", closedReason=code, closedBy="coordinator"),
+               action="closed", data={"reason": code, "note": original})
+    return code
