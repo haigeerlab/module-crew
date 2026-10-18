@@ -1,12 +1,17 @@
 import unittest
 
-from helpers import ReviewCase, RepoCase, git, seed_sessions
+from helpers import MergeCase, ReviewCase, RepoCase, git, seed_sessions
 
 from module_crew import protocol, sources, store
 
 
 def hub_reply(item=120, original="批准 #4 #5", relay=6001):
     return protocol.render_user_reply(item, original, "2026-10-18T12:00:00+08:00", source_relay_id=relay)
+
+
+def handoff(item=130, original="同意接口提案，先按 v2 字段做", scope="b 按 v2 字段实现"):
+    return (f"【负责人转交】\n事项：#{item}（由架构审查抛出，原消息 #650）\n来自：架构审查\n用户原话：{original}\n"
+            f"答复时间：2026-10-18T15:30:00+08:00\n转交范围：{scope}\n")
 
 
 class SourceCase(RepoCase):
@@ -51,12 +56,19 @@ class CheckTest(SourceCase):
         self.assertEqual(info.original, "批准 #4 #5")
         self.assertEqual(info.source, {"name": "live-saas-hub", "kind": "hub", "item": 120, "relayId": 6100})
 
+    def test_lead_handoff_accepted(self):
+        info = sources.check(self.db, "live-saas-arch-review", 130, 6200, handoff())
+        self.assertEqual(info.original, "同意接口提案，先按 v2 字段做")
+        self.assertEqual((info.source["owner"], info.source["scope"]), ("架构审查", "b 按 v2 字段实现"))
+        self.assertEqual(sources.relay_line(info.source), "架构审查（负责人转交），消息 #6200")
+
     def test_refused(self):
         cases = [("someone", 120, hub_reply()),                 # not whitelisted
                  ("live-saas-hub", 121, hub_reply()),           # item mismatch
                  ("live-saas-hub", 120, "随便写的话"),           # not a user reply
                  ("live-saas-hub", 120, ""),                    # empty
-                 ("live-saas-arch-review", 120, hub_reply())]   # lead waits for v1.6
+                 ("live-saas-arch-review", 120, hub_reply()),   # lead must send 【负责人转交】
+                 ("live-saas-hub", 130, handoff())]             # hub must send 【用户答复】
         for name, item, text in cases:
             with self.subTest(name=name, item=item):
                 with self.assertRaises(sources.SourceRefused):
@@ -98,6 +110,43 @@ class ApproveWithSourceTest(ReviewCase):
         self.assertIn(f"#{self.spec}", listed)
         self.assertIn("live-saas-hub", self.run_cli("source", "map", f"#{self.plan}", cwd=self.repo).stdout)
 
+    def test_relayed_reply_and_closing(self):
+        from module_crew import review
+        with store.approval_source(sources.check(self.db, "live-saas-hub", 120, 6100, self.msg.read_text()).source):
+            res = review.approve(self.repo, [self.spec, self.plan], "两个都批准")
+        self.assertEqual(res.code, 0, res.lines)
+        replies = [x for x in res.sends if x["kind"] == "user-reply"]
+        self.assertEqual(len(replies), 1)                      # one reply per recipient (v1.6)
+        msg = protocol.parse(replies[0]["path"].read_text(encoding="utf-8"))
+        self.assertTrue(msg.ok, msg.problems)
+        origin = msg.contract()["origin"]
+        self.assertEqual((msg.item, origin["originals"], origin["relayedFrom"], origin["relayMessage"]),
+                         (120, [4001, 4002], "hub", 6100))
+        self.assertEqual(msg.fields["用户原话"], "两个都批准")
+        closing = [x for x in res.sends if x["kind"] == "resumed"]
+        self.assertEqual(closing[0]["to"], "live-saas-hub")
+        done = protocol.parse(closing[0]["path"].read_text(encoding="utf-8"))
+        self.assertEqual((done.kind, done.ok, done.end.items), ("resumed", True, (120,)))
+
+    def test_lead_relay_carries_scope(self):
+        from module_crew import review
+        sources.add(self.db, "live-saas-arch-review", "lead", "登记审查会话")
+        src = sources.check(self.db, "live-saas-arch-review", 130, 6200, handoff()).source
+        with store.approval_source(src):
+            res = review.approve(self.repo, [self.spec], "同意接口提案，先按 v2 字段做")
+        reply = protocol.parse([x for x in res.sends if x["kind"] == "user-reply"][0]["path"].read_text(encoding="utf-8"))
+        self.assertTrue(reply.ok, reply.problems)
+        self.assertEqual(reply.contract()["origin"]["relayedFrom"], "owner")
+        self.assertEqual(reply.fields["转交范围"], "b 按 v2 字段实现")
+
+    def test_self_reply_unchanged(self):
+        from module_crew import review
+        res = review.approve(self.repo, [self.spec, self.plan], "批准")
+        replies = [x for x in res.sends if x["kind"] == "user-reply"]
+        self.assertEqual(len(replies), 2)
+        self.assertNotIn("转自", replies[0]["path"].read_text(encoding="utf-8"))
+        self.assertFalse([x for x in res.sends if x["kind"] == "resumed"])
+
     def test_bad_source_changes_nothing(self):
         before = (store.events(self.db), git(self.repo, "rev-parse", "HEAD"))
         for extra in (["--source", "nobody", "--source-item", "120", "--source-relay-id", "1"],
@@ -122,6 +171,25 @@ class ApproveWithSourceTest(ReviewCase):
         rec = store.get(self.db, "session", "shop-c")
         self.assertEqual(rec["suspended"]["original"], "两个都批准")
         self.assertEqual(store.events(self.db, key="shop-c")[-1]["data"]["source"]["item"], 120)
+
+
+
+class MergeApproveWithSourceTest(MergeCase):
+    def test_cli_relays_and_closes(self):
+        from module_crew import review
+        db = store.open_store(self.repo)
+        sources.add(db, "live-saas-hub", "hub", "登记收件枢纽")
+        n = review.add(db, self.finish("b"), "shop-b", 4800).number
+        msg = self.tmp / "hub.txt"
+        msg.write_text(hub_reply(140, "b 验收通过"), encoding="utf-8")
+        out = self.run_cli("merge", "approve", str(n), "--source", "live-saas-hub", "--source-item", "140",
+                           "--source-relay-id", "6300", "--original-file", str(msg), cwd=self.repo)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("发送 【已恢复】 → live-saas-hub", out.stdout)
+        body = store.read_body(db, store.get(db, "item", str(n))["answer"]["body"])
+        reply = protocol.parse(body)
+        self.assertTrue(reply.ok, reply.problems)
+        self.assertEqual((reply.item, reply.contract()["origin"]["originals"]), (140, [4800]))
 
 
 if __name__ == "__main__":

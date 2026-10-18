@@ -3,7 +3,7 @@
 
 > 能力图模块 `crew-hub-bridge`。需求来源：LIVE-SAAS 接入方案，用户决定 11、28、29（`~/Documents/haigeerlab/livesaas-integration/USER-DECISIONS-2026-10-18.md`），
 > 接缝分析 `JOINT-SEAM-CHECK.md` 第五节（S4、S5、协调会话规则）与第六节（decision-inbox 的只读出口需求）。用户 2026-10-18 在本会话确认范围与 11 条假设。
-> 契约：依赖 session-protocol v1.6（起草中，用户决定 12）；标「按 v1.6 定稿对照」的条目在 v1.6 发版前不实现。
+> 契约：session-protocol v1.7（1e14a49；v1.6 81720ba 新增「转自」与【负责人转交】，v1.7 写明【取代 #N】只认枢纽事项号）。
 
 ## 目标
 
@@ -45,7 +45,7 @@
 1. **来源登记是一张白名单，只能由用户亲手开**：`source add <邮箱名> --kind hub|lead --original-file <用户原话>` 写运行配置 `sources`（`{name, kind, addedAt, original}`），
    `source remove` 同样要原话。批准命令只认白名单里的名字；`self` 不用登记。这样「别的会话转来的话不算」这条底线不变，只是多了用户亲自指定的可信转达者。
 2. **来源不是 `self` 时，原话取自对方消息、不由协调会话转写**：命令把 `--original-file` 当作对方消息全文，用 `protocol.parse` 解析，
-   核对类型（hub 为【用户答复】，lead 为 v1.6 定的转交格式）、事项号等于 `--source-item`；记下的「用户原话」是解析出的字段，不是协调会话自己写的。
+   核对类型（hub 为【用户答复】，lead 为【负责人转交】owner-handoff）、事项号等于 `--source-item`；记下的「用户原话」是解析出的字段，不是协调会话自己写的；lead 另记「来自」短名与「转交范围」。
    任何一项对不上：退出码 3，状态库与 git 都不变。
 3. **对照记在每条批准上，不另建表**：批准记录的 `answer` 增加 `source: {name, kind, item, relayId}`（`self` 时为 `{kind: "self"}`）。`source map H` 遍历记录列出所有带这个 H 的 crew 编号与节点；
    `source map #N` 反查 N 的来源。不新增记录种类，状态库格式只加字段。
@@ -57,6 +57,9 @@
    `stageText` 沿用钩子的中文句子。挂起不是档位，单独在 `suspended` 字段给原因。
 7. **interface.json 只登记对外出口**：`{"interface": "1.0", "plugin": "module-crew", "version": <plugin.json 的版本>, "contract": <CONTRACT_VERSION>, "sessions": {"command": ["bin/module-crew", "sessions", "--json"], "schemaVersion": 1}}`；
    一致性测试保证 version、contract 与代码一致。
+
+8. **转给模块的答复按 v1.6 写**（2026-10-18 修订）：带来源批准时，给模块的【用户答复】写「事项：#H（你的原消息 #M、#M2）」与「转自：收件枢纽，消息 #R」或「转自：<短名>（负责人转交），消息 #R」，
+   lead 时照抄「转交范围」；同一收件人的几条交审合成一份（一个 #H 涉及几个模块就各发一份）。命令同时输出给来源的【已恢复】「结束：#H」，协调会话在这个 #H 涉及的模块都转完后再发。
 
 ## 接口约定
 
@@ -136,20 +139,24 @@ python3 -m unittest discover -s tests -v
 
 1. `source add live-saas-hub --kind hub --original "登记收件枢纽"`：白名单有它；无原话、重复、kind 不合法退出码 3；`source remove` 同理；`source list` 列出。
 2. 不带 `--source` 的所有批准命令行为与现在一致（现有测试全部通过）。
-3. `review approve 4 5 --source live-saas-hub --source-item 120 --source-relay-id 6001 --original-file <hub 消息>`：合格时两条批准都记 `source: {name, kind: hub, item: 120, relayId: 6001}`，用户原话取自消息；来源未登记、消息不合格、事项号不符时退出码 3、状态库与 git 不变。（hub 消息格式按 v1.6 对照）
+3. `review approve 4 5 --source live-saas-hub --source-item 120 --source-relay-id 6001 --original-file <hub 消息>`：合格时两条批准都记 `source: {name, kind: hub, item: 120, relayId: 6001}`，用户原话取自消息；来源未登记、消息不合格、事项号不符时退出码 3、状态库与 git 不变。
 4. `source map 120` 列出 #4、#5 及其模块与节点；`source map '#4'` 给出来源 120 与 live-saas-hub。
-5. `lead` 来源：按 v1.6 定的转交格式核对；v1.6 发版前此项不实现，测试标记跳过并注明原因。
+5. `lead` 来源：合格的【负责人转交】被接受，记下来自短名与转交范围；拿【用户答复】冒充 lead、拿【负责人转交】冒充 hub 都退出码 3。
 6. `review note 4 --from live-saas-arch-review --file <审查结论>`：记下并在 `review batch` 显示审查行；没有审查的显示「未审查」；未登记、不合格、对不上退出码 3。
 7. `review batch --for-hub`：正文 `protocol.parse` 判为合格的【等待用户】，含每条交审的模块、节点、要点首行、审查行与三个选项；`--parallel-with 118` 时带【与 #118 并行】。
 8. `sessions --json`：`schemaVersion` 为 1，每个在用模块会话有契约字段；五种 stage 各构造一次；挂起时 `suspended` 为原因；未建库时退出码 2、stderr 一行原因、stdout 为空；单次 1 秒内。
 9. `interface.json` 合法，`version` 等于 plugin.json、`contract` 等于 `CONTRACT_VERSION`，`sessions.command` 能运行。
-10. 转交枢纽答复（按 v1.6 对照）：协调会话把 hub 答复转给模块时生成带来源的【用户答复】，并输出发给枢纽的【已恢复】「结束：#H」正文，两者都 `protocol.parse` 合格；v1.6 发版前不实现。
+10. 转交枢纽答复：带来源批准时，给模块的【用户答复】按 v1.6 带「转自」（hub 或负责人转交）、列出该收件人的全部原消息号（同一收件人合成一份）、lead 时带「转交范围」；并输出发给来源的【已恢复】「结束：#H」；两者都 `protocol.parse` 合格；不带来源时答复写法不变。crew-dev skill 写明认「转自」答复的核对。
 11. skill：crew-coordinator 第 13、25、56、122 行改为「用户的决定只有两种来源」的措辞；新增「接入收件枢纽」一节，含只向枢纽交【等待用户】、合批、一对多、转完立刻结束 #H、一个模块一张外部等待单、【答复告知】只记录、醒来先 `status`、可直连 API 与后台线做技术核对与已批范围交付确认（新工作先经枢纽请用户批）、长检查用后台运行。
 
 ## 未决问题
 
-- session-protocol v1.6 的条文与样例（契约负责人起草中）：决定验收 3 的 hub 消息格式、验收 5、验收 10 的写法。v1.6 发版后对照修订本 Spec 并按变更记录复审。
+- 无（v1.6／v1.7 已对照，见变更记录）。
 
 ## 文档建议
 
 README 增加「接入收件枢纽」一节：登记来源、带来源批准、合批交枢纽、只读出口与 interface.json。
+
+## 变更记录
+
+- 2026-10-18：按 session-protocol v1.6（81720ba）、v1.7（1e14a49）定稿对照：契约版本改为 v1.7；lead 来源改为接受【负责人转交】并记短名与转交范围；新增关键决策 8（转给模块的答复按 v1.6 带「转自」、同一收件人合成一份、输出【已恢复】）；验收 3、5、10 由「按 v1.6 对照」改为具体写法；未决问题清空。原因：契约负责人发布 v1.6、v1.7；来源：用户批准的契约版本，随本模块最终验收复审。

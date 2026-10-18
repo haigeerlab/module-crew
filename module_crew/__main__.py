@@ -272,7 +272,7 @@ def _review(args) -> int:
     for line in res.lines:
         print(line)
     for x in res.sends:
-        kind = "【用户答复】" if x["kind"] == "user-reply" else "【协调通知】"
+        kind = {"user-reply": "【用户答复】", "resumed": "【已恢复】"}.get(x["kind"], "【协调通知】")
         reply_to = f"，replyTo：{x['replyTo']}" if x["replyTo"] is not None else ""
         print(f"发送 {kind} → {x['to']}{reply_to}，正文文件：{x['path']}")
     return res.code
@@ -369,6 +369,9 @@ def _merge(args) -> int:
             print(f"收件人：{res.reply.to}")
             print(f"replyTo：{res.reply.reply_to}")
             print(f"正文文件：{res.reply.path}")
+        closing = merge.closing(store.open_store(), [r.reply.to for r in done])
+        if closing:
+            print(f"发送 【已恢复】 → {closing['to']}，正文文件：{closing['path']}（这个事项涉及的模块都转完后再发）")
         return 0
     if args.action == "tick":
         try:

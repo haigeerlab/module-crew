@@ -10,10 +10,10 @@ from pathlib import Path
 
 from module_crew import protocol
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "session-protocol" / "v1.5"
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "session-protocol" / "v1.7"
 
 # Types this plugin parses / generates (spec 假设 2、3). Everything else is skipped and listed.
-PARSED = {"review-request", "shared-change-request", "coordination-notice", "wait-user", "wait-session", "resumed", "withdraw", "user-reply", "unknown"}
+PARSED = {"review-request", "shared-change-request", "coordination-notice", "wait-user", "wait-session", "resumed", "withdraw", "user-reply", "owner-handoff", "unknown"}
 GENERATED = {"user-reply"}
 # Fixtures whose expectation the contract itself must fix; skipped with a reason, never silently.
 CONTRACT_DEFECTS: dict[str, str] = {}
@@ -56,11 +56,11 @@ def diff(expected, actual, path="parse"):
 class FingerprintTest(unittest.TestCase):
     def test_pinned_fixtures_match_sums(self):
         self.assertEqual(verify_sums(FIXTURES), [])
-        self.assertIn("commit: 246e138", (FIXTURES / "SOURCE").read_text())
+        self.assertIn("commit: 1e14a49", (FIXTURES / "SOURCE").read_text())
 
     def test_one_changed_byte_is_caught(self):
         with tempfile.TemporaryDirectory() as tmp:
-            copy = Path(tmp) / "v1.5"
+            copy = Path(tmp) / "v1.7"
             shutil.copytree(FIXTURES, copy)
             target = copy / "withdraw" / "basic.txt"
             data = bytearray(target.read_bytes())
@@ -88,7 +88,7 @@ class ConformanceTest(unittest.TestCase):
                 problems = diff(doc["parse"], actual)
                 self.assertEqual(problems, [], "\n".join(problems))
         print(f"\n  parse checked: {checked}; skipped: {', '.join(skipped) or 'none'}", file=sys.stderr)
-        self.assertEqual(checked, 51)
+        self.assertEqual(checked, 59)
 
 
 class GenerateConformanceTest(unittest.TestCase):

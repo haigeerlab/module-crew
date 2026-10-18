@@ -17,7 +17,7 @@ from pathlib import Path
 
 from module_crew import probe, protocol, store
 from module_crew.inbox import AnswerRefused, Reply
-from module_crew.review import _reply_text
+from module_crew.review import _reply_text, closing
 
 DEFAULT_CHECK_TIMEOUT = 1800
 

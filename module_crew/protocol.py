@@ -1,4 +1,4 @@
-"""Parse and render session-protocol v1.5 messages (see spec/crew-protocol.md).
+"""Parse and render session-protocol v1.7 messages (see spec/crew-protocol.md).
 
 Pure functions only: no file, git or agent-relay access. Field names, tags and
 problem codes follow the contract text in session-protocol PROTOCOL.md.
@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-CONTRACT_VERSION = "1.5"
+CONTRACT_VERSION = "1.7"
 
 KIND_TAGS = {
     "等待用户": "wait-user",
@@ -24,6 +24,7 @@ KIND_TAGS = {
     "交审": "review-request",
     "公共变更请求": "shared-change-request",
     "协调通知": "coordination-notice",
+    "负责人转交": "owner-handoff",
 }
 UNSUPPORTED = ("review-conclusion", "answer-notice")
 
@@ -31,7 +32,8 @@ UNSUPPORTED = ("review-conclusion", "answer-notice")
 FIELDS = {
     "wait-user": ("来自", "项目", "要你决定", "要点", "架构审查", "选项与我的建议", "你该回",
                   "是否完全停住", "适用会话", "各线范围"),
-    "user-reply": ("事项", "用户原话", "选项原文", "适用于你的范围", "答复时间", "原事项全文"),
+    "user-reply": ("事项", "转自", "用户原话", "选项原文", "适用于你的范围", "答复时间", "转交范围", "原事项全文"),
+    "owner-handoff": ("事项", "来自", "用户原话", "答复时间", "转交范围"),
     "wait-session": ("在等谁", "等什么"),
     "resumed": (),
     "withdraw": ("事项", "原因"),
@@ -58,6 +60,15 @@ _FILE_LINE_RE = re.compile(r"^(?:-\s+)?(\S.*?)\s+(sha256:[0-9a-f]{12,64})$")
 REVIEW_NODES = {"Spec": "spec", "Plan": "plan", "接口提案": "interface", "最终验收": "final"}
 NOTICE_KINDS = {"开工": "start", "同步基线": "sync-baseline", "接口变更": "interface-change", "收尾": "wrap-up", "退回": "returned"}
 _THIN_WORDS = ("详见", "已明确", "同上")
+# v1.6 「转自」: only these two wordings (contract section 3)
+_RELAY_HUB_RE = re.compile(r"^收件枢纽\s*[，,]\s*消息\s*#\s*(\d+)$")
+_RELAY_OWNER_RE = re.compile(r"^(.+?)（负责人转交）\s*[，,]\s*消息\s*#\s*(\d+)$")
+_ORIGINALS_RE = re.compile(r"原消息\s*((?:#\s*\d+\s*[、,，]?\s*)+)")
+
+
+def _originals(value: str | None) -> list[int]:
+    m = _ORIGINALS_RE.search(value or "")
+    return [int(x) for x in _NUM_RE.findall(m.group(1))] if m else []
 # 架构审查 wordings (decision-inbox 0.0.7 behaviour carried into v1.0); anything else is "unrecognized".
 _REVIEW_REF_RE = re.compile(r"（\s*(#?[A-Za-z]*-?\d+)\s*）$")
 _REVIEW_FORMS = (
@@ -389,6 +400,26 @@ def parse(text: str) -> Message:
         _require(fields, ("用户原话", "答复时间"), problems)
         if "多线事项" in fields.get("事项", ""):
             _require(fields, ("适用于你的范围", "原事项全文"), problems)
+        relayed, relay_msg = None, None
+        if "转自" in fields:
+            raw = fields["转自"].strip()
+            hub, owner = _RELAY_HUB_RE.match(raw), _RELAY_OWNER_RE.match(raw)
+            if hub:
+                relayed, relay_msg = "hub", int(hub.group(1))
+            elif owner:
+                relayed, relay_msg = "owner", int(owner.group(2))
+            else:
+                problems.append("bad-relay-source")
+            if relayed == "owner":
+                _require(fields, ("转交范围",), problems)
+            extra = {"origin": {"originals": _originals(fields.get("事项")), "relayedFrom": relayed,
+                                "relayMessage": relay_msg}}
+    elif kind == "owner-handoff":
+        item = _number(fields.get("事项"))
+        if item is None:
+            problems.append("missing-field:事项")
+        _require(fields, ("来自", "用户原话", "答复时间", "转交范围"), problems)
+        extra = {"origin": {"originals": _originals(fields.get("事项")), "relayedFrom": None, "relayMessage": None}}
 
     return Message(kind=kind, supported=kind not in UNSUPPORTED, problems=tuple(problems), hints=tuple(hints),
                    fields=fields, end=end, reply_to=reply_to, markers=tuple(markers), item=item, extra=extra)
@@ -416,16 +447,21 @@ def _self_check(text: str, kind: str, expected: dict[str, str]) -> str:
 
 
 def render_user_reply(item: int, original: str, answered_at: str, option_text: str | None = None,
-                      source_relay_id: int | None = None) -> str:
-    """【用户答复】 from the coordinator; the user's words are copied unchanged."""
+                      source_relay_id: int | None = None, originals: list[int] | None = None,
+                      relay: str | None = None, scope: str | None = None) -> str:
+    """【用户答复】 from the coordinator; the user's words are copied unchanged.
+
+    v1.6 relay: `originals` lists every message of the recipient this hub item covers, `relay` is the
+    「转自」 line (收件枢纽，消息 #R / <短名>（负责人转交），消息 #R) and `scope` the handed-over scope."""
     if not isinstance(item, int) or isinstance(item, bool) or item < 1:
         raise ValueError(f"事项编号必须是正整数：{item!r}")
     if not isinstance(original, str) or not original.strip():
         raise ValueError("用户原话不能为空")
     if not answered_at or not answered_at.strip():
         raise ValueError("答复时间不能为空")
-    ref = f"#{item}" if source_relay_id is None else f"#{item}（你的原消息 #{int(source_relay_id)}）"
-    lines = ["【用户答复】", f"事项：{ref}", f"用户原话：{original}"]
+    refs = [int(x) for x in originals] if originals else ([] if source_relay_id is None else [int(source_relay_id)])
+    ref = f"#{item}" + (f"（你的原消息 {'、'.join(f'#{n}' for n in refs)}）" if refs else "")
+    lines = ["【用户答复】", f"事项：{ref}"] + ([f"转自：{relay}"] if relay else []) + [f"用户原话：{original}"]
     expected = {"用户原话": original, "答复时间": answered_at}
     if option_text is not None:
         m = _OPTION_RE.match(option_text.strip())
@@ -434,7 +470,19 @@ def render_user_reply(item: int, original: str, answered_at: str, option_text: s
         lines.append(f"选项 {m.group(2)} 原文：{option_text}")
         expected["选项原文"] = option_text
     lines.append(f"答复时间：{answered_at}")
+    if scope is not None:
+        lines.append(f"转交范围：{scope}")
+        expected["转交范围"] = scope
     return _self_check("\n".join(lines) + "\n", "user-reply", expected)
+
+
+def render_resumed(items: list[int], note: str) -> str:
+    """【已恢复】 closing the given items (e.g. a hub item after its answer was relayed to every module)."""
+    text = "【已恢复】\n结束：" + "、".join(f"#{int(n)}" for n in items) + "\n" + note.strip() + "\n"
+    msg = parse(text)
+    if msg.kind != "resumed" or not msg.ok:
+        raise ValueError(f"生成的消息不合格：{', '.join(msg.problems) or msg.kind}")
+    return text
 
 
 def render_coordination_notice(kind: str, basis: str, todo: str) -> str:

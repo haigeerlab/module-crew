@@ -15,7 +15,7 @@
 | 项目 | git 仓库，能建 worktree；有一条能在本地跑完的完整检查命令，合并后用它判断集成是否通过 |
 | 运行环境 | Python 3（只用标准库） |
 
-消息格式以 [session-protocol](../session-protocol) 契约为准（现钉住 v1.5）。
+消息格式以 [session-protocol](../session-protocol) 契约为准（现钉住 v1.7）。
 
 ## 安装
 
@@ -94,7 +94,7 @@ bin/module-crew status
 4. `module-crew source map <H>` 查一个枢纽事项批准了哪些 crew 编号。
 5. 外部插件读 `module-crew sessions --json`（`schemaVersion` 1：module、relayName、worktree、stage、stageText、suspended、lastActivity），出口与契约版本登记在根目录 `interface.json`。
 
-负责人转交（lead 来源）与「把枢纽答复转给模块」等 session-protocol v1.6 定稿后接入。
+指定负责人用【负责人转交】转来的决定登记为 `--kind lead`；带来源批准时，给模块的【用户答复】按契约 v1.6 带「转自」，命令同时给出发回枢纽的【已恢复】「结束：#H」。
 
 ## 命令一览
 

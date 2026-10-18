@@ -69,14 +69,23 @@ def check(db: store.Store, name: str, item: int, relay_id: int, text: str | None
         raise SourceRefused(f"{name} 不是登记过的来源（先请用户在本会话 source add）")
     if not text or not text.strip():
         raise SourceRefused("来源消息的全文不能为空（--original-file 放对方那条消息）")
-    if row["kind"] == "lead":
-        raise SourceRefused("负责人转交的消息格式要等 session-protocol v1.6 定稿，现在不接受 lead 来源")
     msg = protocol.parse(text)
-    if msg.kind != "user-reply" or not msg.ok:
-        raise SourceRefused("来源消息不是合格的【用户答复】：" + ("、".join(msg.problems) or msg.kind))
+    want, label = ("owner-handoff", "【负责人转交】") if row["kind"] == "lead" else ("user-reply", "【用户答复】")
+    if msg.kind != want or not msg.ok:
+        raise SourceRefused(f"来源消息不是合格的{label}：" + ("、".join(msg.problems) or msg.kind))
     if msg.item != item:
         raise SourceRefused(f"来源消息的事项是 #{msg.item}，不是 --source-item 给的 #{item}")
-    return SourceInfo(msg.fields["用户原话"], {"name": name, "kind": row["kind"], "item": item, "relayId": relay_id})
+    source = {"name": name, "kind": row["kind"], "item": item, "relayId": relay_id}
+    if row["kind"] == "lead":
+        source.update(owner=msg.fields["来自"].strip(), scope=msg.fields["转交范围"])
+    return SourceInfo(msg.fields["用户原话"], source)
+
+
+def relay_line(source: dict) -> str:
+    """The v1.6 「转自」 line for a reply relayed to a module session."""
+    if source["kind"] == "lead":
+        return f"{source['owner']}（负责人转交），消息 #{source['relayId']}"
+    return f"收件枢纽，消息 #{source['relayId']}"
 
 
 def map_item(db: store.Store, item: int) -> list[dict]:

@@ -210,8 +210,58 @@ def _review_summary(items: list[dict]) -> str:
     return f"通过，附建议{advice}条" if advice else "通过"
 
 
+def _reply_groups(picked: list[tuple[int, dict]]) -> list[list[tuple[int, dict]]]:
+    """One reply per item; relaying a source's answer (v1.6): one reply per recipient listing all its messages."""
+    if not store.source_field():
+        return [[pair] for pair in picked]
+    groups: dict[str, list] = {}
+    for pair in picked:
+        groups.setdefault(pair[1]["from"], []).append(pair)
+    return list(groups.values())
+
+
+def _group_reply_text(group: list[tuple[int, dict]], original: str, answered_at: str) -> str:
+    src = store.source_field().get("source")
+    if not src:
+        return _reply_text(group[0][0], group[0][1], original, answered_at)
+    from module_crew import sources
+    try:
+        return protocol.render_user_reply(item=src["item"], original=original, answered_at=answered_at,
+                                          originals=[rec["relayId"] for _, rec in group if rec.get("relayId") is not None],
+                                          relay=sources.relay_line(src), scope=src.get("scope"))
+    except ValueError as exc:
+        raise AnswerRefused(str(exc)) from exc
+
+
+def _closing_send(tx, db: store.Store, sends: list[dict], modules: list[str]) -> None:
+    """After relaying a source's answer, the 【已恢复】 that closes the source's item (contract v1.6)."""
+    src = store.source_field().get("source")
+    if not src:
+        return
+    text = protocol.render_resumed([src["item"]], f"已把用户对 #{src['item']} 的答复转给 {'、'.join(modules)} 的模块会话。")
+    body = tx.allocate_number()
+    meta = tx.write_body(body, text)
+    sends.append({"kind": "resumed", "to": src["name"], "replyTo": None, "body": body, "path": db.path / meta["path"]})
+
+
+def closing(db: store.Store, recipients: list[str]) -> dict | None:
+    """The 【已恢复】 for the active source's item, written as a body; None when there is no source."""
+    if not store.source_field():
+        return None
+    sends: list[dict] = []
+    with db.transaction(actor="coordinator") as tx:
+        _closing_send(tx, db, sends, list(dict.fromkeys(recipients)))
+    return sends[0]
+
+
 def _reply_text(item_no: int, rec: dict, original: str, answered_at: str) -> str:
     try:
+        src = store.source_field().get("source")
+        if src:
+            from module_crew import sources
+            return protocol.render_user_reply(item=src["item"], original=original, answered_at=answered_at,
+                                              originals=[rec["relayId"]] if rec.get("relayId") is not None else None,
+                                              relay=sources.relay_line(src), scope=src.get("scope"))
         return protocol.render_user_reply(item=item_no, original=original, answered_at=answered_at,
                                           source_relay_id=rec["relayId"])
     except ValueError as exc:
@@ -352,14 +402,16 @@ def approve(project: str | os.PathLike, numbers: list[int], original: str) -> Ap
             "state": "closed", "kind": "review-approval", "closedReason": "answered", "relayId": None,
             "from": "coordinator", "reviews": [n for n, _ in picked], "baselineCommit": commit,
             "answer": {"original": original, "answeredAt": answered_at, **store.source_field()}}, action="review-approved")
-        for n, rec in picked:
+        for group in _reply_groups(picked):
             body = tx.allocate_number()
-            meta = tx.write_body(body, _reply_text(n, rec, original, answered_at))
-            tx.put("item", str(n), dict(rec, state="closed", closedReason="answered",
-                                        answer={"original": original, "answeredAt": answered_at, **store.source_field(), "body": body,
-                                                "approval": approval}), action="answered", data={"body": body})
-            result.sends.append({"kind": "user-reply", "to": rec["from"], "replyTo": rec["relayId"], "body": body,
-                                 "path": db.path / meta["path"]})
+            meta = tx.write_body(body, _group_reply_text(group, original, answered_at))
+            for n, rec in group:
+                tx.put("item", str(n), dict(rec, state="closed", closedReason="answered",
+                                            answer={"original": original, "answeredAt": answered_at, **store.source_field(),
+                                                    "body": body, "approval": approval}), action="answered", data={"body": body})
+            result.sends.append({"kind": "user-reply", "to": group[0][1]["from"], "replyTo": group[0][1]["relayId"],
+                                 "body": body, "path": db.path / meta["path"]})
+        _closing_send(tx, db, result.sends, modules)
         for m in modules:
             nodes_now = approved_before.get(m, set()) | {rec["node"] for _, rec in picked if rec["module"] == m}
             if not {"spec", "plan"} <= nodes_now:

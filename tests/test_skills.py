@@ -131,3 +131,11 @@ class HubBridgeSkillTest(unittest.TestCase):
         _, text = read("crew-coordinator")
         self.assertIn("用户的决定只有两种来源", text)
         self.assertNotIn("你是它们与用户之间唯一的通道", text)
+
+
+class RelayReplySkillTest(unittest.TestCase):
+    def test_dev_accepts_relayed_reply(self):
+        _, text = read("crew-dev")
+        section = text.split("## 收到答复", 1)[1].split("\n## ", 1)[0]
+        for words in ("转自", "转交范围", "不看「转自」", "至少有一个"):
+            self.assertIn(words, section)
