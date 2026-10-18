@@ -619,6 +619,9 @@ def main(argv: list[str] | None = None) -> int:
     rg.add_argument("--original")
     rg.add_argument("--original-file")
     sub.add_parser("sessions", help="列出模块会话的事实（只读）").add_argument("--json", action="store_true")
+    pm = sub.add_parser("permissions", help="宿主权限预配：预览、凭用户原话写入、实测、撤销")
+    pm_sub = pm.add_subparsers(dest="action", required=True)
+    pm_sub.add_parser("plan", help="只读：每个 checkout 要写什么、能不能写").add_argument("--json", action="store_true")
     sub.add_parser("host-check", help="在模块 worktree 里预检宿主能否完成工作（Codex 必跑）").add_argument("--json", action="store_true")
     sub.add_parser("resume-kit", help="生成换会话恢复说明").add_argument("module")
     se = sub.add_parser("serial", help="退回串行／恢复并行")
@@ -665,6 +668,19 @@ def _add_source_options(parser: argparse.ArgumentParser) -> None:
         g.add_argument("--source-from", help="这条消息实际的发件邮箱名（照抄 bridge_inbox）；必须就是来源本身")
 
 
+def _permissions(args) -> int:
+    from module_crew import permissions
+    try:
+        if args.action == "plan":
+            p = permissions.plan(".")
+            print(json.dumps(p, ensure_ascii=False, indent=2) if args.json else "\n".join(permissions.render_plan(p)))
+            return 0
+    except store.StoreError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 2
+    return 2
+
+
 def _run(args) -> int:
     if args.group in ("suspend", "resume", "sessions", "resume-kit", "serial"):
         try:
@@ -675,6 +691,8 @@ def _run(args) -> int:
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 2
+    if args.group == "permissions":
+        return _permissions(args)
     if args.group == "host-check":
         from module_crew import hostcheck
         rep = hostcheck.run(".")

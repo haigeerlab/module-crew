@@ -2,7 +2,7 @@
 
 测试命令：`python3 -m unittest discover -s tests -v`
 
-- [ ] Task 1：`permissions plan`（只读）
+- [x] Task 1：`permissions plan`（只读）
   - 验收：Spec 验收 1
   - 文件：`module_crew/permissions.py`、`module_crew/__main__.py`、`tests/test_permissions.py`
 
