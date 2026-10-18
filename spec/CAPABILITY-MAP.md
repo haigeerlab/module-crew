@@ -27,8 +27,9 @@
 | crew-merge | 本地合并队列：合并前清单、`--no-ff`、完整检查、失败 `revert -m 1`、通知下游、收回 worktree 与退役邮箱身份；远端按批推送开 PR 的授权与预告 | crew-review-batch, crew-shared-changes |
 | crew-recovery-hooks | 启动／恢复／压缩与每轮的按角色注入；压缩后「先核对再动手」；换会话的 `takeover` 接管流程 | crew-store, crew-probe |
 | crew-failure | 挂起释放名额、识别悄悄停下、崩溃在原 worktree 换会话、退回串行 | crew-merge, crew-recovery-hooks |
+| crew-hub-bridge | 接入收件枢纽：批准来源登记与校验（self／hub／lead）、枢纽事项号与 crew 编号一对多对照、审查行、交枢纽的【等待用户】正文、只读线状态出口（sessions --json 契约与 interface.json）、skill 措辞与协调会话规则 | crew-review-batch, crew-merge, crew-failure |
 
-Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure
+Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge
 
 <!-- Spec Guard 按严格串行推进。为兼容上游格式，逗号分组会按左到右顺序展开为单模块步骤，不代表并行授权。 -->
 
