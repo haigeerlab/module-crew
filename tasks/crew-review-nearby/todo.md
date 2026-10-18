@@ -47,3 +47,8 @@
   - 文件：`tests/fixtures/session-protocol/v2.0/`、`module_crew/protocol.py`、`tests/test_protocol_conformance.py`、版本文件
 
 - [ ] Checkpoint 3（gate）：模块最终验收——全部测试全绿、18 条验收逐条对应测试、列出实际改动文件
+
+## 外部审查意见
+
+<!-- spec-guard: external-review declined -->
+用户 2026-10-19 批准 Plan 时决定不做外部复核。
