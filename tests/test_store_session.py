@@ -38,7 +38,7 @@ class SessionTest(RepoCase):
             "dev without worktree": ("x", {k: v for k, v in dev(module="m2").items() if k != "worktree"}),
             "relative worktree": ("x", dev(module="m2", worktree="wt")),
             "hub role": ("x", {**coord(), "role": "hub"}),
-            "codex host": ("x", {**dev(module="m2"), "host": "codex-desktop"}),
+            "codex coordinator": ("shop-coord2", {**coord(), "host": "codex-desktop"}),   # Codex module sessions are allowed (crew-codex-host)
             "bad status": ("x", {**dev(module="m2"), "status": "paused"}),
         }
         for name, (key, rec) in cases.items():
