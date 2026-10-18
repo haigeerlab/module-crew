@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from datetime import datetime, timedelta
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -64,6 +65,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         return Outcome(msg.kind, 3, lines=[f"交审的模块 {sub['module']} 不是 {sender} 负责的模块 {session.get('module')}"])
     worktree = Path(session["worktree"])
     reasons = _missing_files(sub["module"], sub["node"], sub["files"]) + _check_files(worktree, sub["files"])
+    if not reasons and sub.get("disagree"):
+        reasons = _disagree_reasons(db, worktree, sub)
     if reasons:
         return Outcome(msg.kind, 3, lines=["拒收，请退回："] + reasons)
     commit = _git(worktree, "rev-parse", "HEAD").stdout.strip()
@@ -79,16 +82,74 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
                        data={"relayId": relay_id})
                 out.closed.append(int(key))
         n = tx.allocate_number()
-        tx.put("item", str(n), {
-            "state": "open", "kind": "review", "from": sender, "relayId": relay_id, "text": text,
-            "module": sub["module"], "node": sub["node"], "files": sub["files"], "commit": commit,
-            "closedReason": None, "answer": None,
-        }, action="created", data={"relayId": relay_id})
+        rec = {"state": "open", "kind": "review", "from": sender, "relayId": relay_id, "text": text,
+               "module": sub["module"], "node": sub["node"], "files": sub["files"], "commit": commit,
+               "closedReason": None, "answer": None}
+        reviewers = [] if sub.get("disagree") else _reviewers(db)
+        if sub.get("disagree"):
+            rec["disagree"] = sub["disagree"]
+        if reviewers:                      # 送审: the 【交审】 goes to every registered reviewer unchanged
+            body = tx.allocate_number()
+            meta = tx.write_body(body, text)
+            rec.update(sentAt=store.now(), sentTo=reviewers)
+            out.sends += [{"kind": "review-forward", "to": r, "replyTo": None, "body": body, "path": db.path / meta["path"]}
+                          for r in reviewers]
+        tx.put("item", str(n), rec, action="created", data={"relayId": relay_id})
         out.number = n
         out.lines.append(f"已记为交审事项 C{n}（{sub['module']} 的 {msg.fields.get('节点', '').strip()}）")
+        if sub.get("disagree"):
+            out.lines.append(f"模块不同意审查 {sub['disagree']['ref']}：不再返工，作为待用户决定的问题进合批")
         if out.closed:
             out.lines.append("取代了 " + "、".join(f"C{k}" for k in out.closed))
         return out
+
+
+REVIEW_TIMEOUT = timedelta(minutes=15)
+
+
+def _reviewers(db: store.Store) -> list[str]:
+    from module_crew import sources
+    return [r["name"] for r in sources.listing(db) if r.get("kind") == "lead"]
+
+
+def _disagree_reasons(db: store.Store, worktree: Path, sub: dict) -> list[str]:
+    """「不同意」 must re-send the previous version unchanged: same files, same content as that submission's commit."""
+    prev = next((v for _, v in sorted(store.records(db, "item").items(), key=lambda kv: -int(kv[0]))
+                 if v.get("kind") == "review" and v.get("state") == "open" and v.get("module") == sub["module"]
+                 and v.get("node") == sub["node"]), None)
+    if prev is None:
+        return ["写了「不同意」，但这个节点没有未答的上一版交审可以不同意"]
+    if sorted(f["path"] for f in prev["files"]) != sorted(f["path"] for f in sub["files"]):
+        return ["写了「不同意」时，文件要和上一版交审相同（不同意就是不改）"]
+    for f in sub["files"]:
+        before = subprocess.run(["git", "-C", str(worktree), "show", f"{prev['commit']}:{f['path']}"], capture_output=True)
+        now = (worktree / f["path"]).read_bytes()
+        if before.returncode != 0 or hashlib.sha256(before.stdout).digest() != hashlib.sha256(now).digest():
+            return [f"写了「不同意」时，文件要和上一版交审相同：{f['path']} 改过了（改了就别写「不同意」，按返工重交）"]
+    return []
+
+
+def _rounds(db: store.Store, module: str, node: str) -> int:
+    """Rework notices already sent for this module and node."""
+    return sum(1 for e in store.events(db, kind="item") if e.get("action") == "rework-sent"
+               and (e.get("data") or {}).get("module") == module and (e.get("data") or {}).get("node") == node)
+
+
+def review_state(db: store.Store, number: int, now: datetime | None = None) -> str:
+    """none / reviewing / timeout / rework / passed / decide (spec/crew-review-nearby.md key decision 1)."""
+    rec = store.get(db, "item", str(number)) or {}
+    if rec.get("disagree") or rec.get("overLimit"):
+        return "decide"
+    rows = rec.get("reviews") or []
+    if rows:
+        verdict = protocol._conclusion_verdict(rows[-1].get("verdict") or "")
+        if rows[-1].get("decisions"):
+            return "decide"
+        return "rework" if verdict == "changes-required" else "passed"
+    if not rec.get("sentAt"):
+        return "none"
+    now = now or datetime.fromisoformat(store.now())
+    return "timeout" if now - datetime.fromisoformat(rec["sentAt"]) > REVIEW_TIMEOUT else "reviewing"
 
 
 def _points(text: str) -> str:

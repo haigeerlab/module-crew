@@ -378,6 +378,11 @@ def _conclusion(fields: dict, problems: list[str], hints: list[str]) -> dict | N
     return None if problems else out
 
 
+def _conclusion_verdict(raw: str) -> str | None:
+    """passed / passed-with-advice / changes-required for a 结论 value, None when it is none of them."""
+    return next((code for pattern, code in _VERDICT_FORMS if pattern.match(raw.strip())), None)
+
+
 def _item_ref(value: str | None) -> int | None:
     """事项：#N (hub item) or C<N> (the coordinator's own item when there is no hub, v2.0 draft)."""
     m = _CREW_RE.match((value or "").strip())

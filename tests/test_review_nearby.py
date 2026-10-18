@@ -1,8 +1,11 @@
 """crew-review-nearby: review close to the coordinator, decisions for the user (spec/crew-review-nearby.md)."""
 
 import unittest
+from datetime import datetime, timedelta
 
-from module_crew import protocol
+from helpers import ReviewCase, git, review_text
+
+from module_crew import protocol, review, sources, store
 
 
 def conclusion(verdict="通过", extra="", ref="R-7", node="Spec", module="b"):
@@ -112,6 +115,74 @@ class NoticeTest(unittest.TestCase):
         msg = protocol.parse("【用户答复】\n事项：C20（你的原消息 #4001）\n用户原话：A\n答复时间：2026-10-19T10:00:00+08:00\n")
         self.assertTrue(msg.ok, msg.problems)
         self.assertEqual(msg.item, 20)
+
+
+class NearbyCase(ReviewCase):
+    """b and c opened; a reviewer `arch` registered as a lead source (registration_lead=False skips it)."""
+    with_lead = True
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        if self.with_lead:
+            sources.add(self.db, "arch", "lead", "登记审查会话")
+
+    def state(self, n, minutes=0):
+        rec = store.get(self.db, "item", str(n))
+        now = datetime.fromisoformat(rec["sentAt"]) + timedelta(minutes=minutes) if rec.get("sentAt") else None
+        return review.review_state(self.db, n, now=now)
+
+
+class ForwardTest(NearbyCase):
+    """Task 3: 送审 and the review state of a submission."""
+
+    def test_forward_to_reviewer(self):
+        text = self.spec_review("b")
+        out = review.add(self.db, text, "shop-b", 4001)
+        self.assertEqual(out.code, 0, out.lines)
+        [send] = out.sends
+        self.assertEqual((send["kind"], send["to"], send["replyTo"]), ("review-forward", "arch", None))
+        self.assertEqual(send["path"].read_text(encoding="utf-8"), text)         # the 【交审】 unchanged
+        self.assertTrue(store.get(self.db, "item", str(out.number))["sentAt"])
+        self.assertEqual(self.state(out.number), "reviewing")
+        self.assertEqual(self.state(out.number, minutes=16), "timeout")          # 15 minutes without a conclusion
+        cli = self.run_cli("review", "add", str(self.write(self.plan_review("b"))), "--from", "shop-b", "--relay-id", "4002",
+                           cwd=self.repo)
+        self.assertIn("发送 【交审】 → arch（送审），正文文件：", cli.stdout)
+
+    def write(self, text):
+        f = self.tmp / f"msg-{len(list(self.tmp.iterdir()))}.txt"
+        f.write_text(text, encoding="utf-8")
+        return f
+
+    def test_disagree(self):
+        first = review.add(self.db, self.spec_review("b"), "shop-b", 4001).number
+        same = self.spec_review("b").replace("要点：", "不同意：R-7：错误码已在接口提案里定\n要点：")
+        out = review.add(self.db, same, "shop-b", 4002)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertEqual(out.closed, [first])
+        self.assertEqual(out.sends, [])                                            # not sent back to the reviewer
+        self.assertEqual(self.state(out.number), "decide")
+        self.assertEqual(store.get(self.db, "item", str(out.number))["disagree"]["ref"], "R-7")
+        spec = self.wt["b"] / "spec" / "b.md"
+        spec.write_text(spec.read_text() + "改了\n")
+        git(self.wt["b"], "commit", "-qam", "change")
+        changed = self.spec_review("b").replace("要点：", "不同意：R-7：理由\n要点：")
+        bad = review.add(self.db, changed, "shop-b", 4003)
+        self.assertEqual(bad.code, 3)
+        self.assertIn("上一版", " ".join(bad.lines))
+
+    def test_disagree_needs_previous(self):
+        text = self.spec_review("b").replace("要点：", "不同意：R-7：理由\n要点：")
+        self.assertEqual(review.add(self.db, text, "shop-b", 4001).code, 3)
+
+
+class NoReviewerTest(NearbyCase):
+    with_lead = False
+
+    def test_no_forward_state_none(self):
+        out = review.add(self.db, self.spec_review("b"), "shop-b", 4001)
+        self.assertEqual((out.sends, review.review_state(self.db, out.number)), ([], "none"))
 
 
 if __name__ == "__main__":

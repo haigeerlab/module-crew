@@ -224,6 +224,8 @@ def _review(args) -> int:
         print(f"类型：{out.kind}")
         for line in out.lines:
             print(line)
+        for x in out.sends:
+            print(f"发送 【交审】 → {x['to']}（送审），正文文件：{x['path']}")
         return out.code
     if args.action == "note":
         text = _read(args.file)

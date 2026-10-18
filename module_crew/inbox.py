@@ -24,6 +24,7 @@ class Outcome:
     unmatched: list[int] = field(default_factory=list)
     tell_sender: list[str] = field(default_factory=list)
     lines: list[str] = field(default_factory=list)
+    sends: list[dict] = field(default_factory=list)   # {"kind", "to", "replyTo", "body", "path"} for the coordinator to send
 
 
 def _active_dev(db: store.Store, sender: str) -> bool:
