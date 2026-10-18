@@ -1,6 +1,6 @@
 # Spec: crew-stall-signals
 
-<!-- spec-guard: review approved e65bc421d47d -->
+<!-- spec-guard: review approved 29fae42ba48e -->
 
 > 能力图模块 `crew-stall-signals`（第四版，0.4.0 三个模块之一）。需求来源：`livesaas-integration/REQ-REVIEW-NEARBY.md` R14（用户决定 49）；
 > 0.3.0 冻结时用户定 R14 放下一版。用户 2026-10-19 在本会话确认 19 条下一版假设（全部按推荐）。
