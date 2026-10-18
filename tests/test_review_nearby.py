@@ -363,6 +363,77 @@ class BatchTest(NearbyCase):
         self.assertIn(f"C{plan}", msg.fields["要你决定"])
 
 
+class DecisionTest(NearbyCase):
+    """Task 9: every D answered before anything happens; coordinator questions decide approve / return / hold."""
+    submit = NoteTest.submit
+
+    def age(self, n):
+        with self.db.transaction(actor="t") as tx:
+            rec = tx.get("item", str(n))
+            tx.put("item", str(n), dict(rec, sentAt="2026-01-01T00:00:00+08:00"), action="aged")
+
+    def test_missing_answer_refused_nothing_changes(self):
+        n = self.submit()
+        review.note(self.db, n, "arch", conclusion("通过", DECISIONS))
+        before = (store.events(self.db), git(self.repo, "rev-parse", "HEAD"))
+        res = review.approve(self.repo, [n], "A；D1 B")
+        self.assertEqual(res.code, 3, res.lines)
+        self.assertIn("D2", " ".join(res.lines))
+        self.assertIn("要不要支持空字符串", " ".join(res.lines))                     # the question to chase
+        self.assertEqual((store.events(self.db), git(self.repo, "rev-parse", "HEAD")), before)
+
+    def test_all_answered_words_go_to_the_module(self):
+        n = self.submit()
+        review.note(self.db, n, "arch", conclusion("通过", DECISIONS))
+        res = review.approve(self.repo, [n], "A；D1 B；D2：A")
+        self.assertEqual(res.code, 0, res.lines)
+        reply = [x for x in res.sends if x["kind"] == "user-reply"][0]["path"].read_text(encoding="utf-8")
+        self.assertEqual(protocol.parse(reply).fields["用户原话"], "A；D1 B；D2：A")
+
+    def disputed(self):
+        n = self.submit()
+        review.note(self.db, n, "arch", conclusion("有须修改项2条", CHANGES))
+        same = self.spec_review("b").replace("要点：", "不同意：\nR-7：错误码已在接口提案里定\n要点：")
+        self.relay += 1
+        return review.add(self.db, same, "shop-b", self.relay).number
+
+    def test_disagree_back_or_current(self):
+        n = self.disputed()
+        head = git(self.repo, "rev-parse", "HEAD")
+        res = review.approve(self.repo, [n], "A；D1 选 B")                         # B: return, change as reviewed
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), head)                  # nothing approved
+        self.assertEqual(store.get(self.db, "item", str(n))["closedReason"], "answered")
+        self.assertTrue(any(x["kind"] == "user-reply" and x["to"] == "shop-b" for x in res.sends))
+        self.assertIn("退回", " ".join(res.lines))
+        n = self.disputed()
+        self.assertEqual(review.approve(self.repo, [n], "A；D1 A").code, 0)
+        self.assertNotEqual(git(self.repo, "rev-parse", "HEAD"), head)                # approved as it is
+
+    def test_timeout_hold(self):
+        n = self.submit()
+        self.age(n)
+        res = review.approve(self.repo, [n], "A；D1 B")                             # B: wait for the review
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(store.get(self.db, "item", str(n))["state"], "open")
+        self.assertIn("等审查", " ".join(res.lines))
+
+
+class MergeDecisionTest(MergeCase):
+    def test_merge_approve_checks_answers(self):
+        db = store.open_store(self.repo)
+        sources.add(db, "arch", "lead", "登记审查会话")
+        n = review.add(db, self.finish("b"), "shop-b", 8101).number
+        with db.transaction(actor="t") as tx:
+            rec = tx.get("item", str(n))
+            tx.put("item", str(n), dict(rec, sentAt="2026-01-01T00:00:00+08:00"), action="aged")
+        out = self.run_cli("merge", "approve", f"C{n}", "--original", "A", cwd=self.repo)
+        self.assertEqual(out.returncode, 3, out.stdout)
+        self.assertIn("D1", out.stdout + out.stderr)
+        out = self.run_cli("merge", "approve", f"C{n}", "--original", "A；D1 A", cwd=self.repo)
+        self.assertEqual(out.returncode, 0, out.stderr)
+
+
 class FinalOptionsTest(MergeCase):
     def test_evidence_required_and_shown_first(self):
         db = store.open_store(self.repo)

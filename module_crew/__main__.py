@@ -402,9 +402,18 @@ def _merge(args) -> int:
     if original is None:
         return 2
     if args.action == "approve":
+        split = review.split_decisions(".", args.numbers, original)
+        if split.missing:
+            print("\n".join(review.chase_lines(split)))
+            return 3
         try:
-            done = merge.approve_many(store.open_store(), args.numbers, original)
-        except merge.AnswerRefused as exc:
+            for n in split.back:
+                reply = review.answer(store.open_store(), n, original)
+                print(f"C{n} 按用户的答复退回（没有批准）：发送 【用户答复】 → {reply.to}，replyTo：{reply.reply_to}，正文文件：{reply.path}")
+            for n in split.hold:
+                print(f"C{n} 等审查结论：保持未答，没有批准")
+            done = merge.approve_many(store.open_store(), split.approve, original) if split.approve else []
+        except (merge.AnswerRefused, review.AnswerRefused) as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
         for res in done:
@@ -412,7 +421,7 @@ def _merge(args) -> int:
             print(f"收件人：{res.reply.to}")
             print(f"replyTo：{res.reply.reply_to}")
             print(f"正文文件：{res.reply.path}")
-        closing = merge.closing(store.open_store(), [r.reply.to for r in done])
+        closing = merge.closing(store.open_store(), [r.reply.to for r in done]) if done else None
         if closing:
             print(f"发送 【已恢复】 → {closing['to']}，正文文件：{closing['path']}（这个事项涉及的模块都转完后再发）")
         return 0
@@ -512,7 +521,7 @@ def main(argv: list[str] | None = None) -> int:
     mr = mgs.add_parser("run")
     mr.add_argument("--check-command")
     mr.add_argument("--replace-check", action="store_true")
-    for name, positional in (("approve", ("numbers", int)), ("cleanup", ("module", str)), ("tick", ("module", str)),
+    for name, positional in (("approve", ("numbers", refs.parse)), ("cleanup", ("module", str)), ("tick", ("module", str)),
                              ("push", None)):
         c = mgs.add_parser(name)
         if positional:

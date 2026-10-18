@@ -660,6 +660,50 @@ class ApproveResult:
     sends: list[dict] = field(default_factory=list)   # {"kind", "to", "replyTo", "body", "path"}
 
 
+_ANSWER_RE = re.compile(r"D\s*(\d+)\s*[：:]?\s*(?:选\s*)?([A-Za-z])(?![A-Za-z])")
+
+
+@dataclass
+class Split:
+    """How a user's answer sorts the reviews being approved (spec key decision 4)."""
+    approve: list[int] = field(default_factory=list)
+    back: list[int] = field(default_factory=list)      # 「退回按审查意见改」: answered, nothing approved
+    hold: list[int] = field(default_factory=list)      # 「等审查结论」: left open
+    missing: list[str] = field(default_factory=list)   # question lines still to ask
+
+
+def split_decisions(project: str | os.PathLike, numbers: list[int], original: str) -> Split:
+    """Number the open questions of these reviews D1… in batch order (as the item showed them) and read the answers."""
+    b = batch(Path(project))
+    order = [i for i in b["items"] if i["number"] in numbers]
+    known = {i["number"] for i in order}
+    answers = {f"D{k}": v.upper() for k, v in _ANSWER_RE.findall(original or "")}
+    out, k = Split(), 0
+    out.approve = [n for n in numbers if n not in known]          # not open reviews: let the caller refuse them
+    for i in order:
+        verdict = "approve"
+        for d in i["decisions"]:
+            k += 1
+            letters = [o["letter"] for o in d["options"]]
+            got = answers.get(f"D{k}")
+            if got not in letters:
+                out.missing += question_lines([(f"D{k}", None, d)])
+                continue
+            if d["kind"] in ("disagree", "over-limit") and got == "B":
+                verdict = "back"
+            elif d["kind"] == "timeout" and got == "B" and verdict == "approve":
+                verdict = "hold"
+        {"approve": out.approve, "back": out.back, "hold": out.hold}[verdict].append(i["number"])
+    return out
+
+
+def chase_lines(split: Split) -> list[str]:
+    """What to ask again when a D is unanswered: never fill in the reviewer's lean."""
+    missing = sorted({line.split("：", 1)[0] for line in split.missing if line[:1] == "D"}, key=lambda x: int(x[1:]))
+    return ([f"待决问题没答全：{'、'.join(missing)}；没有执行。请把下面的问题再问用户一次（有决策收件箱时补发【等待用户】只问这几条），"
+             "用户答全后连同原来的答复一起重跑："] + split.missing)
+
+
 def _next_number(db: store.Store) -> int:
     return max((int(e["key"]) for e in store.events(db)
                 if e["type"].split(".")[0] in store.NUMBERED and e["key"].isdigit()), default=0) + 1
@@ -707,8 +751,29 @@ def _record_lead(db: store.Store, picked: list, original: str, reasons: list[str
 
 
 def approve(project: str | os.PathLike, numbers: list[int], original: str) -> ApproveResult:
-    """Land the approved Spec/Plan files on the integration baseline and prepare all replies and notices."""
+    """Read the answers to open questions first (all must be there), then approve, return or hold each review."""
     project = Path(project)
+    split = split_decisions(project, numbers, original)
+    if split.missing:
+        return ApproveResult(3, chase_lines(split))
+    db = store.open_store(project)
+    extra = ApproveResult(0)
+    for n in split.back:
+        reply = answer(db, n, original)
+        extra.sends.append({"kind": "user-reply", "to": reply.to, "replyTo": reply.reply_to, "alsoAnswers": [],
+                            "body": reply.body, "path": reply.path})
+        extra.lines.append(f"C{n} 按用户的答复退回，按审查意见改后重交（没有批准）")
+    extra.lines += [f"C{n} 等审查结论：保持未答，没有批准" for n in split.hold]
+    if not split.approve:
+        return extra
+    res = _approve(project, split.approve, original)
+    res.lines += extra.lines
+    res.sends += extra.sends
+    return res
+
+
+def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
+    """Land the approved Spec/Plan files on the integration baseline and prepare all replies and notices."""
     db = store.open_store(project)
     items = store.records(db, "item")
     reasons = []

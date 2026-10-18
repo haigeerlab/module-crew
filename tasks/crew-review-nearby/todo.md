@@ -38,11 +38,11 @@
   - 验收：Spec 验收 16
   - 文件：`module_crew/review.py`、`tests/helpers.py`、`tests/test_review_nearby.py`
 
-- [ ] Task 9：批准核对待决问题、分三路
+- [x] Task 9：批准核对待决问题、分三路
   - 验收：Spec 验收 7、8
   - 文件：`module_crew/review.py`、`module_crew/merge.py`、`tests/test_review_nearby.py`
 
-- [ ] Checkpoint 2（report）：完整返工循环与提请批准在三种组合下跑通
+- [x] Checkpoint 2（report）：完整返工循环与提请批准在三种组合下跑通（2026-10-19：单用——ReviewCase 不登记来源与审查者的批准、合并测试；不配审查者——test_sources 带收件枢纽来源批准；两者都配——test_review_nearby 返工循环、提请批准、待决问题与 test_hub_output；全量通过）
 
 - [ ] Task 10：评审节奏
   - 验收：Spec 验收 15
