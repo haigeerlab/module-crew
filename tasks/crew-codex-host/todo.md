@@ -28,4 +28,4 @@
   - 验收：Spec 验收 9、10
   - 文件：`skills/crew-coordinator/SKILL.md`、`module_crew/probe.py`、`module_crew/__main__.py`、`README.md`、`tests/test_skills.py`
 
-- [ ] Checkpoint 2（gate）：模块最终验收——全部测试全绿、10 条验收逐条对应测试、列出实际改动文件
+- [x] Checkpoint 2（gate）：模块最终验收——全部测试全绿、10 条验收逐条对应测试、列出实际改动文件（用户 2026-10-18 批准）
