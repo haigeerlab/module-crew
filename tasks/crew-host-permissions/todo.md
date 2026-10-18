@@ -28,4 +28,4 @@
   - 验收：Spec 验收 10
   - 文件：`skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`codex-skills/crew-dev/SKILL.md`、`README.md`、`tests/test_skills.py`
 
-- [ ] Checkpoint 2（gate）：模块最终验收——全量测试全绿（验收 12）、验收逐条对应证据、验收 11 实地结果或「宿主未实测」、改动文件清单与提交号
+- [x] Checkpoint 2（gate）：模块最终验收——全量测试全绿（验收 12）、验收逐条对应证据、验收 11 实地结果或「宿主未实测」、改动文件清单与提交号（2026-10-19 用户批准，同时批准构建中补改的 Spec：不删文件、记录放运行配置；全量 393 个测试通过；提交 dc51b57…d04fbad。验收 11 记为「宿主未实测」：用户定在冻结 0.4.0 前交给接入方案会话照共享笔记 crew-host-permissions-field-test.md 的步骤实测，结果补进本模块）
