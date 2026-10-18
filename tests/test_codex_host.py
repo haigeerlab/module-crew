@@ -8,7 +8,7 @@ import unittest
 
 from helpers import RepoCase, StartCase
 
-from module_crew import hostcheck, start, store
+from module_crew import failure, hostcheck, start, store
 
 
 class HostRegistryTest(RepoCase):
@@ -128,6 +128,24 @@ class HostCheckTest(StartCase):
             tx.put("config", "main", dict(tx.get("config", "main"), pluginVersion="9.9.9"), action="set")
         rep = hostcheck.run(self.wt)
         self.assertFalse(next(c for c in rep.checks if c["id"] == "version")["ok"])
+
+
+class RecoveryHostTest(StartCase):
+    def test_resume_kit_and_sessions_follow_host(self):
+        self.assertEqual(start.prepare(self.repo, ["b"], "开 b", short="shop", host="codex").code, 0)
+        self.assertEqual(start.prepare(self.repo, ["c"], "开 c").code, 0)
+        db = store.open_store(self.repo)
+        codex = store.read_body(db, failure.resume_kit(db, "b").body)
+        claude = store.read_body(db, failure.resume_kit(db, "c").body)
+        for words in ("Codex", "用原名重新注册", "host-check", f"{start.BIN} status"):
+            self.assertIn(words, codex)
+            self.assertNotIn(words, claude)
+        self.assertIn("module-crew takeover shop-c", claude)
+        rows = {r["module"]: r for r in failure.sessions(db)}
+        self.assertEqual((rows["b"]["host"], rows["c"]["host"]), ("codex-desktop", "claude-desktop"))
+        doc = json.loads(self.run_cli("sessions", "--json", cwd=self.repo).stdout)
+        self.assertEqual(doc["schemaVersion"], 1)
+        self.assertEqual({r["module"]: r["host"] for r in doc["sessions"]}, {"b": "codex-desktop", "c": "claude-desktop"})
 
 
 if __name__ == "__main__":

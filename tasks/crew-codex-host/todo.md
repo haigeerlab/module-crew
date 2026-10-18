@@ -16,7 +16,7 @@
   - 验收：Spec 验收 5
   - 文件：`module_crew/hostcheck.py`、`module_crew/__main__.py`、`module_crew/start.py`（记 `pluginVersion`）、`tests/test_codex_host.py`
 
-- [ ] Task 4：`resume-kit` 按宿主出说明、`sessions` 加 `host`
+- [x] Task 4：`resume-kit` 按宿主出说明、`sessions` 加 `host`
   - 验收：Spec 验收 6、7
   - 文件：`module_crew/failure.py`、`tests/test_codex_host.py`
 

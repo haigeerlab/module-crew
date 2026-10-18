@@ -147,7 +147,7 @@ def sessions(db: store.Store, now: datetime | None = None) -> list[dict]:
         last = next((e["at"] for e in reversed(events) if _related(e, name, module)), None)
         text = hooks._stage(items, module)
         rows.append({
-            "name": name, "relayName": name, "module": module, "worktree": rec.get("worktree"),
+            "name": name, "relayName": name, "module": module, "worktree": rec.get("worktree"), "host": rec.get("host"),
             "stage": stage_code(text), "stageText": text,
             "lastActivity": last, "ago": _ago(last, now) if last else None,
             "openTickets": sorted(int(k) for k, v in tickets.items() if v.get("from") == name and v.get("state") != "closed"),
@@ -191,8 +191,11 @@ def resume_kit(db: store.Store, module: str) -> Kit:
     from module_crew import hooks
     name, rec = _dev_of(store.records(db, "session"), module)
     context = hooks.session_start(rec["worktree"], "startup") or ""
-    text = "\n".join([f"模块：{module}　邮箱名：{name}　worktree：{rec['worktree']}", "", context, "",
-                      RECOVERY_NOTE.format(name=name)]) + "\n"
+    lines = [f"模块：{module}　邮箱名：{name}　worktree：{rec['worktree']}", "", context, "", RECOVERY_NOTE.format(name=name)]
+    if rec.get("host") == "codex-desktop":
+        from module_crew.start import codex_lines
+        lines += codex_lines(name)
+    text = "\n".join(lines) + "\n"
     with db.transaction(actor="coordinator") as tx:
         n = tx.allocate_number()
         tx.write_body(n, text)
