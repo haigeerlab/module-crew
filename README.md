@@ -110,4 +110,4 @@ python3 -m unittest discover -s tests -v
 - 用真实的 spec-guard 0.68.0 跑通（现在用夹具模拟 `interface.json` 1.1 与 `/map --json`）。
 - 会话之间真实收发消息、「等待审批」在线状态、真实远端与 `gh` 开 PR。
 - 预配项目工具许可能否消除模块会话的大部分权限弹窗。
-- interface 1.1 定稿后的三处修订：reviewMark 占位符、开工时用 `checkoutRole` 设角色标记、钩子改为按角色标记判断角色。
+- 已按 interface 1.1 定稿接入 `reviewMark`、`checkoutRole`（开工时设角色标记，钩子以它为准），待 0.68.0 发版后用真实安装副本核对。
