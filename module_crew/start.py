@@ -150,7 +150,7 @@ def _settings(project: Path, db: store.Store | None, short: str | None, max_modu
     """Run configuration to use, plus refusal reasons about it."""
     cfg = _config(db)
     reasons = []
-    if cfg:
+    if "crewDir" in cfg:  # settled by the first prepare; sources/check command alone don't settle it
         if short is not None and short != cfg.get("projectShort"):
             reasons.append(f"项目简称已定为 {cfg.get('projectShort')}，不能改成 {short}")
         if max_modules is not None and max_modules != cfg.get("maxModules"):
@@ -210,9 +210,10 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
     short = cfg["projectShort"]
     coord = f"{short}-coord"
     with db.transaction(actor=coord) as tx:
-        if not tx.get("config", "main"):
+        if "crewDir" not in (tx.get("config", "main") or {}):
             from module_crew.hostcheck import plugin_version
-            tx.put("config", "main", {**cfg, "pluginVersion": plugin_version()}, action="set")
+            tx.put("config", "main", {**(tx.get("config", "main") or {}), **cfg, "pluginVersion": plugin_version()},
+                   action="set")
         if not any(v.get("role") == "coordinator" and v.get("status") == "active" for v in tx.records("session").values()):
             tx.put("session", coord, {"role": "coordinator", "host": "claude-desktop", "status": "active"},
                    action="registered")

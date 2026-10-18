@@ -210,7 +210,7 @@ def set_mode(db: store.Store, serial: bool, original: str) -> None:
     _need(original)
     with db.transaction(actor="coordinator") as tx:
         cfg = tx.get("config", "main")
-        if not cfg:
+        if "crewDir" not in (cfg or {}):  # sources alone don't mean a module was ever opened
             raise FailureRefused("还没有开过模块（没有运行配置），不需要切换")
         if (cfg.get("mode") == "serial") == serial:
             raise FailureRefused("已经是串行模式" if serial else "已经是并行模式")

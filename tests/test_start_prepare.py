@@ -151,6 +151,28 @@ class PrepareTest(StartCase):
         d = store.read_body(db, self.run_prepare(modules=("d",)).prepared[0]["kickoff"])
         self.assertIn("接口：\n无", d)
 
+    def test_sources_added_before_first_prepare(self):
+        # Rehearsal batch 2: `source add` writes config/main first; prepare must still settle the run config.
+        from module_crew import sources
+        db, _ = store.init_store(self.repo)
+        sources.add(db, "di-hub", "hub", "登记枢纽")
+        sources.add(db, "di-owner", "lead", "登记负责人")
+        from module_crew import failure
+        with self.assertRaises(failure.FailureRefused):   # nothing opened yet: sources alone are not a run config
+            failure.set_mode(db, True, "先不并行了")
+        res = self.run_prepare(modules=("b",), max_modules=3)
+        cfg = store.get(store.open_store(self.repo), "config", "main")
+        self.assertEqual((cfg["projectShort"], cfg["integrationBranch"], cfg["maxModules"], cfg["crewDir"]),
+                         ("shop", "main", 3, str(self.tmp / "repo-crew")))
+        self.assertEqual([s["name"] for s in cfg["sources"]], ["di-hub", "di-owner"])
+        self.assertEqual([p["id"] for p in res.prepared], ["b"])
+        self.assert_short_still_fixed()
+
+    def assert_short_still_fixed(self):
+        res = start.prepare(self.repo, ["c"], "再开", short="mall")
+        self.assertEqual(res.code, 3)
+        self.assertIn("项目简称已定为 shop", " ".join(res.lines))
+
     def test_second_prepare_uses_config(self):
         self.run_prepare(modules=("b",))
         res = start.prepare(self.repo, ["c"], "再开一个")
