@@ -70,7 +70,7 @@ class CliTest(StatusCase):
         self.seed_store()
         r = self.run_cli("status")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        for words in ("spec-guard-planning", "shop-coord", "事项 1", "等待单 1", "模块 1/3", "进行中：b",
+        for words in ("spec-guard-planning", "shop-coord", "事项 1", "等待单 1", "模块 1/3", "spec-guard 进行中：b",
                       "模块会话：Claude 或 Codex 桌面版"):
             self.assertIn(words, r.stdout)
 

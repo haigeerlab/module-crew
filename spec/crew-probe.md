@@ -144,3 +144,4 @@ python3 -m unittest discover -s tests -v
 ## 文档建议
 
 README（crew-start 之后补）里写「先跑 `module-crew status`」以及每个 blocker 的处理办法；本模块输出的「怎么办」一栏就是这份内容的来源。
+- 2026-10-18：`status` 的模块进度改写成「spec-guard 当前／spec-guard 进行中」并注明 module-crew 开工的模块见「会话与待办」，避免把 spec-guard 的当前模块误读成已被 crew 开工。原因：第二轮试点小项（status 写「进行中：wordcount」而 wordcount 并未开工）；来源：用户 2026-10-18 定为 0.1.2 待办，随 0.2.0 做。

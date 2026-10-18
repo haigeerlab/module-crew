@@ -82,7 +82,8 @@ def _status(as_json: bool) -> int:
     if m is None:
         print("  读不出（见体检 spec-guard 一项）")
     else:
-        print(f"  模块 {m['done']}/{m['total']} 完成；当前：{m['activeModule'] or '无'}；进行中：{'、'.join(m['inProgress']) or '无'}")
+        print(f"  模块 {m['done']}/{m['total']} 完成；spec-guard 当前：{m['activeModule'] or '无'}；spec-guard 进行中：{'、'.join(m['inProgress']) or '无'}")
+        print("  （这是 spec-guard 按能力图算出的进度；由 module-crew 开工的模块见上面的「会话与待办」）")
     print("协调会话：Claude 桌面版；模块会话：Claude 或 Codex 桌面版")
     return 3 if report.blocked else 0
 

@@ -209,3 +209,11 @@ class CodexCoordinatorSkillTest(unittest.TestCase):
         for words in ("--host codex", "用户手动", "host-check", "提权", "交给 agent-relay", "not-loaded", "原名重新注册",
                       "read-only < workspace-write"):
             self.assertIn(words, section)
+
+
+class WithdrawRuleTest(unittest.TestCase):
+    def test_withdraw_uses_hub_item_number(self):
+        _, text = read("crew-coordinator")
+        section = text.split("## 接入收件枢纽", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("【撤回】", section)
+        self.assertIn("枢纽回执给的事项号（契约 v1.9）", section)
