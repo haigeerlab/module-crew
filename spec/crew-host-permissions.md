@@ -1,6 +1,6 @@
 # Spec: crew-host-permissions
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved b9ce91e9ab26 -->
 
 > 能力图模块 `crew-host-permissions`（第四版，0.4.0 三个模块之二）。需求来源：`livesaas-integration/REQ-REVIEW-NEARBY.md` R16（用户决定 44 第①条、49）；
 > decision-inbox 2026-10-19 实测：由别的会话用开会话工具代开的会话里，`.claude/settings.local.json` 的 ask 规则（如 `git push`）不弹确认就执行。
