@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved ded2d554679a -->
+<!-- spec-guard: review approved d825accb76c6 -->
 # Spec: crew-start
 
 > 能力图模块 `crew-start`。需求来源：`docs/requirements-record.md` B2（开工）、B1（协调会话放 Claude 桌面版）、A5（就绪与排序）、假设 7（上限默认 3）。

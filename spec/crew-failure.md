@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved 4c8a1e8c3c71 -->
+<!-- spec-guard: review approved 780e14a4844c -->
 # Spec: crew-failure
 
 > 能力图模块 `crew-failure`。需求来源：`docs/requirements-record.md` B6（失败与回退：等外部条件挂起不占名额；异常停点、同一 gate 再挡、改能力图复用 spec-guard 规则；崩溃在原 worktree 换会话；

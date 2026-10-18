@@ -151,3 +151,7 @@ Spec 修订 ce26d8b（crew-merge、crew-start、crew-review-batch），实现 79
 | G | agent-relay 负责人确认是宿主限制（桌面版停掉空闲会话）；两份 skill 写明 `pendingReason: offline` 时用桌面版跨会话消息发一句「去读 agent-relay 收件箱」，不带正文 |
 | 漂移 | 协调会话每次醒来核对模块会话权限模式，比自己宽就告诉用户，由用户决定 |
 | 小项 | skill 写明合并队列按 Build order 排；README「尚未验证」按两轮结果重写 |
+
+## 第二轮验收
+
+- 2026-10-18 用户批准：第二轮修复（5715986）最终验收通过，6 份 Spec（crew-merge、crew-start、crew-failure、crew-recovery-hooks、crew-onboarding、crew-protocol）与能力图的修订复审通过；同意回告 LIVE-SAAS 方案会话。
