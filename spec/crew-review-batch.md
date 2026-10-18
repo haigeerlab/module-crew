@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved 33f6839e547c -->
+<!-- spec-guard: review approved 6a183d345397 -->
 # Spec: crew-review-batch
 
 > 能力图模块 `crew-review-batch`。需求来源：`docs/requirements-record.md` B2（批量审批、提交到基线后才开工构建）、A3（扩张点前批量前置审，批准后 Spec 与 Plan 提交到集成基线、同批互相读得到）、
@@ -45,7 +45,7 @@
 4. **`approve` 的顺序与失败处理**：先做全部检查（事项都还开着且是可批准的节点、集成基线干净、文件都能从记下的提交里取出、评审标记入口可用）；
    然后复制文件 → 逐个写评审标记 → `git add` 这些路径 → 一次 `git commit` → 一个状态库事务（批准事项、关交审事项、写所有答复与通知正文）。
    复制或写标记中途失败时停下，**不回滚也不删**集成 checkout 里已复制的文件（它们未提交），输出写明哪些文件已改，交用户决定；退出码 4。
-5. **评审标记命令的安全限制与 `/map` 一样**：必须 `python3` 开头、脚本在 spec-guard 安装目录内；占位符 `<project-root>`、`<module-id>`、`<target>`、`<state>` 由本模块填，末尾加 `--confirm`。
+5. **评审标记命令的安全限制与 `/map` 一样**：必须 `python3` 开头、脚本在 spec-guard 安装目录内；占位符 `<project-root>`、`<module-id>`、`<spec|plan|both>`、`<pending|approved>` 由本模块填（按 interface 1.1 定稿的写法），末尾加 `--confirm`。
 6. **批准事项单独一条**（`kind: "review-approval"`，已答，记原话、批准的交审编号、集成基线提交号）；开工通知的「依据」引用它的编号——满足契约「开工类【协调通知】必须写明所依据的批准事项编号」。
 
 ## 接口约定
@@ -125,7 +125,7 @@ python3 -m unittest discover -s tests -v
 
 ## 未决问题
 
-- spec-guard interface 1.1 的 `reviewMark` 键名与占位符写法以 crew-interface 定稿为准；现按 `{"reviewMark": {"command": ["python3", "-B", "hooks/review_mark.py", "--project", "<project-root>", "--module", "<module-id>", "--target", "<target>", "--state", "<state>"]}}` 实现，定稿后对照并按变更记录复审。
+- 无（`reviewMark` 已按 interface 1.1 定稿对照，见变更记录；0.68.0 发版后在第 7 关用真实安装副本再核一次）。
 
 ## 文档建议
 
@@ -134,3 +134,4 @@ README「一次完整流程」接着写：交审 → `review batch` → 用户�
 ## 变更记录
 
 - 2026-10-18：开工类【协调通知】的「要你做什么」补一句「`spec/<id>.md`、`tasks/<id>/` 冲突时取集成分支的版本（它带评审标记）」，crew-dev skill 增加「同步集成基线」一节，并加回归测试。原因：`review approve` 在集成分支提交带评审标记的副本，模块分支上是同名不带标记的文件，模块同步集成分支时出现 add/add 冲突（crew-recovery-hooks 构建中发现，临时目录已复现）；来源：用户 2026-10-18 选 A。
+- 2026-10-18：`reviewMark.command` 的占位符改为定稿写法 `<spec|plan|both>`、`<pending|approved>`（原按 `<target>`、`<state>` 填），测试夹具同步；不认识的占位符仍按原规则拒绝。原因：interface 1.1 定稿；来源：spec-guard 负责人通知 interface.json 1.1 定稿（spec-guard 分支 `claude/module-concurrency` 提交 6231abc，0.68.0 未发版），用户 2026-10-18 复审批准。

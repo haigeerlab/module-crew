@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved 2c5fd3b1032f -->
+<!-- spec-guard: review approved 4ba4b2103d45 -->
 # Spec: crew-start
 
 > 能力图模块 `crew-start`。需求来源：`docs/requirements-record.md` B2（开工）、B1（协调会话放 Claude 桌面版）、A5（就绪与排序）、假设 7（上限默认 3）。
@@ -22,7 +22,7 @@ worktree、会话登记、开工说明一次准备好，协调会话再用桌面
 
 - 打开会话本身（协调会话调用桌面版工具）；邮箱注册（模块会话按开工说明自己注册）。
 - Spec／Plan 的批量审批与开工类【协调通知】（crew-review-batch）；冲突裁决（crew-review-batch）。
-- 写 spec-guard 角色标记：等 spec-guard 的 `checkoutRole` 入口定稿后另行补上（见未决问题）。
+- 角色标记的读取与解释（spec-guard 与 crew-recovery-hooks 各自读）。
 
 ## 假设（用户 2026-10-18 已确认）
 
@@ -32,7 +32,7 @@ worktree、会话登记、开工说明一次准备好，协调会话再用桌面
 3. 分支名 = 模块 id，从本地集成分支切；worktree 放 `<仓库所在目录>/<仓库名>-crew/<模块 id>`。
 4. 开工说明只让模块会话写 Spec 与 Plan 并发【交审】，收到开工类【协调通知】才构建。
 5. 开工说明只给任务、接口、全局约束。
-6. 角色标记等 spec-guard `checkoutRole`；之前只在状态库登记角色并报告「角色标记待 spec-guard 0.68.0」。
+6. 角色标记按 interface 1.1 的 `checkoutRole` 写：每个新 worktree 用 `setModule` 设为 `module <id>`；集成 checkout 没有角色时用 `setCoordinator` 设为 `coordinator`（2026-10-18 修订，见变更记录）。
 7. 模块会话权限模式不高于协调会话：写进协调会话 skill，命令不管。
 8. `startable.modules` 照单全收；冲突处理归 crew-review-batch。
 9. probe 有任一阻塞项时 `prepare` 拒绝、什么都不写；0.68.0 发版前只用夹具测，第 7 关用真实版本。
@@ -61,7 +61,10 @@ bin/module-crew start prepare <模块 id>… (--original <原话> | --original-f
 ```
 
 - `start plan` 输出：空位数、提议开的模块（按 Build order，最多空位数个）及其职责、`conflicts`（如有，原样列出）、阻塞项（如有）。退出码 `0` 有可开的模块；`3` 有阻塞或没有可开的；`2` 参数错。
-- `start prepare` 输出：每个模块一段（worktree、分支、邮箱名、开工说明正文路径）、批准事项编号、「角色标记待 spec-guard 0.68.0」提示。
+- `start prepare` 输出：每个模块一段（worktree、分支、邮箱名、开工说明正文路径、角色标记结果）、批准事项编号、集成 checkout 的角色标记结果。
+  角色标记命令取 `checkoutRole.commands`，安全限制与 `/map` 相同（`python3` 开头、脚本在 spec-guard 安装目录内），填 `<module-id>`、`<checkout-root>` 并加 `--confirm`，参数列表、带超时、不经 shell。
+  设角色失败（入口缺失、退出码非 0）**不算中途失败**：worktree 与登记照常保留，该模块一段写「角色标记未设」、原因与可手动执行的命令，退出码不变；
+  集成 checkout 已有别的角色时不覆盖，只报告。
   退出码 `0` 全部完成；`3` 校验不过，什么都没写；`4` 中途失败，已完成的模块列出，失败原因写明；`2` 参数错。
 
 ### 开工说明正文（模板）
@@ -125,10 +128,11 @@ python3 -m unittest discover -s tests -v
 6. 开工说明正文与模板一致：含模块 id 与职责、worktree 路径、邮箱名、协调会话名、批准事项编号、所依赖模块的 Spec 路径（依赖取 `/map --json` 的模块依赖）、只写 Spec 与 Plan 的要求。
 7. 第二次 `prepare` 不带 `--project-short` 也能用配置；带了不同的值被拒。
 8. `crew-coordinator` skill 有「开工」一节：`start plan` → 问用户一次 → `start prepare` → 用桌面版开会话工具在 worktree 里开会话、第一条消息用开工说明正文、打开完成提醒 → 检查权限模式不高于本会话。
+9. 角色标记：`prepare b c` 后 b、c 两个 worktree 的角色标记分别为 `module b`、`module c`，集成 checkout 为 `coordinator`；集成 checkout 已是别的角色时不覆盖；
+   假 `checkoutRole` 脚本失败或 interface 没有 `checkoutRole` 时，worktree 与登记照常完成、退出码 0，输出写明「角色标记未设」与手动命令。
 
 ## 未决问题
 
-- spec-guard 的 `checkoutRole` 入口（写角色标记）还没设计。定稿后在本模块补「`prepare` 后调用 `checkoutRole`」与对应验收，按变更记录复审。
 - `/map --json` 里每个模块的依赖字段名以 spec-guard 0.68.0 实际输出为准（现行 0.67.0 为 `dependsOn`，验收 6 按它写）。
 
 ## 文档建议
@@ -138,3 +142,4 @@ README 的「一次完整流程」从这里开始写：`status` → `start plan`
 ## 变更记录
 
 - 2026-10-18：空位计算与名额检查不再数挂起的模块会话（会话登记 `suspended` 非空）；运行配置 `mode` 为 `serial` 时，`start plan` 把「已退回串行」列为阻塞、`start prepare` 退出码 3 拒绝开新模块（沿用原有退出码含义）。原因：crew-failure 要求挂起不占名额、用户可随时退回串行；来源：`spec/crew-failure.md`（用户 2026-10-18 批准），随 crew-failure 最终验收复审。
+- 2026-10-18：`start prepare` 建好 worktree 后用 interface 1.1 的 `checkoutRole.setModule` 设角色标记，集成 checkout 没有角色时用 `setCoordinator`；设角色失败只报告、不算中途失败；删去「角色标记待 spec-guard 0.68.0」提示与对应未决问题，增加验收 9。原因：interface 1.1 定稿 `checkoutRole`；来源：spec-guard 负责人通知 interface.json 1.1 定稿（spec-guard 分支 `claude/module-concurrency` 提交 6231abc，0.68.0 未发版），用户 2026-10-18 复审批准。

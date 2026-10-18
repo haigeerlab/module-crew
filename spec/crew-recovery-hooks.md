@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved b35e681ab821 -->
+<!-- spec-guard: review approved be38adffdd62 -->
 # Spec: crew-recovery-hooks
 
 > 能力图模块 `crew-recovery-hooks`。需求来源：`docs/requirements-record.md` 第 7 节（恢复五原则；钩子在启动／恢复／压缩及每轮按角色注入；换会话需用户同意 `takeover` 邮箱名一次）、
@@ -20,12 +20,12 @@
 **范围外**
 
 - 真正向 agent-relay 注册（新会话自己调用）；钩子信任（README 安装说明）。
-- 停止钩子、定时巡视（第一版不做）；spec-guard 角色标记（发版后再改为以它为准）。
+- 停止钩子、定时巡视（第一版不做）；写角色标记（crew-start 负责）。
 
 ## 假设（用户 2026-10-18 已确认）
 
 1. `hooks/hooks.json` 注册 SessionStart（启动、恢复、压缩）与 UserPromptSubmit，统一调 `bin/module-crew hook <事件>` 输出 `additionalContext`；不属于 module-crew 的会话静默（无输出、退出码 0）。
-2. 角色：当前目录是在用模块会话登记的 worktree → 模块会话；是集成分支所在 checkout 且有在用协调会话 → 协调会话；角色标记发版后改以它为准。
+2. 角色：当前 checkout 有角色标记时以标记为准（见关键决策 6）；没有标记时，当前目录是在用模块会话登记的 worktree → 模块会话，是集成分支所在 checkout 且有在用协调会话 → 协调会话。
 3. 模块会话注入：模块、邮箱名、协调会话名、当前该做什么（从状态库推出）、自己未关的等待单、crew-dev 规则提醒；协调会话注入：事项／请求／等待单／合并队列计数、先跑 `status`、看「等待审批」。
 4. 压缩事件另加：先跑 `module-crew status`、读未完成事项，以状态库为准，不按压缩前记忆重做。
 5. 完整提示只在 SessionStart；UserPromptSubmit 每轮一行；钩子只读状态库，不跑 probe 与 `/map`，目标 0.2 秒内；出错静默退出码 0。
@@ -46,6 +46,13 @@
 4. **每轮一行的内容**：模块会话 `module-crew：你是 <模块> 的模块会话（<邮箱名>），当前：<档位短语>`；协调会话 `module-crew：协调会话；未关 事项 N／请求 N／等待单 N／待合并 N`。
 5. **接管只记同意、不改登记**：`takeover` 要求邮箱名是状态库里在用的会话；记一条该会话的事件（`session.taken-over`，带原话与时间），记录内容不变；
    输出写明新会话应「用同一个名字 `bridge_register`，按 agent-relay 的提示传接管／恢复参数，`wake: "auto"`」。
+
+6. **角色以 spec-guard 角色标记为准**（2026-10-18 修订）：从当前目录向上找到 checkout 根（含 `.git` 的目录），按 interface 1.1 `checkoutRole.marker` 读该 checkout 自己 git 目录下的 `spec-guard/role`
+   （`.git` 是目录就读 `.git/spec-guard/role`；是 `gitdir:` 文件就读所指目录下的；只读文件，不跑子进程）。内容只认一行 `module <id>` 或 `coordinator`：
+   - `module <id>` 且状态库有该模块的在用模块会话 → 模块会话（不再要求路径与登记一致，worktree 换了位置也认）；
+   - `coordinator` 且状态库有在用协调会话 → 协调会话；
+   - 有标记但状态库对不上（模块已退役、没有协调会话）→ 静默，不退回按路径判断；
+   - 没有标记、标记不合法（多行、超长、链接、不认识的内容）→ 按原来的路径规则判断（兼容 spec-guard 0.67 与未开 `moduleConcurrency` 的项目）。
 
 ## 接口约定
 
@@ -116,11 +123,17 @@ python3 -m unittest discover -s tests -v
 6. `meta.json` 损坏或任意异常：无输出、退出码 0；单次运行耗时 1 秒以内（记录实测值）。
 7. `hooks.json` 合法，两个事件都调用 `bin/module-crew hook`，外壳带 `|| true` 与 `exit 0`；`hooks.py` 不 import `probe`／`start`／`review`／`merge`／`subprocess`。
 8. `takeover shop-b --original "让新会话接管"`：记一条 `session.taken-over` 事件（原话、时间），会话记录不变，输出重新注册的做法；不在用的名字或原话为空时退出码 3。
+9. 角色标记：worktree 标记为 `module b` 时按 b 的模块会话注入（含 worktree 被移到别处、登记路径对不上的情况）；集成 checkout 标记为 `coordinator` 时按协调会话注入；
+   标记为 `module x`（没有在用会话）时静默；没有标记或标记不合法时结果与修订前相同；仍不 import `subprocess`。
 
 ## 未决问题
 
-- spec-guard 角色标记发版后，角色判断改为以它为准（按变更记录复审）。
+- 无（角色标记按 interface 1.1 定稿接入；0.68.0 发版后在第 7 关用真实版本再核一次）。
 
 ## 文档建议
 
 README 的安装说明写「首次使用需在 Claude Code 里信任 module-crew 的钩子；插件更新后要开新会话才生效」。
+
+## 变更记录
+
+- 2026-10-18：角色判断改为以 spec-guard 角色标记为准（关键决策 6、验收 9），没有标记时保留原路径规则；删去对应未决问题。原因：interface 1.1 定稿 `checkoutRole`（标记位置 `git rev-parse --git-path spec-guard/role`、取值 `module <id>`／`coordinator`）；来源：spec-guard 负责人通知 interface.json 1.1 定稿（spec-guard 分支 `claude/module-concurrency` 提交 6231abc，0.68.0 未发版），用户 2026-10-18 复审批准。
