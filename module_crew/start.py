@@ -6,10 +6,11 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from module_crew import probe, store
+from module_crew import probe, role, store
 
 DEFAULT_MAX = 3
 
@@ -182,8 +183,56 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
     done = [p["id"] for p in result.prepared]
     if result.code == 4:
         result.lines.append(f"已完成：{'、'.join(done) or '无'}；未完成的模块请处理原因后单独重跑")
-    result.lines.append("角色标记待 spec-guard 0.68.0（checkoutRole 定稿后补）")
+    roles = _role_commands(project)
+    for p in result.prepared:
+        p["role"] = _set_role(roles, "setModule", p["worktree"], p["id"])
+    checkout = probe._checkout_of(project, cfg["integrationBranch"])
+    if checkout is None:
+        result.lines.append("集成 checkout 角色标记未设：找不到集成分支所在的 checkout")
+    else:
+        kind, module = role.read(Path(checkout))
+        if kind == "none":
+            result.lines.append("集成 checkout " + _set_role(roles, "setCoordinator", Path(checkout), None))
+        elif kind == "coordinator":
+            result.lines.append("集成 checkout 角色标记：已是 coordinator")
+        else:
+            result.lines.append(f"集成 checkout 角色标记已是 {('module ' + module) if module else kind}，没有覆盖，请用户决定")
     return result
+
+
+def _role_commands(project: Path) -> tuple[Path, dict] | str:
+    found = probe.find_plugin("spec-guard", project)
+    if isinstance(found, str):
+        return found
+    doc = probe.read_interface(found.root, probe.SPEC_GUARD_MAJOR)
+    if isinstance(doc, str):
+        return doc
+    commands = (doc.get("checkoutRole") or {}).get("commands")
+    if not isinstance(commands, dict):
+        return "spec-guard 的 interface.json 没有 checkoutRole 入口（需要 interface 1.1）"
+    return found.root, commands
+
+
+def _set_role(roles: tuple[Path, dict] | str, key: str, checkout: Path, module: str | None) -> str:
+    """Write one checkout role marker; failures are reported, never fatal."""
+    want = f"module {module}" if module else "coordinator"
+    if isinstance(roles, str):
+        return f"角色标记未设：{roles}"
+    root, commands = roles
+    cmd = probe.safe_command(root, {key: {"command": commands.get(key)}}, key,
+                             {"<module-id>": module or "", "<checkout-root>": str(checkout)})
+    if isinstance(cmd, str):
+        return f"角色标记未设：{cmd}"
+    cmd = cmd + ["--confirm"]
+    manual = " ".join(cmd)
+    try:
+        ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"角色标记未设：{exc}；可在 spec-guard 目录手动执行：{manual}"
+    if ran.returncode != 0 or role.read(checkout) != (("module", module) if module else ("coordinator", None)):
+        why = (ran.stderr or ran.stdout).strip()[:200] or f"退出码 {ran.returncode}"
+        return f"角色标记未设：{why}；可在 spec-guard 目录手动执行：{manual}"
+    return f"角色标记：{want}"
 
 
 def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: str, coord: str, approval: int) -> str:

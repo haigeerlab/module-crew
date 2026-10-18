@@ -2,7 +2,9 @@ import unittest
 
 from helpers import START_MAP, StartCase, git
 
-from module_crew import start, store
+import os
+
+from module_crew import role, start, store
 
 
 def snapshot(case):
@@ -53,6 +55,50 @@ class ValidateTest(StartCase):
         self.assert_refused(["b"], "项目简称", short="mall")
 
 
+class RoleMarkerTest(StartCase):
+    def test_markers_written(self):
+        res = start.prepare(self.repo, ["b", "c"], "开 b 和 c", short="shop")
+        self.assertEqual(res.code, 0, res.lines)
+        for p in res.prepared:
+            self.assertEqual(role.read(p["worktree"]), ("module", p["id"]))
+        self.assertEqual(role.read(self.repo), ("coordinator", None))
+
+    def test_integration_checkout_not_overwritten(self):
+        marker = role.marker_path(self.repo)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("module a\n", encoding="utf-8")
+        res = start.prepare(self.repo, ["b"], "开 b", short="shop")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(role.read(self.repo), ("module", "a"))
+        self.assertTrue(any("没有覆盖" in line for line in res.lines))
+
+    def test_failure_is_reported_not_fatal(self):
+        os.environ["FAKE_ROLE_FAIL"] = "c"
+        try:
+            res = start.prepare(self.repo, ["b", "c"], "开 b 和 c", short="shop")
+        finally:
+            os.environ.pop("FAKE_ROLE_FAIL")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(len(res.prepared), 2)
+        roles = {p["id"]: p["role"] for p in res.prepared}
+        self.assertEqual(roles["b"], "角色标记：module b")
+        self.assertIn("角色标记未设", roles["c"])
+        self.assertIn("checkout_role.py set --module c", roles["c"])
+        self.assertEqual(role.read(res.prepared[1]["worktree"]), ("none", None))
+        self.assertIsNotNone(store.get(store.open_store(self.repo), "session", "shop-c"))
+
+    def test_without_checkout_role_entry(self):
+        from helpers import spec_guard_interface
+        doc = spec_guard_interface("1.1")
+        del doc["checkoutRole"]
+        self.plugins.entries.pop("spec-guard@m")
+        self.plugins.install("spec-guard", doc, map_script=True)
+        res = start.prepare(self.repo, ["b"], "开 b", short="shop")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertIn("没有 checkoutRole 入口", res.prepared[0]["role"])
+        self.assertTrue(any(line.startswith("集成 checkout 角色标记未设") for line in res.lines))
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -84,7 +130,8 @@ class PrepareTest(StartCase):
         self.assertEqual(approval["modules"], ["b", "c"])
         self.assertEqual([p["id"] for p in res.prepared], ["b", "c"])
         self.assertTrue(all(str(p["worktree"]).startswith(str(self.tmp)) for p in res.prepared))
-        self.assertIn("角色标记待 spec-guard 0.68.0", " ".join(res.lines))
+        self.assertEqual([p["role"] for p in res.prepared], ["角色标记：module b", "角色标记：module c"])
+        self.assertIn("集成 checkout 角色标记：coordinator", res.lines)
 
     def test_kickoff_text(self):
         res = self.run_prepare()
@@ -148,7 +195,7 @@ class PrepareCliTest(StartCase):
         f.write_text("开 b\n就这样", encoding="utf-8")
         r = self.run_cli("start", "prepare", "b", "--original-file", str(f), "--project-short", "shop")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        for words in ("b：worktree", "邮箱名 shop-b", "开工说明", "角色标记待"):
+        for words in ("b：worktree", "邮箱名 shop-b", "开工说明", "角色标记：module b"):
             self.assertIn(words, r.stdout)
         approval = [x for x in store.records(store.open_store(self.repo), "item").values() if x["kind"] == "start"][0]
         self.assertEqual(approval["answer"]["original"], "开 b\n就这样")

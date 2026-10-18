@@ -142,6 +142,7 @@ class FakePlugins:
             (path / "hooks").mkdir()
             (path / "hooks" / "map_view.py").write_text(FAKE_MAP)
             (path / "hooks" / "review_mark.py").write_text(FAKE_REVIEW_MARK)
+            (path / "hooks" / "checkout_role.py").write_text(FAKE_CHECKOUT_ROLE)
         entry = {"scope": scope, "installPath": str(path), "version": "9.9.9"}
         if project is not None:
             entry["projectPath"] = str(project)
@@ -154,12 +155,40 @@ REVIEW_MARK_COMMAND = ["python3", "-B", "hooks/review_mark.py", "--project", "<p
                        "--target", "<spec|plan|both>", "--state", "<pending|approved>"]
 
 
+_ROLE = ["python3", "-B", "hooks/checkout_role.py"]
+CHECKOUT_ROLE_COMMANDS = {
+    "show": _ROLE + ["show", "--project", "<checkout-root>"],
+    "setModule": _ROLE + ["set", "--module", "<module-id>", "--project", "<checkout-root>"],
+    "setCoordinator": _ROLE + ["set", "--coordinator", "--project", "<checkout-root>"],
+    "clear": _ROLE + ["clear", "--project", "<checkout-root>"],
+}
+
+FAKE_CHECKOUT_ROLE = '''import argparse, os, subprocess, sys
+from pathlib import Path
+p = argparse.ArgumentParser()
+p.add_argument("action")
+p.add_argument("--module")
+p.add_argument("--coordinator", action="store_true")
+p.add_argument("--project", required=True)
+p.add_argument("--confirm", action="store_true")
+a = p.parse_args()
+if os.environ.get("FAKE_ROLE_FAIL") in (a.module or "coordinator", "all") or not a.confirm:
+    sys.exit(2)
+raw = subprocess.run(["git", "-C", a.project, "rev-parse", "--git-path", "spec-guard/role"],
+                     capture_output=True, text=True, check=True).stdout.strip()
+path = Path(raw) if os.path.isabs(raw) else Path(a.project) / raw
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(("module %s" % a.module if a.module else "coordinator") + "\\n", encoding="utf-8")
+'''
+
+
 def spec_guard_interface(version: str = "1.0", command: list | None = None, review_mark: list | None = None) -> dict:
     doc = {"interface": version, "mapView": {
         "command": command or ["python3", "-B", "hooks/map_view.py", "--json", "--project", "<project-root>"],
         "schemaVersion": 1}}
     if version >= "1.1":
         doc["reviewMark"] = {"command": review_mark or REVIEW_MARK_COMMAND}
+        doc["checkoutRole"] = {"commands": CHECKOUT_ROLE_COMMANDS}
     return doc
 
 

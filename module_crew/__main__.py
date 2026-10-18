@@ -162,7 +162,7 @@ def _start_prepare(modules: list[str], original: str | None, original_file: str 
     for line in res.lines:
         print(line)
     for p in res.prepared:
-        print(f"{p['id']}：worktree {p['worktree']}（分支 {p['branch']}），邮箱名 {p['relayName']}，开工说明 {p['kickoffPath']}")
+        print(f"{p['id']}：worktree {p['worktree']}（分支 {p['branch']}），邮箱名 {p['relayName']}，开工说明 {p['kickoffPath']}，{p.get('role', '角色标记未设')}")
     return res.code
 
 
