@@ -1,6 +1,6 @@
 # Spec: crew-glossary-rename
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 5f59c8e67b04 -->
 
 > 能力图模块 `crew-glossary-rename`（第四版，0.4.0 三个模块之三，也是 0.4.0 的收尾）。需求来源：`livesaas-integration/GLOSSARY.md` 术语表 v1.1（用户决定 48）；
 > 0.3.0 冻结时用户定全面改名放下一版。用户 2026-10-19 在本会话确认 19 条下一版假设（全部按推荐）。契约 session-protocol v2.1 不变。
