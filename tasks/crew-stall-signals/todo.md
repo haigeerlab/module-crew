@@ -16,4 +16,11 @@
   - 验收：Spec 验收 9
   - 文件：`module_crew/failure.py`、`module_crew/probe.py`、`spec/crew-hub-bridge.md`、`README.md`、`tests/test_stall_signals.py`
 
-- [ ] Checkpoint 2（gate）：模块最终验收——全量测试全绿（验收 10）、验收逐条对应测试、改动文件清单与提交号
+- [x] Checkpoint 2（gate）：模块最终验收——全量测试全绿（验收 10）、验收逐条对应测试、改动文件清单与提交号（2026-10-19 用户批准，同时批准 crew-hub-bridge Spec 的追加修订；版本号定为 0.4.0；全量 364 个测试通过；提交 9c43617、79e69a2、657b5eb）
+
+- [x] 回告：把 sessions --json 新字段说明发给 decision-inbox 插件会话确认字段名（用户 2026-10-19 要求）——2026-10-19 已用桌面版跨会话消息发给「Decision-inbox 插件第 3 阶段能力图」，请它回 A 照用或 B 改名；等回复，要改名就在发版前给本模块追加任务。发版后再告知新字段可用
+
+## 外部审查意见
+
+<!-- spec-guard: external-review declined -->
+用户 2026-10-19 在最终验收时表示不做外部审查。

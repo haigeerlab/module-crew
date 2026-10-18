@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved dcaa55c4ecc8 -->
+<!-- spec-guard: review approved 8c038d3c8398 -->
 
 # Spec: crew-hub-bridge
 
