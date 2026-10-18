@@ -213,6 +213,26 @@ def _review(args) -> int:
         for line in out.lines:
             print(line)
         return out.code
+    if args.action == "note":
+        text = _read(args.file)
+        if text is None:
+            return 2
+        try:
+            row = review.note(db, args.number, args.sender, text)
+        except review.NoteRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        print(f"已记下 #{args.number} 的审查结论：{row['from']} {row['verdict']}")
+        return 0
+    if args.action == "batch" and args.for_hub:
+        made = review.for_hub(".", args.parallel_with)
+        if made is None:
+            print("没有未答的交审")
+            return 3
+        n, path, text = made
+        print(text, end="")
+        print(f"正文文件（正文 #{n}）：{path}")
+        return 0
     if args.action == "batch":
         b = review.batch(".")
         if args.json:
@@ -225,6 +245,7 @@ def _review(args) -> int:
             print(f"#{i['number']} {i['module']} 的 {review.NODE_NAME.get(i['node'], i['node'])}（{i['from']}）："
                   + "、".join(f["path"] for f in i["files"]))
             print("  要点：" + i["points"].replace("\n", "\n        "))
+            print("  审查：" + review._review_text(i))
         if not b["dependencyIssues"]:
             print("依赖：全部就绪")
         if not b["conflicts"]:
@@ -406,6 +427,12 @@ def main(argv: list[str] | None = None) -> int:
     ra.add_argument("--relay-id", type=int, required=True)
     rb = rvs.add_parser("batch")
     rb.add_argument("--json", action="store_true")
+    rb.add_argument("--for-hub", action="store_true", help="生成交给收件枢纽的【等待用户】正文")
+    rb.add_argument("--parallel-with", type=int, help="与枢纽事项 #H 并行")
+    rn = rvs.add_parser("note", help="记下审查会话的【审查结论】")
+    rn.add_argument("number", type=int)
+    rn.add_argument("--from", dest="sender", required=True)
+    rn.add_argument("--file", required=True)
     for name in ("approve", "answer"):
         r = rvs.add_parser(name)
         if name == "approve":

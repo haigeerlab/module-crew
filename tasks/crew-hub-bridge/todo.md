@@ -10,15 +10,16 @@
   - 验收：Spec 验收 2、3、4
   - 文件：`module_crew/__main__.py`、`review.py`、`merge.py`、`start.py`、`changes.py`、`failure.py`、`inbox.py`、`hooks.py`、`sources.py`、`tests/test_sources.py`
 
-- [ ] Task 3：`review note` 与 batch 审查行
+- [x] Task 3：`review note` 与 batch 审查行
   - 验收：Spec 验收 6
   - 文件：`module_crew/review.py`、`module_crew/__main__.py`、`tests/test_hub_output.py`
 
-- [ ] Task 4：`review batch --for-hub`
+- [x] Task 4：`review batch --for-hub`
   - 验收：Spec 验收 7
   - 文件：`module_crew/review.py`、`module_crew/__main__.py`、`tests/test_hub_output.py`
 
-- [ ] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
+- [x] Checkpoint 1（report）：全部测试全绿，记下命令与结果后继续
+  - 记录：`python3 -m unittest discover -s tests -v` → Ran 254 tests in 155.381s OK（2026-10-18）；Task 3、4 同改 review.py 与 __main__.py，合一次提交
 
 - [ ] Task 5：`sessions --json` 契约与 `interface.json`
   - 验收：Spec 验收 8、9

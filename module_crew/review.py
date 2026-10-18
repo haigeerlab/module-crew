@@ -117,8 +117,97 @@ def batch(project: str | os.PathLike) -> dict:
     conflicts = [c for c in (report.map or {}).get("startable", {}).get("conflicts", [])
                  if batch_mods & set(c.get("modules", []))]
     return {"items": [{"number": n, "module": v["module"], "node": v["node"], "from": v["from"],
-                       "files": v["files"], "points": _points(v["text"])} for n, v in open_items],
+                       "files": v["files"], "points": _points(v["text"]), "reviews": list(v.get("reviews") or [])}
+                      for n, v in open_items],
             "dependencyIssues": issues, "conflicts": conflicts}
+
+
+class NoteRefused(Exception):
+    """The review conclusion cannot be recorded; nothing was written."""
+
+
+def note(db: store.Store, number: int, sender: str, text: str) -> dict:
+    """Record a whitelisted reviewer's 【审查结论】 on an open review (shown in batch; never blocks approval)."""
+    from module_crew import sources
+    if not any(r.get("name") == sender and r.get("kind") == "lead" for r in sources.listing(db)):
+        raise NoteRefused(f"{sender} 没有登记为审查会话（先请用户 source add {sender} --kind lead）")
+    msg = protocol.parse(text or "")
+    if msg.kind != "review-conclusion" or not msg.ok:
+        raise NoteRefused("不是合格的【审查结论】：" + ("、".join(msg.problems) or msg.kind))
+    with db.transaction(actor="coordinator") as tx:
+        rec = tx.get("item", str(number))
+        if rec is None or rec.get("kind") != "review" or rec.get("state") != "open":
+            raise NoteRefused(f"#{number} 不是未答的交审")
+        node = protocol.REVIEW_NODES.get(msg.fields.get("节点", "").strip())
+        if msg.fields.get("模块", "").strip() != rec["module"] or node != rec["node"]:
+            raise NoteRefused(f"审查结论说的是 {msg.fields.get('模块')} 的 {msg.fields.get('节点')}，"
+                              f"对不上 #{number}（{rec['module']} 的 {NODE_NAME.get(rec['node'], rec['node'])}）")
+        row = {"from": sender, "ref": msg.fields.get("审查编号"), "verdict": msg.fields.get("结论"), "at": store.now()}
+        tx.put("item", str(number), dict(rec, reviews=list(rec.get("reviews") or []) + [row]), action="review-noted")
+    return row
+
+
+def _review_text(item: dict) -> str:
+    rows = item.get("reviews") or []
+    return "未审查" if not rows else f"{rows[-1]['from']} {rows[-1]['verdict']}"
+
+
+def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> tuple[int, Path, str] | None:
+    """One 【等待用户】 for the decision inbox covering every open review; None when there is none."""
+    from module_crew import sources
+    project = Path(project)
+    db = store.open_store(project)
+    b = batch(project)
+    if not b["items"]:
+        return None
+    coord = next((n for n, s in sorted(store.records(db, "session").items())
+                  if s.get("role") == "coordinator" and s.get("status") == "active"), "协调会话")
+    numbers = "、".join(f"#{i['number']}" for i in b["items"])
+    points = []
+    for i in b["items"]:
+        head = (i["points"].splitlines() or [""])[0].lstrip("- ").strip()
+        points.append(f"- #{i['number']} {i['module']} 的 {NODE_NAME.get(i['node'], i['node'])}：{head}（审查：{_review_text(i)}）")
+    for d in b["dependencyIssues"]:
+        points.append(f"- 依赖未就绪：{d['module']} 依赖的 {'、'.join(d['missing'])}")
+    for c in b["conflicts"]:
+        points.append(f"- 并行边界重叠：{'、'.join(c.get('modules', []))} 在 {'、'.join(c.get('paths', []))}")
+    lines = []
+    if parallel_with is not None:
+        lines.append(f"【与 #{parallel_with} 并行】")
+    lines += ["【等待用户】", "结束：无", f"来自：{coord}", f"要你决定：批准下列交审吗（{numbers}）", "要点："] + points
+    if any(r.get("kind") == "lead" for r in sources.listing(db)):
+        lines.append("架构审查：" + _review_summary(b["items"]))
+    lines += ["选项与我的建议：",
+              "推荐 A：全部批准",
+              "  选了会怎样：批准后在集成分支记评审标记，各模块收到开工通知开始构建",
+              "B：只批准部分（请写编号）",
+              "  选了会怎样：只有写到的交审开工，其余等修改",
+              "C：都退回修改",
+              "  选了会怎样：各模块按你的意见改完再交审",
+              "你该回：A",
+              "是否完全停住：否"]
+    text = "\n".join(lines) + "\n"
+    msg = protocol.parse(text)
+    if not msg.ok or msg.kind != "wait-user":
+        raise ValueError("生成的【等待用户】不合格：" + "、".join(msg.problems))
+    with db.transaction(actor="coordinator") as tx:
+        n = tx.allocate_number()
+        meta = tx.write_body(n, text)
+    return n, db.path / meta["path"], text
+
+
+def _review_summary(items: list[dict]) -> str:
+    """The 架构审查 line for the whole batch (contract v1.4 forms)."""
+    rows = [(i.get("reviews") or [None])[-1] for i in items]
+    if any(r is None for r in rows):
+        return "进行中，请勿先批"
+    advice = 0
+    for r in rows:
+        line = protocol._review_line(r["verdict"])
+        if line["status"] not in ("passed", "passed-with-advice"):
+            return "进行中，请勿先批"
+        advice += line["adviceCount"] or 0
+    return f"通过，附建议{advice}条" if advice else "通过"
 
 
 def _reply_text(item_no: int, rec: dict, original: str, answered_at: str) -> str:
