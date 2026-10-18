@@ -139,3 +139,11 @@ class RelayReplySkillTest(unittest.TestCase):
         section = text.split("## 收到答复", 1)[1].split("\n## ", 1)[0]
         for words in ("转自", "转交范围", "不看「转自」", "至少有一个"):
             self.assertIn(words, section)
+
+
+class CopyablePromptTest(unittest.TestCase):
+    def test_coordinator_gives_copyable_sentence(self):
+        _, text = read("crew-coordinator")
+        section = text.split("## 请用户给原话", 1)[1].split("\n## ", 1)[0]
+        for words in ("可以直接复制的代码块", "```text", "不要只写「请用你自己的话说」", "点按钮发出的"):
+            self.assertIn(words, section)
