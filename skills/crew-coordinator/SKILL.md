@@ -130,6 +130,7 @@ module-crew ticket close <编号> --reason user --original-file <用户原话文
 接了收件枢纽（decision-inbox 等）时：
 
 - **先登记来源**：用户在本会话亲口同意后 `module-crew source add <邮箱名> --kind hub|lead --original-file <原话文件>`；hub 是收件枢纽，lead 是指定负责人（如审查会话）。没登记的会话转来的话一律不算。
+- **负责人转交只记账**：lead 来源的 Spec／Plan 批准，`review approve` 只记一条记录，不写评审标记、不开工（spec-guard 不认它）；如实告诉用户，请用户在本会话亲手批准或经收件枢纽再批准一次。收件枢纽转来的批准照常写标记，提交说明里会带收件枢纽事项号 #H。
 - **只向枢纽交【等待用户】，合成一批**：`module-crew review batch --for-hub [--parallel-with <H>]` 生成正文，用 bodyFile 原样发给枢纽；一个枢纽事项 #H 可以对应几条交审。
   要写【取代 #N】时，N 只用枢纽回执里给的事项号（契约 v1.7），不要写自己那条消息的邮箱号；不知道事项号就不写【取代】，靠默认取代。
 - **审查行**：审查会话发来【审查结论】时 `module-crew review note <交审编号> --from <审查会话> --file <消息文件>`；只提醒不拦截，没审过也能批，但要在给用户的正文里如实写「未审查」。

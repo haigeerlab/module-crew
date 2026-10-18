@@ -3,7 +3,7 @@
 让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个协调会话统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在协调会话里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.1.0。已在试点项目上跑过两轮实地验证（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.1.1。已在试点项目上跑过两轮实地验证（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
 ## 前提
 
@@ -95,7 +95,7 @@ bin/module-crew status
 4. `module-crew source map <H>` 查一个枢纽事项批准了哪些 crew 编号。
 5. 外部插件读 `module-crew sessions --json`（`schemaVersion` 1：module、relayName、worktree、stage、stageText、suspended、lastActivity），出口与契约版本登记在根目录 `interface.json`。
 
-指定负责人用【负责人转交】转来的决定登记为 `--kind lead`；带来源批准时，给模块的【用户答复】按契约 v1.6 带「转自」，命令同时给出发回枢纽的【已恢复】「结束：#H」。
+指定负责人用【负责人转交】转来的决定登记为 `--kind lead`；lead 来源的 Spec／Plan 批准只记账、不写评审标记（spec-guard 只认用户亲手与收件枢纽转来的批准），hub 来源批准的提交说明带 #H；带来源批准时，给模块的【用户答复】按契约 v1.6 带「转自」，命令同时给出发回枢纽的【已恢复】「结束：#H」。
 
 ## 命令一览
 

@@ -15,7 +15,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from module_crew import probe, protocol, store
+from module_crew import commits, probe, protocol, store
 from module_crew.inbox import AnswerRefused, Reply
 from module_crew.review import _reply_text, closing
 
@@ -184,12 +184,17 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
         _write_config(db, cfg)
 
     result = RunResult(0, approval=n)
-    merged = _git(checkout, "merge", "--no-ff", "--no-edit", "-m", f"合入 {m}（合并批准事项 #{n}）", m)
+    merged = _git(checkout, "merge", "--no-ff", "--no-edit", "-m", commits.message(f"合并批准事项 #{n}：合入 {m}"), m)
     reset_to = None
     if merged.returncode != 0:
         conflicted = _git(checkout, "diff", "--name-only", "--diff-filter=U").stdout.split()
         _git(checkout, "merge", "--abort")
-        reason = f"与集成基线冲突：{'、'.join(conflicted) or merged.stderr.strip()[:200]}"
+        if not conflicted:
+            # No conflicted file: the merge commit itself was refused (usually a commit hook). Not the module's
+            # fault, so nothing is sent back and the approval stays open for the user to decide.
+            return RunResult(4, [commits.failure(checkout, merged, f"#{n}（{m}）的合并提交没有做成"),
+                                 "已中止合并，集成分支未变；合并批准仍开着，交用户决定"], approval=n)
+        reason = f"与集成基线冲突：{'、'.join(conflicted)}"
     else:
         result.merge_commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
         reason = _run_check(cfg, checkout)
@@ -263,10 +268,11 @@ def _tick(checkout: Path, module: str, approval: int) -> tuple[str | None, str |
     path.write_text("".join(lines), encoding="utf-8")
     rel = f"tasks/{module}/todo.md"
     _git(checkout, "add", "--", rel)
-    done = _git(checkout, "commit", "-q", "-m", f"勾选 {module} 的最终验收（合并批准事项 #{approval}）")
+    done = _git(checkout, "commit", "-q", "-m", commits.message(f"合并批准事项 #{approval}：勾选 {module} 的最终验收"))
     if done.returncode != 0:
+        _git(checkout, "reset", "-q", "--", rel)
         _git(checkout, "checkout", "--", rel)
-        return None, f"勾选 {rel} 失败：{done.stderr.strip()[:200]}"
+        return None, commits.failure(checkout, done, f"勾选 {rel} 失败")
     commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
     return commit, f"已在集成分支勾选 {module} 的最终验收 {commit[:7]}"
 

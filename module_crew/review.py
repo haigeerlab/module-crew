@@ -10,7 +10,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from module_crew import probe, protocol, store
+from module_crew import commits, probe, protocol, store
 from module_crew.inbox import AnswerRefused, Outcome, Reply
 
 
@@ -329,6 +329,23 @@ def _mark_fill(checkout: Path, module: str, target: str) -> dict[str, str]:
             "<spec|plan|both>": target, "<pending|approved>": "approved"}
 
 
+def _record_lead(db: store.Store, picked: list, original: str, reasons: list[str]) -> ApproveResult:
+    """A designated lead's relayed approval of a Spec/Plan is only recorded: spec-guard (0.70.0) does not accept it
+    as a source for review marks, so nothing lands on the baseline and the reviews stay open for the user."""
+    if reasons:
+        return ApproveResult(3, ["没有执行，原因："] + reasons)
+    with db.transaction(actor="coordinator") as tx:
+        n = tx.allocate_number()
+        tx.put("item", str(n), {"state": "closed", "kind": "lead-record", "closedReason": "answered", "relayId": None,
+                                "from": "coordinator", "reviews": [k for k, _ in picked],
+                                "answer": {"original": original, "answeredAt": store.now(), **store.source_field()}},
+               action="lead-recorded")
+    res = ApproveResult(0, approval=n)
+    res.lines += [f"负责人转交的批准只记账（记录 #{n}）：没有写评审标记、没有提交、没有发答复与开工通知，交审事项保持未关",
+                  "原因：spec-guard 不认负责人转交为写评审标记的来源；请用户在本会话亲手批准，或经收件枢纽再批准一次"]
+    return res
+
+
 def approve(project: str | os.PathLike, numbers: list[int], original: str) -> ApproveResult:
     """Land the approved Spec/Plan files on the integration baseline and prepare all replies and notices."""
     project = Path(project)
@@ -348,6 +365,9 @@ def approve(project: str | os.PathLike, numbers: list[int], original: str) -> Ap
             reasons.append(f"交审事项 #{n} 是最终验收：用 review answer 答复，合并归 crew-merge")
         else:
             picked.append((n, rec))
+    src = store.source_field().get("source") or {}
+    if src.get("kind") == "lead":
+        return _record_lead(db, picked, original, reasons)
     baseline = probe.check_baseline(project)
     if baseline.state != "ok":
         reasons.append(baseline.reason)
@@ -388,9 +408,10 @@ def approve(project: str | os.PathLike, numbers: list[int], original: str) -> Ap
     modules = list(dict.fromkeys(rec["module"] for _, rec in picked))
     nodes = "、".join(f"{rec['module']} 的 {NODE_NAME[rec['node']]}" for _, rec in picked)
     _git(checkout, "add", "--", *written)
-    commit_run = _git(checkout, "commit", "-q", "-m", f"协调会话：批准 {nodes}（用户批准事项 #{approval_no}）")
+    hub = f"（收件枢纽事项 #{src['item']}）" if src.get("kind") == "hub" else ""
+    commit_run = _git(checkout, "commit", "-q", "-m", commits.message(f"用户批准事项 #{approval_no}{hub}：批准 {nodes}"))
     if commit_run.returncode != 0:
-        return ApproveResult(4, [f"集成分支提交失败：{commit_run.stderr.strip()[:200]}",
+        return ApproveResult(4, [commits.failure(checkout, commit_run, "集成分支提交失败"),
                                  "已改、已暂存的文件：" + "、".join(written)])
     commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
     result = ApproveResult(0, commit=commit)

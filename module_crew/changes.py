@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from module_crew import probe, protocol, store
+from module_crew import commits, probe, protocol, store
 from module_crew.inbox import AnswerRefused, Outcome, Reply
 
 # Routing hints (spec decision 4); only ever added to.
@@ -165,9 +165,10 @@ def land(project: str | os.PathLike, number: int, original: str | None = None) -
     if not changed:
         return LandResult(3, [f"清单里的文件都没有改动：{'、'.join(rec['files'])}"])
     probe._git(checkout, "add", "-A", "--", *changed)
-    done = probe._git(checkout, "commit", "-q", "-m", f"协调会话：公共变更请求 #{number}（{rec['from']}）：{rec['what'][:60]}")
+    done = probe._git(checkout, "commit", "-q", "-m",
+                      commits.message(f"公共变更请求 #{number}（{rec['from']}）：{rec['what'][:40]}"))
     if done.returncode != 0:
-        return LandResult(4, [f"集成分支提交失败：{done.stderr.strip()[:200]}", "已暂存的文件：" + "、".join(changed)])
+        return LandResult(4, [commits.failure(checkout, done, "集成分支提交失败"), "已暂存的文件：" + "、".join(changed)])
     commit = probe._git(checkout, "rev-parse", "HEAD").stdout.strip()
     result = LandResult(0, commit=commit)
     result.lines.append(f"公共变更请求 #{number} 已在集成基线提交 {commit[:7]}")

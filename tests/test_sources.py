@@ -128,20 +128,33 @@ class ApproveWithSourceTest(ReviewCase):
         done = protocol.parse(closing[0]["path"].read_text(encoding="utf-8"))
         self.assertEqual((done.kind, done.ok, done.end.items), ("resumed", True, (120,)))
 
-    def test_lead_relay_carries_scope(self):
+    def test_lead_approval_only_recorded(self):
         from module_crew import review
         sources.add(self.db, "live-saas-arch-review", "lead", "登记审查会话")
         src = sources.check(self.db, "live-saas-arch-review", 130, 6200, handoff()).source
+        head = git(self.repo, "rev-parse", "HEAD")
         with store.approval_source(src):
             res = review.approve(self.repo, [self.spec], "同意接口提案，先按 v2 字段做")
-        reply = protocol.parse([x for x in res.sends if x["kind"] == "user-reply"][0]["path"].read_text(encoding="utf-8"))
-        self.assertTrue(reply.ok, reply.problems)
-        self.assertEqual(reply.contract()["origin"]["relayedFrom"], "owner")
-        self.assertEqual(reply.fields["转交范围"], "b 按 v2 字段实现")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertIn("只记账", "\n".join(res.lines))
+        self.assertEqual((res.sends, res.commit), ([], None))              # no reply, no start notice
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), head)         # no review mark on the baseline
+        self.assertEqual(store.get(self.db, "item", str(self.spec))["state"], "open")
+        rec = store.get(self.db, "item", str(res.approval))
+        self.assertEqual((rec["kind"], rec["reviews"], rec["answer"]["original"], rec["answer"]["source"]["kind"]),
+                         ("lead-record", [self.spec], "同意接口提案，先按 v2 字段做", "lead"))
+        self.assertEqual(review.approve(self.repo, [self.spec, self.plan], "我亲手批准").code, 0)   # user can still approve
+
+    def test_hub_approval_commit_names_hub_item(self):
+        from module_crew import review
+        with store.approval_source(sources.check(self.db, "live-saas-hub", 120, 6100, self.msg.read_text()).source):
+            self.assertEqual(review.approve(self.repo, [self.spec, self.plan], "两个都批准").code, 0)
+        self.assertIn("收件枢纽事项 #120", git(self.repo, "log", "-1", "--format=%s"))
 
     def test_self_reply_unchanged(self):
         from module_crew import review
         res = review.approve(self.repo, [self.spec, self.plan], "批准")
+        self.assertNotIn("收件枢纽", git(self.repo, "log", "-1", "--format=%s"))
         replies = [x for x in res.sends if x["kind"] == "user-reply"]
         self.assertEqual(len(replies), 2)
         self.assertNotIn("转自", replies[0]["path"].read_text(encoding="utf-8"))
