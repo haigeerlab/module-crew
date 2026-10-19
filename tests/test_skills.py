@@ -45,6 +45,18 @@ class SkillsTest(unittest.TestCase):
         for words in ("派活后主动查弹窗，不等别人提醒", "bridge_sessions", "发完核对", "去会话操作"):
             self.assertIn(words, text)
 
+    def test_card_kinds(self):
+        _, coord = read("crew-coordinator")
+        for words in ("--protocol 2.3", "source list", "类型：卡住选做法", "出了什么事", "类型：能力图审阅",
+                      "拆成哪些模块", "先后顺序", "文档建议", "**不要写**「类型」"):
+            self.assertIn(words, coord)
+        _, dev = read("crew-dev")
+        codex = (PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
+        for words in ("类型：中途检查点", "做到哪了", "为什么停在这", "接下来要做的那一步", "类型：卡住选做法",
+                      "改了哪个接口", "哪些模块要跟着改", "契约 v2.3"):
+            self.assertIn(words, dev)
+            self.assertIn(words, codex)
+
     def test_coordinator_rules(self):
         _, text = read("crew-coordinator")
         for words in ("inbox add", "answer", "bodyFile", "等待审批", "不是批准", "亲手输入", "module-crew status",
