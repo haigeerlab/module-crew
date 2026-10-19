@@ -257,6 +257,13 @@ def _review(args) -> int:
         for x in out.sends:
             print(f"发送 【交审】 → {x['to']}（送审），正文文件：{x['path']}")
         return out.code
+    if args.action == "show":
+        try:
+            print("\n".join(review.show(db, args.number, args.submission)))
+        except review.ShowRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        return 0
     if args.action == "note":
         text = _read(args.file)
         if text is None:
@@ -538,6 +545,9 @@ def main(argv: list[str] | None = None) -> int:
     rn.add_argument("--for-hub", action="store_true", help="和 --then-batch 一起用：都有结论时直接生成交给决策收件箱的正文")
     rn.add_argument("--from", dest="sender", required=True)
     rn.add_argument("--file", required=True)
+    rsh = rvs.add_parser("show", help="只读：交审的审查原文全文与 sha256")
+    rsh.add_argument("number", type=refs.parse)
+    rsh.add_argument("--submission", action="store_true", help="另外输出交审原文")
     for name in ("approve", "answer"):
         r = rvs.add_parser(name)
         if name == "approve":

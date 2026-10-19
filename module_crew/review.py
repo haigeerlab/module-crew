@@ -339,7 +339,8 @@ def note(db: store.Store, number: int | None, sender: str, text: str) -> NoteRes
             todo = "\n".join(f"{i}. {x}" for i, x in enumerate(c.get("changes") or [], 1)) or row["points"] or "按审查意见修改"
             body = tx.allocate_number()
             meta = tx.write_body(body, protocol.render_coordination_notice(
-                "rework", f"审查 {c['ref']}（交审 C{n}）", todo + "\n改完重新发【交审】；不同意就在【交审】里写「不同意：<审查编号>：<理由>」",
+                "rework", f"审查 {c['ref']}（交审 C{n}）", todo + "\n改完重新发【交审】；不同意就在【交审】里写「不同意：<审查编号>：<理由>」"
+                + f"\n审查原文：module-crew review show C{n}",
                 round=done + 1))
             tx.put("item", str(n), rec, action="rework-sent",
                    data={"module": rec["module"], "node": rec["node"], "round": done + 1, "body": body})
@@ -369,6 +370,28 @@ def waiting(project: str | os.PathLike) -> list[str]:
             if state in ("reviewing", "rework"):
                 out.append(f"C{k}（{v['module']} 的 {NODE_NAME.get(v['node'], v['node'])}，{STATE_TEXT[state]}）")
     return out
+
+
+class ShowRefused(Exception):
+    pass
+
+
+def show(db: store.Store, number: int, submission: bool = False) -> list[str]:
+    """Review originals of submission C<number>, oldest round first, each with its sha256 (MC-4); read-only."""
+    rec = store.get(db, "item", str(number))
+    if rec is None or rec.get("kind") != "review":
+        raise ShowRefused(f"C{number} 不是交审事项")
+    out = []
+    if submission:
+        out += [f"交审原文（C{number}，{rec['module']} 的 {NODE_NAME.get(rec['node'], rec['node'])}）"
+                f" sha256:{hashlib.sha256(rec['text'].encode('utf-8')).hexdigest()}：", rec["text"].rstrip("\n"), ""]
+    rows = [r for r in rec.get("reviews") or [] if r.get("text")]
+    if not rows:
+        return out + [f"C{number} 还没有审查结论"]
+    for i, r in enumerate(rows, 1):
+        out += [f"第 {i} 轮 · {r['ref']} · {r['from']} · {r.get('verdict')} "
+                f"sha256:{hashlib.sha256(r['text'].encode('utf-8')).hexdigest()}：", r["text"].rstrip("\n"), ""]
+    return out[:-1]
 
 
 STATE_TEXT = {"reviewing": "审查中", "rework": "返工中", "timeout": "审查者无响应", "passed": "审查通过",
@@ -879,7 +902,9 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
             text = protocol.render_coordination_notice(
                 kind="start", basis=f"用户批准事项 C{approval}（{m} 的 Spec 与 Plan），已提交到集成分支 {commit[:7]}",
                 todo=(f"{sync.STEP}（spec/{m}.md、tasks/{m}/ 冲突时 sync 自动取集成分支的版本，它带批准标记），"
-                      f"然后按 tasks/{m}/plan.md 开始构建；公共文件只能经【公共变更请求】改"))
+                      f"然后按 tasks/{m}/plan.md 开始构建；公共文件只能经【公共变更请求】改"
+                      + "".join(f"\n审查原文：module-crew review show C{k}（写 Plan、构建时吸收遗留建议）"
+                                for k, rec in picked if rec["module"] == m and rec.get("reviews"))))
             body = tx.allocate_number()
             meta = tx.write_body(body, text)
             result.sends.append({"kind": "coordination-notice", "to": sender, "replyTo": None, "body": body,
