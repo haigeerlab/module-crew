@@ -1,6 +1,6 @@
 # Spec: crew-host-permissions
 
-<!-- spec-guard: review approved 9c8a72ae7e55 -->
+<!-- spec-guard: review approved 0e9c76abf36a -->
 
 > 能力图模块 `crew-host-permissions`（第四版，0.4.0 三个模块之二）。需求来源：`livesaas-integration/REQ-REVIEW-NEARBY.md` R16（用户决定 44 第①条、49）；
 > decision-inbox 2026-10-19 实测：由别的会话用开会话工具代开的会话里，`.claude/settings.local.json` 的 ask 规则（如 `git push`）不弹确认就执行。**（0.5.2 更正，决定 67）**这条后经 decision-inbox 核对 E3 会话记录推翻：该会话权限模式为 default，两次 `git push` 的 `permissionDecision.source` 都是 `user_temporary`，即弹了确认、有人点了「允许一次」；本模块 0.5.0 补测里不写规则的命令同样是 `user_temporary`。代开会话里 ask 与默认确认都会弹。
@@ -69,6 +69,16 @@
    与一条应被拒（`git push --dry-run module-crew-probe HEAD`：远端名不存在，就算宿主没拦也推不出去）。模块协调看完后用 `permissions verify --record <会话名> --allowed ok|prompted --denied ok|ran`
    记进状态库（带时间）；`status` 显示每个会话最近一次实测结果，没测过写「权限未实测」。命令本身不判断宿主行为，只记模块协调报来的观察。
 7. **`start prepare` 跟随**：运行配置里有 `permissions.applied` 时，新建 worktree 后照同一清单写规则，输出一行「已写权限规则」；写失败（没被忽略等）不阻止开工，输出原因并在 `status` 标出。
+8. **（0.5.3）提示别处的 ask／禁止规则盖过放行**：`plan` 与 `apply` 对每个 Claude checkout 只读检查这些设置里的 ask 与 deny：
+   该 checkout 的 `.claude/settings.local.json` 里原有的条目（不算 module-crew 写的）、该 checkout 的 `.claude/settings.json`；
+   是 worktree 时，再查主 checkout（git 公共目录的上一级）的 `.claude/settings.local.json` 与 `.claude/settings.json`；用户的 `~/.claude/settings.json`；
+   托管设置 `/Library/Application Support/ClaudeCode/managed-settings.json`（存在才读）。
+   module-crew 每条要写的放行取一条示例命令（把 `*` 换成 `x`，如 `Bash(npm install *)` → `npm install x`），某层的 ask 或 deny 能匹配它就算「会被盖过」
+   （匹配：`*` 代表任意文字，规则末尾 ` *` 也匹配不带参数的命令，`:*` 与末尾 ` *` 等价；不展开复合命令，示例命令都是单条）。
+   每个 checkout 下多一行「会被盖过：<放行> ← <文件> 的 ask｜禁止 <规则>」，没有就不显示；`apply` 照常写入、不因此拒绝；别的文件一概不改。
+   不提示别处的禁止与 module-crew 的禁止重叠（同向加严）。Codex 规则不在这次范围（Codex 的规则判断不同）。
+   依据：2026-10-19 定位实测——crew-rehearsal 集成 checkout 的本地设置里有 decision-inbox join 写的 ask `Bash(npm install *)`，模块 worktree 的会话也读主 checkout 的本地设置，
+   宿主按 deny → ask → allow 判定，于是盖过了 alpha 里的放行；本机命令行 2.1.302 与桌面版自带 2.1.299 复现一致。
 
 ## 接口约定
 
@@ -138,6 +148,7 @@ python3 -m unittest discover -s tests -v
 11. 实地（验收时，crew-rehearsal，默认权限模式，由别的会话代开的模块会话）：清单四条不弹窗、`git push` 被宿主 deny 拦下；结果用 `verify --record` 记下并附在验收证据里。做不了就写「宿主未实测」与原因。
 12. 全量测试通过。
 13. （0.5.1）`permissions plan` 预览里：按锁文件或清单装的命令与加新包的命令（`npm install x`、`pnpm add x`、`yarn add x`、`uv add x`、`uv pip install x`、`.venv/bin/pip install x`）在放行里；裸 `pip install x` 既不在放行也不在禁止里；全局安装（`npm install -g x`、`npm install x -g`、`npm i --global x`、`pnpm add -g x`、`yarn global add x`、`uv pip install --system x`、`brew install x`）都被禁止规则匹配。Codex 规则经 `codex execpolicy check` 核对：`npm ci` 为 allow、`npm install x` 无匹配、`npm install -g x`、`npm i -g x`、`npm install --global x` 为 forbidden。
+14. （0.5.3）`plan` 与 `apply` 输出在别处有 ask 或禁止规则能匹配 module-crew 某条放行的示例命令时，列出「会被盖过：<放行> ← <文件> 的 ask｜禁止 <规则>」；至少覆盖主 checkout 本地设置里的 ask `Bash(npm install *)` 盖过 worktree 放行这一例，以及用户设置、checkout 自己 `settings.json` 两层；没有冲突时不出现这一行；`apply` 不因此拒绝、不改别的文件。
 
 ## 未决问题
 
@@ -156,3 +167,4 @@ README 新增「权限预配」一节：`permissions plan → apply → 开会�
 - 2026-10-19：MC-1 改为按锁文件或清单装的放行、加新包不写规则（交宿主默认确认加 skill 先问）、全局安装禁止，取代上一条修订里「项目内安装一律放行」；验收 13 随之改。原因：用户决定 61 要求 MC-1 与 decision-inbox DI-2 对齐（加新包先问）；因代开会话里 ask 规则不弹，用户 2026-10-19 在本会话选方案 C（不写 ask）；来源：监测会话转达决定 61。
 - 2026-10-19：MC-1 改为加新包放行（Claude），裸 `pip install <包名>` 仍不写规则，全局安装禁止补全（`-g`／`--global` 在任意位置、`yarn global`、`uv --system`），Codex 加新包仍不写规则；验收 13 随之改，取代上一条的「加新包不写规则」。原因：用户决定 62（装包放宽、与上游 agent-skills 对齐；事先列不全、逐项管制造打扰），新增依赖改由 spec-guard SG-5 在最终验收列出；Codex 前缀规则挡不住后置 `-g`、裸 pip 等于全局安装，所以这两处没放；`pip install -r *` 的口子不修。来源：监测会话转达决定 62，用户 2026-10-19 在本会话确认 8 条假设。
 - 2026-10-19：更正「代开会话里 ask 规则不弹、写了等于放行」的说法（需求来源第 6 行加更正、关键决策 1「不写 ask」改理由、第 21 行、成功标准 14、验收 10）；规则行为不变（不可逆操作仍写 deny、推送仍走 deny 加 pre-push 与 merge push）。原因：用户决定 67——decision-inbox 核对 E3 代开会话记录，两次 `git push` 为 `user_temporary`（弹了、被点允许），与本模块 0.5.0 补测一致；来源：监测会话转达决定 67，用户 2026-10-19 在本会话决定现在就改、版本 0.5.2。之前各条变更记录里的旧说法保留原样作为历史。
+- 2026-10-19：加关键决策 8 与验收 14（0.5.3）：`plan`／`apply` 只读检查别处（checkout 自己的 settings.json、主 checkout 的本地与项目设置、用户设置、托管设置）的 ask／禁止规则，提示会盖过 module-crew 放行的条目。原因：定位实测发现 decision-inbox 写进集成 checkout 的 ask `Bash(npm install *)` 盖过了 worktree 里的放行，`plan` 没有提示；来源：用户 2026-10-19 在本会话确认 7 条假设。
