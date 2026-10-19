@@ -1,9 +1,9 @@
 # Spec: crew-host-permissions
 
-<!-- spec-guard: review approved 2d6d3387ce18 -->
+<!-- spec-guard: review approved 9c8a72ae7e55 -->
 
 > 能力图模块 `crew-host-permissions`（第四版，0.4.0 三个模块之二）。需求来源：`livesaas-integration/REQ-REVIEW-NEARBY.md` R16（用户决定 44 第①条、49）；
-> decision-inbox 2026-10-19 实测：由别的会话用开会话工具代开的会话里，`.claude/settings.local.json` 的 ask 规则（如 `git push`）不弹确认就执行。
+> decision-inbox 2026-10-19 实测：由别的会话用开会话工具代开的会话里，`.claude/settings.local.json` 的 ask 规则（如 `git push`）不弹确认就执行。**（0.5.2 更正，决定 67）**这条后经 decision-inbox 核对 E3 会话记录推翻：该会话权限模式为 default，两次 `git push` 的 `permissionDecision.source` 都是 `user_temporary`，即弹了确认、有人点了「允许一次」；本模块 0.5.0 补测里不写规则的命令同样是 `user_temporary`。代开会话里 ask 与默认确认都会弹。
 > 用户 2026-10-19 在本会话确认 19 条下一版假设（全部按推荐，第 13 条选 A）。契约 session-protocol v2.1 不变。
 
 ## 目标
@@ -18,7 +18,7 @@
 - Codex 模块 worktree：写 `.codex/rules/module-crew.rules`（`prefix_rule`，常规 allow、不可逆 forbidden），并检查项目是否受信任。
 - git `pre-push` 钩子：拦模块 worktree 的推送，以及集成 checkout 上没有 `merge push` 一次性放行凭证的推送；`merge push` 推送前写凭证、用后标为已用（module-crew 不删文件）。
 - `start prepare` 新建 worktree 时，若已 apply 过，自动写同一份规则。
-- README、两份 crew-dev skill 与 crew-coordinator skill 写明：代开会话里宿主确认可能不弹，不可逆操作不能只靠弹窗。
+- README、两份 crew-dev skill 与 crew-coordinator skill 写明：不可逆操作不能只靠弹窗（点一次「允许」就执行，代开会话里点的人未必清楚上下文）。（0.5.2 更正）
 
 不做：decision-inbox 的 join 写入与「去〈会话名〉点允许」提醒（归 decision-inbox）；替用户把项目设为 Codex 受信任（改全局配置，只提示）；
 改宿主权限模式；全面改名（crew-glossary-rename）。
@@ -40,7 +40,7 @@
     放行清单为第 44 条①范围；推送、删除、联网安装、改全局配置一律不放行。
 12. 「实测宿主放行」：`permissions verify` 给无害命令清单，模块协调开会话后让模块会话逐条跑、看它有没有进入「等待审批」，结果记进状态库；验收时在 crew-rehearsal 默认权限模式实跑并留证据。
 13. A：模块 worktree 对推送、删除写 deny（不是 ask）；装 pre-push 钩子拦模块 worktree 推送与集成 checkout 上没有 `merge push` 放行凭证的推送；仓库设了 `core.hooksPath` 时不装并报出；deny 在代开会话里是否生效验收时实测。
-14. README 与 skill 写明代开会话里宿主确认可能不弹，不可逆操作不能只靠弹窗。
+14. README 与 skill 写明不可逆操作不能只靠弹窗（点一次「允许」就执行）。（0.5.2 更正）
 
 ## 关键决策与取舍（请重点审）
 
@@ -50,7 +50,7 @@
    - Claude deny：`Bash(git push *)`、`Bash(git push)`、`Bash(rm -rf *)`、`Bash(git reset --hard *)`、`Bash(git branch -D *)`、`Bash(git worktree remove *)`、`Bash(git config --global *)`、
      `Bash(npm install -g *)`、`Bash(pnpm add -g *)`、`Bash(brew install *)`、`Bash(curl * | sh)`、`Bash(curl * | bash)`，以及 0.5.1 补全的全局安装写法（见下）。
    - spec-guard 命令不进 allow：它的入口路径带插件版本号（`.../spec-guard/0.72.0/hooks/...`），升级就失效；spec-guard 自己的权限由它的安装方式管。Spec 写明，不在本版解决。
-   - 不写 ask：ask 在代开会话里实测不弹（需求依据），写了等于放行。
+   - 不可逆操作不写 ask、写 deny（0.5.2 更正理由，决定 67）：ask 会弹，但点一次「允许」就执行了，代开会话里点确认的人未必清楚上下文；deny 由规则直接拒绝，不依赖有人当场判断。原先写的「ask 在代开会话里实测不弹、写了等于放行」经 E3 会话记录核实不成立。
    - （0.5.1 修订，R21 MC-1；按用户决定 62，取代 0.5.0 的「加新包不写规则」）**装依赖的命令放行，含往项目里加新包**：保留按锁文件或清单装的 `Bash(npm ci)`、`Bash(npm ci *)`、`Bash(npm install)`、`Bash(pnpm install)`、`Bash(pnpm install --frozen-lockfile)`、`Bash(yarn install)`、`Bash(uv sync)`、`Bash(uv sync *)`、`Bash(pip install -r *)`、`Bash(.venv/bin/pip install -r *)`，新增 `Bash(npm install *)`、`Bash(pnpm add *)`、`Bash(yarn add *)`、`Bash(uv add *)`、`Bash(uv pip install *)`、`Bash(.venv/bin/pip install *)`。新增依赖不再事先问，由 spec-guard 的 SG-5 在最终验收时列给用户。**裸 `pip install <包名>` 仍不写规则**（交宿主默认确认）：不在 venv 里时它装进系统或用户级 Python，等于全局安装。**全局安装禁止补全**：放行 `npm install *` 后，`npm install x -g`、`--global`、`npm i -g` 这些写法不再落到默认确认，所以 deny 加 `Bash(npm * -g)`、`Bash(npm * -g *)`、`Bash(npm * --global)`、`Bash(npm * --global *)`、`Bash(pnpm * -g)`、`Bash(pnpm * -g *)`、`Bash(pnpm * --global)`、`Bash(pnpm * --global *)`、`Bash(yarn global *)`、`Bash(uv * --system)`、`Bash(uv * --system *)`（Claude 的 `*` 可在规则中间，官方文档「Wildcard patterns」）；代价是 `npm ls -g` 这类只读的全局查询也被拒。deny 先于 allow。**Codex 侧加新包仍不写规则**：Codex 前缀规则只能从命令开头匹配，挡不住 `npm install x -g`，放行 `npm install` 就会放过它，所以加新包交 Codex 默认审批；只同步按锁文件装的 `allow` 与全局安装的 `forbidden`（加 `npm i -g`、`npm install --global`、`npm i --global`、`pnpm add --global`、`yarn global add`）。`pip install -r *` 能顺带装新包的口子不修：决定 62 下加新包本就放行。
 2. **集成 checkout 与模块 worktree 用同一份**：模块协调也不该自己 `git push`——推送只走 `merge push`（它在子进程里推，不经宿主规则，靠用户原话把关）；
    收回 worktree 走 `merge cleanup`。所以两边 deny 相同，只是集成 checkout 多一个推送凭证的放行口（决策 5）。
@@ -134,7 +134,7 @@ python3 -m unittest discover -s tests -v
 7. `start prepare` 在已 apply 的项目里新建 worktree 时自动写同一份规则；写失败不阻止开工并在 `status` 标出。
 8. `verify` 输出实测清单（四条应放行、一条应拒）；`verify --record` 记下结果，`status` 显示每个会话最近一次实测，没测过写「权限未实测」。
 9. `remove` 只撤 module-crew 追加的条目，Codex 规则文件清空、带标记的钩子改为空操作，其他内容不变。
-10. README 与三份 skill 写明：代开会话里宿主确认可能不弹，不可逆操作靠 deny 规则与推送守门；开会话后跑实测清单并记录。
+10. README 与三份 skill 写明：不可逆操作不能只靠弹窗（点一次「允许」就执行），靠 deny 规则与推送守门；开会话后跑实测清单并记录。不再出现「ask 规则实测不弹」的说法。（0.5.2 更正）
 11. 实地（验收时，crew-rehearsal，默认权限模式，由别的会话代开的模块会话）：清单四条不弹窗、`git push` 被宿主 deny 拦下；结果用 `verify --record` 记下并附在验收证据里。做不了就写「宿主未实测」与原因。
 12. 全量测试通过。
 13. （0.5.1）`permissions plan` 预览里：按锁文件或清单装的命令与加新包的命令（`npm install x`、`pnpm add x`、`yarn add x`、`uv add x`、`uv pip install x`、`.venv/bin/pip install x`）在放行里；裸 `pip install x` 既不在放行也不在禁止里；全局安装（`npm install -g x`、`npm install x -g`、`npm i --global x`、`pnpm add -g x`、`yarn global add x`、`uv pip install --system x`、`brew install x`）都被禁止规则匹配。Codex 规则经 `codex execpolicy check` 核对：`npm ci` 为 allow、`npm install x` 无匹配、`npm install -g x`、`npm i -g x`、`npm install --global x` 为 forbidden。
@@ -155,3 +155,4 @@ README 新增「权限预配」一节：`permissions plan → apply → 开会�
 - 2026-10-19：关键决策 1 改为项目内安装依赖放行、全局安装仍禁止（含 Codex 规则），写明「只装 Plan 列出的依赖」不在权限层；加验收 13（0.5.0）。原因：R21「模块打转」MC-1（原先整类禁止 `pip install` 与 DI-1 冲突）；来源：监测会话转达用户决定 58–60，用户 2026-10-19 在本会话确认 6 条假设。
 - 2026-10-19：MC-1 改为按锁文件或清单装的放行、加新包不写规则（交宿主默认确认加 skill 先问）、全局安装禁止，取代上一条修订里「项目内安装一律放行」；验收 13 随之改。原因：用户决定 61 要求 MC-1 与 decision-inbox DI-2 对齐（加新包先问）；因代开会话里 ask 规则不弹，用户 2026-10-19 在本会话选方案 C（不写 ask）；来源：监测会话转达决定 61。
 - 2026-10-19：MC-1 改为加新包放行（Claude），裸 `pip install <包名>` 仍不写规则，全局安装禁止补全（`-g`／`--global` 在任意位置、`yarn global`、`uv --system`），Codex 加新包仍不写规则；验收 13 随之改，取代上一条的「加新包不写规则」。原因：用户决定 62（装包放宽、与上游 agent-skills 对齐；事先列不全、逐项管制造打扰），新增依赖改由 spec-guard SG-5 在最终验收列出；Codex 前缀规则挡不住后置 `-g`、裸 pip 等于全局安装，所以这两处没放；`pip install -r *` 的口子不修。来源：监测会话转达决定 62，用户 2026-10-19 在本会话确认 8 条假设。
+- 2026-10-19：更正「代开会话里 ask 规则不弹、写了等于放行」的说法（需求来源第 6 行加更正、关键决策 1「不写 ask」改理由、第 21 行、成功标准 14、验收 10）；规则行为不变（不可逆操作仍写 deny、推送仍走 deny 加 pre-push 与 merge push）。原因：用户决定 67——decision-inbox 核对 E3 代开会话记录，两次 `git push` 为 `user_temporary`（弹了、被点允许），与本模块 0.5.0 补测一致；来源：监测会话转达决定 67，用户 2026-10-19 在本会话决定现在就改、版本 0.5.2。之前各条变更记录里的旧说法保留原样作为历史。
