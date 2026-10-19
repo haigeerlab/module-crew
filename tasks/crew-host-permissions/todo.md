@@ -37,3 +37,5 @@
 - [x] Task 8（0.5.0，R21 MC-1）：项目内安装依赖放行、全局安装仍禁止，Codex 规则同步；execpolicy 实测同时命中取 forbidden
   - 验收：Spec 验收 13
   - 文件：`module_crew/permissions.py`、`tests/test_permissions.py`、`README.md`
+
+- [x] R21 MC-1 验收（2026-10-19 用户批准；全量 415 个测试通过）
