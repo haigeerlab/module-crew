@@ -10,7 +10,7 @@
 - [x] Task 5：`wait add` 与【已恢复】提示（Spec 验收 10）——提交 a215963；C<N> 走 `answer`，#N 走带来源的批准与答复（`_closing_send`）；review／merge 对 C 号的直接答复不触发（协调会话自己等 C 号事项的情形只经 answer）
 - [x] Task 6：派活后核对权限弹窗的提醒（Spec 验收 11）——提交 3dfcd95
 - [x] Task 7：README、版本 0.6.0、全量测试（Spec 验收 12）——提交 c1c4c96；全量 442 个测试：首轮 441 过、旧称扫描抓到 1 处「审批」，改后重跑通过
-- [ ] Checkpoint 2（gate）：实地验证前停下问用户
-- [ ] Task 8：实地验证（Spec 验收 13）
+- [x] Checkpoint 2（gate）：实地验证前停下问用户——用户 2026-10-19 同意按计划做
+- [x] Task 8：实地验证（Spec 验收 13）——2026-10-19 在 scratchpad 的 crew-rehearsal 临时副本（不碰原仓库与它的 worktree）登记模块 fieldmod、`permissions apply` 写规则，两边各提交一份 spec/fieldmod.md 造冲突；开默认权限模式的会话「实地验证：模块会话跑 module-crew sync」单独执行 `module-crew sync`、`git status --short`、`git log --oneline -3`。结果：sync 取集成分支版本完成合并（HEAD 06546ff，工作区干净，spec/fieldmod.md 带批准标记）；会话记录里 7 次工具调用的权限决定全是 `source: config`（规则放行），没有弹窗、没有 `user_temporary`
 - [ ] Checkpoint 3（gate）：最终验收
 - [ ] 回告：结果告诉 di-p0-tester（local_bbdaaaab）
