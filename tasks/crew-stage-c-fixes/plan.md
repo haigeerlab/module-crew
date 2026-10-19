@@ -1,6 +1,6 @@
 # Implementation Plan: crew-stage-c-fixes
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-stage-c-fixes.md`（用户 2026-10-20 批准，含交审前对 MC-9 的修订）。任务清单：`tasks/crew-stage-c-fixes/todo.md`。
 
