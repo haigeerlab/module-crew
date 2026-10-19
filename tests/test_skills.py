@@ -57,6 +57,18 @@ class SkillsTest(unittest.TestCase):
             self.assertIn(words, dev)
             self.assertIn(words, codex)
 
+    def test_stage_c_rules(self):
+        _, coord = read("crew-coordinator")
+        for words in ("先查后问，不重复提请", "照那次的答复办", "作为信息发出，不再要用户答", "上次 #N 答了什么、这次为什么还要问",
+                      "提请批准只发 for-hub 正文", "不把几个模块的交审合成一条", "每条【等待用户】都填「模块」", "紧跟「要点」",
+                      "收回 worktree", "模块：无"):
+            self.assertIn(words, coord)
+        _, dev = read("crew-dev")
+        codex = (PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
+        for words in ("你发的【等待用户】填「模块」", "模块：<你的模块 id>"):
+            self.assertIn(words, dev)
+            self.assertIn(words, codex)
+
     def test_coordinator_rules(self):
         _, text = read("crew-coordinator")
         for words in ("inbox add", "answer", "bodyFile", "等待审批", "不是批准", "亲手输入", "module-crew status",
