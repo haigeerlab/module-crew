@@ -234,27 +234,50 @@ class FollowAndVerifyTest(PermCase):
         self.assertEqual(self.run_cli("permissions", "verify", "--record", "shop-b").returncode, 3)
 
 
-class ProjectInstallTest(PermCase):
-    """R21 MC-1 after decision 61 (acceptance 13): lockfile installs allowed, new packages left to the host, global denied."""
+def _claude_matches(rule: str, cmd: str) -> bool:
+    """Claude Code's Bash rule shape: `*` stands for any text; a lone trailing ` *` also matches the bare command."""
+    import re
+    body = rule[len("Bash("):-1]
+    if body.endswith(" *") and body.count("*") == 1 and cmd == body[:-2]:
+        return True
+    return re.fullmatch(".*".join(map(re.escape, body.split("*"))), cmd) is not None
 
-    LOCKFILE = ["Bash(npm ci)", "Bash(npm ci *)", "Bash(npm install)", "Bash(pnpm install)", "Bash(pnpm install --frozen-lockfile)",
-                "Bash(yarn install)", "Bash(uv sync)", "Bash(uv sync *)", "Bash(pip install -r *)", "Bash(.venv/bin/pip install -r *)"]
-    NEW_PACKAGE = ["npm install", "pnpm add", "yarn add", "uv add", "pip install", ".venv/bin/pip install"]
+
+class ProjectInstallTest(PermCase):
+    """R21 MC-1 after decision 62 (acceptance 13, 0.5.1): installs allowed, adding packages too; bare pip and global denied."""
+
+    ALLOWED = ["npm ci", "npm ci --dry-run", "npm install", "pnpm install", "pnpm install --frozen-lockfile", "yarn install",
+               "uv sync", "uv sync --frozen", "pip install -r requirements.txt", ".venv/bin/pip install -r requirements.txt",
+               "npm install lodash", "npm install --save-dev vitest", "pnpm add zod", "yarn add react", "uv add httpx",
+               "uv pip install httpx", ".venv/bin/pip install requests"]
+    NO_RULE = ["pip install requests", "pip3 install requests"]
+    DENIED = ["npm install -g lodash", "npm install lodash -g", "npm i -g lodash", "npm i --global lodash",
+              "npm install --global lodash", "pnpm add -g zod", "pnpm add zod --global", "yarn global add serve",
+              "uv pip install --system httpx", "brew install jq"]
+
+    def decide(self, entries, cmd):
+        if any(_claude_matches(r, cmd) for r in entries["deny"] if r.startswith("Bash(")):
+            return "deny"
+        if any(_claude_matches(r, cmd) for r in entries["allow"] if r.startswith("Bash(")):
+            return "allow"
+        return None
 
     def test_claude_lists(self):
         entries = permissions.claude_entries({})
-        for rule in self.LOCKFILE:
-            self.assertIn(rule, entries["allow"])
-        for cmd in self.NEW_PACKAGE:                         # no rule at all: the host's own confirmation decides
-            self.assertNotIn(f"Bash({cmd} *)", entries["allow"] + entries["deny"])
-        for cmd in ("npm install -g", "pnpm add -g", "brew install"):
-            self.assertIn(f"Bash({cmd} *)", entries["deny"])
+        for cmd in self.ALLOWED:
+            self.assertEqual(self.decide(entries, cmd), "allow", cmd)
+        for cmd in self.NO_RULE:                             # the host's own confirmation decides
+            self.assertIsNone(self.decide(entries, cmd), cmd)
+        for cmd in self.DENIED:
+            self.assertEqual(self.decide(entries, cmd), "deny", cmd)
+        self.assertNotIn("Bash(pip install *)", entries["allow"] + entries["deny"])
 
     def test_plan_preview_shows_both(self):
         target = next(t for t in permissions.plan(self.repo)["targets"] if t["role"] == "integration")
         self.assertIn("Bash(npm ci)", target["allow"])
+        self.assertIn("Bash(pnpm add *)", target["allow"])
         self.assertIn("Bash(npm install -g *)", target["deny"])
-        self.assertNotIn("Bash(pnpm add *)", target["allow"] + target["deny"])
+        self.assertIn("Bash(npm * -g *)", target["deny"])
 
     @unittest.skipUnless(__import__("shutil").which("codex"), "本机没有 codex 命令")
     def test_codex_decisions(self):
@@ -268,11 +291,12 @@ class ProjectInstallTest(PermCase):
             return json.loads(out.stdout).get("decision")
         self.assertEqual(decide("npm ci"), "allow")
         self.assertEqual(decide("pip install -r requirements.txt"), "allow")
-        self.assertIsNone(decide("npm install lodash"))
+        self.assertIsNone(decide("npm install lodash"))      # a prefix rule cannot stop `npm install x -g`
         self.assertIsNone(decide("pnpm add zod"))
         self.assertIsNone(decide("pip install requests"))
-        self.assertEqual(decide("npm install -g lodash"), "forbidden")
-        self.assertEqual(decide("brew install jq"), "forbidden")
+        for cmd in ("npm install -g lodash", "npm i -g lodash", "npm install --global lodash", "npm i --global lodash",
+                    "pnpm add -g zod", "pnpm add --global zod", "yarn global add serve", "brew install jq"):
+            self.assertEqual(decide(cmd), "forbidden", cmd)
 
 class CodexStaticTest(PermCase):
     @unittest.skipUnless(__import__("shutil").which("codex"), "本机没有 codex 命令")

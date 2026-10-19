@@ -27,14 +27,19 @@ ROUTINE = ["git add", "git commit", "git status", "git diff", "git log", "git sh
 IRREVERSIBLE = ["git push", "rm -rf", "git reset --hard", "git branch -D", "git worktree remove", "git config --global",
                 "npm install -g", "pnpm add -g", "brew install"]
 PIPED = ["curl * | sh", "curl * | bash"]          # Claude only: not expressible as a Codex prefix rule
-# R21 MC-1 (decision 61): installing what a lockfile or manifest already lists is routine; adding a new package is
-# left to the host's own confirmation (no rule at all: an ask rule does not prompt in a session another session
-# opened) plus the skills' "ask once"; installing globally stays denied.
+# R21 MC-1 (decision 62, 0.5.1): installing dependencies is routine, adding a new package included (new dependencies
+# are listed at final acceptance by spec-guard SG-5). Bare `pip install x` gets no rule: outside a venv it installs
+# into the system or user Python. Installing globally stays denied, wherever the flag sits.
 LOCKFILE_CLAUDE = ["npm ci", "npm ci *", "npm install", "pnpm install", "pnpm install --frozen-lockfile", "yarn install",
-                   "uv sync", "uv sync *", "pip install -r *", ".venv/bin/pip install -r *"]
-# Codex prefix rules cannot say "no arguments", so only prefixes that never add a package are allowed there.
+                   "uv sync", "uv sync *", "pip install -r *", ".venv/bin/pip install -r *",
+                   "npm install *", "pnpm add *", "yarn add *", "uv add *", "uv pip install *", ".venv/bin/pip install *"]
+GLOBAL_CLAUDE = ["npm * -g", "npm * -g *", "npm * --global", "npm * --global *", "pnpm * -g", "pnpm * -g *",
+                 "pnpm * --global", "pnpm * --global *", "yarn global *", "uv * --system", "uv * --system *"]
+# Codex prefix rules only match from the start: allowing `npm install` would let `npm install x -g` through, so adding a
+# package stays with Codex's own approval there, and only prefixes that never add a package are allowed.
 LOCKFILE_CODEX = ["npm ci", "pnpm install --frozen-lockfile", "yarn install", "uv sync", "pip install -r",
                   ".venv/bin/pip install -r"]
+GLOBAL_CODEX = ["npm i -g", "npm install --global", "npm i --global", "pnpm add --global", "yarn global add"]
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
@@ -47,7 +52,8 @@ def claude_entries(cfg: dict) -> dict[str, list[str]]:
              + [f"Bash({c})" for c in LOCKFILE_CLAUDE])
     if cfg.get("checkCommand"):
         allow += [f"Bash({cfg['checkCommand']})", f"Bash({cfg['checkCommand']} *)"]
-    deny = [f"Bash({c} *)" for c in IRREVERSIBLE] + ["Bash(git push)"] + [f"Bash({c})" for c in PIPED]
+    deny = ([f"Bash({c} *)" for c in IRREVERSIBLE] + ["Bash(git push)"] + [f"Bash({c})" for c in PIPED]
+            + [f"Bash({c})" for c in GLOBAL_CLAUDE])
     return {"allow": allow, "deny": deny}
 
 
@@ -203,7 +209,7 @@ def codex_rules(cfg: dict) -> list[dict]:
         rules.append({"pattern": tokens, "decision": "allow", "match": [cfg["checkCommand"]]})
     rules += [{"pattern": c.split(), "decision": "forbidden", "match": [f"{c} x"],
                "justification": "module-crew：不可逆操作不在会话里做；推送只经模块协调的 module-crew merge push（要用户原话）"}
-              for c in IRREVERSIBLE]
+              for c in IRREVERSIBLE + GLOBAL_CODEX]
     return rules
 
 
