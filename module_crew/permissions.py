@@ -2,7 +2,7 @@
 (see spec/crew-host-permissions.md).
 
 Routine work inside decision 44 (1) is allowed; irreversible work is denied (Claude) or forbidden (Codex), never
-"ask": an ask rule was seen not to prompt in a session opened by another session.  Nothing is written without the
+"ask": an ask rule does prompt, but one "allow" click runs the command (decision 67).  Nothing is written without the
 user's words, files that git does not ignore are never touched, and only what module-crew added is ever removed.
 """
 
@@ -22,6 +22,7 @@ CREW_BIN = str(ROOT / "bin" / "module-crew")
 CLAUDE_FILE = Path(".claude") / "settings.local.json"
 CODEX_FILE = Path(".codex") / "rules" / "module-crew.rules"
 CODEX_MARK = "# module-crew rules"
+MANAGED_SETTINGS = Path("/Library/Application Support/ClaudeCode/managed-settings.json")
 
 ROUTINE = ["git add", "git commit", "git status", "git diff", "git log", "git show"]
 IRREVERSIBLE = ["git push", "rm -rf", "git reset --hard", "git branch -D", "git worktree remove", "git config --global",
@@ -148,6 +149,7 @@ def _target(t: dict, cfg: dict, project: Path) -> dict:
         perms = (have or {}).get("permissions") or {}
         out.update(allow=[e for e in want["allow"] if e not in perms.get("allow", [])],
                    deny=[e for e in want["deny"] if e not in perms.get("deny", [])])
+        out["shadowed"] = shadowed(checkout, want["allow"], want["deny"])
     out.update(file=str(checkout / rel), ignored=_ignored(checkout, rel))
     out.setdefault("problem", None)
     return out
@@ -163,6 +165,54 @@ def _read_settings(path: Path) -> tuple[dict | None, str | None]:
     if not isinstance(doc, dict) or not isinstance(doc.get("permissions", {}), dict):
         return None, f"{path} 的格式认不出（顶层或 permissions 不是对象）"
     return doc, None
+
+
+def _sample(entry: str) -> tuple[str, str | None]:
+    """A command an allow entry lets through: `Bash(npm install *)` -> ("Bash", "npm install x")."""
+    if entry.startswith("Bash(") and entry.endswith(")"):
+        return "Bash", entry[5:-1].replace("*", "x")
+    return entry, None
+
+
+def rule_matches(rule: str, tool: str, command: str | None) -> bool:
+    """Claude Code's rule shape, near enough for single commands: `*` is any text, a lone trailing ` *` (or `:*`) also
+    matches the bare command, and a bare tool name (`Bash`, `Bash(*)`, `mcp__x`) matches everything of that tool."""
+    if rule in (tool, f"{tool}(*)"):
+        return True
+    if command is None or not (rule.startswith(f"{tool}(") and rule.endswith(")")):
+        return False
+    body = rule[len(tool) + 1:-1]
+    if body.endswith(":*"):
+        body = body[:-2] + " *"
+    if body.endswith(" *") and body.count("*") == 1 and command == body[:-2]:
+        return True
+    return re.fullmatch(".*".join(map(re.escape, body.split("*"))), command) is not None
+
+
+def _layers(checkout: Path) -> list[Path]:
+    """Every other settings file the host reads for a session in this checkout (decision 8)."""
+    files = [checkout / ".claude" / "settings.json"]
+    common = _git(checkout, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    main = Path(common.stdout.strip()).parent if common.returncode == 0 else None
+    if main is not None and main.resolve() != checkout.resolve():
+        files += [main / CLAUDE_FILE, main / ".claude" / "settings.json"]
+    home = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    return files + [home / "settings.json", MANAGED_SETTINGS]
+
+
+def shadowed(checkout: Path, allow: list[str], own_deny: list[str]) -> list[dict]:
+    """Allow entries that an ask or deny rule elsewhere would win over (the host checks deny, then ask, then allow)."""
+    found = []
+    for path in [checkout / CLAUDE_FILE] + _layers(checkout):
+        doc, _ = _read_settings(path)
+        perms = (doc or {}).get("permissions") or {}
+        for kind in ("deny", "ask"):
+            for rule in perms.get(kind) or []:
+                if not isinstance(rule, str) or (kind == "deny" and rule in own_deny):
+                    continue
+                found += [{"allow": entry, "file": str(path), "kind": kind, "rule": rule}
+                          for entry in allow if rule_matches(rule, *_sample(entry))]
+    return found
 
 
 def plan(project: str | os.PathLike) -> dict:
@@ -194,10 +244,16 @@ def render_plan(p: dict) -> list[str]:
         else:
             lines.append("  追加放行：" + ("、".join(t["allow"]) or "无（已都有）"))
             lines.append("  追加禁止：" + ("、".join(t["deny"]) or "无（已都有）"))
+            lines += _shadow_lines(t)
     h = p["hook"]
     lines.append("推送守门（pre-push 钩子）：" + ("已装" if h["installed"] else "可以装" if h["installable"]
                                             else f"不装——{h['reason']}；推送只能靠宿主的禁止规则"))
     return lines
+
+
+def _shadow_lines(t: dict) -> list[str]:
+    return [f"  ⚠️ 会被盖过：{f['allow']} ← {f['file']} 的 {'ask' if f['kind'] == 'ask' else '禁止'} {f['rule']}"
+            for f in t.get("shadowed") or []]
 
 
 def codex_rules(cfg: dict) -> list[dict]:
@@ -289,6 +345,7 @@ def apply(project: str | os.PathLike, original: str | None) -> list[str]:
         for key in ("allow", "deny"):
             added[key] += [e for e in t[key] if e not in added[key]]
         lines.append(f"已写 {path}：追加放行 {len(t['allow'])} 条、禁止 {len(t['deny'])} 条")
+        lines += _shadow_lines(t)
     hook = install_hook(project)
     lines.append(hook["line"])
     with db.transaction(actor="coordinator") as tx:

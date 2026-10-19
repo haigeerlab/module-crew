@@ -3,6 +3,7 @@
 import json
 import os
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from helpers import StartCase, git
@@ -30,6 +31,15 @@ class PermCase(StartCase):
         old = os.environ.get("CODEX_HOME")
         os.environ["CODEX_HOME"] = str(self.codex_home)
         self.addCleanup(lambda: os.environ.__setitem__("CODEX_HOME", old) if old else os.environ.pop("CODEX_HOME", None))
+        self.claude_home = self.tmp / "claude-home"     # keep the real ~/.claude/settings.json out of the tests
+        self.claude_home.mkdir()
+        old_claude = os.environ.get("CLAUDE_CONFIG_DIR")
+        os.environ["CLAUDE_CONFIG_DIR"] = str(self.claude_home)
+        self.addCleanup(lambda: os.environ.__setitem__("CLAUDE_CONFIG_DIR", old_claude) if old_claude
+                        else os.environ.pop("CLAUDE_CONFIG_DIR", None))
+        managed = unittest.mock.patch.object(permissions, "MANAGED_SETTINGS", self.tmp / "managed-settings.json")
+        managed.start()
+        self.addCleanup(managed.stop)
 
     def settings(self, checkout: Path) -> dict:
         return json.loads((checkout / ".claude" / "settings.local.json").read_text(encoding="utf-8"))
@@ -297,6 +307,62 @@ class ProjectInstallTest(PermCase):
         for cmd in ("npm install -g lodash", "npm i -g lodash", "npm install --global lodash", "npm i --global lodash",
                     "pnpm add -g zod", "pnpm add --global zod", "yarn global add serve", "brew install jq"):
             self.assertEqual(decide(cmd), "forbidden", cmd)
+
+def _write(path: Path, doc: dict) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    return path
+
+
+class ShadowTest(PermCase):
+    """Acceptance 14 (0.5.3): ask/deny rules elsewhere that would win over an allow module-crew writes."""
+
+    def target(self, key):
+        return next(t for t in permissions.plan(self.repo)["targets"] if t["role"] + ":" + (t["module"] or "") == key)
+
+    def test_main_checkout_ask_shadows_the_worktree_allow(self):
+        main = _write(self.repo / ".claude" / "settings.local.json", {"permissions": {"ask": ["Bash(npm install *)"]}})
+        found = self.target("dev:b")["shadowed"]
+        self.assertIn({"allow": "Bash(npm install *)", "file": str(main), "kind": "ask", "rule": "Bash(npm install *)"},
+                      found)
+        self.assertNotIn("Bash(npm ci *)", [f["allow"] for f in found])
+        text = "\n".join(permissions.render_plan(permissions.plan(self.repo)))
+        self.assertIn(f"会被盖过：Bash(npm install *) ← {main} 的 ask Bash(npm install *)", text)
+
+    def test_user_settings_and_the_checkout_own_settings_json(self):
+        user = _write(self.claude_home / "settings.json", {"permissions": {"deny": ["Bash(git commit:*)"]}})
+        own = _write(self.wt["b"] / ".claude" / "settings.json", {"permissions": {"ask": ["Bash(pnpm add *)"]}})
+        b = self.target("dev:b")["shadowed"]
+        self.assertIn({"allow": "Bash(git commit *)", "file": str(user), "kind": "deny", "rule": "Bash(git commit:*)"}, b)
+        self.assertIn({"allow": "Bash(pnpm add *)", "file": str(own), "kind": "ask", "rule": "Bash(pnpm add *)"}, b)
+        integration = self.target("integration:")["shadowed"]
+        self.assertIn("Bash(git commit *)", [f["allow"] for f in integration])
+        self.assertNotIn("Bash(pnpm add *)", [f["allow"] for f in integration])
+        text = "\n".join(permissions.render_plan(permissions.plan(self.repo)))
+        self.assertIn(f"的 禁止 Bash(git commit:*)", text)
+
+    def test_managed_settings_and_bare_tool_rules(self):
+        _write(permissions.MANAGED_SETTINGS, {"permissions": {"ask": ["Bash"], "deny": ["mcp__agent-relay"]}})
+        b = self.target("dev:b")["shadowed"]
+        self.assertIn("Bash(npm ci)", [f["allow"] for f in b])
+        self.assertIn("mcp__agent-relay", [f["allow"] for f in b])
+
+    def test_nothing_to_report_without_conflicts(self):
+        _write(self.claude_home / "settings.json", {"permissions": {"ask": ["Bash(terraform apply *)"],
+                                                                     "deny": ["Bash(npm install -g *)"]}})
+        p = permissions.plan(self.repo)
+        self.assertTrue(all(t.get("shadowed") == [] for t in p["targets"] if "rules" not in t))
+        self.assertNotIn("会被盖过", "\n".join(permissions.render_plan(p)))
+
+    def test_apply_reports_but_still_writes_and_leaves_other_files(self):
+        user = _write(self.claude_home / "settings.json", {"permissions": {"ask": ["Bash(npm install *)"]}})
+        own = _write(self.wt["b"] / ".claude" / "settings.json", {"permissions": {"deny": ["Bash(git add *)"]}})
+        before = (user.read_bytes(), own.read_bytes())
+        lines = permissions.apply(self.repo, "预配")
+        self.assertTrue(any("会被盖过：Bash(npm install *)" in l for l in lines))
+        self.assertIn("Bash(npm install *)", self.settings(self.wt["b"])["permissions"]["allow"])
+        self.assertEqual((user.read_bytes(), own.read_bytes()), before)
+
 
 class CodexStaticTest(PermCase):
     @unittest.skipUnless(__import__("shutil").which("codex"), "本机没有 codex 命令")
