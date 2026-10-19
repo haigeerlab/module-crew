@@ -35,8 +35,9 @@
 | crew-glossary-rename | 第四版：术语表 v1.1 全面改名——README、命令说明、两份 skill、命令输出与生成正文里的自由文字换成新名称，等待记录显示 W 前缀，旧称扫描测试；代码标识符、命令选项、状态库字段与契约标签不动 | crew-stall-signals, crew-host-permissions |
 | crew-pilot-fixes | 第五版：演练修复——module-crew sync 合入集成分支、review show 读审查原文、撤销批准不重开已被取代的交审并作废过期合并批准、模块协调自开的等待记录经 CLI 记账并提示关闭、派活后核对模块会话是否卡在权限弹窗 | crew-merge, crew-review-nearby, crew-host-permissions, crew-glossary-rename |
 | crew-hub-card-fields | 第五版：决策卡片字段——交给决策收件箱的【等待用户】按 session-protocol v2.3 写「类型」与各类小项，「注意」「推荐理由」「批了会怎样」由 module-crew 生成，模块协调自己提的请示按类别写；契约 v2.3 定稿后写 Spec | crew-hub-bridge, crew-review-nearby, crew-glossary-rename |
+| crew-stage-c-fixes | 第五版：阶段丙补修（R22）——【等待用户】带「模块」、已交最终验收的模块不再收同步通知、新合并批准取代旧批准、不重复提请已答过的事、权限预配放行本 worktree 内的编辑、提请批准只发 for-hub 正文不手写合问 | crew-pilot-fixes, crew-hub-card-fields |
 
-Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby → crew-stall-signals → crew-host-permissions → crew-glossary-rename → crew-pilot-fixes → crew-hub-card-fields
+Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby → crew-stall-signals → crew-host-permissions → crew-glossary-rename → crew-pilot-fixes → crew-hub-card-fields → crew-stage-c-fixes
 
 <!-- Spec Guard 按严格串行推进。为兼容上游格式，逗号分组会按左到右顺序展开为单模块步骤，不代表并行授权。 -->
 
