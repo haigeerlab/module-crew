@@ -40,6 +40,6 @@
 
 - [x] R21 MC-1 验收（2026-10-19 用户批准；全量 415 个测试通过）
 
-- [ ] Task 9（0.5.0，R21 MC-1 按决定 61 修订）：放行收窄为按锁文件或清单装的命令，加新包不写规则，全局安装禁止；Codex 同步；crew-dev skill 写明加新包先问一次
+- [x] Task 9（0.5.0，R21 MC-1 按决定 61 修订）：放行收窄为按锁文件或清单装的命令，加新包不写规则，全局安装禁止；Codex 同步；crew-dev skill 写明加新包先问一次
   - 验收：Spec 验收 13（修订后）
   - 文件：`module_crew/permissions.py`、`tests/test_permissions.py`、两份 crew-dev SKILL.md、`README.md`

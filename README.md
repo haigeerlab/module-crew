@@ -7,7 +7,7 @@
 
 ## 0.5.0 的变化（R21 模块打转）
 
-- 权限预配：项目内安装依赖（`npm install`、`pnpm add`、`uv add`、`.venv/bin/pip install` 等）放行，全局安装仍禁止；Codex 规则同步。
+- 权限预配：按锁文件或清单装依赖放行，加新包不写规则（宿主默认确认＋先问一次），全局安装仍禁止；Codex 规则同步。
 - skill：已批范围内直接做、不讨小许可、小步骤不送审、Plan 没列的依赖只问一次；碰到宿主确认经模块协调告诉用户去哪个会话点什么。
 - 契约钉到 session-protocol v2.2：模块会话碰到宿主确认时发「类型：去会话操作」的【等待用户】，模块协调原样转给决策收件箱（没有就直接告诉用户去哪点）。
 - `sessions --json` 加 `answers`：每次「你的答复」之后的提交数与 todo 勾选增量，供决策收件箱判断打转。
@@ -175,7 +175,7 @@ python3 -m unittest discover -s tests -v
 
 ## 权限预配
 
-由别的会话代开的会话里，宿主的 ask 规则实测不弹确认就执行了，所以不可逆操作不能只靠权限弹窗。module-crew 把第 44 条范围内的常规操作（含项目内安装依赖：`npm install`、`pnpm add`、`uv add`、`.venv/bin/pip install` 等）写成宿主认的放行规则，把推送、删除、全局安装（`npm install -g`、`pnpm add -g`、`brew install`、裸 `pip install`）、改全局配置写成禁止；「只装 Plan 列出的依赖」由 skill 与最终验收把关，权限规则只看命令形状，再用 git 的 pre-push 钩子守住推送：
+由别的会话代开的会话里，宿主的 ask 规则实测不弹确认就执行了，所以不可逆操作不能只靠权限弹窗。module-crew 把第 44 条范围内的常规操作（含按锁文件或清单装依赖：`npm ci`、不带参数的 `npm install`、`pip install -r <文件>` 等）写成宿主认的放行规则，把推送、删除、全局安装（`npm install -g`、`pnpm add -g`、`brew install`）、改全局配置写成禁止；往项目里加新包（`npm install <包名>`、`pnpm add`、`pip install <包名>`）不写规则，交给宿主的默认确认，并由 skill 规定先问一次（不写 ask：代开的会话里 ask 规则实测不弹），再用 git 的 pre-push 钩子守住推送：
 
 1. `module-crew permissions plan`：只读预览每个 checkout（集成 checkout 与各模块 worktree）要追加什么、文件有没有被 git 忽略、钩子能不能装、Codex 项目是否受信任。
 2. `module-crew permissions apply --original-file <用户原话>`：Claude 写 `.claude/settings.local.json`（只追加条目），Codex 模块写 `.codex/rules/module-crew.rules`；有一个文件不能写就全部不写。之后 `start prepare` 新开的模块自动跟随。

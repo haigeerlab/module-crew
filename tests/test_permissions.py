@@ -235,23 +235,29 @@ class FollowAndVerifyTest(PermCase):
 
 
 class ProjectInstallTest(PermCase):
-    """R21 MC-1 (acceptance 13): project-local installs allowed, global installs still denied."""
+    """R21 MC-1 after decision 61 (acceptance 13): lockfile installs allowed, new packages left to the host, global denied."""
+
+    LOCKFILE = ["Bash(npm ci)", "Bash(npm ci *)", "Bash(npm install)", "Bash(pnpm install)", "Bash(pnpm install --frozen-lockfile)",
+                "Bash(yarn install)", "Bash(uv sync)", "Bash(uv sync *)", "Bash(pip install -r *)", "Bash(.venv/bin/pip install -r *)"]
+    NEW_PACKAGE = ["npm install", "pnpm add", "yarn add", "uv add", "pip install", ".venv/bin/pip install"]
 
     def test_claude_lists(self):
         entries = permissions.claude_entries({})
-        for cmd in ("npm install", "npm ci", "pnpm install", "pnpm add", "yarn add", "uv add", "uv sync", ".venv/bin/pip install"):
-            self.assertIn(f"Bash({cmd} *)", entries["allow"])
-        for cmd in ("npm install -g", "pnpm add -g", "brew install", "pip install"):
+        for rule in self.LOCKFILE:
+            self.assertIn(rule, entries["allow"])
+        for cmd in self.NEW_PACKAGE:                         # no rule at all: the host's own confirmation decides
+            self.assertNotIn(f"Bash({cmd} *)", entries["allow"] + entries["deny"])
+        for cmd in ("npm install -g", "pnpm add -g", "brew install"):
             self.assertIn(f"Bash({cmd} *)", entries["deny"])
-        self.assertNotIn("Bash(pip install *)", entries["allow"])
 
     def test_plan_preview_shows_both(self):
         target = next(t for t in permissions.plan(self.repo)["targets"] if t["role"] == "integration")
-        self.assertIn("Bash(pnpm add *)", target["allow"])
+        self.assertIn("Bash(npm ci)", target["allow"])
         self.assertIn("Bash(npm install -g *)", target["deny"])
+        self.assertNotIn("Bash(pnpm add *)", target["allow"] + target["deny"])
 
     @unittest.skipUnless(__import__("shutil").which("codex"), "本机没有 codex 命令")
-    def test_codex_forbidden_wins_over_allow(self):
+    def test_codex_decisions(self):
         import subprocess, tempfile
         rules = permissions.render_codex(permissions.codex_rules({}))
         with tempfile.NamedTemporaryFile("w", suffix=".rules", delete=False) as f:
@@ -260,12 +266,13 @@ class ProjectInstallTest(PermCase):
             out = subprocess.run(["codex", "execpolicy", "check", "--rules", f.name, *cmd.split()],
                                  capture_output=True, text=True, stdin=subprocess.DEVNULL)
             return json.loads(out.stdout).get("decision")
-        self.assertEqual(decide("npm install lodash"), "allow")
-        self.assertEqual(decide("pnpm add zod"), "allow")
+        self.assertEqual(decide("npm ci"), "allow")
+        self.assertEqual(decide("pip install -r requirements.txt"), "allow")
+        self.assertIsNone(decide("npm install lodash"))
+        self.assertIsNone(decide("pnpm add zod"))
+        self.assertIsNone(decide("pip install requests"))
         self.assertEqual(decide("npm install -g lodash"), "forbidden")
-        self.assertEqual(decide("pip install requests"), "forbidden")
-        self.assertEqual(decide(".venv/bin/pip install requests"), "allow")
-
+        self.assertEqual(decide("brew install jq"), "forbidden")
 
 class CodexStaticTest(PermCase):
     @unittest.skipUnless(__import__("shutil").which("codex"), "本机没有 codex 命令")
