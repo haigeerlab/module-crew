@@ -114,7 +114,7 @@ def wait_user(events: list[dict], items: dict, name: str) -> list[dict]:
             if v.get("kind") == "wait-user" and v.get("from") == name]
 
 
-ANSWERED = ("review", "wait-user", "merge-approval")
+ANSWERED = ("review", "wait-user")   # a merge approval carries the same answer as its final review: counted once, as the review
 _TICK = re.compile(r"^\s*- \[[xX]\]", re.M)
 
 

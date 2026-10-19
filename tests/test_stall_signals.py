@@ -172,6 +172,14 @@ class AnswersTest(StallCase):
         [a] = self.rows()["b"]["answers"]
         self.assertEqual((a["commitsAfter"], a["ticksAfter"]), (0, 1))
 
+    def test_final_acceptance_counts_once_and_refs_match_asks(self):
+        self.approve_final("b", 7801)
+        row = self.rows()["b"]
+        refs = [a["ref"] for a in row["answers"]]
+        self.assertEqual(len(refs), 1)                           # the review and its merge approval are one answer
+        final = [a for a in row["asks"] if a["node"] == "final"][0]
+        self.assertEqual(refs, final["refs"])
+
     def test_unreadable_worktree_gives_nulls(self):
         n = review.add(self.db, self.spec_review("c"), "shop-c", 7701).number
         review.answer(self.db, n, "改")
