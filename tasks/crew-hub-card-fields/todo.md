@@ -8,5 +8,5 @@
 - [x] Task 3：`review batch --for-hub` 的 2.3 写法（Spec 验收 2～5）——提交 03b92f4；v2.2 写法与改前生成的 3 份夹具逐字一致；2.3 下选项 A 的「选了会怎样」与「批了会怎样」同一函数生成
 - [x] Task 4：三份 skill（Spec 验收 7）——提交 0a56146
 - [x] Task 5：README、版本 0.7.0、全量测试（Spec 验收 8）——提交 826b6de；全量 450 个测试通过（含旧称扫描）
-- [ ] Checkpoint 2（gate）：最终验收
-- [ ] 回告：结果告诉 di-p0-tester（local_bbdaaaab）与契约负责人（local_a9d06942）
+- [x] Checkpoint 2（gate）：最终验收——用户 2026-10-19 批准；除契约样例外 21 个文件 +607 −40，另钉 v2.3 契约样例 206 个文件（d10ae2c..44a5919）
+- [x] 回告：结果告诉 di-p0-tester（local_bbdaaaab）与契约负责人（local_a9d06942）——2026-10-19 已发会话消息；向契约负责人更正「拿能力图核对接口提案影响的模块」未做
