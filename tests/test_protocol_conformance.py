@@ -11,9 +11,9 @@ from pathlib import Path
 from module_crew import protocol
 
 ROOT = Path(__file__).resolve().parent / "fixtures" / "session-protocol"
-FIXTURES = ROOT / "v2.3"
+FIXTURES = ROOT / "v2.4"
 # Every pinned contract version runs against the current parser (contracts only add): commit, parse count, generate count.
-PINNED = {"v2.2": ("f5bc04e", 97, 3), "v2.3": ("6b8810e", 101, 3)}
+PINNED = {"v2.2": ("f5bc04e", 97, 3), "v2.3": ("6b8810e", 101, 3), "v2.4": ("495b475", 104, 3)}
 
 # Types this plugin parses / generates (spec 假设 2、3). Everything else is skipped and listed.
 PARSED = {"hub-receipt", "review-conclusion", "review-request", "shared-change-request", "coordination-notice", "wait-user", "wait-session", "resumed", "withdraw", "user-reply", "owner-handoff", "unknown"}
@@ -65,7 +65,7 @@ class FingerprintTest(unittest.TestCase):
 
     def test_one_changed_byte_is_caught(self):
         with tempfile.TemporaryDirectory() as tmp:
-            copy = Path(tmp) / "v2.3"
+            copy = Path(tmp) / "v2.4"
             shutil.copytree(FIXTURES, copy)
             target = copy / "withdraw" / "basic.txt"
             data = bytearray(target.read_bytes())
@@ -98,7 +98,7 @@ class ConformanceTest(unittest.TestCase):
                 problems = diff(doc["parse"], actual)
                 self.assertEqual(problems, [], "\n".join(problems))
         print(f"\n  {root.name} parse checked: {checked}; skipped: {', '.join(skipped) or 'none'}", file=sys.stderr)
-        return checked   # v2.2: 93 + 4 go-to-session samples (R21 MC-2); v2.3: + 4 card samples
+        return checked   # v2.2: 93 + 4 go-to-session samples (R21 MC-2); v2.3: + 4 card samples; v2.4: + 3 module samples
 
 
 class GenerateConformanceTest(unittest.TestCase):

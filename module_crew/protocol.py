@@ -1,4 +1,4 @@
-"""Parse and render session-protocol v2.3 messages (see spec/crew-protocol.md).
+"""Parse and render session-protocol v2.4 messages (see spec/crew-protocol.md).
 
 Pure functions only: no file, git or agent-relay access. Field names, tags and
 problem codes follow the contract text in session-protocol PROTOCOL.md.
@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-CONTRACT_VERSION = "2.3"
+CONTRACT_VERSION = "2.4"
 
 KIND_TAGS = {
     "等待用户": "wait-user",
@@ -34,7 +34,7 @@ FIELDS = {
     "wait-user": ("来自", "项目", "要你决定", "要点", "产物", "交审原文", "审查原文", "待用户决定", "架构审查",
                   "选项与我的建议", "你该回", "是否完全停住", "适用会话", "各线范围",
                   "类型", "会话", "链接", "被拦的操作", "宿主原文", "点哪个按钮", "为什么批不了", "关联事项",
-                  "注意", "推荐理由", "批了会怎样"),
+                  "注意", "推荐理由", "批了会怎样", "模块"),
     "user-reply": ("事项", "转自", "用户原话", "选项原文", "适用于你的范围", "答复时间", "转交范围", "原事项全文"),
     "owner-handoff": ("事项", "来自", "用户原话", "答复时间", "转交范围"),
     "wait-session": ("在等谁", "等什么"),
@@ -734,6 +734,8 @@ def _go_to_session(fields: dict, problems: list[str], extra: dict) -> None:
     raw = fields.get("类型")
     kind = None
     extra["points"] = None
+    if fields.get("模块") is not None:     # v2.4: the capability-map module id, 「无」 for a line-wide item; not checked
+        extra["module"] = fields["模块"].strip()
     if raw is not None:
         found = WAIT_KINDS.get(raw.strip())
         if found:

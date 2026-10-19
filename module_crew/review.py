@@ -435,7 +435,7 @@ def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> lis
     b = batch(project)
     ready = {i["number"]: i for i in b["items"] if i["ready"]}
     combined = start.review_cadence(project) == "combined"
-    v23 = sources.hub_protocol(db) == "2.3"
+    v23 = sources.hub_protocol(db) != "2.2"
     out = []
     for g in b["groups"]:
         mine = [ready[n] for n in g["items"] if n in ready]
@@ -491,6 +491,9 @@ def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict]
     top = Path(probe._git(project, "rev-parse", "--show-toplevel").stdout.strip() or project)
     lines += ["【等待用户】", "结束：无", f"来自：{coord}", f"项目：{top.name}",
               f"要你决定：批准 {g['module']} 的 {nodes}（{refs}）吗", "要点："] + points
+    # contract v2.4: 「模块」 right after 要点 (older parsers fold it into 要点, which is harmless; after 类型 it is not)
+    at = next((k for k, x in enumerate(lines) if x.startswith("类型：")), len(lines))
+    lines.insert(at, f"模块：{g['module']}")
     lines += ["产物："] + artifacts + ["交审原文："] + subs + (["审查原文："] + revs if revs else [])
     if numbered:
         lines += ["待用户决定："] + question_lines(numbered)

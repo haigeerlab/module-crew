@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from module_crew import protocol, store
 
 KINDS = ("hub", "lead")
-PROTOCOLS = ("2.2", "2.3")       # session-protocol versions a decision inbox may speak (crew-hub-card-fields)
+PROTOCOLS = ("2.2", "2.3", "2.4")       # session-protocol versions a decision inbox may speak (crew-hub-card-fields)
 
 
 class SourceRefused(Exception):
@@ -71,9 +71,9 @@ def listing(db: store.Store) -> list[dict]:
 
 
 def hub_protocol(db: store.Store) -> str:
-    """The contract version module-crew writes for the decision inbox: 2.3 only when every registered hub speaks it."""
-    hubs = [r for r in listing(db) if r.get("kind") == "hub"]
-    return "2.3" if hubs and all(r.get("protocol") == "2.3" for r in hubs) else "2.2"
+    """The contract version module-crew writes for the decision inbox: the lowest one among the registered hubs."""
+    hubs = [r.get("protocol") or "2.2" for r in listing(db) if r.get("kind") == "hub"]
+    return min(hubs, key=lambda v: tuple(int(x) for x in v.split("."))) if hubs else "2.2"
 
 
 def check(db: store.Store, name: str, item: int, relay_id: int, text: str | None, *, sender: str) -> SourceInfo:

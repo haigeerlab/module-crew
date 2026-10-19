@@ -1,0 +1,53 @@
+{
+  "parse": {
+    "type": "wait-user",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [
+      {
+        "kind": "parallel",
+        "item": 8
+      }
+    ],
+    "item": null,
+    "fields": {
+      "来自": "前端",
+      "要你决定": "图标用哪套",
+      "要点": "- 和 #8 互不影响，两项都要你答\n- 两套图标的授权不同\n- 换起来只改一个文件",
+      "选项与我的建议": "推荐 A：开源图标\n  选了会怎样：免费，风格略简单\nB：购买的图标\n  选了会怎样：好看，要走采购",
+      "你该回": "14 A",
+      "是否完全停住": "否"
+    },
+    "options": [
+      {
+        "letter": "A",
+        "text": "开源图标",
+        "consequence": "免费，风格略简单"
+      },
+      {
+        "letter": "B",
+        "text": "购买的图标",
+        "consequence": "好看，要走采购"
+      }
+    ],
+    "recommended": "A",
+    "suggestedReply": "14 A",
+    "fullyStopped": false,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": []
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "generate": {
+    "kind": "answer-notice",
+    "inputs": {
+      "item": 12,
+      "ownerShort": "测试负责人",
+      "original": "12 A",
+      "answeredAt": "2026-10-17T21:52:31+08:00",
+      "sourceRelayId": 5249
+    }
+  }
+}

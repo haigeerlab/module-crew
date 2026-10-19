@@ -64,12 +64,14 @@ class HubProtocolTest(RepoCase):
         self.assertEqual(sources.hub_protocol(self.db), "2.3")
         sources.add(self.db, "arch", "lead", "登记审查会话")                   # a reviewer does not count
         self.assertEqual(sources.hub_protocol(self.db), "2.3")
-        sources.add(self.db, "hub-b", "hub", "第二个收件箱")                   # one hub still on 2.2
+        sources.add(self.db, "hub-b", "hub", "第二个收件箱", protocol="2.4")
+        self.assertEqual(sources.hub_protocol(self.db), "2.3")                 # the lowest registered version
+        sources.add(self.db, "hub-c", "hub", "第三个收件箱")                   # one hub still on 2.2
         self.assertEqual(sources.hub_protocol(self.db), "2.2")
 
     def test_refusals(self):
         with self.assertRaises(sources.SourceRefused):
-            sources.add(self.db, "hub-a", "hub", "登记", protocol="2.4")
+            sources.add(self.db, "hub-a", "hub", "登记", protocol="2.5")
         with self.assertRaises(sources.SourceRefused):
             sources.add(self.db, "arch", "lead", "登记", protocol="2.3")     # only a hub has a contract version
 
@@ -92,7 +94,11 @@ class V22UnchangedTest(CardCase):
         self.assertEqual(len(made), 3)
         for i, (_, _, text) in enumerate(made):
             with self.subTest(i):
-                self.assertEqual(self.normal(text), (V22 / f"v22-{i}.txt").read_text(encoding="utf-8"))
+                # crew-stage-c-fixes MC-9: the only difference from 0.6.0 is the 「模块」 line right after 要点
+                module = protocol.parse(text).contract()["module"]
+                self.assertIn(module, ("b", "c"))
+                self.assertEqual(self.normal(text).replace(f"模块：{module}\n", "", 1),
+                                 (V22 / f"v22-{i}.txt").read_text(encoding="utf-8"))
                 self.assertNotIn("类型：", text)
 
 
@@ -114,6 +120,9 @@ class V23CardTest(CardCase):
         self.final()
         cards = self.cards()
         self.assertEqual([m.contract()["waitKind"] for m, _ in cards], ["spec", "plan", "final"])
+        self.assertEqual([m.contract()["module"] for m, _ in cards], ["b", "b", "c"])
+        for _, text in cards:      # contract v2.4: 「模块」 sits right after 要点, before 类型 and the rest
+            self.assertLess(text.index("\n模块："), text.index("\n类型："))
         spec, plan, final = (m.fields for m, _ in cards)
         self.assertEqual(spec["类型"].strip(), "Spec")
         self.assertIn("接口清楚", spec["注意"])                         # passed with advice: the advice

@@ -1,0 +1,47 @@
+{
+  "parse": {
+    "type": "review-request",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "模块": "crew-protocol",
+      "节点": "接口提案",
+      "文件": "spec/crew-protocol/SPEC.md sha256:0d4e8f2a6c1b",
+      "要点": "- 对外只给 parse 与 render 两个入口\n- 问题代码沿用契约原文"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "missing-end"
+    ],
+    "hints": [],
+    "submission": {
+      "module": "crew-protocol",
+      "node": "interface",
+      "files": [
+        {
+          "path": "spec/crew-protocol/SPEC.md",
+          "fingerprint": "sha256:0d4e8f2a6c1b"
+        }
+      ]
+    }
+  }
+}
