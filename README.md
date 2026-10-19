@@ -5,6 +5,10 @@
 
 > 版本 0.5.0。已在试点项目上跑过两轮实地验证（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
+## 0.5.2 的变化（决定 67）
+
+- 文字更正：去掉「代开会话里 ask 确认不会出现、写 ask 就等同放行」的说法（E3 会话记录显示 ask 会弹、是被点了允许）；不可逆操作仍写禁止，理由改为一次「允许」就会执行。规则行为不变。
+
 ## 0.5.1 的变化（决定 62：装包放宽）
 
 - 权限预配：往项目里加新包也放行（`npm install <包名>`、`pnpm add`、`yarn add`、`uv add`、`uv pip install`、`.venv/bin/pip install`），新增依赖由 spec-guard SG-5 在最终验收列出；裸 `pip install <包名>` 仍交宿主默认确认；全局安装禁止补全到 `-g`／`--global` 在任意位置、`yarn global`、`uv --system`（代价：`npm ls -g` 这类只读查询也被拒）。Codex 侧加新包仍不写规则（前缀规则挡不住后置的 `-g`）。
@@ -180,7 +184,7 @@ python3 -m unittest discover -s tests -v
 
 ## 权限预配
 
-由别的会话代开的会话里，宿主的 ask 规则实测不弹确认就执行了，所以不可逆操作不能只靠权限弹窗。module-crew 把第 44 条范围内的常规操作（含装依赖与往项目里加新包：`npm ci`、`npm install <包名>`、`pnpm add`、`yarn add`、`uv add`、`.venv/bin/pip install` 等）写成宿主认的放行规则，把推送、删除、全局安装（`-g`／`--global` 在任意位置、`yarn global`、`uv --system`、`brew install`）、改全局配置写成禁止；裸 `pip install <包名>` 不写规则、交宿主默认确认（不在 venv 里会装进系统 Python）；Codex 侧加新包也不写规则，因为前缀规则挡不住 `npm install x -g`。不写 ask：代开的会话里 ask 规则实测不弹，而不写规则时默认确认会弹（0.5.0 补测）。再用 git 的 pre-push 钩子守住推送：
+不可逆操作不能只靠弹窗：宿主确认（ask 规则或默认确认）在代开会话里也会弹，但点一次「允许」就执行了，点的人未必清楚上下文。module-crew 把第 44 条范围内的常规操作（含装依赖与往项目里加新包：`npm ci`、`npm install <包名>`、`pnpm add`、`yarn add`、`uv add`、`.venv/bin/pip install` 等）写成宿主认的放行规则，把推送、删除、全局安装（`-g`／`--global` 在任意位置、`yarn global`、`uv --system`、`brew install`）、改全局配置写成禁止；裸 `pip install <包名>` 不写规则、交宿主默认确认（不在 venv 里会装进系统 Python）；Codex 侧加新包也不写规则，因为前缀规则挡不住 `npm install x -g`。不可逆操作写禁止、不写 ask：禁止规则直接拒绝，不依赖有人当场判断。（0.5.2 更正：早先说代开会话里 ask 确认不会出现，经 E3 会话记录核实不成立，两次 `git push` 都是弹了确认、被点了「允许一次」。）再用 git 的 pre-push 钩子守住推送：
 
 1. `module-crew permissions plan`：只读预览每个 checkout（集成 checkout 与各模块 worktree）要追加什么、文件有没有被 git 忽略、钩子能不能装、Codex 项目是否受信任。
 2. `module-crew permissions apply --original-file <用户原话>`：Claude 写 `.claude/settings.local.json`（只追加条目），Codex 模块写 `.codex/rules/module-crew.rules`；有一个文件不能写就全部不写。之后 `start prepare` 新开的模块自动跟随。

@@ -48,7 +48,7 @@ module-crew start prepare <模块 id>… --original-file <原话文件> [--proje
 
 ## 权限预配
 
-由别的会话代开的会话里，宿主的 ask 规则实测不弹确认就执行了，所以**不可逆操作不能只靠权限弹窗**：module-crew 把常规操作写成放行、把推送与删除写成禁止，再用 pre-push 钩子守住推送。
+**不可逆操作不能只靠弹窗**：宿主确认（ask 规则或默认确认）在代开会话里也会弹，但点一次「允许」就执行了，点的人未必清楚上下文。所以 module-crew 把常规操作写成放行、把推送与删除写成禁止，再用 pre-push 钩子守住推送。
 
 1. 第一次开工之前跑 `module-crew permissions plan`，把每个 checkout 要追加的放行／禁止条目、钩子能不能装、Codex 项目是否受信任原样给用户看；
    用户亲手同意后 `module-crew permissions apply --original-file <原话文件>`。之后新开的模块 `start prepare` 会自动写同一份；写不上会在输出与 `status` 里标出。

@@ -237,9 +237,17 @@ class PermissionWordsTest(unittest.TestCase):
 
     def test_coordinator_permissions_section(self):
         _, text = read("crew-coordinator")
-        for words in ("## 权限预配", "ask 规则实测不弹", "permissions plan", "permissions apply --original-file",
+        for words in ("## 权限预配", "不可逆操作不能只靠弹窗", "点一次「允许」就执行", "permissions plan", "permissions apply --original-file",
                       "permissions verify --record", "merge push", "--host codex", "信任该项目", "permissions remove"):
             self.assertIn(words, text)
+
+    def test_no_claim_that_ask_does_not_prompt(self):
+        """0.5.2 (decision 67): the E3 records show ask rules do prompt in a session another session opened."""
+        codex = (PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
+        readme = (PLUGIN_ROOT / "README.md").read_text(encoding="utf-8")
+        for text in (read("crew-coordinator")[1], read("crew-dev")[1], codex, readme):
+            for words in ("ask 规则实测不弹", "ask 规则不弹", "写了等于放行"):
+                self.assertNotIn(words, text)
 
     def test_dev_skills_do_not_push_and_run_the_checklist(self):
         codex = (PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
