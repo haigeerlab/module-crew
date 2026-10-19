@@ -32,3 +32,11 @@
 
 - [x] Checkpoint 2（gate）：模块最终验收——全部测试全绿、11 条验收标准逐条对应测试、列出实际改动文件并贴出两份 skill 全文；停下等用户确认
   - 记录：111 个测试全绿（连跑 3 次）；9 个文件 +677/−7；两份 skill 全文已交审；用户 2026-10-18 验收通过。「等待审批」在线状态未实地核对，留第 7 关
+
+- [ ] Task（0.5.0，R21 MC-2 措辞）：三份 skill 写明已批范围内不问、不讨小许可、小步骤不送审、Plan 没列的依赖只问一次、宿主确认经模块协调抛出
+  - 验收：Spec 验收 14（措辞部分）
+  - 文件：三份 SKILL.md、`tests/test_skills.py`
+
+- [ ] Task（R21 MC-2 契约部分，等 SP-1）：契约发布「类型：去会话操作」后钉新契约版本，`inbox add` 认这个类型并原样转决策收件箱
+  - 验收：Spec 验收 14（契约部分）
+  - 文件：`module_crew/protocol.py`、`tests/fixtures/session-protocol/`、`module_crew/inbox.py`

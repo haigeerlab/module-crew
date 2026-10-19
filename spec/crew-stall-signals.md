@@ -76,6 +76,7 @@
 - `asks`：只列计过数的节点，按 Spec、Plan、接口、最终验收排；`node` 用现有节点代码（`spec`／`plan`／`interface`／`final`），`refs` 按编号升序；`ats` 与 `refs` 一一对应，`ats[i]` 是 `refs[i]` 那次交审进提请批准或被答复的时间（两者都有取较晚的），供决策收件箱按时间窗口计数；`lastAt` 为 `ats` 中最晚的一个。
 - `returns`、`waitUser`：按编号升序；没有为 `[]`。
 - 时间一律 ISO 8601 带时区，与现有 `lastActivity` 同格式。
+- （0.5.0，R21 MC-3）`answers`：这个模块每次收到用户答复的事实，按时间排：`[{"ref": "C24", "at": ISO, "commitsAfter": 0, "ticksAfter": 0}]`。答复取这个模块的交审、【等待用户】、合并批准里带 `answer.answeredAt` 的记录；`commitsAfter` 是从这次答复到下一次答复（最后一次到现在）之间模块 worktree 第一父链上的模块自有提交数（口径同 `commits.last`）；`ticksAfter` 是同一段里 `tasks/<模块>/todo.md` 已勾选项增加了几个（段首取答复时刻 HEAD 第一父链上最近一个提交里的版本，段尾取下一次答复时刻的版本，最后一段取工作区）。只给事实，「答了 2 次进度没动」由决策收件箱判断。worktree 读不到时 `commitsAfter`、`ticksAfter` 为 null。
 
 ### 人看的输出
 
@@ -138,6 +139,7 @@ python3 -m unittest discover -s tests -v
 8. 现有 `sessions --json` 字段与 `schemaVersion: 1` 不变，crew-hub-bridge 的契约测试照常通过；状态库读不到时仍退出 2、stdout 为空。
 9. `module-crew sessions` 每个模块多两行事实（最近提交、问过你），`status` 模块行带「最近提交 X 前」；文字用术语表 v1.1 名称。
 10. 全量测试通过。
+11. （0.5.0）`answers` 每次用户答复一条：答复后有提交的那段 `commitsAfter` 大于 0，答复后只勾了 todo 的那段 `ticksAfter` 大于 0、`commitsAfter` 为 0，连续两次答复后都没动的两段都为 0；字段名发版前经决策收件箱确认。
 
 ## 未决问题
 
@@ -152,3 +154,4 @@ README 里说明 `sessions --json` 字段的那一条（现第 121 行）补上�
 
 - 2026-10-19：`asks` 每项加 `ats`（与 `refs` 一一对应的时间），接口约定与验收 4 随之补一句；老字段不变。原因：decision-inbox 的停滞触发条件「同一件事 24 小时内报了 3 次」需要每次的时间，累计次数与最后时间不够；来源：decision-inbox 插件会话回复（选 B），用户 2026-10-19 批准修订。
 - 2026-10-19：`commits.last` 改为「开工以来 HEAD 第一父链上、不在集成分支第一父链上的最新提交」，与 `ahead` 脱钩；人看的文字「开工以来 N 个提交」改为「未合入集成分支 N 个」；验收 1 补两种情况。原因：验收 11 实地测试时发现已合入的模块 alpha（8a2fe79 已合入 main）显示「开工以来没有提交」，决策收件箱会据此误报停滞；来源：接入方案会话报告疑点，用户 2026-10-19 选「冻结前先修」。
+- 2026-10-19：加 `answers` 字段（每次用户答复之后的提交数与 todo 勾选增量）与验收 11（0.5.0）。原因：R21「模块打转」MC-3，供决策收件箱 DI-6①「用户答了 2 次进度没动」使用；来源：监测会话转达用户决定 58–60，用户 2026-10-19 在本会话确认 6 条假设。

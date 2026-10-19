@@ -33,3 +33,7 @@
 - [x] 验收 11 实地测试（2026-10-19，接入方案会话执行，用户在该会话亲口同意并确认全程无弹窗）：crew-rehearsal，代码 d5bb2dc；apply 给集成 checkout、alpha、beta 三份 settings.local.json 各追加放行 8 条、禁止 13 条；由接入方案会话代开 default 权限模式的测试会话（local_cd5cd580，alpha worktree）逐条跑：`module-crew status`、`git status`、`git add --dry-run .`、`bridge_agents` 直接运行，`git push --dry-run module-crew-probe HEAD` 被宿主拒（「Permission to use Bash with command git push --dry-run module-crew-probe HEAD has been denied.」）；`verify --record rh2-alpha --allowed ok --denied ok` 已记，status 显示「权限实测 2026-10-19 03:53：放行如预期、拒绝如预期」。结论：deny 在代开会话里生效。推送守门没装：crew-rehearsal 设了 core.hooksPath（.husky/_），「模块会话推送被钩子拒」一项测不了，推送只靠宿主禁止规则（本次已拦住）；LIVE-SAAS 也用 husky，情况相同，是否另想办法交用户定。测后由接入方案会话 permissions remove 并与备份比对（结果另报）。
 
 - [x] Task 7（追加）：`remove` 后文件逐字还原——apply 记下原文件全文，remove 去掉追加条目后与原文件一致就写回原文，不再留下 module-crew 建的空 `deny`／`allow`／`permissions`（Spec 验收 9 范围内的修复；来源：接入方案会话实测 remove 后的观察，2026-10-19）
+
+- [ ] Task 8（0.5.0，R21 MC-1）：项目内安装依赖放行、全局安装仍禁止，Codex 规则同步；execpolicy 实测同时命中取 forbidden
+  - 验收：Spec 验收 13
+  - 文件：`module_crew/permissions.py`、`tests/test_permissions.py`、`README.md`
