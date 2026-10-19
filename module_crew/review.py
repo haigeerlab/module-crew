@@ -429,23 +429,32 @@ def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> lis
     """One 【等待用户】 per module for the decision inbox (decision 47), shown as it is (R12); [] when nothing is ready.
 
     `separate` cadence: one node per item; `combined`: a module's ready Spec and Plan share an item."""
-    from module_crew import start
+    from module_crew import sources, start
     project = Path(project)
     db = store.open_store(project)
     b = batch(project)
     ready = {i["number"]: i for i in b["items"] if i["ready"]}
     combined = start.review_cadence(project) == "combined"
+    v23 = sources.hub_protocol(db) == "2.3"
     out = []
     for g in b["groups"]:
         mine = [ready[n] for n in g["items"] if n in ready]
         if not mine:
             continue
-        for part in ([mine] if combined else [[i] for i in mine]):
-            out.append(_hub_item(project, db, b, g, part, parallel_with))
+        if not combined:
+            parts = [[i] for i in mine]
+        elif v23:   # contract v2.3: one kind per card, so only a Spec and a Plan share one (「Spec 与 Plan」)
+            pair = [i for i in mine if i["node"] in ("spec", "plan")]
+            parts = ([pair] if pair else []) + [[i] for i in mine if i not in pair]
+        else:
+            parts = [mine]
+        for part in parts:
+            out.append(_hub_item(project, db, b, g, part, parallel_with, v23))
     return out
 
 
-def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict], parallel_with: int | None):
+def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict], parallel_with: int | None,
+              v23: bool = False):
     from module_crew import sources
     coord = next((n for n, s in sorted(store.records(db, "session").items())
                   if s.get("role") == "coordinator" and s.get("status") == "active"), "模块协调")
@@ -472,10 +481,12 @@ def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict]
         if i["round"]:
             points.append(f"经 {i['round']} 轮审查修改，上次须修改：")
             points += [_safe(line) for line in _last_changes(db, rec)]
-    for d in b["dependencyIssues"]:
-        if d["module"] == g["module"]:
-            points.append(f"依赖未就绪：依赖的 {'、'.join(d['missing'])}")
-    points += ["", "批准会发生什么："] + _what_happens(part)
+    missing = [f"依赖未就绪：依赖的 {'、'.join(d['missing'])}" for d in b["dependencyIssues"] if d["module"] == g["module"]]
+    if v23:
+        points += _card_fields(db, part, missing)
+    else:
+        points += missing
+        points += ["", "批准会发生什么："] + _what_happens(part)
     lines = [f"【与 #{parallel_with} 并行】"] if parallel_with is not None else []
     top = Path(probe._git(project, "rev-parse", "--show-toplevel").stdout.strip() or project)
     lines += ["【等待用户】", "结束：无", f"来自：{coord}", f"项目：{top.name}",
@@ -487,7 +498,7 @@ def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict]
         lines.append("架构审查：" + _review_summary(part))
     lines += ["选项与我的建议：",
               "推荐 A：批准",
-              f"  选了会怎样：{_consequence(part)}",
+              f"  选了会怎样：{_effect(part) if v23 else _consequence(part)}",
               "B：退回修改（请写修改意见）",
               "  选了会怎样：模块按你的意见改完再交审，集成分支不变",
               "你该回：A" + "".join(f"；{k} {d['lean'] or 'A'}" for k, _, d in numbered),
@@ -544,6 +555,43 @@ def _last_changes(db: store.Store, rec: dict) -> list[str]:
             if row:
                 return [f"{k}. {x}" for k, x in enumerate(row["changes"], 1)]
     return []
+
+
+def _effect(part: list[dict]) -> str:
+    """v2.3 「批了会怎样」, also option A's 「选了会怎样」 on the same card."""
+    effect = "；".join(x.removeprefix("- ") for x in _what_happens(part))
+    return effect.replace("合并后只能另走回退", "合了撤不回，只能另走回退").replace("不推送远端", "不推送远端（推送要你另外同意）")
+
+
+CARD_KIND = {"spec": "Spec", "plan": "Plan", "interface": "接口提案", "final": "最终验收"}
+
+
+def _card_fields(db: store.Store, part: list[dict], missing: list[str]) -> list[str]:
+    """Contract v2.3 lines after 要点: 类型, 注意, 推荐理由 (only when there is a fact to give), 批了会怎样."""
+    nodes = {i["node"] for i in part}
+    kind = "Spec 与 Plan" if nodes == {"spec", "plan"} else CARD_KIND[part[0]["node"]]
+    tag = (lambda i: f"C{i['number']}：") if len(part) > 1 else (lambda i: "")
+    notes, passed = [], []
+    for i in part:
+        rec = store.get(db, "item", str(i["number"]))
+        if i["round"]:
+            notes.append(f"{tag(i)}经 {i['round']} 轮返工，上一轮须修改（本轮审查已通过）："
+                         + "；".join(x.split(". ", 1)[-1] for x in _last_changes(db, rec)))
+        rows = i.get("reviews") or []
+        if i.get("reviewState") == "timeout":
+            notes.append(f"{tag(i)}未审查（审查者无响应）")
+        elif rows:
+            advice = _advice(rows[-1])
+            if advice:
+                notes.append(f"{tag(i)}审查建议：{advice}")
+            if protocol._conclusion_verdict(rows[-1].get("verdict") or "") != "changes-required":
+                passed.append(rows[-1]["ref"])
+    notes += missing
+    effect = _effect(part)
+    lines = [f"类型：{kind}", "注意：" + ("；".join(notes) if notes else "无")]
+    if passed and len(passed) == len(part):
+        lines.append(f"推荐理由：审查通过（{'、'.join(passed)}）" + ("，建议见「注意」" if any("审查建议" in n for n in notes) else ""))
+    return lines + [f"批了会怎样：{effect}"]
 
 
 def _what_happens(part: list[dict]) -> list[str]:
