@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from module_crew import protocol, store
 
 KINDS = ("hub", "lead")
+PROTOCOLS = ("2.2", "2.3")       # session-protocol versions a decision inbox may speak (crew-hub-card-fields)
 
 
 class SourceRefused(Exception):
@@ -32,10 +33,14 @@ def _need(original: str | None) -> None:
         raise SourceRefused("用户原话不能为空：来源只能由用户在本会话亲手登记")
 
 
-def add(db: store.Store, name: str, kind: str, original: str) -> None:
+def add(db: store.Store, name: str, kind: str, original: str, protocol: str | None = None) -> None:
     _need(original)
     if kind not in KINDS:
         raise SourceRefused(f"来源种类只能是 {'／'.join(KINDS)}")
+    if protocol is not None and protocol not in PROTOCOLS:
+        raise SourceRefused(f"契约版本只能是 {'／'.join(PROTOCOLS)}")
+    if protocol is not None and kind != "hub":
+        raise SourceRefused("只有决策收件箱（hub）才登记契约版本")
     if not name or not name.strip():
         raise SourceRefused("来源的邮箱名不能为空")
     with db.transaction(actor="coordinator") as tx:
@@ -43,7 +48,10 @@ def add(db: store.Store, name: str, kind: str, original: str) -> None:
         rows = list(cfg.get("sources") or [])
         if any(r.get("name") == name for r in rows):
             raise SourceRefused(f"{name} 已经登记为来源")
-        rows.append({"name": name, "kind": kind, "addedAt": store.now(), "original": original})
+        row = {"name": name, "kind": kind, "addedAt": store.now(), "original": original}
+        if protocol is not None:
+            row["protocol"] = protocol
+        rows.append(row)
         tx.put("config", "main", {**cfg, "sources": rows}, action="source-added", data={"name": name, "kind": kind})
 
 
@@ -60,6 +68,12 @@ def remove(db: store.Store, name: str, original: str) -> None:
 
 def listing(db: store.Store) -> list[dict]:
     return list((store.get(db, "config", "main") or {}).get("sources") or [])
+
+
+def hub_protocol(db: store.Store) -> str:
+    """The contract version module-crew writes for the decision inbox: 2.3 only when every registered hub speaks it."""
+    hubs = [r for r in listing(db) if r.get("kind") == "hub"]
+    return "2.3" if hubs and all(r.get("protocol") == "2.3" for r in hubs) else "2.2"
 
 
 def check(db: store.Store, name: str, item: int, relay_id: int, text: str | None, *, sender: str) -> SourceInfo:

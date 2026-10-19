@@ -652,6 +652,8 @@ def _main(argv: list[str] | None = None) -> int:
     soa = sos.add_parser("add")
     soa.add_argument("name")
     soa.add_argument("--kind", required=True, choices=sources.KINDS)
+    soa.add_argument("--protocol", choices=sources.PROTOCOLS,
+                     help="决策收件箱支持的 session-protocol 版本（只对 hub；不写按 2.2）")
     sor = sos.add_parser("remove")
     sor.add_argument("name")
     for c in (soa, sor):
@@ -843,7 +845,8 @@ def _run(args) -> int:
                     print(json.dumps(rows, ensure_ascii=False, indent=2))
                 else:
                     for r in rows:
-                        print(f"{r['name']}（{r['kind']}）登记于 {r['addedAt']}")
+                        ver = f"，契约 v{r.get('protocol', '2.2')}" if r["kind"] == "hub" else ""
+                        print(f"{r['name']}（{r['kind']}{ver}）登记于 {r['addedAt']}")
                     if not rows:
                         print("没有登记的来源")
                 return 0
@@ -851,8 +854,9 @@ def _run(args) -> int:
             if original is None:
                 return 2
             if args.action == "add":
-                sources.add(db, args.name, args.kind, original)
-                print(f"已登记可信批准来源 {args.name}（{args.kind}）")
+                sources.add(db, args.name, args.kind, original, args.protocol)
+                ver = f"，契约 v{args.protocol or '2.2'}" if args.kind == "hub" else ""
+                print(f"已登记可信批准来源 {args.name}（{args.kind}{ver}）")
             else:
                 sources.remove(db, args.name, original)
                 print(f"已撤掉来源 {args.name}")
