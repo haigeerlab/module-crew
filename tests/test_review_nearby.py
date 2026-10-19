@@ -488,6 +488,18 @@ class CadenceTest(StartCase):
         db = store.open_store(self.repo)
         return store.read_body(db, next(p for p in res.prepared if p["id"] == m)["kickoff"])
 
+    def test_cadence_from_map_wins_when_present(self):
+        """Task 15 (0.4.1): spec-guard 0.73.0+ /map --json carries the effective reviewCadence with its source."""
+        from helpers import START_MAP
+        self.set_map({**START_MAP, "reviewCadence": {"value": "combined", "source": ".agent/config.json"}})
+        res = start.prepare(self.repo, ["b"], "开 b", short="shop")
+        self.assertIn("Spec、Plan 各一条", self.kickoff(res, "b"))
+        self.assertIn("评审节奏：combined（来源：.agent/config.json，读自 spec-guard /map）",
+                      self.run_cli("status", cwd=self.repo).stdout)
+        self.set_map({**START_MAP, "reviewCadence": {"value": "separate", "source": "default (config invalid)"}})
+        self.assertIn("评审节奏：separate（来源：default (config invalid)，读自 spec-guard /map）",
+                      self.run_cli("status", cwd=self.repo).stdout)
+
     def test_separate_by_default_then_combined(self):
         res = start.prepare(self.repo, ["b"], "开 b", short="shop")
         text = self.kickoff(res, "b")

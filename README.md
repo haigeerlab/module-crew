@@ -3,7 +3,12 @@
 让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.4.0。已在试点项目上跑过两轮实地验证（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.4.1。已在试点项目上跑过两轮实地验证（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+
+## 0.4.1 的变化
+
+- 评审节奏优先读 spec-guard（0.73.0 起）`/map --json` 的顶层 `reviewCadence`，`status` 写明来源；spec-guard 较旧时照旧读 `.agent/config.json`。
+- `permissions remove` 把 `.claude/settings.local.json` 逐字还原为 apply 之前的原文。
 
 ## 0.4.0 的变化
 

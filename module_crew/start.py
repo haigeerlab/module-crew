@@ -23,6 +23,7 @@ class Proposal:
     conflicts: list[dict] = field(default_factory=list)
     blockers: list[str] = field(default_factory=list)
     reasons: list[dict] = field(default_factory=list)      # {"module", "reason"} when nothing can be started
+    cadence: str = "separate"                                 # effective reviewCadence (from /map when it has one)
 
 
 def _open_store(project: Path) -> store.Store | None:
@@ -85,6 +86,7 @@ def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal
     """Read-only: free slots and the first startable modules in Build order."""
     project = Path(project)
     report = probe.run(project)
+    cadence = review_cadence(project, report.map)
     db = _open_store(project)
     limit = _config(db).get("maxModules") or max_modules or DEFAULT_MAX
     slots = max(limit - len(_counted_devs(db)), 0)
@@ -93,7 +95,7 @@ def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal
         from module_crew.failure import SERIAL_BLOCKER
         blockers.append(SERIAL_BLOCKER)
     if blockers:
-        return Proposal(slots, blockers=blockers)
+        return Proposal(slots, blockers=blockers, cadence=cadence)
     modules = {m.get("id"): m for m in report.map.get("modules") or [] if isinstance(m, dict)}
     sessions = {v.get("module"): v for v in _active_devs(db).values()}
     picked = [{"id": mid, "responsibility": modules.get(mid, {}).get("responsibility", ""),
@@ -106,7 +108,7 @@ def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal
             why = _why_not(m, sessions, merged, done, slots)
             if why:
                 reasons.append({"module": mid, "reason": why})
-    return Proposal(slots, picked, list((report.startable or {}).get("conflicts", [])), reasons=reasons)
+    return Proposal(slots, picked, list((report.startable or {}).get("conflicts", [])), reasons=reasons, cadence=cadence)
 
 
 HOSTS = {"claude": "claude-desktop", "codex": "codex-desktop"}
@@ -150,14 +152,25 @@ def _toplevel(project: Path) -> Path:
 CADENCES = ("separate", "combined")
 
 
-def review_cadence(project: str | os.PathLike) -> str:
-    """The project's spec-guard reviewCadence (.agent/config.json, read only); `separate` when unset or unreadable."""
+def cadence_info(project: str | os.PathLike, map_doc: dict | None = None) -> tuple[str, str, bool]:
+    """(value, source, read from /map). spec-guard 0.73.0+ puts the effective reviewCadence in /map --json; use it when
+    the caller already has the map, otherwise read .agent/config.json (same source, same value); `separate` by default."""
+    given = (map_doc or {}).get("reviewCadence")
+    if isinstance(given, dict) and given.get("value") in CADENCES:
+        return given["value"], str(given.get("source") or "default"), True
     try:
         top = _toplevel(Path(project))
         value = json.loads((top / ".agent" / "config.json").read_text(encoding="utf-8")).get("reviewCadence")
     except (OSError, ValueError, AttributeError):
-        return "separate"
-    return value if value in CADENCES else "separate"
+        return "separate", "default", False
+    if value is None:
+        return "separate", "default", False
+    return (value, ".agent/config.json", False) if value in CADENCES else ("separate", "default (config invalid)", False)
+
+
+def review_cadence(project: str | os.PathLike, map_doc: dict | None = None) -> str:
+    """The project's spec-guard reviewCadence, read only; `separate` when unset or unreadable."""
+    return cadence_info(project, map_doc)[0]
 
 
 def _settings(project: Path, db: store.Store | None, short: str | None, max_modules: int | None) -> tuple[dict, list[str]]:
@@ -227,7 +240,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
         if "crewDir" not in (tx.get("config", "main") or {}):
             from module_crew.hostcheck import plugin_version
             tx.put("config", "main", {**(tx.get("config", "main") or {}), **cfg, "pluginVersion": plugin_version(),
-                                      "reviewCadence": review_cadence(project)},
+                                      "reviewCadence": proposal.cadence},
                    action="set")
         if not any(v.get("role") == "coordinator" and v.get("status") == "active" for v in tx.records("session").values()):
             tx.put("session", coord, {"role": "coordinator", "host": "claude-desktop", "status": "active"},
@@ -254,7 +267,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
                                 + ("；git 已留下分支 " + m + "，请决定是否删除" if left else ""))
             break
         relay = f"{short}-{m}"
-        text = render_kickoff(m, info.get(m, {}), path, {**cfg, "reviewCadence": review_cadence(project)}, relay, coord,
+        text = render_kickoff(m, info.get(m, {}), path, {**cfg, "reviewCadence": proposal.cadence}, relay, coord,
                               approval, host_id)
         with db.transaction(actor=coord) as tx:
             tx.put("session", relay, {"role": "dev", "host": host_id, "status": "active",
