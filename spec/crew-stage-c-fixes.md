@@ -1,6 +1,6 @@
 # Spec: crew-stage-c-fixes
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 9861f639f320 -->
 
 > 能力图模块 `crew-stage-c-fixes`（第五版，0.8.0）。需求来源：`livesaas-integration/REQ-R22-STAGE-C-FIXES.md` 第一节 MC-9、第四节 MC-10～MC-14（决定 71），
 > 证据见 `STAGE-C-REPORT.md` 与 `REHEARSAL-LOG.md`。由接入协调（local_4f410de8）转来。用户 2026-10-20 在本会话确认 8 条假设：
