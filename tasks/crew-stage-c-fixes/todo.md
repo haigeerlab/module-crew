@@ -2,10 +2,10 @@
 
 > 依据 `tasks/crew-stage-c-fixes/plan.md`。
 
-- [ ] Task 1：MC-10 同步通知跳过已交最终验收的模块（Spec 验收 1）
-- [ ] Task 2：MC-11 新合并批准取代旧批准（Spec 验收 2、3）
-- [ ] Task 3：MC-13 模块 worktree 内编辑放行（Spec 验收 4）
-- [ ] Checkpoint 1（report）：三处修复就位，全量测试通过
+- [x] Task 1：MC-10 同步通知跳过已交最终验收的模块（Spec 验收 1）——提交 8f48d1b
+- [x] Task 2：MC-11 新合并批准取代旧批准（Spec 验收 2、3）——提交 09e4865
+- [x] Task 3：MC-13 模块 worktree 内编辑放行（Spec 验收 4）——提交 be0680c
+- [x] Checkpoint 1（report）：三处修复就位，全量测试通过（2026-10-20，456 个测试全过）
 - [ ] Task 4：MC-9 契约 v2.4 与「模块」字段（Spec 验收 7）
 - [ ] Task 5：三份 skill（Spec 验收 6、7）
 - [ ] Task 6：README、版本 0.8.0、全量测试（Spec 验收 8）
