@@ -1,6 +1,6 @@
 # Spec: crew-hub-card-fields
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved e941b04b3b77 -->
 
 > 能力图模块 `crew-hub-card-fields`（第五版，0.7.0 两个模块之二）。需求来源：`livesaas-integration/REQ-DECISION-CARDS.md` 第二节「3. module-crew」的 MC-1、MC-2，
 > 基准 `DECISION-CARD-TEMPLATES.md`（用户已定稿）。契约 session-protocol v2.3 已定稿（提交 6b8810e，事项 Q6Q0CJ4，用户 2026-10-19 批准）。
