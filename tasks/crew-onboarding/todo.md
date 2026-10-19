@@ -46,3 +46,5 @@
 - [x] Task（0.5.1，决定 62）：两份 crew-dev skill 去掉「Plan 没列的依赖只问一次」，改为加新包直接装、新增依赖由 spec-guard SG-5 在最终验收列出
   - 验收：Spec 验收 14（0.5.1 措辞）
   - 文件：`skills/crew-dev/SKILL.md`、`codex-skills/crew-dev/SKILL.md`、skill 测试
+
+- [x] 0.5.1 措辞任务验收（2026-10-19 用户批准；全量 417 个测试通过；提交 2efad94；随 0.5.1 冻结）
