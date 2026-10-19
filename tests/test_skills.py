@@ -264,10 +264,12 @@ class R21WordsTest(unittest.TestCase):
     def test_skills_say_do_not_ask_inside_the_approved_scope(self):
         codex = (PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
         for text in (read("crew-dev")[1], codex, read("crew-coordinator")[1]):
-            for words in ("已批准的 Spec、Plan 范围内", "不送审", "Plan 没列的依赖只问", "去会话操作", "为什么"):
+            for words in ("已批准的 Spec、Plan 范围内", "不送审", "加新包直接装", "SG-5", "去会话操作", "为什么"):
                 self.assertIn(words, text)
         for text in (read("crew-dev")[1], codex):
             self.assertIn("不要一次次讨小许可", text)
             for words in ("类型：去会话操作", "被拦的操作：", "点哪个按钮：", "推荐 A：我去点"):
                 self.assertIn(words, text)
         self.assertIn("没有决策收件箱就在本会话直接告诉用户", read("crew-coordinator")[1])
+        for text in (read("crew-dev")[1], codex, read("crew-coordinator")[1]):   # decision 62 (0.5.1)
+            self.assertNotIn("Plan 没列的依赖只问", text)
