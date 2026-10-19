@@ -3,7 +3,16 @@
 让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.6.0。已在试点项目上跑过两轮实地验证（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.7.0。已在试点项目上跑过两轮实地验证（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+
+## 0.7.0 的变化（决策卡片字段）
+
+- 消息格式升到 session-protocol v2.3：`protocol check` 认识「类型」的九种取值（能力图审阅、Spec、Plan、Spec 与 Plan、中途检查点、最终验收、接口提案、卡住选做法、去会话操作）、
+  「注意」「推荐理由」「批了会怎样」三个字段，以及各类要点里的固定小项。v2.2 的写法照旧合格。
+- `source add <名> --kind hub --protocol 2.3` 登记决策收件箱支持的版本（不写按 2.2），`source list` 显示。
+  **登记的 hub 全是 2.3 时**，`review batch --for-hub` 才写「类型」「注意」「推荐理由」「批了会怎样」，「批准会发生什么」不再写在要点里；否则与 0.6.0 一字不差。
+- **升级顺序**：先把决策收件箱升到 v2.3，再经用户同意 `source remove` 后 `source add … --protocol 2.3` 重新登记；顺序反了，v2.2 的收件箱会把带新「类型」的请示整条退回。
+- 协调 skill 与模块 skill 写明卡住选做法、能力图审阅、中途检查点按类别写，接口提案交审写「改了哪个接口」「哪些模块要跟着改」。
 
 ## 0.6.0 的变化（演练修复）
 
@@ -178,7 +187,7 @@ module-crew change add|list|land|answer          公共变更请求
 module-crew merge approve|revoke|queue|run|cleanup|push-plan|push
 module-crew suspend|resume|sessions|resume-kit|serial
 module-crew takeover <邮箱名> --original(-file)  换会话接管
-module-crew source add|remove|list|map           可信批准来源（决策收件箱、审查者）与对照
+module-crew source add|remove|list|map           可信批准来源（决策收件箱、审查者）与对照；hub 可带 --protocol 2.2|2.3
 module-crew review note [--then-batch]|batch --for-hub   审查结论、返工、提请批准正文（一个模块一条）
 module-crew ticket close <编号> --reason …        模块协调关等待记录
 module-crew wait add --file --to --relay-id --about  记下模块协调自己发出的等待记录
