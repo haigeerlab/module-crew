@@ -84,6 +84,13 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
                        data={"relayId": relay_id})
                 out.closed.append(int(key))
         n = tx.allocate_number()
+        if sub["node"] == "final":          # O-stale-approval: a resubmitted final acceptance voids the old approval
+            for key, ap in sorted(tx.records("item").items(), key=lambda kv: int(kv[0])):
+                if ap.get("kind") == "merge-approval" and ap.get("state") == "open" and ap.get("module") == sub["module"]:
+                    tx.put("item", key, dict(ap, state="closed", closedReason="superseded", supersededBy=n),
+                           action="superseded", data={"by": n})
+                    out.lines.append(f"合并批准 C{key} 因重交审 C{n} 作废，合并队列不再取它；"
+                                     "告诉用户：之前批的那次验收作废，新的一份会另外提请")
         rec = {"state": "open", "kind": "review", "from": sender, "relayId": relay_id, "text": text,
                "module": sub["module"], "node": sub["node"], "files": sub["files"], "commit": commit,
                "closedReason": None, "answer": None}

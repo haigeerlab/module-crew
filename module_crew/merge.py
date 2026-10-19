@@ -65,11 +65,17 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
     return Approved(approval, Reply(rec["from"], rec["relayId"], body, db.path / meta["path"]))
 
 
+@dataclass(frozen=True)
+class Revoked(Reply):
+    superseded_by: int | None = None          # the newer submission that keeps the old one closed (MC-6)
+
+
 REVOKE_TODO = "最终验收批准已撤回，不会合并：停在当前停点，不要再提交，等新的答复"
 
 
-def revoke(db: store.Store, approval: int, original: str) -> Reply:
-    """Take back a merge approval before `merge run` (R5): close it, reopen the final review, notify the module."""
+def revoke(db: store.Store, approval: int, original: str) -> Revoked:
+    """Take back a merge approval before `merge run` (R5): close it, reopen the final review unless a newer
+    submission of the same module and node replaced it (MC-6), notify the module."""
     if not original or not original.strip():
         raise AnswerRefused("用户原话不能为空：撤回批准要用户明确说")
     with db.transaction(actor="coordinator") as tx:
@@ -87,12 +93,16 @@ def revoke(db: store.Store, approval: int, original: str) -> Reply:
                action="revoke-approved")
         tx.put("item", str(approval), dict(rec, state="closed", closedReason="revoked", revokedBy=record), action="revoked")
         review = tx.get("item", str(rec["review"]))
-        tx.put("item", str(rec["review"]), dict(review, state="open", closedReason=None, answer=None), action="reopened",
-               data={"revokedApproval": approval})
+        newer = [int(k) for k, v in tx.records("item").items()
+                 if v.get("kind") == "review" and v.get("module") == review["module"] and v.get("node") == review["node"]
+                 and int(k) > int(rec["review"])]
+        if not newer:
+            tx.put("item", str(rec["review"]), dict(review, state="open", closedReason=None, answer=None), action="reopened",
+                   data={"revokedApproval": approval})
         body = tx.allocate_number()
         meta = tx.write_body(body, protocol.render_coordination_notice(
             "approval-revoked", f"C{approval}（用户撤回批准 C{record}；交审 C{rec['review']}）", REVOKE_TODO))
-    return Reply(rec["from"], None, body, db.path / meta["path"])
+    return Revoked(rec["from"], None, body, db.path / meta["path"], max(newer) if newer else None)
 
 
 def _build_order(project: Path) -> list[str] | None:

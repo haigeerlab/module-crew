@@ -476,7 +476,10 @@ def _merge(args) -> int:
         except merge.AnswerRefused as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
-        print(f"已撤回合并批准 C{args.number}：交审重新打开，等用户新的答复")
+        if note.superseded_by is None:
+            print(f"已撤回合并批准 C{args.number}：交审重新打开，等用户新的答复")
+        else:
+            print(f"已撤回合并批准 C{args.number}；交审已被 C{note.superseded_by} 取代，不重开")
         print(f"发送 撤销批准通知 → {note.to}，正文文件：{note.path}")
         return 0
     if args.action == "tick":
