@@ -45,3 +45,7 @@
   - 文件：`module_crew/permissions.py`、`tests/test_permissions.py`、两份 crew-dev SKILL.md、`README.md`
 
 - [x] Task 9 验收（2026-10-19 用户批准；全量 417 个测试通过；提交 9315f38、3dca76b；随 0.5.0 冻结）
+
+- [ ] Task 10（0.5.1，R21 MC-1 按决定 62 修订）：Claude 放行加新包（`npm install *`、`pnpm add *`、`yarn add *`、`uv add *`、`uv pip install *`、`.venv/bin/pip install *`），裸 `pip install` 仍不写规则；deny 补全全局安装（`npm|pnpm * -g|--global`、`yarn global *`、`uv * --system`）；Codex 加新包仍不写规则，forbidden 补 `npm i -g`、`--global`、`yarn global add`；README 同步
+  - 验收：Spec 验收 13（0.5.1）
+  - 文件：`module_crew/permissions.py`、`tests/test_permissions.py`、`README.md`

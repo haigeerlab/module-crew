@@ -1,6 +1,6 @@
 # Spec: crew-host-permissions
 
-<!-- spec-guard: review approved 596690ee8fea -->
+<!-- spec-guard: review approved 2d6d3387ce18 -->
 
 > 能力图模块 `crew-host-permissions`（第四版，0.4.0 三个模块之二）。需求来源：`livesaas-integration/REQ-REVIEW-NEARBY.md` R16（用户决定 44 第①条、49）；
 > decision-inbox 2026-10-19 实测：由别的会话用开会话工具代开的会话里，`.claude/settings.local.json` 的 ask 规则（如 `git push`）不弹确认就执行。
@@ -48,10 +48,10 @@
    - Claude allow：`Bash(<module-crew 绝对路径> *)`（apply 时取正在运行的 `bin/module-crew` 绝对路径）、`Bash(git add *)`、`Bash(git commit *)`、`Bash(git status *)`、`Bash(git diff *)`、`Bash(git log *)`、`Bash(git show *)`、
      `mcp__agent-relay`（整个服务器）、运行配置里的检查命令 `checkCommand`（有才加，按「首个词 *」写，如 `Bash(pnpm test *)`）。
    - Claude deny：`Bash(git push *)`、`Bash(git push)`、`Bash(rm -rf *)`、`Bash(git reset --hard *)`、`Bash(git branch -D *)`、`Bash(git worktree remove *)`、`Bash(git config --global *)`、
-     `Bash(npm install -g *)`、`Bash(pnpm add -g *)`、`Bash(pip install *)`、`Bash(brew install *)`、`Bash(curl * | sh)`、`Bash(curl * | bash)`。
+     `Bash(npm install -g *)`、`Bash(pnpm add -g *)`、`Bash(brew install *)`、`Bash(curl * | sh)`、`Bash(curl * | bash)`，以及 0.5.1 补全的全局安装写法（见下）。
    - spec-guard 命令不进 allow：它的入口路径带插件版本号（`.../spec-guard/0.72.0/hooks/...`），升级就失效；spec-guard 自己的权限由它的安装方式管。Spec 写明，不在本版解决。
    - 不写 ask：ask 在代开会话里实测不弹（需求依据），写了等于放行。
-   - （0.5.0 修订，R21 MC-1；按用户决定 61 与 decision-inbox DI-2 对齐）**按锁文件或清单装依赖的命令放行**：`Bash(npm ci)`、`Bash(npm ci *)`、`Bash(npm install)`（只放不带参数的）、`Bash(pnpm install)`、`Bash(pnpm install --frozen-lockfile)`、`Bash(yarn install)`、`Bash(uv sync)`、`Bash(uv sync *)`、`Bash(pip install -r *)`、`Bash(.venv/bin/pip install -r *)`。**往项目里加新包的命令不写任何规则**（`npm install <包名>`、`pnpm add`、`yarn add`、`uv add`、`pip install <包名>`、`.venv/bin/pip install <包名>`）：需求原文要的是「先问」，但 module-crew 的模块会话由模块协调代开，代开会话里 ask 规则实测不弹确认（本 Spec 第 53 行「不写 ask」的依据），写成 ask 等于静默放行；所以不写规则、交给宿主的默认确认，再由 crew-dev skill 规定「Plan 没列的依赖先经模块协调问用户一次」，spec-guard 的 SG-5b 事后核对新增依赖。「不写规则时代开会话会不会弹默认确认」尚未实测，列入下一次实地测试。**全局安装仍禁止**：`npm install -g`、`pnpm add -g`、`brew install`；原先对裸 `pip install` 的整体禁止取消（它属于加新包，按上面不写规则）。deny 先于 allow。Codex 规则同样改：按锁文件装的 `allow`，加新包的不写规则，全局安装 `forbidden`；`codex execpolicy check` 实测 `npm install -g x` 为 forbidden、`npm install x` 无匹配。
+   - （0.5.1 修订，R21 MC-1；按用户决定 62，取代 0.5.0 的「加新包不写规则」）**装依赖的命令放行，含往项目里加新包**：保留按锁文件或清单装的 `Bash(npm ci)`、`Bash(npm ci *)`、`Bash(npm install)`、`Bash(pnpm install)`、`Bash(pnpm install --frozen-lockfile)`、`Bash(yarn install)`、`Bash(uv sync)`、`Bash(uv sync *)`、`Bash(pip install -r *)`、`Bash(.venv/bin/pip install -r *)`，新增 `Bash(npm install *)`、`Bash(pnpm add *)`、`Bash(yarn add *)`、`Bash(uv add *)`、`Bash(uv pip install *)`、`Bash(.venv/bin/pip install *)`。新增依赖不再事先问，由 spec-guard 的 SG-5 在最终验收时列给用户。**裸 `pip install <包名>` 仍不写规则**（交宿主默认确认）：不在 venv 里时它装进系统或用户级 Python，等于全局安装。**全局安装禁止补全**：放行 `npm install *` 后，`npm install x -g`、`--global`、`npm i -g` 这些写法不再落到默认确认，所以 deny 加 `Bash(npm * -g)`、`Bash(npm * -g *)`、`Bash(npm * --global)`、`Bash(npm * --global *)`、`Bash(pnpm * -g)`、`Bash(pnpm * -g *)`、`Bash(pnpm * --global)`、`Bash(pnpm * --global *)`、`Bash(yarn global *)`、`Bash(uv * --system)`、`Bash(uv * --system *)`（Claude 的 `*` 可在规则中间，官方文档「Wildcard patterns」）；代价是 `npm ls -g` 这类只读的全局查询也被拒。deny 先于 allow。**Codex 侧加新包仍不写规则**：Codex 前缀规则只能从命令开头匹配，挡不住 `npm install x -g`，放行 `npm install` 就会放过它，所以加新包交 Codex 默认审批；只同步按锁文件装的 `allow` 与全局安装的 `forbidden`（加 `npm i -g`、`npm install --global`、`npm i --global`、`pnpm add --global`、`yarn global add`）。`pip install -r *` 能顺带装新包的口子不修：决定 62 下加新包本就放行。
 2. **集成 checkout 与模块 worktree 用同一份**：模块协调也不该自己 `git push`——推送只走 `merge push`（它在子进程里推，不经宿主规则，靠用户原话把关）；
    收回 worktree 走 `merge cleanup`。所以两边 deny 相同，只是集成 checkout 多一个推送凭证的放行口（决策 5）。
 3. **Codex 写 `.codex/rules/module-crew.rules`**：与 Claude 清单对应——常规操作 `decision = "allow"`，不可逆操作 `decision = "forbidden"` 并在 `justification` 写「推送只经模块协调的 merge push」；
@@ -137,7 +137,7 @@ python3 -m unittest discover -s tests -v
 10. README 与三份 skill 写明：代开会话里宿主确认可能不弹，不可逆操作靠 deny 规则与推送守门；开会话后跑实测清单并记录。
 11. 实地（验收时，crew-rehearsal，默认权限模式，由别的会话代开的模块会话）：清单四条不弹窗、`git push` 被宿主 deny 拦下；结果用 `verify --record` 记下并附在验收证据里。做不了就写「宿主未实测」与原因。
 12. 全量测试通过。
-13. （0.5.0）`permissions plan` 预览里按锁文件或清单装的命令（`npm ci`、不带参数的 `npm install`、`pip install -r <文件>` 等）在放行里；加新包的命令（`npm install <包名>`、`pnpm add`、`pip install <包名>` 等）既不在放行也不在禁止里；全局安装（`npm install -g`、`pnpm add -g`、`brew install`）在禁止里。Codex 规则经 `codex execpolicy check` 核对：`npm ci` 为 allow、`npm install x` 无匹配、`npm install -g x` 为 forbidden。
+13. （0.5.1）`permissions plan` 预览里：按锁文件或清单装的命令与加新包的命令（`npm install x`、`pnpm add x`、`yarn add x`、`uv add x`、`uv pip install x`、`.venv/bin/pip install x`）在放行里；裸 `pip install x` 既不在放行也不在禁止里；全局安装（`npm install -g x`、`npm install x -g`、`npm i --global x`、`pnpm add -g x`、`yarn global add x`、`uv pip install --system x`、`brew install x`）都被禁止规则匹配。Codex 规则经 `codex execpolicy check` 核对：`npm ci` 为 allow、`npm install x` 无匹配、`npm install -g x`、`npm i -g x`、`npm install --global x` 为 forbidden。
 
 ## 未决问题
 
@@ -154,3 +154,4 @@ README 新增「权限预配」一节：`permissions plan → apply → 开会�
 - 2026-10-19：`remove` 与放行凭证由「删除」改为「清空规则／钩子改空操作／凭证标为已用」；记录位置写明为运行配置 `config/main` 的 `permissions` 字段。原因：构建中全量测试 `tests/test_package.py` 的项目约束「module-crew 源码不调用删除」与状态库 config 只认 main 一个键；来源：构建 Task 3、Task 4 时发现，随最终验收交用户复审。
 - 2026-10-19：关键决策 1 改为项目内安装依赖放行、全局安装仍禁止（含 Codex 规则），写明「只装 Plan 列出的依赖」不在权限层；加验收 13（0.5.0）。原因：R21「模块打转」MC-1（原先整类禁止 `pip install` 与 DI-1 冲突）；来源：监测会话转达用户决定 58–60，用户 2026-10-19 在本会话确认 6 条假设。
 - 2026-10-19：MC-1 改为按锁文件或清单装的放行、加新包不写规则（交宿主默认确认加 skill 先问）、全局安装禁止，取代上一条修订里「项目内安装一律放行」；验收 13 随之改。原因：用户决定 61 要求 MC-1 与 decision-inbox DI-2 对齐（加新包先问）；因代开会话里 ask 规则不弹，用户 2026-10-19 在本会话选方案 C（不写 ask）；来源：监测会话转达决定 61。
+- 2026-10-19：MC-1 改为加新包放行（Claude），裸 `pip install <包名>` 仍不写规则，全局安装禁止补全（`-g`／`--global` 在任意位置、`yarn global`、`uv --system`），Codex 加新包仍不写规则；验收 13 随之改，取代上一条的「加新包不写规则」。原因：用户决定 62（装包放宽、与上游 agent-skills 对齐；事先列不全、逐项管制造打扰），新增依赖改由 spec-guard SG-5 在最终验收列出；Codex 前缀规则挡不住后置 `-g`、裸 pip 等于全局安装，所以这两处没放；`pip install -r *` 的口子不修。来源：监测会话转达决定 62，用户 2026-10-19 在本会话确认 8 条假设。
