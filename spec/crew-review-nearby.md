@@ -101,6 +101,7 @@ README 与旧文字的全面改名（下一版）。
 
 7. **评审节奏（R13）**：`start prepare` 读项目 `.agent/config.json` 的 `reviewCadence`（spec-guard 项目配置，只读，取值 `separate`／`combined`），记入运行配置；
    开工说明的「这一步只做」按它写。`separate` 下 Spec 批准时不发开工通知（照旧要 Spec 与 Plan 都批了才开工），模块收到 Spec 的批准答复就写 Plan 交审——crew-dev 写明这一条。
+   （0.4.1 修订）已经读过 spec-guard `/map --json` 的地方（`status`、`start plan`／`start prepare` 的体检）优先用它的顶层 `reviewCadence`（`{value, source}`，spec-guard 0.73.0 起）：值照用，`status` 写明来源（`.agent/config.json`／`default`／`default (config invalid)`）；`/map` 没有这个字段（spec-guard 早于 0.73.0）或读不出时退回读 `.agent/config.json`，结果与原来相同。没读 `/map` 的地方（`review batch`）不为此多跑一次 `/map`，仍读文件——两边同源，值一致。
 
 8. **送审是一条发送项**：module-crew 不直接发消息，`review add` 输出「发送 【交审】 → <审查者>（送审）」，正文文件是交审原文；登记了多个审查者时发给每一个。
 
@@ -191,7 +192,7 @@ python3 -m unittest discover -s tests -v
 12. `merge revoke`：open 的合并批准关为 `revoked` 并输出撤销批准通知；已合并或在合并中退出码 3。
 13. 对外文字与生成的消息里 module-crew 编号写 `C<数字>`，命令参数 `15`、`C15` 都认；开工依据按假设 16；`--json` 数字字段不变并加 `ref`。
 14. 两个模块同时就绪生成两条【等待用户】；每条带「产物」「交审原文」「审查原文」，原文文件存在、指纹对、与原消息逐字一致；要点不截断，最后有「批准会发生什么」。
-15. `reviewCadence` 为 `separate`（或未设）时开工说明只让写 Spec 交审、一项一个节点；`combined` 时 Spec 与 Plan 一起交、放在同一项；`status` 写明生效值。
+15. `reviewCadence` 为 `separate`（或未设）时开工说明只让写 Spec 交审、一项一个节点；`combined` 时 Spec 与 Plan 一起交、放在同一项；`status` 写明生效值。 `/map --json` 带顶层 `reviewCadence` 时 `status` 用它并写明来源；不带时退回读 `.agent/config.json`，行为不变。
 16. 最终验收【交审】缺「验收标准与证据」一节拒收；有时这一节排在提请批准要点最前。
 17. `status` 与 `sessions --json` 显示返工轮次（`review` 字段），`schemaVersion` 仍为 1。
 18. 契约 v2.1 样例一致性测试通过（含新样例）；不登记审查者、不登记决策收件箱时现有流程照常通过（除编号与正文写法）。
@@ -216,3 +217,4 @@ README「接入收件枢纽」一节改写为「审查就近」流程（送审 �
   提请批准改为一个模块一项；待决问题改写进【等待用户】的「待用户决定」字段；钉契约 v2.1；新写正文用术语表 v1.1 名称。R14、R16 放下一版。
   原因：需求文档新增用户决定 46、47、49（R12 取代 R8），契约 v2.0／v2.0.1／v2.1 定稿；来源：用户 2026-10-19 在本会话定修订范围并确认修订后的假设。
 - 2026-10-19：并入 R20 两项小修——⑤ 合并检查失败的退回通知分「模块需要修改」「检查环境出了问题」两种，新增 `merge renotice`；⑥ `merge run` 输出提交钩子的退出码与最后 10 行。加范围两条、假设 26、27、关键决策 12、接口与验收 20、21，验收 19 加一句。原因：用户决定 51（批 2 观察 O-return-env、O-hook-output-hidden）；来源：用户 2026-10-19 在本会话选做法 A（先补 R20 再冻结 0.3.0）。
+- 2026-10-19：关键决策 7 补「优先用 spec-guard `/map --json` 的顶层 `reviewCadence`，没有就退回读文件」，验收 15 补一句来源显示（0.4.1）。原因：spec-guard 0.73.0 给出带来源的生效值，R13 不必再自己打开配置文件；来源：spec-guard 插件负责人知会，用户 2026-10-19 要求推进。

@@ -48,6 +48,8 @@ Task 1–5 已按修订前的 Spec 做完并提交（协议层、C 编号、送�
 
 - [ ] Task 14：R20——合并检查失败的退回分「模块需要修改」「检查环境出了问题」两种、`merge renotice`、`merge run` 输出提交钩子退出码与最后 10 行；skill 写明两种退回怎么处理（验收 20、21）
 
+- [ ] Task 15（0.4.1）：评审节奏优先读 `/map --json` 的顶层 `reviewCadence`——`start.review_cadence(project, map_doc=None)` 返回值与来源，`status`、`start plan`／`prepare` 传入已读到的 map，没有字段时退回读文件（验收 15）
+
 ### Checkpoint 3（gate）：模块最终验收
 
 - [ ] 全部测试全绿；21 条验收逐条对应测试；列出实际改动文件；附 Spec 与 crew-protocol Spec 的修订差异；冻结前按需求文档 R1–R20 逐项勾清单给用户看
@@ -65,3 +67,4 @@ Task 1–5 已按修订前的 Spec 做完并提交（协议层、C 编号、送�
 ## 变更记录
 
 - 2026-10-19：加 Task 14（R20 两项小修），最终验收改为 21 条验收并在冻结前按需求文档逐项勾清单。原因：用户决定 51；来源：用户 2026-10-19 在本会话选做法 A。
+- 2026-10-19：加 Task 15（0.4.1，R13 改读 `/map --json` 的 reviewCadence）。原因与来源同 Spec 变更记录。

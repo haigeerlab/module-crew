@@ -70,3 +70,8 @@
 
 <!-- spec-guard: external-review declined -->
 用户 2026-10-19 批准 Plan 时决定不做外部复核。
+
+- [ ] Task 15（0.4.1）：评审节奏优先读 `/map --json` 的顶层 `reviewCadence`，没有时退回读文件；`status` 写明来源
+  - 验收：Spec 验收 15（修订后）
+  - 文件：`module_crew/start.py`、`module_crew/__main__.py`、`module_crew/review.py`（不改读法，只核对）、`tests/test_review_nearby.py`
+
