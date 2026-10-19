@@ -166,6 +166,7 @@ def sessions(db: store.Store, now: datetime | None = None) -> list[dict]:
             "asks": stall.asks(events, items, module),
             "returns": stall.returns(events, items, module),
             "waitUser": stall.wait_user(events, items, name),
+            "answers": stall.answers(items, module, name, rec.get("worktree"), integration, started),
         })
     return rows
 

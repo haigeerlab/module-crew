@@ -138,6 +138,48 @@ class WaitUserTest(StallCase):
         self.assertEqual(rows["c"]["returns"], [])
 
 
+class AnswersTest(StallCase):
+    """R21 MC-3 (acceptance 11): after each user answer, did the module commit or tick its todo?"""
+
+    def tick(self, m, message):
+        todo = self.wt[m] / "tasks" / m / "todo.md"
+        todo.write_text(todo.read_text(encoding="utf-8").replace("- [ ] Task 1", "- [x] Task 1"), encoding="utf-8")
+        git(self.wt[m], "add", "-A")
+        git(self.wt[m], "commit", "-q", "-m", message)
+
+    def test_progress_after_each_answer(self):
+        import time
+        first = review.add(self.db, self.spec_review("b"), "shop-b", 7501).number
+        review.answer(self.db, first, "Spec 改一下")
+        time.sleep(1.1)
+        self.tick("b", "b: task 1")                      # progress after the first answer
+        time.sleep(1.1)
+        second = review.add(self.db, self.spec_review("b"), "shop-b", 7502).number
+        review.answer(self.db, second, "再改")
+        time.sleep(1.1)
+        third = inbox.add(self.db, wait_user(sender="shop-b"), "shop-b", 7503).number
+        inbox.answer(self.db, third, "A")                  # nothing happened in between
+        got = [(a["ref"], a["commitsAfter"], a["ticksAfter"]) for a in self.rows()["b"]["answers"]]
+        self.assertEqual(got, [(f"C{first}", 1, 1), (f"C{second}", 0, 0), (f"C{third}", 0, 0)])
+        datetime.fromisoformat(self.rows()["b"]["answers"][0]["at"])
+        self.assertEqual(self.rows()["c"]["answers"], [])
+
+    def test_uncommitted_tick_counts_in_the_last_window(self):
+        n = review.add(self.db, self.spec_review("b"), "shop-b", 7601).number
+        review.answer(self.db, n, "改")
+        todo = self.wt["b"] / "tasks" / "b" / "todo.md"
+        todo.write_text(todo.read_text(encoding="utf-8").replace("- [ ] Task 1", "- [x] Task 1"), encoding="utf-8")
+        [a] = self.rows()["b"]["answers"]
+        self.assertEqual((a["commitsAfter"], a["ticksAfter"]), (0, 1))
+
+    def test_unreadable_worktree_gives_nulls(self):
+        n = review.add(self.db, self.spec_review("c"), "shop-c", 7701).number
+        review.answer(self.db, n, "改")
+        shutil.rmtree(self.wt["c"])
+        [a] = self.rows()["c"]["answers"]
+        self.assertEqual((a["commitsAfter"], a["ticksAfter"]), (None, None))
+
+
 class HumanTextTest(StallCase):
     def test_sessions_text(self):
         plan = review.add(self.db, self.plan_review("b"), "shop-b", 7201).number

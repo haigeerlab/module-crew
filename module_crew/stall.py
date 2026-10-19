@@ -5,7 +5,9 @@ No thresholds and no verdicts here: how long is too long, and how many asks are 
 
 from __future__ import annotations
 
+import re
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 
@@ -110,3 +112,51 @@ def wait_user(events: list[dict], items: dict, name: str) -> list[dict]:
              "decide": (v.get("decide") or "").strip().split("\n")[0], "at": first.get(str(n))}
             for n, v in sorted((int(k), v) for k, v in items.items())
             if v.get("kind") == "wait-user" and v.get("from") == name]
+
+
+ANSWERED = ("review", "wait-user", "merge-approval")
+_TICK = re.compile(r"^\s*- \[[xX]\]", re.M)
+
+
+def _own_commits(path: Path, integration: str, since: str) -> list[tuple[str, datetime]] | None:
+    """The module's own first-parent commits since it started (same rule as `commit_facts`), newest first."""
+    own = _git(path, "log", "--first-parent", f"--since={since}", "--format=%H%x00%cI", "HEAD")
+    theirs = _git(path, "rev-list", "--first-parent", f"--since={since}", integration)
+    if own.returncode != 0 or theirs.returncode != 0:
+        return None
+    skip = set(theirs.stdout.split())
+    return [(c, datetime.fromisoformat(t)) for c, t in (line.split("\0") for line in own.stdout.splitlines())
+            if c not in skip]
+
+
+def _ticks(path: Path, module: str, before: datetime | None) -> int:
+    """Checked todo items: in the last first-parent commit before `before`, or in the working tree when None."""
+    rel = f"tasks/{module}/todo.md"
+    if before is None:
+        try:
+            return len(_TICK.findall((path / rel).read_text(encoding="utf-8")))
+        except (OSError, UnicodeDecodeError):
+            return 0
+    commit = _git(path, "rev-list", "-1", "--first-parent", f"--before={before.isoformat()}", "HEAD").stdout.strip()
+    shown = _git(path, "show", f"{commit}:{rel}") if commit else None
+    return len(_TICK.findall(shown.stdout)) if shown is not None and shown.returncode == 0 else 0
+
+
+def answers(items: dict, module: str, name: str, worktree: str | None, integration: str | None,
+            since: str | None) -> list[dict]:
+    """R21: each user answer to this module, and what moved before the next one (commits, ticked todo items)."""
+    found = sorted((datetime.fromisoformat(v["answer"]["answeredAt"]), int(k))
+                   for k, v in items.items()
+                   if v.get("kind") in ANSWERED and (v.get("module") == module or v.get("from") == name)
+                   and (v.get("answer") or {}).get("answeredAt"))
+    path = Path(worktree) if worktree else None
+    own = _own_commits(path, integration, since) if path and path.is_dir() and integration and since else None
+    out = []
+    for i, (at, n) in enumerate(found):
+        end = found[i + 1][0] if i + 1 < len(found) else None
+        row = {"ref": f"C{n}", "at": at.isoformat(), "commitsAfter": None, "ticksAfter": None}
+        if own is not None:
+            row["commitsAfter"] = sum(1 for _, t in own if t > at and (end is None or t <= end))
+            row["ticksAfter"] = max(_ticks(path, module, end) - _ticks(path, module, at), 0)
+        out.append(row)
+    return out

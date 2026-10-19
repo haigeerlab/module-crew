@@ -30,7 +30,7 @@
   - 来源：验收 11 实测时接入方案会话发现，用户 2026-10-19 批准冻结前先修
   - 文件：`module_crew/stall.py`、`module_crew/failure.py`、`tests/test_stall_signals.py`
 
-- [ ] Task 6（0.5.0，R21 MC-3）：`sessions --json` 加 `answers`（每次用户答复后的提交数与 todo 勾选增量）；发版前请决策收件箱确认字段名
+- [x] Task 6（0.5.0，R21 MC-3）：`sessions --json` 加 `answers`（每次用户答复后的提交数与 todo 勾选增量）；发版前请决策收件箱确认字段名
   - 验收：Spec 验收 11
   - 文件：`module_crew/stall.py`、`module_crew/failure.py`、`tests/test_stall_signals.py`、`spec/crew-hub-bridge.md`（契约一节加一句）
 
