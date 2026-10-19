@@ -256,3 +256,17 @@ class GlossaryWordsTest(unittest.TestCase):
         for text in (read("crew-coordinator")[1], read("crew-dev")[1], codex):
             for words in ("## 名称", "「你」指本会话", "已结项（契约标签【已恢复】）", "等待记录写 W<号>", "契约标签与字段名照契约原样发"):
                 self.assertIn(words, text)
+
+
+class R21WordsTest(unittest.TestCase):
+    """R21 MC-2 (crew-onboarding acceptance 14, wording part)."""
+
+    def test_skills_say_do_not_ask_inside_the_approved_scope(self):
+        codex = (PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
+        for text in (read("crew-dev")[1], codex, read("crew-coordinator")[1]):
+            for words in ("已批准的 Spec、Plan 范围内", "不送审", "Plan 没列的依赖只问", "去会话操作", "为什么"):
+                self.assertIn(words, text)
+        for text in (read("crew-dev")[1], codex):
+            self.assertIn("不要一次次讨小许可", text)
+            self.assertIn("被拦的操作原文", text)
+        self.assertIn("没有决策收件箱就在本会话直接告诉用户", read("crew-coordinator")[1])
