@@ -55,3 +55,5 @@
 - [x] Task 11（0.5.2，决定 67）：README 与 crew-coordinator skill 去掉「ask 规则实测不弹」，改为「不可逆操作不能只靠弹窗（点一次『允许』就执行）」；skill 测试断言改新说法并断言旧说法不再出现；版本 0.5.2
   - 验收：Spec 验收 10（0.5.2 更正）
   - 文件：`README.md`、`skills/crew-coordinator/SKILL.md`、`tests/test_skills.py`、三处版本号
+
+- [x] Task 11 验收（2026-10-19 用户批准；全量 418 个测试通过；提交 ba4dfac；随 0.5.2 冻结）
