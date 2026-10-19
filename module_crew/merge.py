@@ -15,7 +15,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from module_crew import commits, probe, protocol, store
+from module_crew import commits, probe, protocol, store, sync
 from module_crew.inbox import AnswerRefused, Reply
 from module_crew.review import _reply_text, closing
 
@@ -279,7 +279,7 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
                         and s.get("module") not in busy and not s.get("suspended")):  # resume sends it later
                     _notice(tx, db, result, name, "sync-baseline",
                             basis=f"模块 {m} 已合入集成分支 {short}（合并批准记录 C{n}）",
-                            todo="把集成分支合进你的模块分支，跑完整检查后继续")
+                            todo=f"{sync.STEP}，跑完整检查后继续")
             result.lines.append(f"C{n}（{m}）已合入集成分支 {short}")
             if tick_line:
                 result.lines.append(tick_line)

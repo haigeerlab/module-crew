@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from module_crew import store
+from module_crew import store, sync
 
 
 class FailureRefused(Exception):
@@ -91,7 +91,7 @@ def resume(db: store.Store, module: str, original: str) -> Changed:
         todo = RESUME_TODO
         if merged:
             done = "、".join(f"{r.get('module')}（合并批准事项 C{k}，{(r.get('mergeCommit') or '')[:7]}）" for k, r in merged)
-            todo = f"集成分支在挂起期间合入了 {done}：先把集成分支合进你的模块分支、跑完整检查，再{RESUME_TODO}"
+            todo = f"集成分支在挂起期间合入了 {done}：先{sync.STEP}、跑完整检查，再{RESUME_TODO}"
         _send(tx, db, sends, name, "resume", protocol.render_coordination_notice(kind="resume", basis=basis, todo=todo))
     return Changed(name, sends)
 

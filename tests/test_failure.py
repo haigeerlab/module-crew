@@ -81,7 +81,7 @@ class SuspendTest(FailureCase):
         [note] = failure.resume(self.db, "b", "恢复 b").sends
         todo = self.notice(note).fields["要你做什么"]
         self.assertIn(f"C{n}", todo)
-        self.assertIn("先把集成分支合进你的模块分支", todo)
+        self.assertIn("先跑 `module-crew sync`", todo)
 
     def test_suspended_session_keeps_its_identity(self):
         failure.suspend(self.db, "b", "等设计稿", "先挂起 b")

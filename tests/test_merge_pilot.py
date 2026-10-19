@@ -4,7 +4,7 @@ import unittest
 
 from helpers import MergeCase, git
 
-from module_crew import merge, review, start, store
+from module_crew import merge, protocol, review, start, store
 
 
 def todo(wt, m, *items):
@@ -38,6 +38,10 @@ class SyncRecipientsTest(PilotCase):
         self.assertEqual(first.code, 0, first.lines)
         sync = {x["to"] for x in first.sends if x["kind"] == "sync-baseline"}
         self.assertEqual(sync, {"shop-d"})
+        [note] = [x for x in first.sends if x["kind"] == "sync-baseline"]
+        todo = protocol.parse(store.read_body(store.open_store(self.repo), note["body"])).fields["要你做什么"]
+        self.assertIn("`module-crew sync`", todo)
+        self.assertNotIn("git merge", todo)
         second = merge.run(self.repo, self.check)
         self.assertEqual(second.code, 0, second.lines)
         sync = {x["to"] for x in second.sends if x["kind"] == "sync-baseline"}

@@ -12,7 +12,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from module_crew import commits, probe, protocol, store
+from module_crew import commits, probe, protocol, store, sync
 from module_crew.inbox import AnswerRefused, Outcome, Reply
 
 
@@ -878,7 +878,7 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
             sender = next(rec["from"] for _, rec in picked if rec["module"] == m)
             text = protocol.render_coordination_notice(
                 kind="start", basis=f"用户批准事项 C{approval}（{m} 的 Spec 与 Plan），已提交到集成分支 {commit[:7]}",
-                todo=(f"把集成分支合进你的模块分支（spec/{m}.md、tasks/{m}/ 冲突时取集成分支的版本，它带批准标记），"
+                todo=(f"{sync.STEP}（spec/{m}.md、tasks/{m}/ 冲突时 sync 自动取集成分支的版本，它带批准标记），"
                       f"然后按 tasks/{m}/plan.md 开始构建；公共文件只能经【公共变更请求】改"))
             body = tx.allocate_number()
             meta = tx.write_body(body, text)

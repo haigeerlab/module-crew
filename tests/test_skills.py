@@ -76,8 +76,10 @@ class SkillsTest(unittest.TestCase):
     def test_dev_sync_section(self):
         _, text = read("crew-dev")
         section = text.split("## 同步集成分支", 1)[1].split("\n## ", 1)[0]
-        for words in ("git merge", "取集成分支的版本", "--theirs", "批准标记"):
+        for words in ("单独执行", "module-crew sync", "取集成分支的版本", "批准标记", "git commit --no-edit",
+                      "「合入集成分支」这一步写成 `module-crew sync`"):
             self.assertIn(words, section)
+        self.assertNotIn("`git merge <集成分支>` 合进", section)
 
     def test_dev_rules(self):
         _, text = read("crew-dev")
@@ -186,7 +188,7 @@ class PilotRound2SkillTest(unittest.TestCase):
 class CodexPackageTest(unittest.TestCase):
     COMMON = ("只认模块协调发来的【用户答复】", "`tasks/<模块>/todo.md`", "验收标准与证据", "不同意", "撤销批准通知",
               "按项目的评审节奏交审", "不放可以点的决定按钮", "与你的代码无关」时**不改代码**", "**必须**发【等待其他会话】", "不改公共文件", "不要自己勾 todo 末项",
-              "一律取集成分支的版本", "不要**撤销任何提交")
+              "**单独执行** `module-crew sync`", "sync 自动取集成分支的版本", "不要**撤销任何提交")
 
     def codex(self):
         text = (PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")

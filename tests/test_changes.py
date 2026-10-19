@@ -117,6 +117,8 @@ class LandTest(ReviewCase):
         self.assertEqual(mine.reply_to, 4700)
         self.assertEqual(mine.contract()["notice"]["kind"], "sync-baseline")
         self.assertIn(f"公共变更请求 C{n}", mine.fields["依据"])
+        self.assertIn("`module-crew sync`", mine.fields["要你做什么"])
+        self.assertNotIn("git merge", mine.fields["要你做什么"])
         other = protocol.parse(store.read_body(self.db, by_to["shop-c"]["body"]))
         self.assertTrue(other.ok)
         self.assertIsNone(other.reply_to)

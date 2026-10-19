@@ -175,11 +175,11 @@ class SyncAfterApprovalTest(ReviewCase):
         res = review.approve(self.repo, [s, p], "批")
         notice = [x for x in res.sends if x["kind"] == "coordination-notice"][0]
         todo = protocol.parse(store.read_body(db, notice["body"])).fields["要你做什么"]
-        self.assertIn("冲突时取集成分支的版本", todo)
-        plain = __import__("subprocess").run(["git", "-C", str(self.wt["b"]), "merge", "--no-edit", "main"],
-                                             capture_output=True, text=True)
-        self.assertNotEqual(plain.returncode, 0)                       # the add/add conflict is real
-        git(self.wt["b"], "checkout", "--theirs", "--", "spec/b.md", "tasks/b/plan.md")
-        git(self.wt["b"], "add", "-A")
-        git(self.wt["b"], "commit", "-q", "--no-edit")
+        self.assertIn("冲突时 sync 自动取集成分支的版本", todo)
+        self.assertIn("`module-crew sync`", todo)
+        self.assertNotIn("git merge", todo)
+        from module_crew import sync
+        res = sync.run(self.wt["b"])                                   # the add/add conflict is real; sync takes theirs
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertIn("已取集成分支版本", "\n".join(res.lines))
         self.assertEqual((self.wt["b"] / "spec" / "b.md").read_text(), (self.repo / "spec" / "b.md").read_text())

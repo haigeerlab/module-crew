@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from module_crew import commits, probe, protocol, store
+from module_crew import commits, probe, protocol, store, sync
 from module_crew.inbox import AnswerRefused, Outcome, Reply
 
 # Routing hints (spec decision 4); only ever added to.
@@ -175,7 +175,7 @@ def land(project: str | os.PathLike, number: int, original: str | None = None) -
     if original is None and _asks_user(rec.get("hints", [])):
         result.lines.append("提醒：这条请求带「要问用户」提示，但没有记下用户原话")
     basis = f"公共变更请求 C{number} 已在集成分支提交 {commit[:7]}"
-    todo = "把集成分支合进你的模块分支，跑完整检查后继续"
+    todo = f"{sync.STEP}，跑完整检查后继续"
     with db.transaction(actor="coordinator") as tx:
         answer_rec = {"original": original, "answeredAt": store.now(), **store.source_field()} if original is not None else None
         tx.put("request", str(number), dict(rec, state="closed", closedReason="landed", commit=commit, answer=answer_rec),
