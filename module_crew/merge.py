@@ -26,6 +26,7 @@ DEFAULT_CHECK_TIMEOUT = 1800
 class Approved:
     approval: int
     reply: Reply
+    superseded: list[int] = field(default_factory=list)   # the module's older open approvals this one replaced (MC-11)
 
 
 def approve(db: store.Store, review_no: int, original: str) -> Approved:
@@ -50,6 +51,12 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
     answered_at = store.now()
     text = _reply_text(review_no, rec, original, answered_at)
     approval = tx.allocate_number()
+    replaced = []
+    for key, old in sorted(tx.records("item").items(), key=lambda kv: int(kv[0])):
+        if old.get("kind") == "merge-approval" and old.get("state") == "open" and old.get("module") == rec["module"]:
+            tx.put("item", key, dict(old, state="closed", closedReason="superseded", supersededBy=approval),
+                   action="superseded", data={"by": approval})
+            replaced.append(int(key))
     tx.put("item", str(approval), {
         "state": "open", "kind": "merge-approval", "module": rec["module"], "review": review_no,
         "commit": rec["commit"], "from": rec["from"], "relayId": rec["relayId"],
@@ -62,7 +69,7 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
                                         answer={"original": original, "answeredAt": answered_at, **store.source_field(), "body": body,
                                                 "approval": approval}),
            action="answered", data={"body": body})
-    return Approved(approval, Reply(rec["from"], rec["relayId"], body, db.path / meta["path"]))
+    return Approved(approval, Reply(rec["from"], rec["relayId"], body, db.path / meta["path"]), replaced)
 
 
 def awaiting_final(tx) -> set[str]:

@@ -484,6 +484,8 @@ def _merge(args) -> int:
             return 3
         for res in done:
             print(f"合并批准事项 C{res.approval}，已排入本地合并队列")
+            for n in res.superseded:
+                print(f"合并批准 C{n} 被 C{res.approval} 取代，合并队列不再取它")
             print(f"收件人：{res.reply.to}")
             _sent(res.reply.to)
             print(f"replyTo：{res.reply.reply_to}")

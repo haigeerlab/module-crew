@@ -46,5 +46,38 @@ class SyncSkipTest(MergeCase):
         self.assertEqual({x["to"] for x in changes.land(self.repo, m).sends}, {"shop-c"})
 
 
+class ApprovalSupersedeTest(MergeCase):
+    """Task 2 (MC-11): a new merge approval replaces the module's older open one (Spec acceptance 2, 3)."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+
+    def open_approval(self, module, n):
+        with self.db.transaction(actor="t") as tx:     # an old approval still open (written by an older version)
+            tx.put("item", str(n), dict(tx.get("item", str(n)), state="open", closedReason=None), action="t")
+
+    def test_new_approval_replaces_old(self):
+        old = self.approve_final("b", 1)
+        c_old = self.approve_final("c", 2)
+        newer = review.add(self.db, self.finish("b", "VALUE = 'b2'\n"), "shop-b", 3).number   # voids `old` (0.6.0)
+        self.open_approval("b", old)
+        res = merge.approve(self.db, newer, "b 验收通过")
+        rec = store.get(self.db, "item", str(old))
+        self.assertEqual((rec["state"], rec["closedReason"], rec["supersededBy"]), ("closed", "superseded", res.approval))
+        self.assertEqual(res.superseded, [old])
+        self.assertEqual(store.get(self.db, "item", str(c_old))["state"], "open")      # other modules untouched
+        queued = [(r["module"], n) for n, r in merge.queue(self.repo)]
+        self.assertEqual(sorted(queued), sorted([("b", res.approval), ("c", c_old)]))
+
+    def test_cli_says_replaced(self):
+        old = self.approve_final("b", 1)
+        newer = review.add(self.db, self.finish("b", "VALUE = 'b2'\n"), "shop-b", 3).number
+        self.open_approval("b", old)
+        out = self.run_cli("merge", "approve", f"C{newer}", "--original", "b 验收通过")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn(f"合并批准 C{old} 被", out.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
