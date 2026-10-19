@@ -61,3 +61,5 @@
 - [x] Task 12（0.5.3）：`plan`／`apply` 只读检查别处（checkout 自己的 settings.json 与原有本地条目、主 checkout 的本地与项目设置、用户设置、托管设置）的 ask／禁止规则，列出会盖过 module-crew 放行的条目；不拒绝、不改别的文件；README 补一句；版本 0.5.3
   - 验收：Spec 验收 14（0.5.3）
   - 文件：`module_crew/permissions.py`、`tests/test_permissions.py`、`README.md`、三处版本号
+
+- [x] Task 12 验收（2026-10-19 用户批准；全量 423 个测试通过；提交 4d9f2ed；随 0.5.3 冻结）
