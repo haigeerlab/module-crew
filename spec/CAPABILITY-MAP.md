@@ -33,8 +33,10 @@
 | crew-stall-signals | 第四版：停滞事实只读出口——sessions --json 加模块最近提交、开工时间、领先提交数与同一节点问过用户几次、模块发来的【等待用户】首行；只给事实不设阈值，判断与提问归决策收件箱 | crew-hub-bridge, crew-review-nearby |
 | crew-host-permissions | 第四版：宿主权限预配与推送守门——permissions plan／apply／verify 把第 44 条范围内的常规操作写进集成 checkout 与模块 worktree 的 .claude/settings.local.json（推送、删除写 deny）、开会话后实测放行；pre-push 钩子拦模块 worktree 推送与无 merge push 放行凭证的推送 | crew-start, crew-merge |
 | crew-glossary-rename | 第四版：术语表 v1.1 全面改名——README、命令说明、两份 skill、命令输出与生成正文里的自由文字换成新名称，等待记录显示 W 前缀，旧称扫描测试；代码标识符、命令选项、状态库字段与契约标签不动 | crew-stall-signals, crew-host-permissions |
+| crew-pilot-fixes | 第五版：演练修复——module-crew sync 合入集成分支、review show 读审查原文、撤销批准不重开已被取代的交审并作废过期合并批准、模块协调自开的等待记录经 CLI 记账并提示关闭、派活后核对模块会话是否卡在权限弹窗 | crew-merge, crew-review-nearby, crew-host-permissions, crew-glossary-rename |
+| crew-hub-card-fields | 第五版：决策卡片字段——交给决策收件箱的【等待用户】按 session-protocol v2.3 写「类型」与各类小项，「注意」「推荐理由」「批了会怎样」由 module-crew 生成，模块协调自己提的请示按类别写；契约 v2.3 定稿后写 Spec | crew-hub-bridge, crew-review-nearby, crew-glossary-rename |
 
-Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby → crew-stall-signals → crew-host-permissions → crew-glossary-rename
+Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby → crew-stall-signals → crew-host-permissions → crew-glossary-rename → crew-pilot-fixes → crew-hub-card-fields
 
 <!-- Spec Guard 按严格串行推进。为兼容上游格式，逗号分组会按左到右顺序展开为单模块步骤，不代表并行授权。 -->
 
