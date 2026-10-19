@@ -3,7 +3,16 @@
 让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.5.0。已在试点项目上跑过两轮实地验证（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.6.0。已在试点项目上跑过两轮实地验证（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+
+## 0.6.0 的变化（演练修复）
+
+- 新命令 `module-crew sync`（模块会话在自己的 worktree 里跑）：把集成分支合进模块分支，本模块的 Spec 与 tasks 冲突自动取集成分支版本，别的冲突留给模块解决（退出码 2）。
+  开工、同步基线、恢复通知改为「单独执行 `module-crew sync`」，不再叫模块自己敲 `git merge`——它不在放行范围里，写法稍有不同（如 `git merge main --no-edit`）就会弹窗。
+- 新命令 `module-crew review show C<号> [--submission]`（只读）：输出审查原文全文与 sha256；返工通知和开工通知里写明这条命令，模块不再去集成 checkout 的 git 目录里找原文。
+- 撤回合并批准时，已经被重交审取代的交审不再重新打开；最终验收重交审时，旧的合并批准自动作废，不再排在合并队列里挡住新批准。
+- 新命令 `module-crew wait add`：模块协调把自己发出的【等待其他会话】记账；所等事项的答复转达时，命令输出给出要发的【已恢复】并关掉记录。
+- 发给模块会话的命令，输出末尾提醒核对对方是否停在权限弹窗；协调 skill 写明派活后用 agent-relay 查会话状态，卡住就报「去会话操作」。
 
 ## 0.5.3 的变化
 
@@ -86,7 +95,7 @@ bin/module-crew status
 3. **批量批准**（模块协调）
    - `module-crew review add` 记下每条【交审】，`module-crew review batch` 汇总，把要点写在正文里交用户审。
    - 用户批准后 `module-crew review approve <编号>… --original-file <原话文件>`：在集成分支记批准标记，生成【用户答复】与开工通知。
-   - 模块会话把集成分支合进自己的分支（Spec／Plan 冲突取集成分支版本）后开始构建。
+   - 模块会话单独执行 `module-crew sync` 把集成分支合进自己的分支（Spec／Plan 冲突自动取集成分支版本）后开始构建；写 Plan 前可用 `module-crew review show C<号>` 读审查原文。
 4. **公共文件**：模块会话不改公共文件，发【公共变更请求】；模块协调 `change add` → 在集成 checkout 改 → `change land`，其他模块收到同步基线通知。
 5. **合并**
    - 模块做完发最终验收【交审】，用户批准后 `module-crew merge approve <交审编号> --original-file <原话文件>`。
@@ -172,6 +181,9 @@ module-crew takeover <邮箱名> --original(-file)  换会话接管
 module-crew source add|remove|list|map           可信批准来源（决策收件箱、审查者）与对照
 module-crew review note [--then-batch]|batch --for-hub   审查结论、返工、提请批准正文（一个模块一条）
 module-crew ticket close <编号> --reason …        模块协调关等待记录
+module-crew wait add --file --to --relay-id --about  记下模块协调自己发出的等待记录
+module-crew sync                                 模块 worktree 里合入集成分支（模块会话用）
+module-crew review show <C号> [--submission]     审查原文全文与 sha256（只读）
 module-crew permissions plan|apply|verify|remove  宿主权限预配与推送守门
 module-crew hook session-start|prompt            插件钩子入口（只读，永远退出码 0）
 ```
