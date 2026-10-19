@@ -11,8 +11,52 @@ from datetime import datetime
 from pathlib import Path
 
 
+_SEEN: dict[tuple, subprocess.CompletedProcess] = {}
+
+
+def forget() -> None:
+    """Drop the answers of the previous `sessions` run: the repository may have moved since."""
+    _SEEN.clear()
+
+
 def _git(worktree: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(worktree), *args], capture_output=True, text=True)
+    """Read-only git query, asked once per `sessions` run (0.8.1: 136 processes for 7 modules ran past 15 s under load)."""
+    key = (str(worktree), args)
+    if key not in _SEEN:
+        _SEEN[key] = subprocess.run(["git", "-C", str(worktree), *args], capture_output=True, text=True)
+    return _SEEN[key]
+
+
+def _first_parents(path: Path) -> list[tuple[str, datetime]] | None:
+    """HEAD's whole first-parent chain with commit dates, in walk order (one git process)."""
+    out = _git(path, "log", "--first-parent", "--format=%H%x00%cI", "HEAD")
+    if out.returncode != 0:
+        return None
+    return [(c, datetime.fromisoformat(t)) for c, t in (line.split("\0") for line in out.stdout.splitlines())]
+
+
+def _blobs(path: Path, specs: list[str]) -> dict[str, str | None]:
+    """`<commit>:<path>` → text (None when missing), all through one `git cat-file --batch`."""
+    specs = list(dict.fromkeys(specs))
+    if not specs:
+        return {}
+    out = subprocess.run(["git", "-C", str(path), "cat-file", "--batch"], input=("\n".join(specs) + "\n").encode("utf-8"),
+                         capture_output=True)
+    found: dict[str, str | None] = {}
+    data, pos = out.stdout, 0
+    for spec in specs:
+        end = data.find(b"\n", pos)
+        if out.returncode != 0 or end < 0:
+            found[spec] = None
+            continue
+        head = data[pos:end].split()
+        if len(head) != 3:                       # "<spec> missing" (or ambiguous)
+            found[spec], pos = None, end + 1
+            continue
+        size = int(head[2])
+        found[spec] = data[end + 1:end + 1 + size].decode("utf-8", "replace")
+        pos = end + 1 + size + 1                 # contents are followed by a newline
+    return found
 
 
 def _error(out: subprocess.CompletedProcess) -> str:
@@ -37,14 +81,16 @@ def commit_facts(worktree: str | None, integration: str | None, since: str | Non
         return {**failed, "error": _error(count)}
     ahead = int(count.stdout.strip())
     if since:
-        own = _git(path, "rev-list", "--first-parent", f"--since={since}", "HEAD")
+        own = _git(path, "log", "--first-parent", f"--since={since}", "--format=%H%x00%cI", "HEAD")
         theirs = _git(path, "rev-list", "--first-parent", f"--since={since}", integration)
         if own.returncode != 0 or theirs.returncode != 0:
             return {**failed, "error": _error(own if own.returncode != 0 else theirs)}
         skip = set(theirs.stdout.split())
-        commit = next((c for c in own.stdout.split() if c not in skip), None)
-    else:
-        commit = _git(path, "rev-list", "-1", span).stdout.strip() or None
+        hit = next((line.split("\0") for line in own.stdout.splitlines() if line.split("\0")[0] not in skip), None)
+        if hit is None:
+            return {"ahead": ahead, "last": None, "error": None}
+        return {"ahead": ahead, "last": {"commit": hit[0], "at": hit[1]}, "error": None}
+    commit = _git(path, "rev-list", "-1", span).stdout.strip() or None
     if commit is None:
         return {"ahead": ahead, "last": None, "error": None}
     at = _git(path, "log", "-1", "--format=%cI", commit)
@@ -129,17 +175,24 @@ def _own_commits(path: Path, integration: str, since: str) -> list[tuple[str, da
             if c not in skip]
 
 
-def _ticks(path: Path, module: str, before: datetime | None) -> int:
-    """Checked todo items: in the last first-parent commit before `before`, or in the working tree when None."""
+def _tick_counts(path: Path, module: str, bounds: list[datetime | None]) -> dict[datetime | None, int]:
+    """Checked todo items at each bound: in the last first-parent commit at or before it, or in the working tree
+    for None. One `git log` and one `git cat-file --batch` for all bounds together."""
     rel = f"tasks/{module}/todo.md"
-    if before is None:
+    out: dict[datetime | None, int] = {}
+    if None in bounds:
         try:
-            return len(_TICK.findall((path / rel).read_text(encoding="utf-8")))
+            out[None] = len(_TICK.findall((path / rel).read_text(encoding="utf-8")))
         except (OSError, UnicodeDecodeError):
-            return 0
-    commit = _git(path, "rev-list", "-1", "--first-parent", f"--before={before.isoformat()}", "HEAD").stdout.strip()
-    shown = _git(path, "show", f"{commit}:{rel}") if commit else None
-    return len(_TICK.findall(shown.stdout)) if shown is not None and shown.returncode == 0 else 0
+            out[None] = 0
+    dated = [b for b in dict.fromkeys(bounds) if b is not None]
+    chain = _first_parents(path) if dated else []
+    commit = {b: next((c for c, t in chain or [] if t <= b), None) for b in dated}
+    texts = _blobs(path, [f"{c}:{rel}" for c in commit.values() if c])
+    for b in dated:
+        text = texts.get(f"{commit[b]}:{rel}") if commit[b] else None
+        out[b] = len(_TICK.findall(text)) if text else 0
+    return out
 
 
 def answers(items: dict, module: str, name: str, worktree: str | None, integration: str | None,
@@ -151,12 +204,13 @@ def answers(items: dict, module: str, name: str, worktree: str | None, integrati
                    and (v.get("answer") or {}).get("answeredAt"))
     path = Path(worktree) if worktree else None
     own = _own_commits(path, integration, since) if path and path.is_dir() and integration and since else None
+    ends = [found[i + 1][0] if i + 1 < len(found) else None for i in range(len(found))]
+    ticks = _tick_counts(path, module, [at for at, _ in found] + ends) if own is not None and found else {}
     out = []
-    for i, (at, n) in enumerate(found):
-        end = found[i + 1][0] if i + 1 < len(found) else None
+    for (at, n), end in zip(found, ends):
         row = {"ref": f"C{n}", "at": at.isoformat(), "commitsAfter": None, "ticksAfter": None}
         if own is not None:
             row["commitsAfter"] = sum(1 for _, t in own if t > at and (end is None or t <= end))
-            row["ticksAfter"] = max(_ticks(path, module, end) - _ticks(path, module, at), 0)
+            row["ticksAfter"] = max(ticks[end] - ticks[at], 0)
         out.append(row)
     return out

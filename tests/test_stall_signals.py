@@ -188,6 +188,27 @@ class AnswersTest(StallCase):
         self.assertEqual((a["commitsAfter"], a["ticksAfter"]), (None, None))
 
 
+class GitCallCountTest(StallCase):
+    """0.8.1: `sessions --json` runs a fixed number of git processes per module, not a few per user answer.
+
+    Rehearsal stage C: 7 modules took 136 git processes; at load average 91 the decision inbox's 15 s limit ran out."""
+
+    def test_calls_do_not_grow_with_answers(self):
+        import subprocess
+        from unittest import mock
+        for k in range(6):
+            n = review.add(self.db, self.spec_review("b"), "shop-b", 9100 + k).number
+            review.answer(self.db, n, f"改第 {k} 次")
+        real = subprocess.run
+        calls = []
+        with mock.patch("subprocess.run", side_effect=lambda *a, **kw: calls.append(a[0]) or real(*a, **kw)):
+            row = self.rows()["b"]
+        git = [c for c in calls if c and c[0] == "git"]
+        self.assertEqual(len(row["answers"]), 6)
+        per_module = len(git) / 2                         # modules b and c
+        self.assertLessEqual(per_module, 6, git)          # was 4 + 4 per answer for b
+
+
 class HumanTextTest(StallCase):
     def test_sessions_text(self):
         plan = review.add(self.db, self.plan_review("b"), "shop-b", 7201).number

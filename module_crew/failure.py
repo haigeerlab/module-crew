@@ -140,6 +140,7 @@ def sessions(db: store.Store, now: datetime | None = None) -> list[dict]:
     items = store.records(db, "item")
     tickets = store.records(db, "ticket")
     from module_crew import review, stall
+    stall.forget()
     nearby = review.progress(db)
     integration = (store.get(db, "config", "main") or {}).get("integrationBranch")
     rows = []

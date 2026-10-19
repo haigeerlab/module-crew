@@ -40,3 +40,11 @@
 用户 2026-10-19 在最终验收时表示不做外部审查。
 
 - [x] R21 MC-3 验收（2026-10-19 用户批准；全量 415 个测试通过）
+
+- [x] Task 4（0.8.1，接入协调 2026-10-20 报 `sessions --json` 超过 decision-inbox 的 15 秒上限，用户同意先修再装）：同一次 `sessions` 里同一条 git 查询只问一次；
+  每个模块的首父链只读一次，答复前后 todo 的勾选数按时间在 Python 里挑提交，所有要读的 todo 用一个 `git cat-file --batch` 读完；`commit_facts` 用一条 `git log` 同时拿提交和时间。输出不变
+  - 验收：crew-rehearsal 真实数据改前改后输出逐项一致（7 个模块、27 个答复；`ago` 随时间变化除外）；git 进程 137 → 36，同负载下 3.07 s → 0.92 s；新测试卡住每模块 git 进程不随答复数增长（≤6）
+  - 文件：`module_crew/stall.py`、`module_crew/failure.py`、`tests/test_stall_signals.py`、`README.md`、三处版本号
+
+
+- [ ] Task 4 验收（0.8.1）
