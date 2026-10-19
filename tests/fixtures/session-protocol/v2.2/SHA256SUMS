@@ -150,6 +150,12 @@ cd44d9198ef77d2b6579d5923689de1bd22ac9c8d07639907db86ddd5ccb575d  ./wait-user/de
 b8c341b0e61dd1144dc9479e96b83e1b514f0f197d7e2abf842c190a3969d421  ./wait-user/decision-duplicate.txt
 05439ac99f823dcd5717ccf2691389446e2a3d4b24c0e8d2515785ffd2dd094f  ./wait-user/decisions.json
 43be516640a0d070cf5cd62a1b22d15d8cc7abe60d775c44a578ccfca8f39696  ./wait-user/decisions.txt
+5c22444a27302f8e90ca100acbfdd5b0ae2c53811b45b0d81eb0e80cfdfffe47  ./wait-user/go-to-session-codex.json
+acda6bab4d45d4bdc09e14032fc0030e26f8d6a860c029f7ef3321ee783899e1  ./wait-user/go-to-session-codex.txt
+7a79e457655cc76f5c890baecb5a135b890ddd3befffb66a496169f634b20977  ./wait-user/go-to-session-missing-field.json
+407e9899d02d262c24a726f86d6736b3485e2d1d3966ef7929e0b9e67fbc1597  ./wait-user/go-to-session-missing-field.txt
+c8c5a6a0bdf3233dad2fb6040b7208f46826a7520861f1b9730596de86ce94d1  ./wait-user/go-to-session.json
+808e1f48a8c162d7ad3a08738b3f674c273f1490e59e6377b76fab69b996c01f  ./wait-user/go-to-session.txt
 04b5c9e7b79936789a45db1379d8eeafdc451a72d99bb65252a5c3a1c14406b4  ./wait-user/missing-end.json
 34cd84f11e3e9812a4a00b38918fe57fd523cdb5d0a4fc0e27b71bc30f4affc4  ./wait-user/missing-end.txt
 accc9844fbe7296f5f42d10a587bc281ab7a4518b8c0d2dee2fdd64683d4aa90  ./wait-user/missing-field.json
@@ -184,5 +190,7 @@ d0de8b744b8ff65c6fe6187331f903620eb2772dbe014bd4578d04e8b5820590  ./wait-user/sc
 9e21d6d0824e98ef1738fa423e7d2e125c52867cf3f313624f5f5142754e7ecb  ./wait-user/scope-unknown.txt
 f6fc94342abab5a406fc233c82e4860499046168e41b2eddad24211cf0d93ae0  ./wait-user/supersede.json
 c6ecb22f2795db31eacfa6f079f7fc68978799eddad9fe37283a84c95353ed6e  ./wait-user/supersede.txt
+1216c84f3168b5cddeced873b5384f570edacfa8628fe7ad5d959a659d680550  ./wait-user/wait-kind-bad.json
+081c3a202b5ad0fe854cf827b1909b6a138677a82da8fdf6d81c9fd556be6b13  ./wait-user/wait-kind-bad.txt
 6ea1adeda3f3f48475b9df87060b3b3d511523bd2632f2da52bea7c079a93e91  ./withdraw/basic.json
 0dd56b3af3fdc320f0fffc86046ae993c9aaf2690070527240a63dd9ed533f6d  ./withdraw/basic.txt

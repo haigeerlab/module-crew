@@ -1,4 +1,4 @@
-"""Parse and render session-protocol v2.1 messages (see spec/crew-protocol.md).
+"""Parse and render session-protocol v2.2 messages (see spec/crew-protocol.md).
 
 Pure functions only: no file, git or agent-relay access. Field names, tags and
 problem codes follow the contract text in session-protocol PROTOCOL.md.
@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-CONTRACT_VERSION = "2.1"
+CONTRACT_VERSION = "2.2"
 
 KIND_TAGS = {
     "等待用户": "wait-user",
@@ -32,7 +32,8 @@ UNSUPPORTED = ("answer-notice",)
 # Field names each kind knows (contract section 3).
 FIELDS = {
     "wait-user": ("来自", "项目", "要你决定", "要点", "产物", "交审原文", "审查原文", "待用户决定", "架构审查",
-                  "选项与我的建议", "你该回", "是否完全停住", "适用会话", "各线范围"),
+                  "选项与我的建议", "你该回", "是否完全停住", "适用会话", "各线范围",
+                  "类型", "会话", "链接", "被拦的操作", "宿主原文", "点哪个按钮", "为什么批不了", "关联事项"),
     "user-reply": ("事项", "转自", "用户原话", "选项原文", "适用于你的范围", "答复时间", "转交范围", "原事项全文"),
     "owner-handoff": ("事项", "来自", "用户原话", "答复时间", "转交范围"),
     "wait-session": ("在等谁", "等什么"),
@@ -480,6 +481,7 @@ def parse(text: str) -> Message:
                  "fullyStopped": stopped, "linesInScope": in_scope, "scopes": scopes,
                  "reviewLine": _review_line(fields.get("架构审查")), "artifacts": artifacts,
                  "originals": {"submission": sub_rows, "conclusion": rev_rows}}
+        _go_to_session(fields, problems, extra)
         if "待用户决定" in fields:
             extra["decisions"] = _decisions(fields["待用户决定"], problems)
     elif kind == "review-request":
@@ -684,3 +686,26 @@ def render_coordination_notice(kind: str, basis: str, todo: str, reason: str | N
                      + [f"要你做什么：{todo}"]) + "\n"
     expected = {"依据": basis, "要你做什么": todo, **({"原因": reason} if kind == "suspend" else {})}
     return _self_check(text, "coordination-notice", expected)
+
+
+GO_TO_SESSION_REQUIRED = ("会话", "被拦的操作", "点哪个按钮", "为什么批不了")
+
+
+def _go_to_session(fields: dict, problems: list[str], extra: dict) -> None:
+    """v2.2: 「类型：去会话操作」 marks a 【等待用户】 the user settles by clicking in another session, not by replying."""
+    raw = fields.get("类型")
+    kind = None
+    if raw is not None:
+        if raw.strip() == "去会话操作":
+            kind = "go-to-session"
+        else:
+            problems.append("bad-wait-kind")
+    extra["waitKind"] = kind
+    if kind is None:
+        return
+    problems += [f"missing-field:{name}" for name in GO_TO_SESSION_REQUIRED if not fields.get(name, "").strip()]
+    value = lambda name: fields.get(name, "").strip() or None
+    related = re.match(r"^#\s*(\d+)$", value("关联事项") or "")
+    extra["goToSession"] = {"session": value("会话"), "blockedAction": value("被拦的操作"), "button": value("点哪个按钮"),
+                            "reason": value("为什么批不了"), "hostText": value("宿主原文"), "link": value("链接"),
+                            "relatedItem": int(related.group(1)) if related else None}

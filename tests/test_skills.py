@@ -268,5 +268,6 @@ class R21WordsTest(unittest.TestCase):
                 self.assertIn(words, text)
         for text in (read("crew-dev")[1], codex):
             self.assertIn("不要一次次讨小许可", text)
-            self.assertIn("被拦的操作原文", text)
+            for words in ("类型：去会话操作", "被拦的操作：", "点哪个按钮：", "推荐 A：我去点"):
+                self.assertIn(words, text)
         self.assertIn("没有决策收件箱就在本会话直接告诉用户", read("crew-coordinator")[1])

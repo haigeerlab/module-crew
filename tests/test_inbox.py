@@ -245,3 +245,43 @@ class WaitRecordRefTest(TicketTest):
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertIn(f"已关等待记录 W{n}", res.stdout)
         self.assertEqual(self.ticket(n)["state"], "closed")
+
+
+GO = """【等待用户】
+结束：无
+来自：a
+要你决定：去 Claude 会话「shop-a」点「允许（Yes）」
+要点：shop-a 要装依赖，宿主弹窗在等你确认
+类型：去会话操作
+会话：shop-a
+被拦的操作：Bash: pnpm add zod
+点哪个按钮：允许（Yes）
+为什么批不了：宿主弹窗只能在那个会话里点
+选项与我的建议：
+推荐 A：我去点（点完不用回复，发起方会自己结项）
+  选了会怎样：shop-a 继续
+是否完全停住：是
+"""
+
+
+class GoToSessionTest(InboxCase):
+    """R21 MC-2 contract part: 「类型：去会话操作」 (session-protocol v2.2)."""
+
+    def test_recorded_and_does_not_replace_an_open_question(self):
+        q = self.add(wait_user(decide="先做哪个"), relay_id=9001).number
+        out = self.add(GO, relay_id=9002)
+        self.assertEqual(out.code, 0, out.lines)
+        rec = store.get(self.db, "item", str(out.number))
+        self.assertEqual((rec["kind"], rec["waitKind"], rec["state"]), ("wait-user", "go-to-session", "open"))
+        self.assertEqual(rec["goToSession"]["blockedAction"], "Bash: pnpm add zod")
+        self.assertEqual(store.get(self.db, "item", str(q))["state"], "open")
+        self.assertTrue(any("去会话操作" in line and "不用等答复" in line for line in out.lines))
+        again = self.add(wait_user(decide="另一个问题"), relay_id=9003)
+        self.assertEqual(store.get(self.db, "item", str(out.number))["state"], "open")
+        self.assertEqual(store.get(self.db, "item", str(q))["closedReason"], "superseded")
+        self.assertEqual(again.code, 0)
+
+    def test_missing_required_field_is_refused(self):
+        out = self.add(GO.replace("被拦的操作：Bash: pnpm add zod\n", ""), relay_id=9010)
+        self.assertEqual(out.code, 3)
+        self.assertIn("missing-field:被拦的操作", " ".join(out.lines))

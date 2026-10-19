@@ -37,6 +37,6 @@
   - 验收：Spec 验收 14（措辞部分）
   - 文件：三份 SKILL.md、`tests/test_skills.py`
 
-- [ ] Task（R21 MC-2 契约部分，等 SP-1）：契约发布「类型：去会话操作」后钉新契约版本，`inbox add` 认这个类型并原样转决策收件箱
+- [x] Task（R21 MC-2 契约部分，钉 v2.2）：契约发布「类型：去会话操作」后钉新契约版本，`inbox add` 认这个类型并原样转决策收件箱
   - 验收：Spec 验收 14（契约部分）
   - 文件：`module_crew/protocol.py`、`tests/fixtures/session-protocol/`、`module_crew/inbox.py`

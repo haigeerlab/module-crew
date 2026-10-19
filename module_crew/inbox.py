@@ -126,9 +126,12 @@ def _wait_user(tx, msg: protocol.Message, text: str, sender: str, relay_id: int,
                 out.unmatched.append(n)
     else:
         keep = {_find(items, sender, n) for n in parallel}
+        go = doc.get("waitKind") == "go-to-session"
         for key, rec in sorted(items.items(), key=lambda kv: int(kv[0])):
+            # a go-to-session request (v2.2) and an ordinary question never replace each other
             if (rec.get("from") == sender and rec.get("state") == "open" and rec.get("kind") == "wait-user"
-                    and rec.get("multiline") == multiline and key not in keep):
+                    and rec.get("multiline") == multiline and key not in keep and not go
+                    and rec.get("waitKind") != "go-to-session"):
                 _close_item(tx, key, "superseded", relay_id, out)
                 out.tell_sender.append(f"#{key} 已被新事项自动取代；确实要两项都答，请写【与 #{key} 并行】重发")
     n = tx.allocate_number()
@@ -138,9 +141,14 @@ def _wait_user(tx, msg: protocol.Message, text: str, sender: str, relay_id: int,
         "options": [{"letter": o["letter"], "text": o["text"]} for o in doc["options"]],
         "recommended": doc["recommended"], "fullyStopped": doc["fullyStopped"],
         "multiline": multiline, "closedReason": None, "answer": None,
+        "waitKind": doc.get("waitKind"), "goToSession": doc.get("goToSession"),
     }, action="created", data={"relayId": relay_id})
     out.number = n
     out.lines.append(f"已记为事项 C{n}")
+    if doc.get("waitKind") == "go-to-session":
+        g = doc["goToSession"]
+        out.lines.append(f"这是去会话操作（契约 v2.2）：不用等答复。有决策收件箱就原样转给它；没有就直接告诉用户去「{g['session']}」"
+                         f"点「{g['button']}」（被拦的操作：{g['blockedAction']}；{g['reason']}）。用户点完后由模块会话发已结项（契约标签【已恢复】）")
 
 
 class AnswerRefused(Exception):
