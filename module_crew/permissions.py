@@ -27,6 +27,10 @@ ROUTINE = ["git add", "git commit", "git status", "git diff", "git log", "git sh
 IRREVERSIBLE = ["git push", "rm -rf", "git reset --hard", "git branch -D", "git worktree remove", "git config --global",
                 "npm install -g", "pnpm add -g", "pip install", "brew install"]
 PIPED = ["curl * | sh", "curl * | bash"]          # Claude only: not expressible as a Codex prefix rule
+# R21 MC-1: installing into the project is routine work inside an approved Plan; installing globally is not.
+# Permission rules only see the shape of a command, so "only what the Plan lists" is the skills' and reviews' job.
+PROJECT_INSTALL = ["npm install", "npm ci", "pnpm install", "pnpm add", "yarn add", "uv add", "uv sync",
+                   ".venv/bin/pip install"]
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
@@ -35,7 +39,8 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
 
 def claude_entries(cfg: dict) -> dict[str, list[str]]:
     """The fixed allow/deny lists (key decision 1); the check command is allowed as written, nothing wider."""
-    allow = [f"Bash({CREW_BIN} *)"] + [f"Bash({c} *)" for c in ROUTINE] + ["mcp__agent-relay"]
+    allow = ([f"Bash({CREW_BIN} *)"] + [f"Bash({c} *)" for c in ROUTINE] + ["mcp__agent-relay"]
+             + [rule for c in PROJECT_INSTALL for rule in (f"Bash({c} *)", f"Bash({c})")])
     if cfg.get("checkCommand"):
         allow += [f"Bash({cfg['checkCommand']})", f"Bash({cfg['checkCommand']} *)"]
     deny = [f"Bash({c} *)" for c in IRREVERSIBLE] + ["Bash(git push)"] + [f"Bash({c})" for c in PIPED]
@@ -188,7 +193,7 @@ def render_plan(p: dict) -> list[str]:
 def codex_rules(cfg: dict) -> list[dict]:
     """Codex prefix rules matching the Claude lists (key decision 3)."""
     rules = [{"pattern": [CREW_BIN], "decision": "allow", "match": [f"{CREW_BIN} status"]}]
-    rules += [{"pattern": c.split(), "decision": "allow", "match": [c]} for c in ROUTINE]
+    rules += [{"pattern": c.split(), "decision": "allow", "match": [c]} for c in ROUTINE + PROJECT_INSTALL]
     if cfg.get("checkCommand"):
         tokens = shlex.split(cfg["checkCommand"])
         rules.append({"pattern": tokens, "decision": "allow", "match": [cfg["checkCommand"]]})

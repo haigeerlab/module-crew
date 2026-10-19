@@ -168,7 +168,7 @@ python3 -m unittest discover -s tests -v
 
 ## 权限预配
 
-由别的会话代开的会话里，宿主的 ask 规则实测不弹确认就执行了，所以不可逆操作不能只靠权限弹窗。module-crew 把第 44 条范围内的常规操作写成宿主认的放行规则，把推送、删除、联网安装、改全局配置写成禁止，再用 git 的 pre-push 钩子守住推送：
+由别的会话代开的会话里，宿主的 ask 规则实测不弹确认就执行了，所以不可逆操作不能只靠权限弹窗。module-crew 把第 44 条范围内的常规操作（含项目内安装依赖：`npm install`、`pnpm add`、`uv add`、`.venv/bin/pip install` 等）写成宿主认的放行规则，把推送、删除、全局安装（`npm install -g`、`pnpm add -g`、`brew install`、裸 `pip install`）、改全局配置写成禁止；「只装 Plan 列出的依赖」由 skill 与最终验收把关，权限规则只看命令形状，再用 git 的 pre-push 钩子守住推送：
 
 1. `module-crew permissions plan`：只读预览每个 checkout（集成 checkout 与各模块 worktree）要追加什么、文件有没有被 git 忽略、钩子能不能装、Codex 项目是否受信任。
 2. `module-crew permissions apply --original-file <用户原话>`：Claude 写 `.claude/settings.local.json`（只追加条目），Codex 模块写 `.codex/rules/module-crew.rules`；有一个文件不能写就全部不写。之后 `start prepare` 新开的模块自动跟随。

@@ -34,6 +34,6 @@
 
 - [x] Task 7（追加）：`remove` 后文件逐字还原——apply 记下原文件全文，remove 去掉追加条目后与原文件一致就写回原文，不再留下 module-crew 建的空 `deny`／`allow`／`permissions`（Spec 验收 9 范围内的修复；来源：接入方案会话实测 remove 后的观察，2026-10-19）
 
-- [ ] Task 8（0.5.0，R21 MC-1）：项目内安装依赖放行、全局安装仍禁止，Codex 规则同步；execpolicy 实测同时命中取 forbidden
+- [x] Task 8（0.5.0，R21 MC-1）：项目内安装依赖放行、全局安装仍禁止，Codex 规则同步；execpolicy 实测同时命中取 forbidden
   - 验收：Spec 验收 13
   - 文件：`module_crew/permissions.py`、`tests/test_permissions.py`、`README.md`

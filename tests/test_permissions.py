@@ -234,6 +234,39 @@ class FollowAndVerifyTest(PermCase):
         self.assertEqual(self.run_cli("permissions", "verify", "--record", "shop-b").returncode, 3)
 
 
+class ProjectInstallTest(PermCase):
+    """R21 MC-1 (acceptance 13): project-local installs allowed, global installs still denied."""
+
+    def test_claude_lists(self):
+        entries = permissions.claude_entries({})
+        for cmd in ("npm install", "npm ci", "pnpm install", "pnpm add", "yarn add", "uv add", "uv sync", ".venv/bin/pip install"):
+            self.assertIn(f"Bash({cmd} *)", entries["allow"])
+        for cmd in ("npm install -g", "pnpm add -g", "brew install", "pip install"):
+            self.assertIn(f"Bash({cmd} *)", entries["deny"])
+        self.assertNotIn("Bash(pip install *)", entries["allow"])
+
+    def test_plan_preview_shows_both(self):
+        target = next(t for t in permissions.plan(self.repo)["targets"] if t["role"] == "integration")
+        self.assertIn("Bash(pnpm add *)", target["allow"])
+        self.assertIn("Bash(npm install -g *)", target["deny"])
+
+    @unittest.skipUnless(__import__("shutil").which("codex"), "本机没有 codex 命令")
+    def test_codex_forbidden_wins_over_allow(self):
+        import subprocess, tempfile
+        rules = permissions.render_codex(permissions.codex_rules({}))
+        with tempfile.NamedTemporaryFile("w", suffix=".rules", delete=False) as f:
+            f.write(rules)
+        def decide(cmd):
+            out = subprocess.run(["codex", "execpolicy", "check", "--rules", f.name, *cmd.split()],
+                                 capture_output=True, text=True, stdin=subprocess.DEVNULL)
+            return json.loads(out.stdout).get("decision")
+        self.assertEqual(decide("npm install lodash"), "allow")
+        self.assertEqual(decide("pnpm add zod"), "allow")
+        self.assertEqual(decide("npm install -g lodash"), "forbidden")
+        self.assertEqual(decide("pip install requests"), "forbidden")
+        self.assertEqual(decide(".venv/bin/pip install requests"), "allow")
+
+
 class CodexStaticTest(PermCase):
     @unittest.skipUnless(__import__("shutil").which("codex"), "本机没有 codex 命令")
     def test_execpolicy_check_on_the_written_rules(self):
