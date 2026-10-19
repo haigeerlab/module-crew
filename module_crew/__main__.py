@@ -637,6 +637,7 @@ def main(argv: list[str] | None = None) -> int:
         pg.add_argument("--original")
         pg.add_argument("--original-file")
     sub.add_parser("host-check", help="在模块 worktree 里预检宿主能否完成工作（Codex 必跑）").add_argument("--json", action="store_true")
+    sub.add_parser("sync", help="在模块 worktree 里把集成分支合进模块分支（本模块 Spec、tasks 冲突取集成分支版本）")
     sub.add_parser("resume-kit", help="生成换会话恢复说明").add_argument("module")
     se = sub.add_parser("serial", help="退回串行／恢复并行")
     se.add_argument("--off", action="store_true")
@@ -725,6 +726,11 @@ def _run(args) -> int:
             return 2
     if args.group == "permissions":
         return _permissions(args)
+    if args.group == "sync":
+        from module_crew import sync
+        res = sync.run(".")
+        print("\n".join(res.lines), file=sys.stderr if res.code == 3 else sys.stdout)
+        return res.code
     if args.group == "host-check":
         from module_crew import hostcheck
         rep = hostcheck.run(".")
