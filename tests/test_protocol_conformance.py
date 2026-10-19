@@ -10,7 +10,10 @@ from pathlib import Path
 
 from module_crew import protocol
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "session-protocol" / "v2.2"
+ROOT = Path(__file__).resolve().parent / "fixtures" / "session-protocol"
+FIXTURES = ROOT / "v2.3"
+# Every pinned contract version runs against the current parser (contracts only add): commit, parse count, generate count.
+PINNED = {"v2.2": ("f5bc04e", 97, 3), "v2.3": ("6b8810e", 101, 3)}
 
 # Types this plugin parses / generates (spec 假设 2、3). Everything else is skipped and listed.
 PARSED = {"hub-receipt", "review-conclusion", "review-request", "shared-change-request", "coordination-notice", "wait-user", "wait-session", "resumed", "withdraw", "user-reply", "owner-handoff", "unknown"}
@@ -39,8 +42,8 @@ def verify_sums(root: Path) -> list[str]:
     return problems
 
 
-def cases():
-    for exp in sorted(FIXTURES.glob("*/*.json")):
+def cases(root: Path = FIXTURES):
+    for exp in sorted(root.glob("*/*.json")):
         yield exp.parent.name + "/" + exp.stem, exp.with_suffix(".txt"), json.loads(exp.read_text())
 
 
@@ -55,12 +58,14 @@ def diff(expected, actual, path="parse"):
 
 class FingerprintTest(unittest.TestCase):
     def test_pinned_fixtures_match_sums(self):
-        self.assertEqual(verify_sums(FIXTURES), [])
-        self.assertIn("commit: f5bc04e", (FIXTURES / "SOURCE").read_text())
+        for version, (commit, _, _) in PINNED.items():
+            with self.subTest(version):
+                self.assertEqual(verify_sums(ROOT / version), [])
+                self.assertIn(f"commit: {commit}", (ROOT / version / "SOURCE").read_text())
 
     def test_one_changed_byte_is_caught(self):
         with tempfile.TemporaryDirectory() as tmp:
-            copy = Path(tmp) / "v2.2"
+            copy = Path(tmp) / "v2.3"
             shutil.copytree(FIXTURES, copy)
             target = copy / "withdraw" / "basic.txt"
             data = bytearray(target.read_bytes())
@@ -71,8 +76,13 @@ class FingerprintTest(unittest.TestCase):
 
 class ConformanceTest(unittest.TestCase):
     def test_parse_fixtures(self):
+        for version, (_, count, _) in PINNED.items():
+            with self.subTest(version):
+                self.assertEqual(self.check_parse(ROOT / version), count)
+
+    def check_parse(self, root: Path) -> int:
         skipped, checked = [], 0
-        for name, txt, doc in cases():
+        for name, txt, doc in cases(root):
             if "parse" not in doc:
                 continue
             kind = doc["parse"]["type"]
@@ -87,14 +97,19 @@ class ConformanceTest(unittest.TestCase):
                 actual = protocol.parse(txt.read_text(encoding="utf-8")).contract()
                 problems = diff(doc["parse"], actual)
                 self.assertEqual(problems, [], "\n".join(problems))
-        print(f"\n  parse checked: {checked}; skipped: {', '.join(skipped) or 'none'}", file=sys.stderr)
-        self.assertEqual(checked, 97)   # contract v2.2: 93 + 4 go-to-session samples (R21 MC-2)
+        print(f"\n  {root.name} parse checked: {checked}; skipped: {', '.join(skipped) or 'none'}", file=sys.stderr)
+        return checked   # v2.2: 93 + 4 go-to-session samples (R21 MC-2); v2.3: + 4 card samples
 
 
 class GenerateConformanceTest(unittest.TestCase):
     def test_generate_fixtures(self):
+        for version, (_, _, count) in PINNED.items():
+            with self.subTest(version):
+                self.assertEqual(self.check_generate(ROOT / version), count)
+
+    def check_generate(self, root: Path) -> int:
         skipped, checked = [], 0
-        for name, txt, doc in cases():
+        for name, txt, doc in cases(root):
             gen = doc.get("generate")
             if gen is None:
                 continue
@@ -107,8 +122,8 @@ class GenerateConformanceTest(unittest.TestCase):
                 out = protocol.render_user_reply(item=i["item"], original=i["original"], answered_at=i["answeredAt"],
                                                  option_text=i["optionText"], source_relay_id=i["sourceRelayId"])
                 self.assertEqual(out, txt.read_text(encoding="utf-8"))
-        print(f"\n  generate checked: {checked}; skipped: {', '.join(skipped)}", file=sys.stderr)
-        self.assertEqual(checked, 3)
+        print(f"\n  {root.name} generate checked: {checked}; skipped: {', '.join(skipped)}", file=sys.stderr)
+        return checked
 
 
 class UnsupportedKindsTest(unittest.TestCase):

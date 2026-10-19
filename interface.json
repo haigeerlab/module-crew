@@ -2,7 +2,7 @@
   "interface": "1.0",
   "plugin": "module-crew",
   "version": "0.6.0",
-  "contract": "2.2",
+  "contract": "2.3",
   "sessions": {
     "command": [
       "bin/module-crew",

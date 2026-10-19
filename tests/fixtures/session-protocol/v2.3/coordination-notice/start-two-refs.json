@@ -1,0 +1,43 @@
+{
+  "parse": {
+    "type": "coordination-notice",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "类型": "开工",
+      "依据": "#41（交审 C15）",
+      "要你做什么": "在本 worktree 按 tasks/alpha/plan.md 开始构建"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "notice": {
+      "kind": "start",
+      "refs": [
+        41
+      ],
+      "localRefs": [
+        "C15"
+      ]
+    }
+  }
+}

@@ -1,4 +1,4 @@
-"""Parse and render session-protocol v2.2 messages (see spec/crew-protocol.md).
+"""Parse and render session-protocol v2.3 messages (see spec/crew-protocol.md).
 
 Pure functions only: no file, git or agent-relay access. Field names, tags and
 problem codes follow the contract text in session-protocol PROTOCOL.md.
@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-CONTRACT_VERSION = "2.2"
+CONTRACT_VERSION = "2.3"
 
 KIND_TAGS = {
     "等待用户": "wait-user",
@@ -33,7 +33,8 @@ UNSUPPORTED = ("answer-notice",)
 FIELDS = {
     "wait-user": ("来自", "项目", "要你决定", "要点", "产物", "交审原文", "审查原文", "待用户决定", "架构审查",
                   "选项与我的建议", "你该回", "是否完全停住", "适用会话", "各线范围",
-                  "类型", "会话", "链接", "被拦的操作", "宿主原文", "点哪个按钮", "为什么批不了", "关联事项"),
+                  "类型", "会话", "链接", "被拦的操作", "宿主原文", "点哪个按钮", "为什么批不了", "关联事项",
+                  "注意", "推荐理由", "批了会怎样"),
     "user-reply": ("事项", "转自", "用户原话", "选项原文", "适用于你的范围", "答复时间", "转交范围", "原事项全文"),
     "owner-handoff": ("事项", "来自", "用户原话", "答复时间", "转交范围"),
     "wait-session": ("在等谁", "等什么"),
@@ -691,17 +692,58 @@ def render_coordination_notice(kind: str, basis: str, todo: str, reason: str | N
 GO_TO_SESSION_REQUIRED = ("会话", "被拦的操作", "点哪个按钮", "为什么批不了")
 
 
+_SPEC_POINTS = ("目标", "做／不做", "要你确认的假设", "验收标准", "附带的小决定")
+_PLAN_POINTS = ("分几步", "会改哪些文件", "风险", "中途会停下来问你的地方")
+# v2.3: 「类型」 name → (code, the fixed 要点 items in order); 去会话操作 is v2.2's and has none.
+WAIT_KINDS = {
+    "去会话操作": ("go-to-session", ()),
+    "能力图审阅": ("capability-map", ("拆成哪些模块", "先后顺序", "文档建议")),
+    "Spec": ("spec", _SPEC_POINTS),
+    "Plan": ("plan", _PLAN_POINTS),
+    "Spec 与 Plan": ("spec-plan", _SPEC_POINTS + _PLAN_POINTS),
+    "中途检查点": ("checkpoint", ("做到哪了", "为什么停在这", "接下来要做的那一步")),
+    "最终验收": ("final", ("做了什么", "验收结果", "改了哪些文件", "Spec 中途改过吗")),
+    "接口提案": ("interface", _SPEC_POINTS + ("改了哪个接口", "哪些模块要跟着改")),
+    "卡住选做法": ("stuck", ("出了什么事",)),
+}
+WAIT_KIND_NAME = {code: name for name, (code, _) in WAIT_KINDS.items()}
+
+
+def _point_names(names: tuple[str, ...]) -> list[tuple[re.Pattern, str]]:
+    """「做／不做」 takes either slash width; every item takes either colon width."""
+    return [(re.compile("^" + re.escape(n).replace("／", "[／/]") + r"\s*[：:]\s?(.*)$"), n) for n in names]
+
+
+def _points(text: str, names: tuple[str, ...]) -> list[dict]:
+    """v2.3: this kind's fixed items in 要点, in writing order; a line that names none continues the previous item."""
+    pats, out = _point_names(names), []
+    for line in (text or "").splitlines():
+        hit = next(((m, n) for p, n in pats if (m := p.match(line))), None)
+        if hit:
+            out.append({"name": hit[1], "text": hit[0].group(1)})
+        elif out:
+            out[-1]["text"] += "\n" + line
+    for p in out:
+        p["text"] = p["text"].strip()
+    return out
+
+
 def _go_to_session(fields: dict, problems: list[str], extra: dict) -> None:
-    """v2.2: 「类型：去会话操作」 marks a 【等待用户】 the user settles by clicking in another session, not by replying."""
+    """v2.2 「类型：去会话操作」 marks a 【等待用户】 the user settles by clicking in another session, not by replying;
+    v2.3 adds the approval kinds, whose 要点 carries fixed items (`points`)."""
     raw = fields.get("类型")
     kind = None
+    extra["points"] = None
     if raw is not None:
-        if raw.strip() == "去会话操作":
-            kind = "go-to-session"
+        found = WAIT_KINDS.get(raw.strip())
+        if found:
+            kind = found[0]
+            if found[1]:
+                extra["points"] = _points(fields.get("要点", ""), found[1])
         else:
             problems.append("bad-wait-kind")
     extra["waitKind"] = kind
-    if kind is None:
+    if kind != "go-to-session":
         return
     problems += [f"missing-field:{name}" for name in GO_TO_SESSION_REQUIRED if not fields.get(name, "").strip()]
     value = lambda name: fields.get(name, "").strip() or None

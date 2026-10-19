@@ -1,6 +1,6 @@
 # Implementation Plan: crew-hub-card-fields
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-hub-card-fields.md`（用户 2026-10-19 批准，8 条假设照推荐）。任务清单：`tasks/crew-hub-card-fields/todo.md`。
 
