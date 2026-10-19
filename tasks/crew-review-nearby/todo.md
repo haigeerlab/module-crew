@@ -75,3 +75,4 @@
   - 验收：Spec 验收 15（修订后）
   - 文件：`module_crew/start.py`、`module_crew/__main__.py`、`module_crew/review.py`（不改读法，只核对）、`tests/test_review_nearby.py`
 
+- [x] Task 15 验收（2026-10-19 用户批准；全量 407 个测试通过；提交 9b5523a；随 0.4.1 冻结）
