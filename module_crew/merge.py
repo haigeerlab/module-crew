@@ -65,6 +65,12 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
     return Approved(approval, Reply(rec["from"], rec["relayId"], body, db.path / meta["path"]))
 
 
+def awaiting_final(tx) -> set[str]:
+    """Modules with an open final-acceptance submission: syncing now would void the approval they wait for (MC-10)."""
+    return {v.get("module") for v in tx.records("item").values()
+            if v.get("kind") == "review" and v.get("node") == "final" and v.get("state") == "open"}
+
+
 @dataclass(frozen=True)
 class Revoked(Reply):
     superseded_by: int | None = None          # the newer submission that keeps the old one closed (MC-6)
@@ -283,7 +289,7 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
                     basis=f"最终验收的合并批准事项 C{n}；已合入集成分支 {short}",
                     todo="停止在本 worktree 开发，等模块协调收回 worktree")
             busy = {v.get("module") for v in tx.records("item").values() if v.get("kind") == "merge-approval"
-                    and (v.get("state") == "open" or v.get("closedReason") == "merged")}
+                    and (v.get("state") == "open" or v.get("closedReason") == "merged")} | awaiting_final(tx)
             for name, s in sorted(tx.records("session").items()):
                 if (s.get("role") == "dev" and s.get("status") == "active" and name != rec["from"]
                         and s.get("module") not in busy and not s.get("suspended")):  # resume sends it later

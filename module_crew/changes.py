@@ -181,8 +181,12 @@ def land(project: str | os.PathLike, number: int, original: str | None = None) -
         tx.put("request", str(number), dict(rec, state="closed", closedReason="landed", commit=commit, answer=answer_rec),
                action="landed", data={"commit": commit})
         _close_ticket(tx, rec)
+        from module_crew import merge
+        waiting = merge.awaiting_final(tx)     # MC-10: they sync after their final acceptance is settled
         for name, sess in sorted(tx.records("session").items()):
             if sess.get("role") != "dev" or sess.get("status") != "active":
+                continue
+            if sess.get("module") in waiting and name != rec["from"]:
                 continue
             text = protocol.render_coordination_notice(kind="sync-baseline", basis=basis, todo=todo)
             reply_to = rec["relayId"] if name == rec["from"] else None

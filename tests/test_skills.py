@@ -103,6 +103,7 @@ class SkillsTest(unittest.TestCase):
                       "「合入集成分支」这一步写成 `module-crew sync`"):
             self.assertIn(words, section)
         self.assertNotIn("`git merge <集成分支>` 合进", section)
+        self.assertIn("改完、重新发最终验收【交审】之前，先单独执行一次 `module-crew sync`", text)
 
     def test_dev_rules(self):
         _, text = read("crew-dev")
