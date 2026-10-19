@@ -643,6 +643,18 @@ def _closing_send(tx, db: store.Store, sends: list[dict], modules: list[str]) ->
     body = tx.allocate_number()
     meta = tx.write_body(body, text)
     sends.append({"kind": "resumed", "to": src["name"], "replyTo": None, "body": body, "path": db.path / meta["path"]})
+    from module_crew import inbox
+    inbox.resume_own_waits(tx, db, sends, [f"#{src['item']}"])
+
+
+def closing_all(db: store.Store, recipients: list[str]) -> list[dict]:
+    """Every 【已恢复】 due after relaying the active source's answer (its item, then own wait records)."""
+    if not store.source_field():
+        return []
+    sends: list[dict] = []
+    with db.transaction(actor="coordinator") as tx:
+        _closing_send(tx, db, sends, list(dict.fromkeys(recipients)))
+    return sends
 
 
 def closing(db: store.Store, recipients: list[str]) -> dict | None:

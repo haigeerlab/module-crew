@@ -97,6 +97,9 @@ def _status(as_json: bool) -> int:
             perm_fact = ("　" + permissions.status_fact(perm, s["name"])) if s.get("role") == "dev" else ""
             print(f"  {s['name']}{extra}{_stall_facts(facts.get(s['name']))}{perm_fact}")
         print("  未关：" + "、".join(f"{_KIND_NAME[k]} {n}" for k, n in report.store["open"].items()))
+        own = inbox.own_waits(store.open_store())
+        if own:
+            print("  模块协调自开的等待记录：" + "、".join(f"W{n}（等 {r['about']}）" for n, r in own))
         for mod, r in review.progress(store.open_store()).items():
             print(f"  {mod} " + (f"返工中（审查第 {r['round']} 轮）" if r["state"] == "rework" else
                                  "审查中" + (f"（第 {r['round'] + 1} 轮）" if r["round"] else "")))
@@ -157,6 +160,9 @@ def _answer(number: int, original: str | None, original_file: str | None, option
     print(f"收件人：{reply.to}")
     print(f"replyTo：{reply.reply_to}")
     print(f"正文文件：{reply.path}")
+    src = store.source_field().get("source")
+    for x in inbox.resume_own_waits_now(store.open_store(), [f"C{number}"] + ([f"#{src['item']}"] if src else [])):
+        print(f"你开的等待记录 W{x['wait']} 等的事已发生：发送 【已恢复】 → {x['to']}，正文文件：{x['path']}")
     return 0
 
 
@@ -216,6 +222,9 @@ def _failure(args) -> int:
             print(json.dumps({"schemaVersion": failure.SESSIONS_SCHEMA, "sessions": rows}, ensure_ascii=False, indent=2))
         else:
             print("\n".join(failure.render_sessions(rows)))
+            own = inbox.own_waits(db)
+            if own:
+                print("模块协调自开的等待记录：" + "、".join(f"W{n}（等 {r['about']}，邮箱 #{r['relayId']} → {r['to']}）" for n, r in own))
         return 0
     if args.group == "resume-kit":
         kit = failure.resume_kit(db, args.module)
@@ -466,8 +475,7 @@ def _merge(args) -> int:
             print(f"收件人：{res.reply.to}")
             print(f"replyTo：{res.reply.reply_to}")
             print(f"正文文件：{res.reply.path}")
-        closing = merge.closing(store.open_store(), [r.reply.to for r in done]) if done else None
-        if closing:
+        for closing in (merge.closing_all(store.open_store(), [r.reply.to for r in done]) if done else []):
             print(f"发送 【已恢复】 → {closing['to']}，正文文件：{closing['path']}（这个事项涉及的模块都转完后再发）")
         return 0
     if args.action == "revoke":
@@ -611,6 +619,13 @@ def main(argv: list[str] | None = None) -> int:
     som = sos.add_parser("map")
     som.add_argument("ref", help="待决事项号 H，或 #module-crew 编号")
     som.add_argument("--json", action="store_true")
+    wt = sub.add_parser("wait", help="模块协调自己发出的【等待其他会话】")
+    wts = wt.add_subparsers(dest="action", required=True)
+    wta = wts.add_parser("add", help="发出后立刻记账；所等事项的答复转达时会给出要发的【已恢复】")
+    wta.add_argument("--file", required=True)
+    wta.add_argument("--to", required=True, help="收件会话名（邮箱名）")
+    wta.add_argument("--relay-id", type=int, required=True, help="发出那条消息的邮箱消息号")
+    wta.add_argument("--about", required=True, help="所等的事项：#N（决策收件箱）或 C<N>")
     tc = sub.add_parser("ticket", help="等待记录（W 编号）")
     tcs = tc.add_subparsers(dest="action", required=True)
     tcc = tcs.add_parser("close", help="模块协调关等待记录（所等的事已发生／你说关）")
@@ -805,6 +820,17 @@ def _run(args) -> int:
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 2
+    if args.group == "wait":
+        text = _read(args.file)
+        if text is None:
+            return 2
+        try:
+            n, again = inbox.add_own_wait(store.open_store(), text, args.to, args.relay_id, args.about)
+        except inbox.AnswerRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        print(f"{'已记过' if again else '已记为'}模块协调自开的等待记录 W{n}（等 {args.about}，邮箱 #{args.relay_id}）")
+        return 0
     if args.group == "ticket":
         original = _original(args.original, args.original_file)
         if original is None:

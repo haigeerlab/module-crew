@@ -3,9 +3,9 @@
 import hashlib
 import unittest
 
-from helpers import MergeCase
+from helpers import MergeCase, ReviewCase
 
-from module_crew import protocol, review, sources, store
+from module_crew import inbox, protocol, review, sources, store
 
 
 def conclusion(verdict="通过", extra="", ref="R-7", node="Spec", module="b"):
@@ -125,6 +125,62 @@ class ApprovalBookkeepingTest(MergeCase):
         out = self.run_cli("merge", "revoke", f"C{p}", "--original", "撤回旧批准")
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn(f"已被 C{b} 取代，不重开", out.stdout)
+
+
+WAIT = "【等待其他会话】\n结束：无\n在等谁：决策收件箱（live-saas-hub）\n等什么：#120 的【用户答复】转达\n"
+
+
+class OwnWaitTest(ReviewCase):
+    """Task 5: the coordinator's own 【等待其他会话】 is recorded and closed when what it waits for is answered (acceptance 10)."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        sources.add(self.db, "live-saas-hub", "hub", "登记收件枢纽")
+
+    def test_add_and_duplicate(self):
+        n, again = inbox.add_own_wait(self.db, WAIT, "live-saas-hub", 8738, "#120")
+        self.assertFalse(again)
+        rec = store.get(self.db, "ticket", str(n))
+        self.assertEqual((rec["state"], rec["own"], rec["to"], rec["about"], rec["relayId"]),
+                         ("open", True, "live-saas-hub", "#120", 8738))
+        self.assertEqual(inbox.add_own_wait(self.db, WAIT, "live-saas-hub", 8738, "#120"), (n, True))
+        self.assertEqual([k for k, _ in inbox.own_waits(self.db)], [n])
+        for bad in (("【已恢复】\n结束：#1\n好了\n", "#120"), (WAIT, "120"), (WAIT, "W3")):
+            with self.subTest(bad), self.assertRaises(inbox.AnswerRefused):
+                inbox.add_own_wait(self.db, bad[0], "live-saas-hub", 9000, bad[1])
+
+    def test_hub_answer_relay_resumes_own_wait(self):
+        from test_sources import hub_reply
+        n, _ = inbox.add_own_wait(self.db, WAIT, "live-saas-hub", 8738, "#120")
+        s = review.add(self.db, self.spec_review("b"), "shop-b", 4001).number
+        text = hub_reply(120, "批准")
+        with store.approval_source(sources.check(self.db, "live-saas-hub", 120, 6100, text, sender="live-saas-hub").source):
+            res = review.approve(self.repo, [s], "批准")
+        self.assertEqual(res.code, 0, res.lines)
+        resumed = [protocol.parse(x["path"].read_text(encoding="utf-8")) for x in res.sends if x["kind"] == "resumed"]
+        self.assertIn((8738,), [m.end.items for m in resumed])
+        self.assertTrue(all(m.ok for m in resumed))
+        self.assertEqual(store.get(self.db, "ticket", str(n))["state"], "closed")
+        self.assertEqual(inbox.own_waits(self.db), [])
+
+    def test_crew_item_answer_and_cli(self):
+        from helpers import wait_user
+        item = inbox.add(self.db, wait_user(), "shop-b", 5001).number
+        msg = self.tmp / "wait.txt"
+        msg.write_text(WAIT.replace("#120 的", f"C{item} 的"), encoding="utf-8")
+        out = self.run_cli("wait", "add", "--file", str(msg), "--to", "live-saas-hub", "--relay-id", "8800",
+                           "--about", f"C{item}")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("W", out.stdout)
+        self.assertIn("模块协调自开的等待记录：W", self.run_cli("sessions").stdout)
+        done = self.run_cli("answer", f"C{item}", "--original", "先做 b")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("发送 【已恢复】 → live-saas-hub", done.stdout)
+        line = next(x for x in done.stdout.splitlines() if "发送 【已恢复】" in x)
+        body = line.split("正文文件：", 1)[1].strip()
+        self.assertIn("结束：#8800", open(body, encoding="utf-8").read())
+        self.assertEqual(inbox.own_waits(self.db), [])
 
 
 if __name__ == "__main__":

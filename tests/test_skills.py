@@ -34,6 +34,12 @@ class SkillsTest(unittest.TestCase):
                 self.assertEqual(meta["name"], name)
                 self.assertTrue(meta["description"].strip())
 
+    def test_coordinator_own_wait_records(self):
+        _, text = read("crew-coordinator")
+        section = text.split("## 等待记录", 1)[1].split("\n## ", 1)[0]
+        for words in ("你自己发出的【等待其他会话】", "module-crew wait add", "--about <#N|C<N>>", "照发"):
+            self.assertIn(words, section)
+
     def test_coordinator_rules(self):
         _, text = read("crew-coordinator")
         for words in ("inbox add", "answer", "bodyFile", "等待审批", "不是批准", "亲手输入", "module-crew status",

@@ -17,7 +17,7 @@ from pathlib import Path
 
 from module_crew import commits, probe, protocol, store, sync
 from module_crew.inbox import AnswerRefused, Reply
-from module_crew.review import _reply_text, closing
+from module_crew.review import _reply_text, closing, closing_all
 
 DEFAULT_CHECK_TIMEOUT = 1800
 

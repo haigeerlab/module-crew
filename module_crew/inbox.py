@@ -6,6 +6,7 @@ record it in the store, and say what to send back.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -190,6 +191,56 @@ def answer(db: store.Store, number: int, original: str, option: str | None = Non
                               "answeredAt": answered_at, "body": body})
         tx.put("item", str(number), closed, action="answered", data={"body": body})
     return Reply(item["from"], item["relayId"], body, db.path / meta["path"])
+
+
+_ABOUT = re.compile(r"^(#\d+|C\d+)$")
+
+
+def add_own_wait(db: store.Store, text: str, to: str, relay_id: int, about: str) -> tuple[int, bool]:
+    """Record a 【等待其他会话】 the coordinator itself sent (MC-7); returns (W number, already recorded)."""
+    msg = protocol.parse(text)
+    if msg.kind != "wait-session" or not msg.ok:
+        raise AnswerRefused("不是合格的【等待其他会话】：" + ("、".join(msg.problems) or msg.kind))
+    about = (about or "").strip()
+    if not _ABOUT.match(about):
+        raise AnswerRefused(f"--about 只认 #N（决策收件箱事项）或 C<N>（module-crew 事项），收到：{about or '空'}")
+    with db.transaction(actor="coordinator") as tx:
+        for key, rec in tx.records("ticket").items():
+            if rec.get("own") and rec.get("relayId") == relay_id:
+                return int(key), True
+        n = tx.allocate_number()
+        tx.put("ticket", str(n), {
+            "state": "open", "own": True, "from": "coordinator", "to": to, "relayId": relay_id, "text": text,
+            "about": about, "waitingFor": msg.fields.get("在等谁", "").strip(), "what": msg.fields.get("等什么", ""),
+            "closedReason": None, "closedBy": None}, action="opened", data={"relayId": relay_id, "own": True})
+    return n, False
+
+
+def own_waits(db: store.Store) -> list[tuple[int, dict]]:
+    """The coordinator's own open wait records, oldest first."""
+    return sorted(((int(k), v) for k, v in store.records(db, "ticket").items()
+                   if v.get("own") and v.get("state") == "open"), key=lambda kv: kv[0])
+
+
+def resume_own_waits(tx, db: store.Store, sends: list[dict], about: list[str]) -> None:
+    """What an own wait record waited for was answered: close it and add the 【已恢复】 to send (结束：#<relayId>)."""
+    for key, rec in sorted(tx.records("ticket").items(), key=lambda kv: int(kv[0])):
+        if rec.get("own") and rec.get("state") == "open" and rec.get("about") in about:
+            text = protocol.render_resumed([rec["relayId"]], f"所等的 {rec['about']} 已答复，等待记录 {refs.wait(int(key))} 结项。")
+            body = tx.allocate_number()
+            meta = tx.write_body(body, text)
+            tx.put("ticket", key, dict(rec, state="closed", closedReason=3, closedBy="coordinator"), action="closed",
+                   data={"reason": 3, "about": rec["about"]})
+            sends.append({"kind": "resumed", "to": rec["to"], "replyTo": None, "body": body, "path": db.path / meta["path"],
+                          "wait": int(key)})
+
+
+def resume_own_waits_now(db: store.Store, about: list[str]) -> list[dict]:
+    sends: list[dict] = []
+    if any(rec.get("about") in about for _, rec in own_waits(db)):
+        with db.transaction(actor="coordinator") as tx:
+            resume_own_waits(tx, db, sends, about)
+    return sends
 
 
 TICKET_REASONS = {"happened": 3, "user": 4}  # contract section 11: 3 what was waited for happened, 4 the user closed it
