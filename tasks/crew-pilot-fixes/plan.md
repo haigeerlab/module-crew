@@ -1,6 +1,6 @@
 # Implementation Plan: crew-pilot-fixes
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-pilot-fixes.md`（用户 2026-10-19 批准）。任务清单：`tasks/crew-pilot-fixes/todo.md`。
 

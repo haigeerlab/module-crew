@@ -2,9 +2,9 @@
 
 > 依据 `tasks/crew-pilot-fixes/plan.md`。
 
-- [ ] Task 1：`module-crew sync`（Spec 验收 1～4）
-- [ ] Task 2：通知与 crew-dev skill 改写「跑 module-crew sync」（Spec 验收 5）
-- [ ] Checkpoint 1（report）：sync 与新措辞跑通，全量测试通过
+- [x] Task 1：`module-crew sync`（Spec 验收 1～4）——提交 aea9740；`tests/test_sync.py` 5 例通过
+- [x] Task 2：通知与 crew-dev skill 改写「跑 module-crew sync」（Spec 验收 5）——提交 61bc2cb；开工回归测试改用 sync 实跑 add/add 冲突
+- [x] Checkpoint 1（report）：sync 与新措辞跑通，全量测试通过（2026-10-19，428 个测试全过）
 - [ ] Task 3：`review show` 与通知里的审查原文行（Spec 验收 6、7）
 - [ ] Task 4：撤回不重开已取代交审、重交审作废合并批准（Spec 验收 8、9）
 - [ ] Task 5：`wait add` 与【已恢复】提示（Spec 验收 10）
