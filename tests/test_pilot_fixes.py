@@ -183,5 +183,45 @@ class OwnWaitTest(ReviewCase):
         self.assertEqual(inbox.own_waits(self.db), [])
 
 
+class PromptReminderTest(MergeCase):
+    """Task 6: commands that send to a module session end with a reminder to check for a permission prompt (acceptance 11)."""
+
+    REMIND = "发完核对"
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        sources.add(self.db, "arch", "lead", "登记审查会话")
+
+    def reminder(self, out) -> str:
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        lines = [x for x in out.stdout.splitlines() if self.REMIND in x]
+        self.assertEqual(len(lines), 1, out.stdout)
+        self.assertIn("去会话操作", lines[0])
+        return lines[0]
+
+    def test_start_rework_revoke_and_answer(self):
+        s = review.add(self.db, self.spec_review("b"), "shop-b", 1).number
+        p = review.add(self.db, self.plan_review("b"), "shop-b", 2).number
+        self.assertIn("shop-b", self.reminder(self.run_cli("review", "approve", f"C{s}", f"C{p}", "--original", "批")))
+        c = review.add(self.db, self.spec_review("c"), "shop-c", 3).number
+        note = self.tmp / "note.txt"
+        note.write_text(conclusion("有须修改项1条", CHANGES, module="c"), encoding="utf-8")
+        self.assertIn("shop-c", self.reminder(self.run_cli("review", "note", f"C{c}", "--from", "arch", "--file", str(note))))
+        approval = self.approve_final("b", 9)
+        self.assertIn("shop-b", self.reminder(self.run_cli("merge", "revoke", f"C{approval}", "--original", "撤回")))
+        from helpers import wait_user
+        item = inbox.add(self.db, wait_user(), "shop-c", 5001).number
+        self.assertIn("shop-c", self.reminder(self.run_cli("answer", f"C{item}", "--original", "先做 b")))
+
+    def test_no_reminder_without_module_recipient(self):
+        out = self.run_cli("review", "show", "C1")
+        self.assertNotIn(self.REMIND, out.stdout)
+        msg = self.tmp / "wait.txt"
+        msg.write_text(WAIT, encoding="utf-8")
+        out = self.run_cli("wait", "add", "--file", str(msg), "--to", "live-saas-hub", "--relay-id", "1", "--about", "#5")
+        self.assertNotIn(self.REMIND, out.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

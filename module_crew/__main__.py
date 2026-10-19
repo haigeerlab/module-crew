@@ -158,11 +158,13 @@ def _answer(number: int, original: str | None, original_file: str | None, option
         print(f"❌ {exc}", file=sys.stderr)
         return 3
     print(f"收件人：{reply.to}")
+    _sent(reply.to)
     print(f"replyTo：{reply.reply_to}")
     print(f"正文文件：{reply.path}")
     src = store.source_field().get("source")
     for x in inbox.resume_own_waits_now(store.open_store(), [f"C{number}"] + ([f"#{src['item']}"] if src else [])):
         print(f"你开的等待记录 W{x['wait']} 等的事已发生：发送 【已恢复】 → {x['to']}，正文文件：{x['path']}")
+        _sent(x['to'])
     return 0
 
 
@@ -246,6 +248,7 @@ def _failure(args) -> int:
             print(f"已取消挂起：{out.name}（重新占名额）")
         for x in out.sends:
             print(f"发送 【协调通知】 → {x['to']}：bridge_send bodyFile={x['path']}")
+            _sent(x['to'])
         return 0
     failure.set_mode(db, not args.off, original)
     print("已改回并行：可以再开新模块" if args.off
@@ -265,6 +268,7 @@ def _review(args) -> int:
             print(line)
         for x in out.sends:
             print(f"发送 【交审】 → {x['to']}（送审），正文文件：{x['path']}")
+            _sent(x['to'])
         return out.code
     if args.action == "show":
         try:
@@ -286,6 +290,7 @@ def _review(args) -> int:
             print(line)
         for x in res.sends:
             print(f"发送 【协调通知】（返工） → {x['to']}，正文文件：{x['path']}")
+            _sent(x['to'])
         if args.then_batch:
             wait = review.waiting(".")
             if wait:
@@ -353,6 +358,7 @@ def _review(args) -> int:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
         print(f"收件人：{reply.to}")
+        _sent(reply.to)
         print(f"replyTo：{reply.reply_to}")
         print(f"正文文件：{reply.path}")
         return 0
@@ -364,6 +370,7 @@ def _review(args) -> int:
         reply_to = f"，replyTo：{x['replyTo']}" if x["replyTo"] is not None else ""
         also = f"，alsoAnswers：{'、'.join(map(str, x['alsoAnswers']))}" if x.get("alsoAnswers") else ""
         print(f"发送 {kind} → {x['to']}{reply_to}{also}，正文文件：{x['path']}")
+        _sent(x['to'])
     return res.code
 
 
@@ -399,6 +406,7 @@ def _change(args) -> int:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
         print(f"收件人：{reply.to}")
+        _sent(reply.to)
         print(f"replyTo：{reply.reply_to}")
         print(f"正文文件：{reply.path}")
         return 0
@@ -410,6 +418,7 @@ def _change(args) -> int:
     for x in res.sends:
         reply_to = f"，replyTo：{x['replyTo']}" if x["replyTo"] is not None else ""
         print(f"发送 【协调通知】 → {x['to']}{reply_to}，正文文件：{x['path']}")
+        _sent(x['to'])
     return res.code
 
 
@@ -443,6 +452,7 @@ def _merge(args) -> int:
             print(line)
         for x in res.sends:
             print(f"发送 【协调通知】（{x['kind']}）→ {x['to']}，正文文件：{x['path']}")
+            _sent(x['to'])
         return res.code
     if args.action == "renotice":
         try:
@@ -451,6 +461,7 @@ def _merge(args) -> int:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
         print(f"发送 退回通知（{'检查环境出了问题' if args.kind == 'env' else '模块需要修改'}）→ {note.to}，正文文件：{note.path}")
+        _sent(note.to)
         return 0
     original = _original(args.original, args.original_file)
     if original is None:
@@ -464,6 +475,7 @@ def _merge(args) -> int:
             for n in split.back:
                 reply = review.answer(store.open_store(), n, original)
                 print(f"C{n} 按用户的答复退回（没有批准）：发送 【用户答复】 → {reply.to}，replyTo：{reply.reply_to}，正文文件：{reply.path}")
+                _sent(reply.to)
             for n in split.hold:
                 print(f"C{n} 等审查结论：保持未答，没有批准")
             done = merge.approve_many(store.open_store(), split.approve, original) if split.approve else []
@@ -473,10 +485,12 @@ def _merge(args) -> int:
         for res in done:
             print(f"合并批准事项 C{res.approval}，已排入本地合并队列")
             print(f"收件人：{res.reply.to}")
+            _sent(res.reply.to)
             print(f"replyTo：{res.reply.reply_to}")
             print(f"正文文件：{res.reply.path}")
         for closing in (merge.closing_all(store.open_store(), [r.reply.to for r in done]) if done else []):
             print(f"发送 【已恢复】 → {closing['to']}，正文文件：{closing['path']}（这个事项涉及的模块都转完后再发）")
+            _sent(closing['to'])
         return 0
     if args.action == "revoke":
         try:
@@ -489,6 +503,7 @@ def _merge(args) -> int:
         else:
             print(f"已撤回合并批准 C{args.number}；交审已被 C{note.superseded_by} 取代，不重开")
         print(f"发送 撤销批准通知 → {note.to}，正文文件：{note.path}")
+        _sent(note.to)
         return 0
     if args.action == "tick":
         try:
@@ -506,7 +521,35 @@ def _merge(args) -> int:
     return res.code
 
 
+_SENT: list[str] = []
+
+
+def _sent(to: str) -> None:
+    """Remember a recipient so main() can remind the coordinator to check it for a permission prompt (MC-8)."""
+    _SENT.append(to)
+
+
+def _remind() -> None:
+    try:
+        db = store.open_store()
+    except store.StoreError:
+        return
+    devs = [n for n in dict.fromkeys(_SENT)
+            if (store.get(db, "session", n) or {}).get("role") == "dev"]
+    if devs:
+        print(f"发完核对 {'、'.join(devs)} 是否停在权限弹窗：看 agent-relay 的会话状态或应用侧栏「需要用户」；"
+              "卡住就按「去会话操作」报给决策收件箱（没有收件箱就告诉用户去哪个会话点）")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _SENT.clear()
+    code = _main(argv)
+    if _SENT and "--json" not in (argv if argv is not None else sys.argv[1:]):
+        _remind()
+    return code
+
+
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="module-crew", description="module-crew 状态库")
     sub = parser.add_subparsers(dest="group")
     st = sub.add_parser("store", help="状态库")

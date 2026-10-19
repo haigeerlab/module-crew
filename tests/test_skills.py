@@ -40,6 +40,11 @@ class SkillsTest(unittest.TestCase):
         for words in ("你自己发出的【等待其他会话】", "module-crew wait add", "--about <#N|C<N>>", "照发"):
             self.assertIn(words, section)
 
+    def test_coordinator_checks_prompts_after_sending(self):
+        _, text = read("crew-coordinator")
+        for words in ("派活后主动查弹窗，不等别人提醒", "bridge_sessions", "发完核对", "去会话操作"):
+            self.assertIn(words, text)
+
     def test_coordinator_rules(self):
         _, text = read("crew-coordinator")
         for words in ("inbox add", "answer", "bodyFile", "等待审批", "不是批准", "亲手输入", "module-crew status",
