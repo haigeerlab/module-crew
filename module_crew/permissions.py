@@ -47,14 +47,21 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
 
 
-def claude_entries(cfg: dict) -> dict[str, list[str]]:
-    """The fixed allow/deny lists (key decision 1); the check command is allowed as written, nothing wider."""
+def claude_entries(cfg: dict, worktree: Path | None = None) -> dict[str, list[str]]:
+    """The fixed allow/deny lists (key decision 1); the check command is allowed as written, nothing wider.
+
+    A module worktree also gets its own files to edit (crew-stage-c-fixes MC-13), except its `.claude/`, so the
+    session cannot rewrite its permissions. `//` makes the path absolute in Claude Code's gitignore-style rules."""
     allow = ([f"Bash({CREW_BIN} *)"] + [f"Bash({c} *)" for c in ROUTINE] + ["mcp__agent-relay"]
              + [f"Bash({c})" for c in LOCKFILE_CLAUDE])
     if cfg.get("checkCommand"):
         allow += [f"Bash({cfg['checkCommand']})", f"Bash({cfg['checkCommand']} *)"]
     deny = ([f"Bash({c} *)" for c in IRREVERSIBLE] + ["Bash(git push)"] + [f"Bash({c})" for c in PIPED]
             + [f"Bash({c})" for c in GLOBAL_CLAUDE])
+    if worktree is not None:
+        root = "//" + str(worktree).lstrip("/")
+        allow.append(f"Edit({root}/**)")
+        deny.append(f"Edit({root}/.claude/**)")
     return {"allow": allow, "deny": deny}
 
 
@@ -143,7 +150,7 @@ def _target(t: dict, cfg: dict, project: Path) -> dict:
             out["problem"] = f"{existing} 已存在且不是 module-crew 写的，不覆盖"
     else:
         rel = CLAUDE_FILE
-        want = claude_entries(cfg)
+        want = claude_entries(cfg, checkout if t["role"] == "dev" else None)
         have, problem = _read_settings(checkout / rel)
         out["problem"] = problem
         perms = (have or {}).get("permissions") or {}

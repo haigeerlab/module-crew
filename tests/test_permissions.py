@@ -204,6 +204,38 @@ class CodexRulesTest(PermCase):
         self.assertNotIn("prefix_rule(", text)
 
 
+class WorktreeEditTest(PermCase):
+    """crew-stage-c-fixes Task 3 (MC-13): edits inside a module worktree are allowed, its .claude/ is not."""
+
+    def edit_rules(self, wt: Path) -> tuple[str, str]:
+        root = "//" + str(wt).lstrip("/")
+        return f"Edit({root}/**)", f"Edit({root}/.claude/**)"
+
+    def test_module_worktree_only(self):
+        allow, deny = self.edit_rules(self.wt["b"])
+        targets = {t["checkout"]: t for t in permissions.plan(self.repo)["targets"]}
+        self.assertIn(allow, targets[str(self.wt["b"])]["allow"])
+        self.assertIn(deny, targets[str(self.wt["b"])]["deny"])
+        self.assertFalse(any(e.startswith("Edit(") for e in targets[str(self.repo)]["allow"] + targets[str(self.repo)]["deny"]))
+        permissions.apply(self.repo, "预配")
+        doc = self.settings(self.wt["b"])["permissions"]
+        self.assertIn(allow, doc["allow"])
+        self.assertIn(deny, doc["deny"])
+        self.assertFalse(any(e.startswith("Edit(") for e in self.settings(self.repo)["permissions"]["allow"]))
+        permissions.remove(self.repo, "撤掉")
+        doc = self.settings(self.wt["b"]).get("permissions", {})
+        self.assertNotIn(allow, doc.get("allow", []))
+        self.assertNotIn(deny, doc.get("deny", []))
+
+    def test_prepare_follows(self):
+        permissions.apply(self.repo, "预配")
+        res = start.prepare(self.repo, ["d"], "开 d")
+        d = Path(res.prepared[0]["worktree"])
+        allow, deny = self.edit_rules(d)
+        self.assertIn(allow, self.settings(d)["permissions"]["allow"])
+        self.assertIn(deny, self.settings(d)["permissions"]["deny"])
+
+
 class FollowAndVerifyTest(PermCase):
     def test_prepare_follows_after_apply(self):
         permissions.apply(self.repo, "预配")
