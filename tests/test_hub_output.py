@@ -16,7 +16,7 @@ class HubCase(ReviewCase):
     def setUp(self):
         super().setUp()
         self.db = store.open_store(self.repo)
-        sources.add(self.db, "live-saas-arch-review", "lead", "登记审查会话")
+        sources.add(self.db, "live-saas-arch-review", "lead", "登记审查会话", scope=sources.ALL_SCOPE)
         self.spec = review.add(self.db, self.spec_review("b"), "shop-b", 4001).number
         self.plan = review.add(self.db, self.plan_review("b"), "shop-b", 4002).number
 

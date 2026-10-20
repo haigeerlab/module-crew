@@ -126,7 +126,7 @@ class NearbyCase(ReviewCase):
         super().setUp()
         self.db = store.open_store(self.repo)
         if self.with_lead:
-            sources.add(self.db, "arch", "lead", "登记审查会话")
+            sources.add(self.db, "arch", "lead", "登记审查会话", scope=sources.ALL_SCOPE)
 
     def state(self, n, minutes=0):
         rec = store.get(self.db, "item", str(n))
@@ -430,7 +430,7 @@ class DecisionTest(NearbyCase):
 class MergeDecisionTest(MergeCase):
     def test_merge_approve_checks_answers(self):
         db = store.open_store(self.repo)
-        sources.add(db, "arch", "lead", "登记审查会话")
+        sources.add(db, "arch", "lead", "登记审查会话", scope=sources.ALL_SCOPE)
         n = review.add(db, self.finish("b"), "shop-b", 8101).number
         with db.transaction(actor="t") as tx:
             rec = tx.get("item", str(n))

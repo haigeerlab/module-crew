@@ -13,6 +13,10 @@ from module_crew import protocol, store
 
 KINDS = ("hub", "lead")
 PROTOCOLS = ("2.2", "2.3", "2.4")       # session-protocol versions a decision inbox may speak (crew-hub-card-fields)
+NODES = ("spec", "plan", "interface", "final")       # review nodes a reviewer can be responsible for (crew-routing-fixes)
+ALL = "all"
+ALL_WORDS = ("all", "全部")
+ALL_SCOPE = {"modules": ALL, "nodes": ALL}
 
 
 class SourceRefused(Exception):
@@ -33,7 +37,54 @@ def _need(original: str | None) -> None:
         raise SourceRefused("用户原话不能为空：来源只能由用户在本会话亲手登记")
 
 
-def add(db: store.Store, name: str, kind: str, original: str, protocol: str | None = None) -> None:
+def parse_scope(modules: str | None, nodes: str | None) -> dict:
+    """A reviewer's responsibility from the command line: comma lists, or 全部／all spelled out."""
+    def one(raw: str | None, what: str, allowed: tuple[str, ...] | None) -> str | list[str]:
+        if raw is None or not raw.strip():
+            raise SourceRefused(f"审查者必须写负责的{what}（要全部也写「全部」）：问清用户再登记")
+        if raw.strip() in ALL_WORDS:
+            return ALL
+        items = [x.strip() for x in raw.replace("，", ",").split(",") if x.strip()]
+        bad = [x for x in items if allowed is not None and x not in allowed]
+        if bad:
+            raise SourceRefused(f"{what}只能是 {'／'.join(allowed)} 或「全部」，收到：{'、'.join(bad)}")
+        return sorted(dict.fromkeys(items))
+    return {"modules": one(modules, "模块", None), "nodes": one(nodes, "节点", NODES)}
+
+
+def _valid_scope(scope) -> bool:
+    return (isinstance(scope, dict)
+            and all(scope.get(k) == ALL or (isinstance(scope.get(k), list) and scope.get(k)) for k in ("modules", "nodes")))
+
+
+def covers(row: dict, module: str, node: str) -> bool:
+    """Whether a lead row's registered scope covers this module's node; a row without a scope covers nothing."""
+    scope = row.get("scope")
+    if not _valid_scope(scope):
+        return False
+    return all(scope[k] == ALL or v in scope[k] for k, v in (("modules", module), ("nodes", node)))
+
+
+def scope_text(scope) -> str:
+    if not _valid_scope(scope):
+        return "未登记负责范围"
+    show = lambda v: "全部" if v == ALL else "、".join(v)
+    return f"模块 {show(scope['modules'])} × 节点 {show(scope['nodes'])}"
+
+
+def _overlaps(a: dict, b: dict) -> bool:
+    return all(a[k] == ALL or b[k] == ALL or set(a[k]) & set(b[k]) for k in ("modules", "nodes"))
+
+
+def _overlap_lines(rows: list[dict], name: str, scope: dict) -> list[str]:
+    return [f"提示：{name} 的负责范围和 {r['name']}（{scope_text(r['scope'])}）重叠，重叠部分的交审两个都会收到"
+            for r in rows if r.get("kind") == "lead" and r.get("name") != name and _valid_scope(r.get("scope"))
+            and _overlaps(scope, r["scope"])]
+
+
+def add(db: store.Store, name: str, kind: str, original: str, protocol: str | None = None,
+        scope: dict | None = None) -> list[str]:
+    """Whitelist a source; a lead must come with its scope. Returns notes to show (scope overlaps)."""
     _need(original)
     if kind not in KINDS:
         raise SourceRefused(f"来源种类只能是 {'／'.join(KINDS)}")
@@ -41,6 +92,10 @@ def add(db: store.Store, name: str, kind: str, original: str, protocol: str | No
         raise SourceRefused(f"契约版本只能是 {'／'.join(PROTOCOLS)}")
     if protocol is not None and kind != "hub":
         raise SourceRefused("只有决策收件箱（hub）才登记契约版本")
+    if kind == "lead" and not _valid_scope(scope):
+        raise SourceRefused("审查者必须写负责范围（--modules 与 --nodes，要全部也写「全部」）：问清用户再登记")
+    if kind != "lead" and scope is not None:
+        raise SourceRefused("只有审查者（lead）才登记负责范围")
     if not name or not name.strip():
         raise SourceRefused("来源的邮箱名不能为空")
     with db.transaction(actor="coordinator") as tx:
@@ -51,8 +106,32 @@ def add(db: store.Store, name: str, kind: str, original: str, protocol: str | No
         row = {"name": name, "kind": kind, "addedAt": store.now(), "original": original}
         if protocol is not None:
             row["protocol"] = protocol
+        if scope is not None:
+            row["scope"] = scope
+        notes = _overlap_lines(rows, name, scope) if scope is not None else []
         rows.append(row)
         tx.put("config", "main", {**cfg, "sources": rows}, action="source-added", data={"name": name, "kind": kind})
+    return notes
+
+
+def set_scope(db: store.Store, name: str, scope: dict, original: str) -> list[str]:
+    """Record or change a registered reviewer's scope (also how a pre-0.9.0 lead gets one)."""
+    _need(original)
+    if not _valid_scope(scope):
+        raise SourceRefused("负责范围要同时写模块和节点")
+    with db.transaction(actor="coordinator") as tx:
+        cfg = tx.get("config", "main") or {}
+        rows = list(cfg.get("sources") or [])
+        row = next((r for r in rows if r.get("name") == name), None)
+        if row is None:
+            raise SourceRefused(f"{name} 没有登记为来源")
+        if row.get("kind") != "lead":
+            raise SourceRefused(f"{name} 不是审查者（lead），没有负责范围")
+        notes = _overlap_lines(rows, name, scope)
+        rows = [dict(r, scope=scope) if r.get("name") == name else r for r in rows]
+        tx.put("config", "main", {**cfg, "sources": rows}, action="source-scoped",
+               data={"name": name, "scope": scope, "original": original})
+    return notes
 
 
 def remove(db: store.Store, name: str, original: str) -> None:

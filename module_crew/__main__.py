@@ -656,9 +656,14 @@ def _main(argv: list[str] | None = None) -> int:
     soa.add_argument("--kind", required=True, choices=sources.KINDS)
     soa.add_argument("--protocol", choices=sources.PROTOCOLS,
                      help="决策收件箱支持的 session-protocol 版本（只对 hub；不写按 2.2）")
+    sosc = sos.add_parser("scope", help="补登记或修改审查者的负责范围")
+    sosc.add_argument("name")
+    for c in (soa, sosc):
+        c.add_argument("--modules", help="审查者负责的模块，逗号分隔；全部写「全部」（lead 必填）")
+        c.add_argument("--nodes", help=f"审查者负责的节点：{'、'.join(sources.NODES)}，逗号分隔；全部写「全部」（lead 必填）")
     sor = sos.add_parser("remove")
     sor.add_argument("name")
-    for c in (soa, sor):
+    for c in (soa, sosc, sor):
         g = c.add_mutually_exclusive_group(required=True)
         g.add_argument("--original")
         g.add_argument("--original-file")
@@ -848,7 +853,8 @@ def _run(args) -> int:
                 else:
                     for r in rows:
                         ver = f"，契约 v{r.get('protocol', '2.2')}" if r["kind"] == "hub" else ""
-                        print(f"{r['name']}（{r['kind']}{ver}）登记于 {r['addedAt']}")
+                        scope = f"，{sources.scope_text(r.get('scope'))}" if r["kind"] == "lead" else ""
+                        print(f"{r['name']}（{r['kind']}{ver}{scope}）登记于 {r['addedAt']}")
                     if not rows:
                         print("没有登记的来源")
                 return 0
@@ -856,9 +862,23 @@ def _run(args) -> int:
             if original is None:
                 return 2
             if args.action == "add":
-                sources.add(db, args.name, args.kind, original, args.protocol)
+                scope = None
+                if args.kind == "lead":
+                    scope = sources.parse_scope(args.modules, args.nodes)
+                elif args.modules is not None or args.nodes is not None:
+                    raise sources.SourceRefused("只有审查者（lead）才登记负责范围")
+                notes = sources.add(db, args.name, args.kind, original, args.protocol, scope)
                 ver = f"，契约 v{args.protocol or '2.2'}" if args.kind == "hub" else ""
-                print(f"已登记可信批准来源 {args.name}（{args.kind}{ver}）")
+                extra = f"，{sources.scope_text(scope)}" if scope else ""
+                print(f"已登记可信批准来源 {args.name}（{args.kind}{ver}{extra}）")
+                for line in notes:
+                    print(line)
+            elif args.action == "scope":
+                scope = sources.parse_scope(args.modules, args.nodes)
+                notes = sources.set_scope(db, args.name, scope, original)
+                print(f"已登记审查者 {args.name} 的负责范围：{sources.scope_text(scope)}")
+                for line in notes:
+                    print(line)
             else:
                 sources.remove(db, args.name, original)
                 print(f"已撤掉来源 {args.name}")

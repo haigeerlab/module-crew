@@ -49,7 +49,7 @@ class CheckTest(SourceCase):
     def setUp(self):
         super().setUp()
         sources.add(self.db, "live-saas-hub", "hub", "登记收件枢纽")
-        sources.add(self.db, "live-saas-arch-review", "lead", "登记审查会话")
+        sources.add(self.db, "live-saas-arch-review", "lead", "登记审查会话", scope=sources.ALL_SCOPE)
 
     def test_hub_reply_accepted(self):
         info = sources.check(self.db, "live-saas-hub", 120, 6100, hub_reply(), sender="live-saas-hub")
@@ -136,7 +136,7 @@ class ApproveWithSourceTest(ReviewCase):
 
     def test_lead_approval_only_recorded(self):
         from module_crew import review
-        sources.add(self.db, "live-saas-arch-review", "lead", "登记审查会话")
+        sources.add(self.db, "live-saas-arch-review", "lead", "登记审查会话", scope=sources.ALL_SCOPE)
         src = sources.check(self.db, "live-saas-arch-review", 130, 6200, handoff(), sender="live-saas-arch-review").source
         head = git(self.repo, "rev-parse", "HEAD")
         with store.approval_source(src):

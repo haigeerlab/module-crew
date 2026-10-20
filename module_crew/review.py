@@ -94,10 +94,12 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         rec = {"state": "open", "kind": "review", "from": sender, "relayId": relay_id, "text": text,
                "module": sub["module"], "node": sub["node"], "files": sub["files"], "commit": commit,
                "closedReason": None, "answer": None}
-        reviewers = [] if sub.get("disputes") else _reviewers(db)
+        reviewers = [] if sub.get("disputes") else _reviewers(db, sub["module"], sub["node"])
+        if not sub.get("disputes"):
+            out.lines += _unrouted(db, sub["module"], sub["node"], reviewers)
         if sub.get("disputes"):
             rec["disputes"] = sub["disputes"]
-        if reviewers:                      # 送审: the 【交审】 goes to every registered reviewer unchanged
+        if reviewers:                      # 送审: the 【交审】 goes unchanged to the reviewers whose scope covers it
             body = tx.allocate_number()
             meta = tx.write_body(body, text)
             rec.update(sentAt=store.now(), sentTo=reviewers)
@@ -132,9 +134,20 @@ def _evidence(points: str) -> list[str]:
     return out
 
 
-def _reviewers(db: store.Store) -> list[str]:
+def _reviewers(db: store.Store, module: str, node: str) -> list[str]:
+    """Registered reviewers responsible for this module's node (crew-routing-fixes: no copy to every reviewer)."""
     from module_crew import sources
-    return [r["name"] for r in sources.listing(db) if r.get("kind") == "lead"]
+    return [r["name"] for r in sources.listing(db) if r.get("kind") == "lead" and sources.covers(r, module, node)]
+
+
+def _unrouted(db: store.Store, module: str, node: str, reviewers: list[str]) -> list[str]:
+    from module_crew import sources
+    leads = [r for r in sources.listing(db) if r.get("kind") == "lead"]
+    lines = [f"审查者 {r['name']} 没登记负责范围，没有送审：请用户确认范围后 source scope {r['name']} --modules … --nodes …"
+             for r in leads if not r.get("scope")]
+    if leads and not reviewers:
+        lines.append(f"没有审查者负责 {module} 的 {node}，未送审：照常等用户批")
+    return lines
 
 
 def _disagree_reasons(db: store.Store, worktree: Path, sub: dict) -> list[str]:

@@ -24,7 +24,7 @@ class CardCase(MergeCase):
     def setUp(self):
         super().setUp()
         self.db = store.open_store(self.repo)
-        sources.add(self.db, "arch", "lead", "登记审查会话")
+        sources.add(self.db, "arch", "lead", "登记审查会话", scope=sources.ALL_SCOPE)
         sources.add(self.db, "hub", "hub", "登记收件箱", protocol=self.protocol_version)
 
     def normal(self, text: str) -> str:
@@ -62,7 +62,7 @@ class HubProtocolTest(RepoCase):
         sources.remove(self.db, "hub-a", "撤掉")
         sources.add(self.db, "hub-a", "hub", "登记收件箱", protocol="2.3")
         self.assertEqual(sources.hub_protocol(self.db), "2.3")
-        sources.add(self.db, "arch", "lead", "登记审查会话")                   # a reviewer does not count
+        sources.add(self.db, "arch", "lead", "登记审查会话", scope=sources.ALL_SCOPE)                   # a reviewer does not count
         self.assertEqual(sources.hub_protocol(self.db), "2.3")
         sources.add(self.db, "hub-b", "hub", "第二个收件箱", protocol="2.4")
         self.assertEqual(sources.hub_protocol(self.db), "2.3")                 # the lowest registered version

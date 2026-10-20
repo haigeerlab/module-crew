@@ -157,7 +157,7 @@ class PrepareTest(StartCase):
         from module_crew import sources
         db, _ = store.init_store(self.repo)
         sources.add(db, "di-hub", "hub", "登记枢纽")
-        sources.add(db, "di-owner", "lead", "登记负责人")
+        sources.add(db, "di-owner", "lead", "登记负责人", scope=sources.ALL_SCOPE)
         from module_crew import failure
         with self.assertRaises(failure.FailureRefused):   # nothing opened yet: sources alone are not a run config
             failure.set_mode(db, True, "先不并行了")

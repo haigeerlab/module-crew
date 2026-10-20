@@ -26,7 +26,7 @@ class ReviewShowTest(MergeCase):
     def setUp(self):
         super().setUp()
         self.db = store.open_store(self.repo)
-        sources.add(self.db, "arch", "lead", "登记审查会话")
+        sources.add(self.db, "arch", "lead", "登记审查会话", scope=sources.ALL_SCOPE)
 
     def test_rounds_in_order_with_sha(self):
         n = review.add(self.db, self.spec_review("b"), "shop-b", 1).number
@@ -191,7 +191,7 @@ class PromptReminderTest(MergeCase):
     def setUp(self):
         super().setUp()
         self.db = store.open_store(self.repo)
-        sources.add(self.db, "arch", "lead", "登记审查会话")
+        sources.add(self.db, "arch", "lead", "登记审查会话", scope=sources.ALL_SCOPE)
 
     def reminder(self, out) -> str:
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
