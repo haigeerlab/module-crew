@@ -10,5 +10,5 @@
 - [x] Task 4：身份登记与 bind（Spec 验收 5）
 - [x] Task 5：钩子按会话核对（Spec 验收 4）
 - [x] Task 6：skill、README、版本 0.9.0、全量测试（Spec 验收 7）——全量 475 个测试通过（含旧称扫描）
-- [ ] Checkpoint 2（gate）：最终验收
+- [x] Checkpoint 2（gate）：最终验收——用户 2026-10-20 批准（含构建中补改 interface 节点的 Spec）；不算 spec/tasks 27 个文件 +497 −44（baa634c..e7d83f5）；整个桌面版退出重开未验证
 - [ ] 回告：完成情况发给总协调（local_d7434023）

@@ -1,6 +1,6 @@
 # Spec: crew-routing-fixes
 
-<!-- spec-guard: review approved 4d51d049a5dd -->
+<!-- spec-guard: review approved 23dd0bcfbb36 -->
 
 > 能力图模块 `crew-routing-fixes`（第五版，0.9.0）。需求来源：总协调（local_d7434023）2026-10-20 转来的收发规则（点对点、沿上下级），
 > 以及本会话按规则做的自查。用户原话（经总协调转达）：「module-crew 修第 1、2 条和钩子按目录认身份（我那份清单的第 9、10 条），
@@ -15,7 +15,7 @@ module-crew 生成的消息和注入的角色，只给真正要处理它的那�
 ## 范围
 
 1. **【交审】按负责范围送审**（`review.py:97-105`、`sources.py`）：登记审查者（`source add --kind lead`）时必须写负责范围：
-   负责哪些模块、哪些节点（spec／plan／final），全部也要明写「全部」。`review add` 只把【交审】发给范围覆盖这个模块和节点的审查者。
+   负责哪些模块、哪些节点（spec／plan／interface／final，interface 是接口提案），全部也要明写「全部」。`review add` 只把【交审】发给范围覆盖这个模块和节点的审查者。
 2. **同步基线跳过挂起模块**（`changes.py:186-199`、`failure.py` 的 `resume`）：`change land` 发同步基线通知时跳过挂起中的模块，
    和 `merge run` 的做法（`merge.py:301-302`）一致；恢复时 `resume` 的通知里补上挂起期间落地的公共变更。
 3. **钩子按会话认身份**（`hooks.py:53-80` 的 `detect()`）：会话登记记下宿主会话 id；钩子拿当前会话 id 和登记核对，
@@ -59,7 +59,7 @@ module-crew 生成的消息和注入的角色，只给真正要处理它的那�
 
 ## 关键决策与取舍（请重点审）
 
-1. **审查者范围的写法**：`source add <名> --kind lead --modules <a,b|全部> --nodes <spec,plan,final|全部>`，两个参数对 lead 都必填，hub 不能带。
+1. **审查者范围的写法**：`source add <名> --kind lead --modules <a,b|全部> --nodes <spec,plan,interface,final|全部>`，两个参数对 lead 都必填，hub 不能带。
    已登记的审查者用新命令 `source scope <名> --modules … --nodes … --original-file <原话>` 补登记或修改。`source list` 显示范围。
    范围只决定送审给谁，不影响【负责人转交】批准来源的校验。
 2. **没有匹配的审查者**：不送审，照「不配审查者时照常可用」的路径走（交审直接等用户批），输出写明「没有审查者负责 <模块> 的 <节点>，未送审」。
@@ -102,3 +102,4 @@ module-crew 生成的消息和注入的角色，只给真正要处理它的那�
 
 - 2026-10-20：初稿，待用户审。
 - 2026-10-20：Task 1 实测后修订——身份只认 payload 的 `session_id`，去掉 `CLAUDE_CODE_HOST_SESSION_ID` 备用核对与 `hostSessionId` 字段（它从父进程继承，会认错会话）；补现场事实 6，改假设 4、关键决策 5、验收 6 与风险。来源：本模块 Task 1 实测。
+- 2026-10-20：构建中补改——审查者可负责的节点补上 interface（接口提案）：【交审】的节点本来就有「接口提案」，只写三种会让接口提案永远送不到审查者；改范围第 1 条与关键决策 1。来源：Task 2 实现时核对 `protocol.REVIEW_NODES`。
