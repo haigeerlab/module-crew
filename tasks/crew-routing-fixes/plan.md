@@ -1,6 +1,6 @@
 # Implementation Plan: crew-routing-fixes
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-routing-fixes.md`（用户 2026-10-20 批准）。任务清单：`tasks/crew-routing-fixes/todo.md`。
 
