@@ -194,6 +194,37 @@ class TakeoverRefused(Exception):
     """The takeover cannot be recorded; nothing was written."""
 
 
+class BindRefused(Exception):
+    """The identity cannot be recorded; nothing was written."""
+
+
+def own_session_id() -> str | None:
+    """This process's host session id: Claude Code's CLAUDE_CODE_SESSION_ID (the hook payload's session_id) or Codex's thread."""
+    for key in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
+        value = (os.environ.get(key) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def bind(db: store.Store, name: str, session_id: str | None) -> str:
+    """Record that the conversation running this command is the registered session `name` (crew-routing-fixes)."""
+    if not session_id or not session_id.strip():
+        raise BindRefused("读不到本会话的会话 id（CLAUDE_CODE_SESSION_ID／CODEX_THREAD_ID）：只能在模块会话或模块协调自己的命令里运行")
+    with db.transaction(actor=name) as tx:
+        rec = tx.get("session", name)
+        if rec is None or rec.get("status") != "active":
+            raise BindRefused(f"{name} 不是状态库里在用的会话")
+        bound = (rec.get("hostSession") or {}).get("sessionId")
+        if bound == session_id:
+            return f"{name} 已是本会话，没有改动"
+        if bound:
+            raise BindRefused(f"{name} 已登记为另一个会话：换会话要先请用户同意接管（模块协调运行 module-crew takeover {name}）")
+        tx.put("session", name, {**rec, "hostSession": {"sessionId": session_id, "boundAt": store.now()}},
+               action="bound", data={"sessionId": session_id})
+    return f"已登记：本会话就是 {name}，module-crew 的钩子从现在起按这个会话注入角色"
+
+
 def takeover(db: store.Store, name: str, original: str) -> str:
     """Record the user's consent that a new conversation takes over relay name `name`."""
     if not original or not original.strip():
@@ -202,6 +233,8 @@ def takeover(db: store.Store, name: str, original: str) -> str:
         rec = tx.get("session", name)
         if rec is None or rec.get("status") != "active":
             raise TakeoverRefused(f"{name} 不是状态库里在用的会话")
+        rec = {k: v for k, v in rec.items() if k != "hostSession"}      # the new conversation binds itself
         tx.put("session", name, rec, action="taken-over", data={"original": original, "at": store.now()})
     return (f"已记下：新会话接管 {name}。请在新会话里用同一个名字调用 agent-relay 的 bridge_register"
-            f"（name: \"{name}\"，wake: \"auto\"；若提示该名字已被占用或已退役，按提示传接管／恢复参数），然后先跑 module-crew status。")
+            f"（name: \"{name}\"，wake: \"auto\"；若提示该名字已被占用或已退役，按提示传接管／恢复参数），"
+            f"再运行 module-crew bind {name}，然后先跑 module-crew status。")

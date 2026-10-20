@@ -95,7 +95,8 @@ def _status(as_json: bool) -> int:
         for s in report.store["sessions"] or [{"name": "（没有在用的会话）"}]:
             extra = f"（{s.get('role')}{'，' + s['module'] if s.get('module') else ''}）" if s.get("role") else ""
             perm_fact = ("　" + permissions.status_fact(perm, s["name"])) if s.get("role") == "dev" else ""
-            print(f"  {s['name']}{extra}{_stall_facts(facts.get(s['name']))}{perm_fact}")
+            unbound = "　未登记身份（该会话运行 module-crew bind）" if s.get("role") and not s.get("bound") else ""
+            print(f"  {s['name']}{extra}{unbound}{_stall_facts(facts.get(s['name']))}{perm_fact}")
         print("  未关：" + "、".join(f"{_KIND_NAME[k]} {n}" for k, n in report.store["open"].items()))
         own = inbox.own_waits(store.open_store())
         if own:
@@ -686,6 +687,8 @@ def _main(argv: list[str] | None = None) -> int:
     tcg = tcc.add_mutually_exclusive_group(required=True)
     tcg.add_argument("--original")
     tcg.add_argument("--original-file")
+    bd = sub.add_parser("bind", help="登记本会话就是状态库里的某个会话（钩子只给登记过的会话注入角色）")
+    bd.add_argument("name", help="开工说明或恢复说明里写的邮箱名")
     tk = sub.add_parser("takeover", help="记录用户同意新会话接管邮箱名")
     tk.add_argument("name")
     tg = tk.add_mutually_exclusive_group(required=True)
@@ -913,6 +916,16 @@ def _run(args) -> int:
             print(f"❌ {exc}", file=sys.stderr)
             return 2
         print(f"已关等待记录 {refs.wait(args.number)}（理由 {code}）")
+        return 0
+    if args.group == "bind":
+        try:
+            print(hooks.bind(store.open_store(), args.name, hooks.own_session_id()))
+        except hooks.BindRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
         return 0
     if args.group == "takeover":
         original = _original(args.original, args.original_file)

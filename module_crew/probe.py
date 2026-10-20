@@ -278,7 +278,7 @@ def summarize_store(project: Path) -> tuple[Check, dict | None]:
                        for k in OPEN_KINDS}
     except store.StoreError as exc:
         return Check("store", "warning", f"状态库读不出：{exc}", "运行 module-crew store check 排查"), None
-    active = [{"name": name, **{k: rec.get(k) for k in ("role", "module", "worktree")}}
+    active = [{"name": name, **{k: rec.get(k) for k in ("role", "module", "worktree")}, "bound": bool(rec.get("hostSession"))}
               for name, rec in sorted(sessions.items()) if rec.get("status") == "active"]
     return Check("store", "ok", str(db.path)), {"sessions": active, "open": open_counts}
 

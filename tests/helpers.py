@@ -48,8 +48,8 @@ class RepoCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.repo = make_repo(self.tmp)
 
-    def run_cli(self, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
-        env = dict(os.environ)
+    def run_cli(self, *args: str, cwd: Path | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
+        env = dict(os.environ) if env is None else env
         return subprocess.run([str(PLUGIN_ROOT / "bin" / "module-crew"), *args], cwd=cwd or self.repo,
                               capture_output=True, text=True, env=env)
 

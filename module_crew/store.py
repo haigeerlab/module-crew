@@ -315,6 +315,10 @@ def _validate_session(key: str, rec: dict, others: dict) -> None:
         raise bad("模块协调只能是 claude-desktop")
     if status not in SESSION_STATUSES:
         raise bad(f"status 只能是 {'／'.join(SESSION_STATUSES)}")
+    ident = rec.get("hostSession")
+    if ident is not None and not (isinstance(ident, dict) and isinstance(ident.get("sessionId"), str)
+                                  and ident["sessionId"].strip()):
+        raise bad("hostSession 必须带非空的 sessionId")
     if role == "dev":
         module, worktree = rec.get("module"), rec.get("worktree")
         if not isinstance(module, str) or not module:

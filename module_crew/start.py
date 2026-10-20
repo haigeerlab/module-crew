@@ -243,7 +243,10 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
                                       "reviewCadence": proposal.cadence},
                    action="set")
         if not any(v.get("role") == "coordinator" and v.get("status") == "active" for v in tx.records("session").values()):
-            tx.put("session", coord, {"role": "coordinator", "host": "claude-desktop", "status": "active"},
+            from module_crew.hooks import own_session_id
+            sid = own_session_id()          # crew-routing-fixes: the coordinator running start binds itself
+            ident = {"hostSession": {"sessionId": sid, "boundAt": store.now()}} if sid else {}
+            tx.put("session", coord, {"role": "coordinator", "host": "claude-desktop", "status": "active", **ident},
                    action="registered")
         approval = tx.allocate_number()
         tx.put("item", str(approval), {
@@ -299,6 +302,8 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             result.lines.append(f"集成 checkout 角色标记已是 {('module ' + module) if module else kind}，没有覆盖，请用户决定")
     if result.prepared:
         result.lines.append(f"开会话之前：模块协调先用 agent-relay bridge_register 注册邮箱名 {coord}（wake: \"auto\"），模块只和这个名字说话")
+        if not (store.get(db, "session", coord) or {}).get("hostSession"):
+            result.lines.append(f"模块协调还没登记身份：在本会话运行 module-crew bind {coord}，钩子才认本会话")
     return result
 
 
@@ -356,6 +361,7 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
         "",
         f"工作目录：{worktree}（分支 {module}，从集成分支 {cfg['integrationBranch']} 切出）",
         f"邮箱名：{relay}，用 agent-relay bridge_register 注册，wake: \"auto\"",
+        f"注册后先运行 module-crew bind {relay}：登记本会话的身份，module-crew 的钩子只认登记过的会话",
         f"模块协调：{coord}（你只和它说话）",
         f"开会话依据：用户批准事项 C{approval}",
         "",
