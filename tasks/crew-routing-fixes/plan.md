@@ -17,12 +17,11 @@
   登记时与已有 lead 范围重叠只输出提示。`source list`（含 `--json`）带范围。
 - **挂起跳过**：`changes.land` 的循环加 `sess.get("suspended")` 跳过，请求方例外（与「等最终验收」的例外同一处判断）。
   `failure.resume` 在找 `item.merged` 事件之外，再找挂起之后的 `request.landed` 事件，待办合成一句「挂起期间合入了 …、落地了公共变更 C<N>（<提交>）：先同步…」。
-- **身份登记**：会话登记加可选字段 `hostSession: {"sessionId", "hostSessionId", "boundAt"}`（`store._validate_session` 校验类型）。
-  新命令 `module-crew bind <邮箱名>`：从环境变量 `CLAUDE_CODE_SESSION_ID`、`CLAUDE_CODE_HOST_SESSION_ID` 读取；都没有就拒绝（退出码 3）。
+- **身份登记**：会话登记加可选字段 `hostSession: {"sessionId", "boundAt"}`（`store._validate_session` 校验类型）。
+  新命令 `module-crew bind <邮箱名>`：从环境变量 `CLAUDE_CODE_SESSION_ID` 读取（Codex 读 `CODEX_THREAD_ID`）；都没有就拒绝（退出码 3）。
   规则按 Spec 关键决策 5；`takeover` 在同一事务里清掉 `hostSession`。`start` 登记模块协调时顺带写它自己的 `hostSession`。
   开工说明「邮箱名」那一行之后加「先运行 module-crew bind <邮箱名>」；恢复说明在「用同一个名字注册」之后加同样一步；Codex 段不加（没有钩子）。
-- **钩子核对**：`detect(cwd)` 不变（仍回答「这个目录属于哪条登记」）；新增 `matches(role, payload)`：payload 的 `session_id` 等于登记的 `sessionId`，
-  或环境变量 `CLAUDE_CODE_HOST_SESSION_ID` 等于登记的 `hostSessionId`，才算对上。`run_hook` 把 payload 传下去：
+- **钩子核对**：`detect(cwd)` 不变（仍回答「这个目录属于哪条登记」）；新增 `matches(role, payload)`：payload 的 `session_id` 等于登记的 `sessionId` 才算对上（不看任何环境变量）。`run_hook` 把 payload 传下去：
   对上照旧；对不上时 SessionStart 只给那一句（文字见 Spec 关键决策 6），UserPromptSubmit 返回空。
 - **status**：会话一栏对没有 `hostSession` 的在用会话标「未登记身份」；`sessions --json` 不改（契约字段不动）。
 
@@ -70,3 +69,7 @@
 - Task 1 实测若显示重开会话 `session_id` 会变，钩子方案要改（例如只认桌面版会话 id），Task 4、5 的设计随之调整，先回 Spec 复审。
 - `source add` 加必填参数会让现有 lead 登记的测试与 skill 示例一起改；漏改的地方由全量测试兜住。
 - 升级后已在跑的会话失去角色注入，要靠 `status` 的「未登记身份」提醒跑 `bind`。
+
+## 变更记录
+
+- 2026-10-20：Task 1 实测后随 Spec 修订——去掉 `CLAUDE_CODE_HOST_SESSION_ID` 备用核对与 `hostSessionId` 字段（从父进程继承，会认错会话）。来源：本模块 Task 1 实测。

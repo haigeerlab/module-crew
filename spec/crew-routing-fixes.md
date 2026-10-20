@@ -1,6 +1,6 @@
 # Spec: crew-routing-fixes
 
-<!-- spec-guard: review approved 2e7db67147e0 -->
+<!-- spec-guard: review approved 4d51d049a5dd -->
 
 > 能力图模块 `crew-routing-fixes`（第五版，0.9.0）。需求来源：总协调（local_d7434023）2026-10-20 转来的收发规则（点对点、沿上下级），
 > 以及本会话按规则做的自查。用户原话（经总协调转达）：「module-crew 修第 1、2 条和钩子按目录认身份（我那份清单的第 9、10 条），
@@ -39,15 +39,18 @@ module-crew 生成的消息和注入的角色，只给真正要处理它的那�
    （会话记录 3878bada….jsonl、0f36d94f….jsonl 第 4 行）；10-18、10-19 在 alpha worktree 做权限实测的 cd5cd580、697ccda9、996bf975
    都收到「你是模块 alpha 的模块会话」（5dd08a92、d6d38f60、196c085c 第 4 行）。
 5. 本机 Claude Code 桌面版的命令环境里有 `CLAUDE_CODE_SESSION_ID`（与会话记录文件名、钩子 payload 的 `session_id` 同一个值）和
-   `CLAUDE_CODE_HOST_SESSION_ID`（桌面版会话 id，`local_…`）。2026-10-20 在本会话的 Bash 实测。钩子进程里能不能读到 `CLAUDE_CODE_HOST_SESSION_ID` 还没实测。
+   `CLAUDE_CODE_HOST_SESSION_ID`（桌面版会话 id，`local_…`）。2026-10-20 在本会话的 Bash 实测。
+6. Task 1 实测（2026-10-20，scratchpad 临时仓库，记录钩子写日志）：同一会话启动、桌面版里续聊、命令行 `claude --resume` 接上、`/compact` 压缩、压缩后再接上，
+   钩子 payload 的 `session_id` 与环境变量 `CLAUDE_CODE_SESSION_ID` 始终是同一个值；但 `CLAUDE_CODE_HOST_SESSION_ID` 是**从父进程继承的**——从本会话的 Bash 里起的进程，
+   钩子读到的是本会话的桌面版 id，不是被接上的那个会话的。所以它不能用来认会话。
 
 ## 假设（请逐条确认）
 
 1. 发 0.9.0，做成一个修复模块，不拆成三个：三处改动都是「收窄收件对象」，相互独立但都小。
 2. 审查者负责范围用「模块 × 节点」两维；旧登记没有范围的审查者，升级后**不再送审**（不默认全部），`review add` 输出一行提醒用户补登记。
 3. 一个交审有多个审查者的范围都覆盖时，全部送到（多段审查本来就允许），登记时如果范围和已有审查者重叠，输出一行提示，但不拒绝。
-4. 会话身份用钩子 payload 的 `session_id` 核对，`CLAUDE_CODE_HOST_SESSION_ID` 作为备用（payload 的值变了时用它再对一次）。
-   假设压缩、在桌面版里重开同一会话时 `session_id` 不变；Task 1 先实测，不成立就停下改方案。
+4. 会话身份只用钩子 payload 的 `session_id` 核对（现场事实 6：压缩、接上会话后不变）；不用 `CLAUDE_CODE_HOST_SESSION_ID`（会从父进程继承，认错会话）。
+   桌面版退出重开整个应用后的情况没有实测（见风险）。
 5. 由会话自己登记身份：模块会话按开工说明第一步跑 `module-crew bind`，模块协调在跑 `start` 时自动登记（升级前开的协调会话手动跑一次 `bind`）。
    命令从自己的环境变量读会话 id，所以只能登记「正在跑命令的这个会话」，不能替别的会话登记。
 6. 升级到 0.9.0 时，已在跑的会话都还没登记身份，钩子对它们只注入那一句「你不是登记会话」，直到它们跑一次 `bind`。
@@ -63,7 +66,7 @@ module-crew 生成的消息和注入的角色，只给真正要处理它的那�
 3. **挂起模块与请求方**：`change land` 跳过挂起中的模块，**例外是提出这条请求的模块**：它要收到带「回复：#N」的那条，才能关掉自己的等待。
    这和现有「等最终验收的模块跳过、请求方例外」是同一个规则。
 4. **恢复时补发**：`resume` 的待办把「挂起期间合入的模块」和「挂起期间落地的公共变更 C<N>」合在一句里，先同步、跑完整检查再继续。
-5. **身份登记存什么**：会话登记加 `hostSession: {"sessionId", "hostSessionId", "boundAt"}`。`bind` 的规则：
+5. **身份登记存什么**：会话登记加 `hostSession: {"sessionId", "boundAt"}`，`sessionId` 取命令环境里的 `CLAUDE_CODE_SESSION_ID`（Codex 取 `CODEX_THREAD_ID`，只记录、不用于钩子）。`bind` 的规则：
    - 登记里没有身份：写入；
    - 已是同一个会话：不改，输出「已登记」；
    - 已是另一个会话：拒绝，提示走 `takeover`。`takeover` 记下用户同意时清掉旧身份，新会话按恢复说明 `bind`。
@@ -81,12 +84,12 @@ module-crew 生成的消息和注入的角色，只给真正要处理它的那�
 3. 模块 beta 挂起时 `change land`：beta 收不到同步基线；提出请求的模块即使挂起也收到回复；`resume beta` 的通知里写明挂起期间落地的 C<N>。合入后的同步基线（`merge run`）行为不变。
 4. 钩子：同一个 worktree 里，登记会话的 SessionStart 与每轮注入角色不变；另一个 `session_id` 的会话只在 SessionStart 收到那一句，每轮不注入；集成 checkout 同理（重放 38932d81／cb182a33 的场景）。
 5. `bind`：没有身份时写入；同一会话重跑不改；另一会话被拒并提示 `takeover`；`takeover` 之后新会话能 `bind`。开工说明、恢复说明、`start` 跑完后的提示都带 `bind` 这一步。
-6. 实测（Task 1，做之前先停下问你）：本机桌面版里压缩一次、重开一次会话，`session_id` 不变；钩子进程里能不能读到 `CLAUDE_CODE_HOST_SESSION_ID`。做不了记「宿主未验证」并写原因。
+6. 实测（Task 1）：压缩、接上同一会话后 `session_id` 不变（已做，见现场事实 6）。
 7. 两份 crew-dev skill、crew-coordinator skill 写明 `bind` 与审查者范围；skill 测试断言；全量测试与旧称扫描通过。
 
 ## 风险
 
-- `session_id` 在某些重开方式下会变：登记会话会被当成「不是登记会话」，只剩那一句注入；补救是重跑 `bind`（会被拒，要走 `takeover`）。Task 1 的实测就是要先排除这个风险。
+- 桌面版退出重开整个应用后没有实测（命令行 `--resume` 走同一套会话恢复，已实测不变）；万一 `session_id` 变了：登记会话会被当成「不是登记会话」，只剩那一句注入；补救是重跑 `bind`（会被拒，要走 `takeover`）。
 - 升级后忘了 `bind`：钩子不再给它注入角色，它只能靠开工说明和 skill 行事；`status` 的「未登记身份」用来提醒。
 - 审查者 `review note` 仍不核对是否收到过这条交审，范围外的审查者如果主动发结论还是会被记下（不做，留作后续）。
 
@@ -98,3 +101,4 @@ module-crew 生成的消息和注入的角色，只给真正要处理它的那�
 ## 变更记录
 
 - 2026-10-20：初稿，待用户审。
+- 2026-10-20：Task 1 实测后修订——身份只认 payload 的 `session_id`，去掉 `CLAUDE_CODE_HOST_SESSION_ID` 备用核对与 `hostSessionId` 字段（它从父进程继承，会认错会话）；补现场事实 6，改假设 4、关键决策 5、验收 6 与风险。来源：本模块 Task 1 实测。
