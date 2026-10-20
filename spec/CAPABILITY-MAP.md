@@ -36,8 +36,9 @@
 | crew-pilot-fixes | 第五版：演练修复——module-crew sync 合入集成分支、review show 读审查原文、撤销批准不重开已被取代的交审并作废过期合并批准、模块协调自开的等待记录经 CLI 记账并提示关闭、派活后核对模块会话是否卡在权限弹窗 | crew-merge, crew-review-nearby, crew-host-permissions, crew-glossary-rename |
 | crew-hub-card-fields | 第五版：决策卡片字段——交给决策收件箱的【等待用户】按 session-protocol v2.3 写「类型」与各类小项，「注意」「推荐理由」「批了会怎样」由 module-crew 生成，模块协调自己提的请示按类别写；契约 v2.3 定稿后写 Spec | crew-hub-bridge, crew-review-nearby, crew-glossary-rename |
 | crew-stage-c-fixes | 第五版：阶段丙补修（R22）——【等待用户】带「模块」、已交最终验收的模块不再收同步通知、新合并批准取代旧批准、不重复提请已答过的事、权限预配放行本 worktree 内的编辑、提请批准只发 for-hub 正文不手写合问 | crew-pilot-fixes, crew-hub-card-fields |
+| crew-routing-fixes | 第五版：收发对象收窄——【交审】只送负责该模块或节点的审查者（登记审查者时写明负责范围）、公共变更后的同步基线通知跳过挂起模块并在恢复时补发、启动钩子只给会话登记里的那个会话注入角色 | crew-recovery-hooks, crew-failure, crew-hub-bridge, crew-stage-c-fixes |
 
-Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby → crew-stall-signals → crew-host-permissions → crew-glossary-rename → crew-pilot-fixes → crew-hub-card-fields → crew-stage-c-fixes
+Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby → crew-stall-signals → crew-host-permissions → crew-glossary-rename → crew-pilot-fixes → crew-hub-card-fields → crew-stage-c-fixes → crew-routing-fixes
 
 <!-- Spec Guard 按严格串行推进。为兼容上游格式，逗号分组会按左到右顺序展开为单模块步骤，不代表并行授权。 -->
 
@@ -74,3 +75,4 @@ Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → cr
 - 2026-10-18：「说明」改为 crew-protocol 现钉住 session-protocol v1.9（f47631b）。原因：v1.9 写明【撤回】只认枢纽事项号；来源：用户 2026-10-18 定为 0.1.2 待办，随 0.2.0 做。模块、依赖与顺序不变。
 - 2026-10-19：插入第三版模块 crew-review-nearby（依赖 crew-protocol、crew-review-batch、crew-merge、crew-hub-bridge，排在 crew-codex-host 之后）。原因：用户决定 41–43「审查就近、决策集中」与批 2 暴露的问题（livesaas-integration/REQ-REVIEW-NEARBY.md 的 R1–R9）；来源：用户 2026-10-19 确认 21 条假设并批准插入。
 - 2026-10-19：插入第四版三个模块 crew-stall-signals（依赖 crew-hub-bridge、crew-review-nearby）、crew-host-permissions（依赖 crew-start、crew-merge）、crew-glossary-rename（依赖前两个），依次排在 crew-review-nearby 之后。原因：0.3.0 放到下一版的 R14 停滞检测、R16 宿主权限与术语表 v1.1 全面改名（livesaas-integration/REQ-REVIEW-NEARBY.md、GLOSSARY.md）；来源：用户 2026-10-19 确认 19 条假设并批准插入。
+- 2026-10-20：插入第五版模块 crew-routing-fixes（依赖 crew-recovery-hooks、crew-failure、crew-hub-bridge、crew-stage-c-fixes，排在最后）。原因：收发规则（点对点、沿上下级）自查与总协调排查查到的三处收件对象过宽；来源：用户 2026-10-20 在本会话批准插入与 Spec。
