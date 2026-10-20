@@ -47,4 +47,4 @@
   - 文件：`module_crew/stall.py`、`module_crew/failure.py`、`tests/test_stall_signals.py`、`README.md`、三处版本号
 
 
-- [ ] Task 4 验收（0.8.1）
+- [x] Task 4 验收（0.8.1；2026-10-20 用户批准；全量 458 个测试通过；提交 e8818d3）
