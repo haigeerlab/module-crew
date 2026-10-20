@@ -164,6 +164,21 @@ def prompt_line(cwd: str | os.PathLike) -> str | None:
     return f"module-crew：模块协调；{_count_text(_counts(role.db))}"
 
 
+def matches(role: Role, session_id: str | None) -> bool:
+    """Whether the conversation the hook runs for is the one bound to this registration (crew-routing-fixes)."""
+    bound = ((store.get(role.db, "session", role.name) or {}).get("hostSession") or {}).get("sessionId")
+    return bool(bound) and bound == session_id
+
+
+def stranger_line(role: Role) -> str:
+    """The one line for any other conversation in a registered directory: whose it is, and that it is not you."""
+    if role.kind == "dev":
+        return (f"module-crew：本目录属于模块 {role.module}（登记会话 {role.name}）；你不是它的登记会话，不要按模块会话行事。"
+                f"如果你刚收到这个模块的开工说明或恢复说明，先按说明运行 module-crew bind {role.name}。")
+    return (f"module-crew：本目录是 module-crew 的集成 checkout（模块协调 {role.name}）；你不是它的登记会话，不要按模块协调行事。"
+            f"如果用户指定你做模块协调，先运行 module-crew bind {role.name}。")
+
+
 EVENT_NAMES = {"session-start": "SessionStart", "prompt": "UserPromptSubmit"}
 
 
@@ -176,12 +191,15 @@ def run_hook(event: str, stdin_text: str) -> str:
         except ValueError:
             payload = {}
         cwd = payload.get("cwd") or os.getcwd()
-        if event == "session-start":
-            text = session_start(cwd, payload.get("source") or "startup")
-        elif event == "prompt":
-            text = prompt_line(cwd)
-        else:
+        if event not in EVENT_NAMES:
             return ""
+        role = detect(cwd)
+        if role is not None and not matches(role, payload.get("session_id")):
+            text = stranger_line(role) if event == "session-start" else None   # once, never every turn
+        elif event == "session-start":
+            text = session_start(cwd, payload.get("source") or "startup")
+        else:
+            text = prompt_line(cwd)
         if not text:
             return ""
         return json.dumps({"hookSpecificOutput": {"hookEventName": EVENT_NAMES[event], "additionalContext": text}},

@@ -8,7 +8,7 @@
 - [x] Task 3：同步基线跳过挂起模块、恢复时补写（Spec 验收 3）
 - [x] Checkpoint 1（report）：两处收件收窄就位，全量测试通过（2026-10-20，466 个测试全过）
 - [x] Task 4：身份登记与 bind（Spec 验收 5）
-- [ ] Task 5：钩子按会话核对（Spec 验收 4）
+- [x] Task 5：钩子按会话核对（Spec 验收 4）
 - [ ] Task 6：skill、README、版本 0.9.0、全量测试（Spec 验收 7）
 - [ ] Checkpoint 2（gate）：最终验收
 - [ ] 回告：完成情况发给总协调（local_d7434023）

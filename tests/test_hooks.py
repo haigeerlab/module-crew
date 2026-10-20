@@ -157,14 +157,19 @@ def run_hook(event, cwd, payload=None):
 
 class HookCommandTest(MergeCase):
     def test_outputs_and_timing(self):
-        r, secs = run_hook("session-start", self.wt["b"], {"cwd": str(self.wt["b"]), "source": "compact"})
+        db = store.open_store(self.repo)
+        for name, sid in (("shop-b", "sid-b"), ("shop-coord", "sid-coord")):   # only the bound session gets its role
+            with db.transaction(actor="test") as tx:
+                tx.put("session", name, {**tx.get("session", name), "hostSession": {"sessionId": sid}}, action="bound")
+        r, secs = run_hook("session-start", self.wt["b"], {"cwd": str(self.wt["b"]), "source": "compact",
+                                                           "session_id": "sid-b"})
         self.assertEqual(r.returncode, 0)
         doc = json.loads(r.stdout)
         self.assertEqual(doc["hookSpecificOutput"]["hookEventName"], "SessionStart")
         self.assertIn("以状态库为准", doc["hookSpecificOutput"]["additionalContext"])
         self.assertLess(secs, 1.0)
         print(f"\n  hook session-start: {secs * 1000:.0f} ms", file=__import__("sys").stderr)
-        r, secs = run_hook("prompt", self.repo)
+        r, secs = run_hook("prompt", self.repo, {"cwd": str(self.repo), "session_id": "sid-coord"})
         self.assertEqual(json.loads(r.stdout)["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
         self.assertLess(secs, 1.0)
         print(f"  hook prompt: {secs * 1000:.0f} ms", file=__import__("sys").stderr)
