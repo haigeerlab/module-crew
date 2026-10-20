@@ -319,3 +319,16 @@ class R21WordsTest(unittest.TestCase):
         self.assertIn("没有决策收件箱就在本会话直接告诉用户", read("crew-coordinator")[1])
         for text in (read("crew-dev")[1], codex, read("crew-coordinator")[1]):   # decision 62 (0.5.1)
             self.assertNotIn("Plan 没列的依赖只问", text)
+
+
+class RoutingWordsTest(unittest.TestCase):
+    """crew-routing-fixes acceptance 7: bind and the reviewer scope are written down in the skills."""
+
+    def test_bind_and_reviewer_scope(self):
+        codex = (PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
+        for text in (read("crew-dev")[1], codex, read("crew-coordinator")[1]):
+            self.assertIn("module-crew bind", text)
+        self.assertIn("你不是它的登记会话", read("crew-dev")[1])
+        coord = read("crew-coordinator")[1]
+        for words in ("--modules", "--nodes", "不要默认填「全部」", "source scope", "未登记身份"):
+            self.assertIn(words, coord)

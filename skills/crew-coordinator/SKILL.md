@@ -40,6 +40,7 @@ module-crew start prepare <模块 id>… --original-file <原话文件> [--proje
 
    退出码 3：什么都没做，把原因告诉用户；4：中途停下，已完成的照常开会话，没完成的把原因交用户决定。
    开会话之前，先用 agent-relay `bridge_register` 注册你自己的邮箱名 `<简称>-coord`（wake: "auto"）：开工说明里模块只和这个名字说话。
+   `start prepare` 会顺带登记你这个会话的身份；输出提示「模块协调还没登记身份」时，在本会话运行 `module-crew bind <简称>-coord`。module-crew 的钩子只给登记过的会话注入角色，同一目录里的其他会话只收到一句「你不是它的登记会话」。`module-crew status` 里标「未登记身份」的会话，提醒它运行一次 `bind`。
 4. 对每个准备好的模块，用桌面版的开会话工具在它的 worktree 目录里开一个新会话：第一条消息用「开工说明」文件的全文，不改一字（开会话工具强制要求附一段背景时，背景另起一段并标明「不是开工说明的一部分」）；
    打开「做完一轮叫醒我」；新会话的权限模式**不能比本会话更宽**，宽了就先调低再让它开始。
    开好后按「权限预配」第 2 步让它跑实测清单并记下结果。
@@ -193,6 +194,7 @@ module-crew ticket close <编号> --reason user --original-file <用户原话文
 接了决策收件箱（decision-inbox 等）时：
 
 - **先登记可信批准来源**：用户在本会话亲口同意后 `module-crew source add <邮箱名> --kind hub|lead --original-file <原话文件>`；hub 是决策收件箱，lead 是指定的审查者。没登记的会话转来的话一律不算。
+- **审查者要写负责范围**：登记 lead 时必须带 `--modules <模块,…|全部> --nodes <spec,plan,interface,final|全部>`，用户没说清负责哪些模块、哪些节点就先问清楚，不要默认填「全部」。【交审】只送给范围覆盖它的审查者，没有人负责的照常等用户批。0.9.0 之前登记、没有范围的审查者不再收交审，经用户确认后用 `module-crew source scope <邮箱名> --modules … --nodes … --original-file <原话文件>` 补上。
 - **审查者转交只记账**：lead 来源的 Spec／Plan 批准，`review approve` 只记一条记录，不写批准标记、不开工（spec-guard 不认它）；如实告诉用户，请用户在本会话亲手批准或经决策收件箱再批准一次。决策收件箱转来的批准照常写标记，提交说明里会带待决事项号 #H。
 - **提请批准一个模块一条**：`module-crew review batch --for-hub [--parallel-with <H>]` 给每个就绪模块各生成一个正文文件，逐条用 bodyFile 原样发给决策收件箱，不要合成一条。
   正文里的交审原文、审查原文文件在 `<状态库>/originals/` 下，对应的待决事项结项前不删不改。审查中、返工中的交审不会出现在里面。

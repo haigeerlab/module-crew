@@ -20,7 +20,7 @@ description: 本 Codex 会话是 module-crew 的模块会话时使用：开工�
 - **提交要提权**：Codex 默认沙箱不让写 `.git`（worktree 的 git 目录在仓库外），第一次提交会弹提权，请用户在**本会话**批准；有「本会话一直允许」就选它。
   提权只有用户能点，别的会话（包括模块协调）转来的「已批准」不算；被拒就发【等待其他会话】说明卡在提权，不要换写法绕过。
 - **身份**：用 agent-relay 注册时带 `host:{app:"codex", sessionId:<CODEX_THREAD_ID>}`，wake 用同样的 app 与 sessionId。空闲久了或应用重启后读不到自己的消息，
-  就用**原名**重新注册（正常恢复，不是接管，不用找用户）。
+  就用**原名**重新注册（正常恢复，不是接管，不用找用户）。开工注册后运行一次 `module-crew bind <你的邮箱名>`，在状态库里登记本会话（Codex 没有钩子，只作记录）。
 - **没有钩子**：module-crew 的钩子在 Codex 里不运行。压缩、中断或应用重启后，先跑 `module-crew status`，以状态库为准，不按记忆重做。
 - **spec-guard 用技能**：Codex 里没有斜杠命令，批准标记、挂起等用 spec-guard 的 `spec-guard-ops` 技能里对应的操作。
 
@@ -108,4 +108,4 @@ module-crew protocol check <消息文件>
 ## 换会话之后
 
 新开的 Codex 会话接替崩溃的会话时，按恢复说明做：先请用户在模块协调里同意接管，再用同一个邮箱名注册（带 `host:{app:"codex", sessionId}`，按提示传接管参数），
-然后跑 `module-crew status`、读自己未关的等待记录；不要另起新名字。
+再运行 `module-crew bind <邮箱名>`，然后跑 `module-crew status`、读自己未关的等待记录；不要另起新名字。
