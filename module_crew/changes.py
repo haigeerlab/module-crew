@@ -186,8 +186,8 @@ def land(project: str | os.PathLike, number: int, original: str | None = None) -
         for name, sess in sorted(tx.records("session").items()):
             if sess.get("role") != "dev" or sess.get("status") != "active":
                 continue
-            if sess.get("module") in waiting and name != rec["from"]:
-                continue
+            if (sess.get("module") in waiting or sess.get("suspended")) and name != rec["from"]:
+                continue          # a suspended module is told on resume (crew-routing-fixes); the requester still gets its reply
             text = protocol.render_coordination_notice(kind="sync-baseline", basis=basis, todo=todo)
             reply_to = rec["relayId"] if name == rec["from"] else None
             if reply_to is not None:

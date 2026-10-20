@@ -3,8 +3,9 @@
 import unittest
 
 from helpers import ReviewCase
+from test_changes import request
 
-from module_crew import review, sources, store
+from module_crew import changes, failure, protocol, review, sources, store
 
 
 class ReviewerScopeTest(ReviewCase):
@@ -74,6 +75,43 @@ class ReviewerScopeTest(ReviewCase):
         self.assertEqual(scoped.returncode, 0, scoped.stderr)
         listed = self.run_cli("source", "list", cwd=self.repo)
         self.assertIn("arch（lead，模块 全部 × 节点 final）", listed.stdout)
+
+
+class SuspendedSyncTest(ReviewCase):
+    """Task 3: change land skips a suspended module (the requester still gets its reply); resume says what landed."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+
+    def land(self, sender, rid, path):
+        n = changes.add(self.db, request([path]), sender, rid).number
+        (self.repo / path).write_text(f"{path}\n", encoding="utf-8")
+        res = changes.land(self.repo, n)
+        self.assertEqual(res.code, 0, res.lines)
+        return n, res
+
+    def test_suspended_module_skipped_then_told_on_resume(self):
+        failure.suspend(self.db, "c", "等设计稿", "先挂起 c")
+        n, res = self.land("shop-b", 4700, "tsconfig.base.json")
+        self.assertEqual([x["to"] for x in res.sends], ["shop-b"])
+        [note] = failure.resume(self.db, "c", "恢复 c").sends
+        todo = protocol.parse(store.read_body(self.db, note["body"])).fields["要你做什么"]
+        self.assertIn(f"落地了公共变更 C{n}（{res.commit[:7]}）", todo)
+        self.assertIn("`module-crew sync`", todo)
+
+    def test_suspended_requester_still_gets_its_reply(self):
+        failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        _, res = self.land("shop-b", 4701, "tsconfig.base.json")
+        by_to = {x["to"]: x for x in res.sends}
+        self.assertEqual(sorted(by_to), ["shop-b", "shop-c"])
+        self.assertEqual(by_to["shop-b"]["replyTo"], 4701)
+
+    def test_resume_without_changes_unchanged(self):
+        failure.suspend(self.db, "c", "等设计稿", "先挂起 c")
+        [note] = failure.resume(self.db, "c", "恢复 c").sends
+        todo = protocol.parse(store.read_body(self.db, note["body"])).fields["要你做什么"]
+        self.assertEqual(todo, failure.RESUME_TODO)
 
 
 if __name__ == "__main__":

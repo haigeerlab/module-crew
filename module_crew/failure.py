@@ -87,11 +87,17 @@ def resume(db: store.Store, module: str, original: str) -> Changed:
         since = max((e["seq"] for e in log if e["type"] == "session.suspended" and e["key"] == name), default=0)
         items = tx.records("item")
         merged = [(e["key"], items.get(e["key"]) or {}) for e in log if e["type"] == "item.merged" and e["seq"] > since]
+        landed = [(e["key"], e["data"].get("commit") or "") for e in log if e["type"] == "request.landed" and e["seq"] > since]
         basis = f"用户批准事项 C{n}（恢复 {module}）" + (f"，挂起依据 C{mark['approval']}" if mark.get("approval") else "")
         todo = RESUME_TODO
-        if merged:
-            done = "、".join(f"{r.get('module')}（合并批准事项 C{k}，{(r.get('mergeCommit') or '')[:7]}）" for k, r in merged)
-            todo = f"集成分支在挂起期间合入了 {done}：先{sync.STEP}、跑完整检查，再{RESUME_TODO}"
+        if merged or landed:
+            parts = []
+            if merged:
+                parts.append("合入了 " + "、".join(f"{r.get('module')}（合并批准事项 C{k}，{(r.get('mergeCommit') or '')[:7]}）"
+                                                for k, r in merged))
+            if landed:      # crew-routing-fixes: change land skipped this module while it was suspended
+                parts.append("落地了公共变更 " + "、".join(f"C{k}（{c[:7]}）" for k, c in landed))
+            todo = f"集成分支在挂起期间{'，'.join(parts)}：先{sync.STEP}、跑完整检查，再{RESUME_TODO}"
         _send(tx, db, sends, name, "resume", protocol.render_coordination_notice(kind="resume", basis=basis, todo=todo))
     return Changed(name, sends)
 
