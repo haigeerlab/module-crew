@@ -183,6 +183,47 @@ class OwnWaitTest(ReviewCase):
         self.assertEqual(inbox.own_waits(self.db), [])
 
 
+class OwnWaitOnReviewNumberTest(MergeCase):
+    """0.9.1 (rehearsal W257): a wait on C<N> closes when review approve / merge approve answers that C<N>."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        sources.add(self.db, "live-saas-hub", "hub", "登记收件枢纽")
+
+    def wait_on(self, n, relay):
+        return inbox.add_own_wait(self.db, WAIT.replace("#120 的", f"C{n} 的"), "di-p0-owner", relay, f"C{n}")[0]
+
+    def test_hub_approval_closes_wait_on_review_number(self):
+        from test_sources import hub_reply
+        s = review.add(self.db, self.spec_review("b"), "shop-b", 4001).number
+        w = self.wait_on(s, 9876)
+        text = hub_reply(84, "84 A")
+        with store.approval_source(sources.check(self.db, "live-saas-hub", 84, 6100, text, sender="live-saas-hub").source):
+            res = review.approve(self.repo, [s], "84 A")
+        self.assertEqual(res.code, 0, res.lines)
+        mine = [x for x in res.sends if x.get("wait") == w]
+        self.assertEqual([x["to"] for x in mine], ["di-p0-owner"])
+        self.assertIn("结束：#9876", mine[0]["path"].read_text(encoding="utf-8"))
+        self.assertEqual(store.get(self.db, "ticket", str(w))["state"], "closed")
+
+    def test_self_approval_closes_wait_and_cli_says_so(self):
+        s = review.add(self.db, self.spec_review("b"), "shop-b", 4001).number
+        w = self.wait_on(s, 9877)
+        out = self.run_cli("review", "approve", f"C{s}", "--original", "批准 b 的 Spec")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn(f"你开的等待记录 W{w} 等的事已发生：发送 【已恢复】 → di-p0-owner", out.stdout)
+        self.assertEqual(inbox.own_waits(self.db), [])
+
+    def test_merge_approve_closes_wait_on_final_review(self):
+        n = review.add(self.db, self.finish("b"), "shop-b", 4800).number
+        w = self.wait_on(n, 9878)
+        out = self.run_cli("merge", "approve", f"C{n}", "--original", "b 验收通过")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn(f"你开的等待记录 W{w} 等的事已发生", out.stdout)
+        self.assertEqual(inbox.own_waits(self.db), [])
+
+
 class PromptReminderTest(MergeCase):
     """Task 6: commands that send to a module session end with a reminder to check for a permission prompt (acceptance 11)."""
 

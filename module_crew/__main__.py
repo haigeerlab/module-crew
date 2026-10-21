@@ -367,6 +367,10 @@ def _review(args) -> int:
     for line in res.lines:
         print(line)
     for x in res.sends:
+        if x.get("wait"):
+            print(f"你开的等待记录 W{x['wait']} 等的事已发生：发送 【已恢复】 → {x['to']}，正文文件：{x['path']}")
+            _sent(x['to'])
+            continue
         kind = {"user-reply": "【用户答复】", "resumed": "【已恢复】"}.get(x["kind"], "【协调通知】")
         reply_to = f"，replyTo：{x['replyTo']}" if x["replyTo"] is not None else ""
         also = f"，alsoAnswers：{'、'.join(map(str, x['alsoAnswers']))}" if x.get("alsoAnswers") else ""
@@ -491,8 +495,11 @@ def _merge(args) -> int:
             _sent(res.reply.to)
             print(f"replyTo：{res.reply.reply_to}")
             print(f"正文文件：{res.reply.path}")
-        for closing in (merge.closing_all(store.open_store(), [r.reply.to for r in done]) if done else []):
-            print(f"发送 【已恢复】 → {closing['to']}，正文文件：{closing['path']}（这个事项涉及的模块都转完后再发）")
+        for closing in (merge.closing_all(store.open_store(), [r.reply.to for r in done], list(split.approve)) if done else []):
+            if closing.get("wait"):
+                print(f"你开的等待记录 W{closing['wait']} 等的事已发生：发送 【已恢复】 → {closing['to']}，正文文件：{closing['path']}")
+            else:
+                print(f"发送 【已恢复】 → {closing['to']}，正文文件：{closing['path']}（这个事项涉及的模块都转完后再发）")
             _sent(closing['to'])
         return 0
     if args.action == "revoke":

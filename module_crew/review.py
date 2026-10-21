@@ -698,26 +698,29 @@ def _group_reply_text(group: list[tuple[int, dict]], original: str, answered_at:
         raise AnswerRefused(str(exc)) from exc
 
 
-def _closing_send(tx, db: store.Store, sends: list[dict], modules: list[str]) -> None:
-    """After relaying a source's answer, the 【已恢复】 that closes the source's item (contract v1.6)."""
-    src = store.source_field().get("source")
-    if not src:
-        return
-    text = protocol.render_resumed([src["item"]], f"已把用户对 #{src['item']} 的答复转给 {'、'.join(modules)} 的模块会话。")
-    body = tx.allocate_number()
-    meta = tx.write_body(body, text)
-    sends.append({"kind": "resumed", "to": src["name"], "replyTo": None, "body": body, "path": db.path / meta["path"]})
+def _closing_send(tx, db: store.Store, sends: list[dict], modules: list[str], answered: list[int] = ()) -> None:
+    """After relaying an answer: the 【已恢复】 that closes the source's item (contract v1.6), then the coordinator's
+    own wait records on that item or on any answered C<N> (0.9.1: a wait on C<N> closed only through `answer`)."""
     from module_crew import inbox
-    inbox.resume_own_waits(tx, db, sends, [f"#{src['item']}"])
+    src = store.source_field().get("source")
+    about = [f"C{n}" for n in answered]
+    if src:
+        text = protocol.render_resumed([src["item"]], f"已把用户对 #{src['item']} 的答复转给 {'、'.join(modules)} 的模块会话。")
+        body = tx.allocate_number()
+        meta = tx.write_body(body, text)
+        sends.append({"kind": "resumed", "to": src["name"], "replyTo": None, "body": body, "path": db.path / meta["path"]})
+        about.append(f"#{src['item']}")
+    if about:
+        inbox.resume_own_waits(tx, db, sends, about)
 
 
-def closing_all(db: store.Store, recipients: list[str]) -> list[dict]:
-    """Every 【已恢复】 due after relaying the active source's answer (its item, then own wait records)."""
-    if not store.source_field():
+def closing_all(db: store.Store, recipients: list[str], answered: list[int] = ()) -> list[dict]:
+    """Every 【已恢复】 due after relaying an answer (the source's item, then own wait records on it or on `answered`)."""
+    if not store.source_field() and not answered:
         return []
     sends: list[dict] = []
     with db.transaction(actor="coordinator") as tx:
-        _closing_send(tx, db, sends, list(dict.fromkeys(recipients)))
+        _closing_send(tx, db, sends, list(dict.fromkeys(recipients)), answered)
     return sends
 
 
@@ -976,7 +979,7 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
             result.sends.append({"kind": "user-reply", "to": group[0][1]["from"], "replyTo": group[0][1]["relayId"],
                                  "alsoAnswers": relays[1:],     # one reply answering several requests (agent-relay)
                                  "body": body, "path": db.path / meta["path"]})
-        _closing_send(tx, db, result.sends, modules)
+        _closing_send(tx, db, result.sends, modules, [n for n, _ in picked])
         for m in modules:
             nodes_now = approved_before.get(m, set()) | {rec["node"] for _, rec in picked if rec["module"] == m}
             if not {"spec", "plan"} <= nodes_now:

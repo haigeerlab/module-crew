@@ -14,3 +14,4 @@
 - [x] Task 8：实地验证（Spec 验收 13）——2026-10-19 在 scratchpad 的 crew-rehearsal 临时副本（不碰原仓库与它的 worktree）登记模块 fieldmod、`permissions apply` 写规则，两边各提交一份 spec/fieldmod.md 造冲突；开默认权限模式的会话「实地验证：模块会话跑 module-crew sync」单独执行 `module-crew sync`、`git status --short`、`git log --oneline -3`。结果：sync 取集成分支版本完成合并（HEAD 06546ff，工作区干净，spec/fieldmod.md 带批准标记）；会话记录里 7 次工具调用的权限决定全是 `source: config`（规则放行），没有弹窗、没有 `user_temporary`
 - [x] Checkpoint 3（gate）：最终验收——用户 2026-10-19 批准；26 个文件 +924 −43（1051985..3ff5b34）
 - [x] 回告：结果告诉 di-p0-tester（local_bbdaaaab）——2026-10-19 已发会话消息
+- [x] Task 9（2026-10-21 追加，演练执行 local_7b860c90 报的缺陷）：`review approve`／`merge approve` 批准后，`--about C<N>` 的自开等待记录不自动关（演练 W257：等 C247，批准经收件箱 #84，只按 #84 匹配；在本会话亲口批准时连 #H 都没有，一条都不关）。改为把答到的交审编号 C<N> 与 #H 一起匹配，命令输出补「你开的等待记录 W<号> 等的事已发生」一行；协调 skill 写明三条命令都会带。复现测试 `OwnWaitOnReviewNumberTest`（3 个，改前全红）。用户 2026-10-21 选 A：本地提交，不打标签、不升级本机，等短验证结束再发 0.9.1
