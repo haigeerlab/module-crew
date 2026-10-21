@@ -867,7 +867,10 @@ def _run(args) -> int:
                     print(json.dumps(rows, ensure_ascii=False, indent=2))
                 else:
                     for r in rows:
-                        ver = f"，契约 v{r.get('protocol', '2.2')}" if r["kind"] == "hub" else ""
+                        ver = ""
+                        if r["kind"] == "hub":
+                            got = sources.hub_protocol(r)
+                            ver = f"，契约 v{got}" + ("" if r.get("protocol") == got else f"（登记为 {r.get('protocol') or '未写'}，按 {got} 发）")
                         scope = f"，{sources.scope_text(r.get('scope'))}" if r["kind"] == "lead" else ""
                         print(f"{r['name']}（{r['kind']}{ver}{scope}）登记于 {r['addedAt']}")
                     if not rows:
@@ -883,7 +886,7 @@ def _run(args) -> int:
                 elif args.modules is not None or args.nodes is not None:
                     raise sources.SourceRefused("只有审查者（lead）才登记负责范围")
                 notes = sources.add(db, args.name, args.kind, original, args.protocol, scope)
-                ver = f"，契约 v{args.protocol or '2.2'}" if args.kind == "hub" else ""
+                ver = f"，契约 v{args.protocol or sources.OLDEST_HUB}" if args.kind == "hub" else ""
                 extra = f"，{sources.scope_text(scope)}" if scope else ""
                 print(f"已登记可信批准来源 {args.name}（{args.kind}{ver}{extra}）")
                 for line in notes:

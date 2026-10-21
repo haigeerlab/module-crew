@@ -251,7 +251,13 @@ def batch(project: str | os.PathLike) -> dict:
 
 READY = ("none", "timeout", "passed", "decide")   # states that may go to the user (key decision 3)
 CHOOSE_CURRENT = [{"letter": "A", "text": "按模块现版本批准"}, {"letter": "B", "text": "退回按审查意见改"}]
-CAUTIOUS = "取稳妥的一边；模块协调不替你判断，请按你的意见选"
+# 0.9.5 (boundary review 6): module-crew's own rule, not the contract's — the decision inbox takes the proposer's
+# lean as it is and has no rule of its own (spec/crew-review-nearby.md). Each says why B is the cautious side.
+WHY_B = {
+    "timeout": "审查者没回不等于审查通过；选 B 只是多等，选 A 也能批",
+    "disagree": "审查者和模块意见不一，选 B 由模块照审查意见改，现版本不进集成分支",
+    "over-limit": "改了 3 轮仍有须修改项，选 B 再改一轮，选 A 现版本照样能用但带着这些问题",
+}
 CHOOSE_WAIT = [{"letter": "A", "text": "不等审查直接批"}, {"letter": "B", "text": "等审查结论"}]
 
 
@@ -275,13 +281,13 @@ def _item_decisions(n: int, v: dict, state: str) -> list[dict]:
     asked = (last.get("changes") or [last.get("points", "")])
     if v.get("disputes"):
         reasons = "；".join(f"{d['review']}：{d['reason']}" for d in v["disputes"])
-        return [{"source": "coordinator", "kind": "disagree", "lean": "B", "leanReason": CAUTIOUS, "options": CHOOSE_CURRENT,
+        return [{"source": "coordinator", "kind": "disagree", "lean": "B", "leanReason": WHY_B["disagree"], "options": CHOOSE_CURRENT,
                  "question": f"{what}：模块不同意审查——审查要求：{'；'.join(asked) or '见审查结论'}；模块理由：{reasons}"}]
     if v.get("overLimit"):
-        return [{"source": "coordinator", "kind": "over-limit", "lean": "B", "leanReason": CAUTIOUS, "options": CHOOSE_CURRENT,
+        return [{"source": "coordinator", "kind": "over-limit", "lean": "B", "leanReason": WHY_B["over-limit"], "options": CHOOSE_CURRENT,
                  "question": f"{what}：返工 {REWORK_LIMIT} 轮后审查仍要求修改——{'；'.join(asked)}"}]
     if state == "timeout":
-        return [{"source": "coordinator", "kind": "timeout", "lean": "B", "leanReason": CAUTIOUS, "options": CHOOSE_WAIT,
+        return [{"source": "coordinator", "kind": "timeout", "lean": "B", "leanReason": WHY_B["timeout"], "options": CHOOSE_WAIT,
                  "question": f"{what}：审查者 {'、'.join(v.get('sentTo') or [])} 15 分钟没有给出结论"}]
     return [{"source": last["from"], "kind": "reviewer", "lean": d["lean"], "leanReason": d.get("leanReason"),
              "options": d["options"], "question": d["question"]}
@@ -457,7 +463,6 @@ def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> lis
     b = batch(project)
     ready = {i["number"]: i for i in b["items"] if i["ready"]}
     combined = start.review_cadence(project) == "combined"
-    v23 = sources.hub_protocol(db) != "2.2"
     out = []
     for g in b["groups"]:
         mine = [ready[n] for n in g["items"] if n in ready]
@@ -465,18 +470,15 @@ def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> lis
             continue
         if not combined:
             parts = [[i] for i in mine]
-        elif v23:   # contract v2.3: one kind per card, so only a Spec and a Plan share one (「Spec 与 Plan」)
+        else:       # contract v2.3: one kind per card, so only a Spec and a Plan share one (「Spec 与 Plan」)
             pair = [i for i in mine if i["node"] in ("spec", "plan")]
             parts = ([pair] if pair else []) + [[i] for i in mine if i not in pair]
-        else:
-            parts = [mine]
         for part in parts:
-            out.append(_hub_item(project, db, b, g, part, parallel_with, v23))
+            out.append(_hub_item(project, db, b, g, part, parallel_with))
     return out
 
 
-def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict], parallel_with: int | None,
-              v23: bool = False):
+def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict], parallel_with: int | None):
     from module_crew import sources
     coord = next((n for n, s in sorted(store.records(db, "session").items())
                   if s.get("role") == "coordinator" and s.get("status") == "active"), "模块协调")
@@ -504,11 +506,7 @@ def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict]
             points.append(f"经 {i['round']} 轮审查修改，上次须修改：")
             points += [_safe(line) for line in _last_changes(db, rec)]
     missing = [f"依赖未就绪：依赖的 {'、'.join(d['missing'])}" for d in b["dependencyIssues"] if d["module"] == g["module"]]
-    if v23:
-        points += _card_fields(db, part, missing)
-    else:
-        points += missing
-        points += ["", "批准会发生什么："] + _what_happens(part)
+    points += _card_fields(db, part, missing)     # 0.9.5: the v2.2 card is gone; every inbox here speaks v2.3+
     lines = [f"【与 #{parallel_with} 并行】"] if parallel_with is not None else []
     top = Path(probe._git(project, "rev-parse", "--show-toplevel").stdout.strip() or project)
     lines += ["【等待用户】", "结束：无", f"来自：{coord}", f"项目：{top.name}",
@@ -523,7 +521,7 @@ def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict]
         lines.append("架构审查：" + _review_summary(part))
     lines += ["选项与我的建议：",
               "推荐 A：批准",
-              f"  选了会怎样：{_effect(part) if v23 else _consequence(part)}",
+              f"  选了会怎样：{_effect(part)}",
               "B：退回修改（请写修改意见）",
               "  选了会怎样：模块按你的意见改完再交审，集成分支不变",
               "你该回：A" + "".join(f"；{k} {d['lean'] or 'A'}" for k, _, d in numbered),
@@ -616,6 +614,11 @@ def _card_fields(db: store.Store, part: list[dict], missing: list[str]) -> list[
     lines = [f"类型：{kind}", "注意：" + ("；".join(notes) if notes else "无")]
     if passed and len(passed) == len(part):
         lines.append(f"推荐理由：审查通过（{'、'.join(passed)}）" + ("，建议见「注意」" if any("审查建议" in n for n in notes) else ""))
+    else:
+        why = [f"{tag(i)}{d['leanReason']}" for i in part for d in i.get("decisions") or []
+               if d.get("source") == "coordinator" and d.get("leanReason")]
+        if why:                                   # 0.9.5: the coordinator's lean explained where the inbox shows it
+            lines.append("推荐理由：" + "；".join(why))
     return lines + [f"批了会怎样：{effect}"]
 
 
@@ -650,16 +653,6 @@ def question_lines(numbered: list) -> list[str]:
         if d["lean"]:
             lines.append(f"  倾向：{d['lean']}（{d.get('leanReason') or d['source']}）")
     return lines
-
-
-def _consequence(ready: list[dict]) -> str:
-    """R4: what approving really does for the nodes in this batch."""
-    parts = []
-    if any(i["node"] != "final" for i in ready):
-        parts.append("Spec、Plan 写批准标记，两份都批了的模块开工")
-    if any(i["node"] == "final" for i in ready):
-        parts.append("最终验收排进合并队列，检查通过后合并进集成分支")
-    return "；".join(parts)
 
 
 def _review_summary(items: list[dict]) -> str:

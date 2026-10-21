@@ -13,6 +13,7 @@ from module_crew import protocol, store
 
 KINDS = ("hub", "lead")
 PROTOCOLS = ("2.2", "2.3", "2.4")       # session-protocol versions a decision inbox may speak (crew-hub-card-fields)
+OLDEST_HUB = "2.4"                      # 0.9.5: every inbox here speaks v2.3+; unset or 2.2 registrations count as 2.4
 NODES = ("spec", "plan", "interface", "final")       # review nodes a reviewer can be responsible for (crew-routing-fixes)
 ALL = "all"
 ALL_WORDS = ("all", "全部")
@@ -92,6 +93,8 @@ def add(db: store.Store, name: str, kind: str, original: str, protocol: str | No
         raise SourceRefused(f"契约版本只能是 {'／'.join(PROTOCOLS)}")
     if protocol is not None and kind != "hub":
         raise SourceRefused("只有决策收件箱（hub）才登记契约版本")
+    if protocol == "2.2":
+        raise SourceRefused("决策收件箱已全部是 v2.3 以上，不再按 2.2 登记：不写 --protocol（按 2.4）或写 2.3／2.4")
     if kind == "lead" and not _valid_scope(scope):
         raise SourceRefused("审查者必须写负责范围（--modules 与 --nodes，要全部也写「全部」）：问清用户再登记")
     if kind != "lead" and scope is not None:
@@ -149,10 +152,10 @@ def listing(db: store.Store) -> list[dict]:
     return list((store.get(db, "config", "main") or {}).get("sources") or [])
 
 
-def hub_protocol(db: store.Store) -> str:
-    """The contract version module-crew writes for the decision inbox: the lowest one among the registered hubs."""
-    hubs = [r.get("protocol") or "2.2" for r in listing(db) if r.get("kind") == "hub"]
-    return min(hubs, key=lambda v: tuple(int(x) for x in v.split("."))) if hubs else "2.2"
+def hub_protocol(row: dict) -> str:
+    """The contract version module-crew writes to a registered hub: as registered, unset or 2.2 counting as 2.4 (0.9.5)."""
+    got = row.get("protocol")
+    return got if got in ("2.3", "2.4") else OLDEST_HUB
 
 
 def check(db: store.Store, name: str, item: int, relay_id: int, text: str | None, *, sender: str) -> SourceInfo:

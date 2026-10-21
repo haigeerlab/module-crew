@@ -299,7 +299,7 @@ class BatchTest(NearbyCase):
         for line in ("1. 一", "5. 五"):
             self.assertIn(line, msg.fields["要点"])                                 # nothing cut
         self.assertNotIn("共 5 条", text)
-        self.assertIn("批准会发生什么", msg.fields["要点"])
+        self.assertIn("在集成分支记批准标记", msg.fields["批了会怎样"])             # 0.9.5: the v2.3 field, not 批准会发生什么
         rec = store.get(self.db, "item", str(n))
         self.assertEqual({a["path"] for a in msg.contract()["artifacts"]},
                          {str(self.wt["b"] / "tasks" / "b" / "plan.md"), str(self.wt["b"] / "tasks" / "b" / "todo.md")})
@@ -343,12 +343,18 @@ class BatchTest(NearbyCase):
         [(text, msg)] = self.bodies()
         self.assertIn("未审查（审查者无响应）", text)
         self.assertIn("不等审查直接批", msg.fields["待用户决定"])
+        # 0.9.5 (boundary review 6): each coordinator lean says why B is the cautious side, on the card too
+        self.assertIn(f"倾向：B（{review.WHY_B['timeout']}）", msg.fields["待用户决定"])
+        self.assertIn(review.WHY_B["timeout"], msg.fields["推荐理由"])
+        self.assertNotIn("模块协调不替你判断", text)
         review.note(self.db, n, "arch", conclusion("有须修改项2条", CHANGES))
         same = self.spec_review("b").replace("要点：", "不同意：\nR-7：错误码已在接口提案里定\n要点：")
         review.add(self.db, same, "shop-b", 6001)
         [(text, msg)] = self.bodies()
         self.assertIn("按模块现版本批准", msg.fields["待用户决定"])
         self.assertIn("错误码已在接口提案里定", msg.fields["待用户决定"])
+        self.assertIn(review.WHY_B["disagree"], msg.fields["待用户决定"])
+        self.assertIn(review.WHY_B["disagree"], msg.fields["推荐理由"])
 
     def test_cadence_combined_puts_spec_and_plan_together(self):
         spec, plan = self.submit(), self.submit("Plan")

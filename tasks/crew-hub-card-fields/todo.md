@@ -10,3 +10,4 @@
 - [x] Task 5：README、版本 0.7.0、全量测试（Spec 验收 8）——提交 826b6de；全量 450 个测试通过（含旧称扫描）
 - [x] Checkpoint 2（gate）：最终验收——用户 2026-10-19 批准；除契约样例外 21 个文件 +607 −40，另钉 v2.3 契约样例 206 个文件（d10ae2c..44a5919）
 - [x] 回告：结果告诉 di-p0-tester（local_bbdaaaab）与契约负责人（local_a9d06942）——2026-10-19 已发会话消息；向契约负责人更正「拿能力图核对接口提案影响的模块」未做
+- [x] 修订（2026-10-22 追加，职责边界审查第 12 条）：删提请批准卡片的 v2.2 写法与 card-fields 回归夹具，未写版本的 hub 按 2.4，拒绝登记 2.2；解析器与契约样例保留——删 tests/fixtures/card-fields 三份夹具与 V22UnchangedTest，改为 NoVersionTest；skill、README 同步；全量 491 个测试通过

@@ -47,8 +47,8 @@ class SkillsTest(unittest.TestCase):
 
     def test_card_kinds(self):
         _, coord = read("crew-coordinator")
-        for words in ("--protocol 2.3", "source list", "类型：卡住选做法", "出了什么事", "类型：能力图审阅",
-                      "拆成哪些模块", "先后顺序", "文档建议", "**不要写**「类型」"):
+        for words in ("`--protocol 2.2` 会被拒", "按 2.4 发", "source list", "类型：卡住选做法", "出了什么事", "类型：能力图审阅",
+                      "拆成哪些模块", "先后顺序", "文档建议"):          # 0.9.5: no v2.2 card any more
             self.assertIn(words, coord)
         _, dev = read("crew-dev")
         codex = (PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")

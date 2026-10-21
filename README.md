@@ -3,14 +3,12 @@
 让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.9.4。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.9.5。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
-## 0.9.4 的变化（职责边界审查修复）
+## 0.9.5 的变化（职责边界审查修复）
 
-- 提交信息的前缀改成项目配置 `commitPrefix`：默认仍是 `chore(crew): `，`start prepare --commit-prefix <值>` 设定，空字符串表示不加。原来写死，是为第一个试点项目的 commitlint 定的规矩。
-- 停滞信号的「已勾选项」口径以 spec-guard 为准，代码和 Spec 里写明为什么自己读历史版本；行为不变。
-- 各版本的变化移到 [CHANGELOG.md](CHANGELOG.md)；「尚未验证」按现状重写。
-- 测试不再受运行环境里会话变量的影响。
+- 审查超时、模块不同意审查意见、返工满 3 次时，模块协调给的「倾向 B」各写一句为什么稳妥，卡片的「推荐理由」也带上；不再写「取稳妥的一边；模块协调不替你判断」。这条规则归 module-crew，决策收件箱照原样显示。
+- 提请批准的卡片一律按 v2.3 起的写法生成，v2.2 卡片删掉：登记 hub 不写 `--protocol` 按 2.4，`--protocol 2.2` 被拒；以前登记为 2.2 或没写的，`source list` 显示「按 2.4 发」，不用重新登记。解析器照样认旧写法。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -116,7 +114,7 @@ bin/module-crew status
 3. 审查者回【审查结论】，`review note [<C号>] … [--then-batch [--for-hub]]` 记下（一条消息几段也行）：
    「有须修改项N条」时输出返工通知，模块改完重交、再送审，不问用户；返工满 3 次、模块写了「不同意」、或送审 15 分钟没结论，都变成「待你决定」的问题（D 编号）。
 4. 只有审查通过（或带「待你决定」问题）的交审才提请批准：`review batch --for-hub` **一个模块一条**【等待用户】，
-   带交审要点全文、「批准会发生什么」、「产物」（路径 ＠ 提交，重交带上一版）、「交审原文」「审查原文」（`<状态库>/originals/` 下的原文文件）和「待你决定」（字段名：待用户决定）。
+   带交审要点全文、「批了会怎样」、「产物」（路径 ＠ 提交，重交带上一版）、「交审原文」「审查原文」（`<状态库>/originals/` 下的原文文件）和「待你决定」（字段名：待用户决定）。
 5. 「你的答复」要答到每个 D（如「A；D1 B」）；没答全批准命令退出码 3、什么都不做。退回、等审查这类答案分别让交审退回或保持未答。
 6. 最终验收批准后、合并前可以 `merge revoke <C号>` 撤回；`status` 与 `sessions --json` 显示返工轮次（`review` 字段）。
 
@@ -147,7 +145,7 @@ module-crew change add|list|land|answer          公共变更请求
 module-crew merge approve|revoke|queue|run|cleanup|push-plan|push
 module-crew suspend|resume|sessions|resume-kit|serial
 module-crew takeover <邮箱名> --original(-file)  换会话接管
-module-crew source add|remove|list|map           可信批准来源（决策收件箱、审查者）与对照；hub 可带 --protocol 2.2|2.3
+module-crew source add|remove|list|map           可信批准来源（决策收件箱、审查者）与对照；hub 可带 --protocol 2.3|2.4（不写按 2.4）
 module-crew review note [--then-batch]|batch --for-hub   审查结论、返工、提请批准正文（一个模块一条）
 module-crew ticket close <编号> --reason …        模块协调关等待记录
 module-crew wait add --file --to --relay-id --about  记下模块协调自己发出的等待记录

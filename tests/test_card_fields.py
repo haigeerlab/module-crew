@@ -8,7 +8,6 @@ from helpers import MergeCase, RepoCase
 
 from module_crew import protocol, review, sources, start, store
 
-V22 = Path(__file__).resolve().parent / "fixtures" / "card-fields"
 
 
 def conclusion(module="b", node="Spec", verdict="通过", ref="R-1", extra=""):
@@ -55,23 +54,21 @@ class HubProtocolTest(RepoCase):
         self.db = store.open_store(self.repo)
 
     def test_default_and_recorded(self):
-        self.assertEqual(sources.hub_protocol(self.db), "2.2")              # no hub at all
+        # 0.9.5 (boundary review 12): every inbox here speaks v2.3+, so unset or 2.2 registrations count as 2.4
+        self.assertEqual(sources.hub_protocol({"kind": "hub"}), "2.4")
+        self.assertEqual(sources.hub_protocol({"kind": "hub", "protocol": "2.2"}), "2.4")   # registered before 0.9.5
         sources.add(self.db, "hub-a", "hub", "登记收件箱")
-        self.assertEqual(sources.listing(self.db)[0].get("protocol"), None)  # not written: read as 2.2
-        self.assertEqual(sources.hub_protocol(self.db), "2.2")
-        sources.remove(self.db, "hub-a", "撤掉")
-        sources.add(self.db, "hub-a", "hub", "登记收件箱", protocol="2.3")
-        self.assertEqual(sources.hub_protocol(self.db), "2.3")
-        sources.add(self.db, "arch", "lead", "登记审查会话", scope=sources.ALL_SCOPE)                   # a reviewer does not count
-        self.assertEqual(sources.hub_protocol(self.db), "2.3")
-        sources.add(self.db, "hub-b", "hub", "第二个收件箱", protocol="2.4")
-        self.assertEqual(sources.hub_protocol(self.db), "2.3")                 # the lowest registered version
-        sources.add(self.db, "hub-c", "hub", "第三个收件箱")                   # one hub still on 2.2
-        self.assertEqual(sources.hub_protocol(self.db), "2.2")
+        self.assertEqual(sources.listing(self.db)[0].get("protocol"), None)
+        self.assertEqual(sources.hub_protocol(sources.listing(self.db)[0]), "2.4")
+        sources.add(self.db, "hub-b", "hub", "第二个收件箱", protocol="2.3")
+        self.assertEqual(sources.hub_protocol(sources.listing(self.db)[1]), "2.3")
 
     def test_refusals(self):
         with self.assertRaises(sources.SourceRefused):
             sources.add(self.db, "hub-a", "hub", "登记", protocol="2.5")
+        with self.assertRaises(sources.SourceRefused) as ctx:
+            sources.add(self.db, "hub-a", "hub", "登记", protocol="2.2")
+        self.assertIn("按 2.4", str(ctx.exception))
         with self.assertRaises(sources.SourceRefused):
             sources.add(self.db, "arch", "lead", "登记", protocol="2.3")     # only a hub has a contract version
 
@@ -82,24 +79,23 @@ class HubProtocolTest(RepoCase):
         self.assertIn("契约 v2.3", self.run_cli("source", "list").stdout)
         self.assertNotEqual(self.run_cli("source", "add", "hub-b", "--kind", "hub", "--protocol", "3",
                                          "--original", "x").returncode, 0)
+        self.assertEqual(self.run_cli("source", "add", "hub-c", "--kind", "hub", "--protocol", "2.2",
+                                      "--original", "x").returncode, 3)
+        self.run_cli("source", "add", "hub-d", "--kind", "hub", "--original", "登记")
+        self.assertIn("hub-d（hub，契约 v2.4（登记为 未写，按 2.4 发））", self.run_cli("source", "list").stdout)
 
 
-class V22UnchangedTest(CardCase):
-    """Spec acceptance 5: with a hub on 2.2 (or no version), the text is what 0.6.0 wrote, byte for byte."""
+class NoVersionTest(CardCase):
+    """0.9.5: a hub registered without a version gets the v2.3+ card (类型, 注意, 推荐理由, 批了会怎样)."""
 
-    def test_same_as_before(self):
+    def test_unversioned_hub_gets_v23_card(self):
         self.spec_and_plan()
-        self.final()
-        made = review.for_hub(self.repo)
-        self.assertEqual(len(made), 3)
-        for i, (_, _, text) in enumerate(made):
-            with self.subTest(i):
-                # crew-stage-c-fixes MC-9: the only difference from 0.6.0 is the 「模块」 line right after 要点
-                module = protocol.parse(text).contract()["module"]
-                self.assertIn(module, ("b", "c"))
-                self.assertEqual(self.normal(text).replace(f"模块：{module}\n", "", 1),
-                                 (V22 / f"v22-{i}.txt").read_text(encoding="utf-8"))
-                self.assertNotIn("类型：", text)
+        for _, _, text in review.for_hub(self.repo):
+            msg = protocol.parse(text)
+            self.assertTrue(msg.ok, msg.problems)
+            self.assertIn("类型", msg.fields)
+            self.assertIn("批了会怎样", msg.fields)
+            self.assertNotIn("批准会发生什么", text)
 
 
 class V23CardTest(CardCase):

@@ -1,6 +1,6 @@
 # Spec: crew-hub-card-fields
 
-<!-- spec-guard: review approved e941b04b3b77 -->
+<!-- spec-guard: review approved 3a241446c219 -->
 
 > 能力图模块 `crew-hub-card-fields`（第五版，0.7.0 两个模块之二）。需求来源：`livesaas-integration/REQ-DECISION-CARDS.md` 第二节「3. module-crew」的 MC-1、MC-2，
 > 基准 `DECISION-CARD-TEMPLATES.md`（用户已定稿）。契约 session-protocol v2.3 已定稿（提交 6b8810e，事项 Q6Q0CJ4，用户 2026-10-19 批准）。
@@ -65,6 +65,7 @@
 6. `source add --kind hub --protocol 2.3` 记下版本、`source list` 显示；`--protocol` 只认 2.2、2.3。
 7. 三份 skill 写明各类请示的类别与小项，接口提案两项；skill 测试断言。
 8. 全量测试与旧称扫描通过。
+（0.9.5 追加，审查第 12 条）删掉提请批准卡片的 v2.2 写法：`review batch --for-hub` 一律按 v2.3 起的写法生成（类型、注意、推荐理由、批了会怎样，紧跟要点写「模块」）；登记 hub 时不写 `--protocol` 按 2.4，`--protocol 2.2` 被拒并提示「决策收件箱已全部是 v2.3 以上，按 2.4 登记」；已经按 2.2 或没写版本登记的 hub，`source list` 显示「按 2.4 发」。解析器与 v2.2、v2.3 契约样例不动：模块会话、收件箱发来的旧写法照样要认。`tests/fixtures/card-fields/v22-*.txt` 这三份「v2.2 卡片逐字不变」的回归夹具与对应测试删掉。
 
 ## 风险
 
@@ -79,3 +80,4 @@
 ## 变更记录
 
 - 2026-10-19：初稿，待用户审。
+- 2026-10-22：删提请批准卡片的 v2.2 写法，未写版本的 hub 按 2.4，拒绝登记 2.2；解析器与契约样例保留；发 0.9.5。来源：本会话职责边界审查第 12 条；decision-inbox 统筹经总协调 2026-10-22 答复本机收件箱都是 0.0.36（契约 v2.4），删 v2.2 卡片路径对收件箱侧没有影响，但要先处理未写版本的登记；本机唯一登记的 hub `di-p0-hub` 是 2.4（2026-10-22 只读核对）。
