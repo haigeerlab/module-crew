@@ -124,32 +124,39 @@ for t in targets:
 
 FAKE_GATE_TICK = '''import argparse, re, sys
 from pathlib import Path
-# Stand-in for spec-guard interface 1.7 gateTick: the final gate is the last item that names a checkpoint
-# (最终验收 / Checkpoint / gate); it is ticked only when it is the first unchecked item.
+# Stand-in for spec-guard interface 1.7 gateTick (output lines as hooks/gate_tick.py of 0.83.0 prints them):
+# the final gate is the last item that names a checkpoint (最终验收 / Checkpoint / gate); it is ticked only when
+# it is the first unchecked item.
 p = argparse.ArgumentParser()
 p.add_argument("--project", required=True)
 p.add_argument("--module", required=True)
 p.add_argument("--confirm", action="store_true")
 a = p.parse_args()
 path = Path(a.project) / "tasks" / a.module / "todo.md"
+rel = "tasks/%s/todo.md" % a.module
 if not path.exists():
-    print("todo-missing"); sys.exit(2)
+    print("todo-missing: %s does not exist" % rel); sys.exit(2)
 lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
 item = re.compile(r"^(\\s*[-*] )\\[( |x)\\]( .*)$")
 rows = [(i, m) for i, line in enumerate(lines) if (m := item.match(line.rstrip("\\n")))]
 gates = [i for i, m in rows if re.search(r"最终验收|Checkpoint|gate", m.group(3))]
 if not gates:
-    print("no-gate"); sys.exit(2)
+    print("no-gate: %s has no gate checkpoint" % rel); sys.exit(2)
 final = gates[-1]
 open_rows = [i for i, m in rows if m.group(2) == " "]
 if final not in open_rows:
-    print("already ticked"); sys.exit(0)
+    print("%s: the final gate is already ticked; nothing to change (%d unchecked item(s) left)" % (rel, len(open_rows)))
+    sys.exit(0)
 if open_rows[0] != final:
-    print("not-at-final-gate: " + item.match(lines[open_rows[0]].rstrip("\\n")).group(3).strip()); sys.exit(2)
+    first = item.match(lines[open_rows[0]].rstrip("\\n")).group(3).strip()
+    print("not-at-final-gate: the first unchecked item of %s is not its last gate: %s" % (rel, first)); sys.exit(2)
+print("%s line %d: %s" % (rel, final + 1, lines[final].strip()))
 if a.confirm:
     end = lines[final][len(lines[final].rstrip("\\n")):]
     lines[final] = item.sub(r"\\1[x]\\3", lines[final].rstrip("\\n")) + end
     path.write_text("".join(lines), encoding="utf-8")
+if not a.confirm:
+    print("preview only: add --confirm to tick it (%d unchecked item(s) left after)" % (len(open_rows) - 1)); sys.exit(0)
 print("ticked; %d unchecked item(s) left" % (len(open_rows) - 1))
 '''
 

@@ -68,7 +68,7 @@ class TickTest(PilotCase):
         self.assertEqual(git(self.repo, "rev-parse", "HEAD").strip(), res.merge_commit)
         res = merge.run(self.repo, self.check)
         self.assertEqual(git(self.repo, "rev-parse", "HEAD").strip(), res.merge_commit)
-        self.assertTrue(any("not-at-final-gate: Task 1" in line for line in res.lines), res.lines)   # spec-guard's short code
+        self.assertTrue(any(line.startswith("spec-guard 没有勾 c") and "not-at-final-gate" in line and "Task 1" in line for line in res.lines), res.lines)
         self.assertNotIn("- [x] 最终验收", self.main_todo("c"))
 
     def test_gate_with_items_after_it(self):
