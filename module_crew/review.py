@@ -333,6 +333,9 @@ def note(db: store.Store, number: int | None, sender: str, text: str) -> NoteRes
         if c["module"] != rec["module"] or c["node"] != rec["node"]:
             raise NoteRefused(f"{where}审查结论说的是 {msg.fields.get('模块')} 的 {msg.fields.get('节点')}，"
                               f"对不上 C{n}（{rec['module']} 的 {NODE_NAME.get(rec['node'], rec['node'])}）")
+        sent = list(rec.get("sentTo") or [])
+        if sender not in sent:          # crew-routing-fixes: only a reviewer this 【交审】 was sent to may conclude it
+            raise NoteRefused(f"{where}C{n} 没有送给 {sender} 审（" + (f"送审对象：{'、'.join(sent)}" if sent else "没有送审") + "）")
         picked.append((n, msg, section))
     res = NoteResult()
     with db.transaction(actor="coordinator") as tx:

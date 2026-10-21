@@ -101,6 +101,55 @@ class ReviewerScopeTest(ReviewCase):
         self.assertIn("arch（lead，模块 全部 × 节点 final）", listed.stdout)
 
 
+def conclusion(module, node="Spec", ref="R-1", sender="arch-b"):
+    return (f"【审查结论】\n审查编号：{ref}\n节点：{node}\n模块：{module}\n送审方：shop-{module}\n结论：通过\n"
+            f"来自：{sender}\n要点：接口清楚。\n")
+
+
+class NoteSenderTest(ReviewCase):
+    """Task 7: a 【审查结论】 counts only from a reviewer the 【交审】 was sent to."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        sources.add(self.db, "arch-b", "lead", "登记", scope=sources.parse_scope("b", "spec"))
+        sources.add(self.db, "arch-c", "lead", "登记", scope=sources.parse_scope("c", "spec"))
+
+    def test_only_the_reviewer_it_was_sent_to(self):
+        n = review.add(self.db, self.spec_review("b"), "shop-b", 4001).number
+        before = store.get(self.db, "item", str(n))
+        with self.assertRaises(review.NoteRefused) as ctx:
+            review.note(self.db, n, "arch-c", conclusion("b", sender="arch-c"))
+        self.assertIn(f"C{n} 没有送给 arch-c 审（送审对象：arch-b）", str(ctx.exception))
+        self.assertEqual(store.get(self.db, "item", str(n)), before)              # nothing written
+        res = review.note(self.db, n, "arch-b", conclusion("b"))
+        self.assertEqual(store.get(self.db, "item", str(n))["reviews"][0]["from"], "arch-b")
+        self.assertTrue(res.lines)
+
+    def test_not_sent_at_all(self):
+        n = review.add(self.db, self.plan_review("b"), "shop-b", 4002).number   # nobody covers b's plan
+        with self.assertRaises(review.NoteRefused) as ctx:
+            review.note(self.db, n, "arch-b", conclusion("b", node="Plan"))
+        self.assertIn(f"C{n} 没有送给 arch-b 审（没有送审）", str(ctx.exception))
+
+    def test_one_bad_section_refuses_all(self):
+        b = review.add(self.db, self.spec_review("b"), "shop-b", 4001).number
+        c = review.add(self.db, self.spec_review("c"), "shop-c", 4003).number
+        text = conclusion("b", ref="R-1") + "\n" + conclusion("c", ref="R-2")
+        with self.assertRaises(review.NoteRefused):
+            review.note(self.db, None, "arch-b", text)
+        self.assertFalse(store.get(self.db, "item", str(b)).get("reviews"))
+        self.assertFalse(store.get(self.db, "item", str(c)).get("reviews"))
+
+    def test_cli_exit_code(self):
+        n = review.add(self.db, self.spec_review("b"), "shop-b", 4001).number
+        f = self.tmp / "concl.txt"
+        f.write_text(conclusion("b", sender="arch-c"), encoding="utf-8")
+        out = self.run_cli("review", "note", f"C{n}", "--from", "arch-c", "--file", str(f), cwd=self.repo)
+        self.assertEqual(out.returncode, 3)
+        self.assertIn("没有送给 arch-c 审", out.stderr)
+
+
 class SuspendedSyncTest(ReviewCase):
     """Task 3: change land skips a suspended module (the requester still gets its reply); resume says what landed."""
 

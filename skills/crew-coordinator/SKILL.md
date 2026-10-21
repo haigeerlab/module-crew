@@ -194,7 +194,7 @@ module-crew ticket close <编号> --reason user --original-file <用户原话文
 接了决策收件箱（decision-inbox 等）时：
 
 - **先登记可信批准来源**：用户在本会话亲口同意后 `module-crew source add <邮箱名> --kind hub|lead --original-file <原话文件>`；hub 是决策收件箱，lead 是指定的审查者。没登记的会话转来的话一律不算。
-- **审查者要写负责范围**：登记 lead 时必须带 `--modules <模块,…|全部> --nodes <spec,plan,interface,final|全部>`，用户没说清负责哪些模块、哪些节点就先问清楚，不要默认填「全部」。【交审】只送给范围覆盖它的审查者，没有人负责的照常等用户批。0.9.0 之前登记、没有范围的审查者不再收交审，经用户确认后用 `module-crew source scope <邮箱名> --modules … --nodes … --original-file <原话文件>` 补上。
+- **审查者要写负责范围**：登记 lead 时必须带 `--modules <模块,…|全部> --nodes <spec,plan,interface,final|全部>`，用户没说清负责哪些模块、哪些节点就先问清楚，不要默认填「全部」。【交审】只送给范围覆盖它的审查者，没有人负责的照常等用户批。不在送审对象里的审查者发来的【审查结论】，`review note` 会拒收（退出码 3），把拒收说明照实回给对方，不要换个编号硬记。0.9.0 之前登记、没有范围的审查者不再收交审，经用户确认后用 `module-crew source scope <邮箱名> --modules … --nodes … --original-file <原话文件>` 补上。
 - **审查者转交只记账**：lead 来源的 Spec／Plan 批准，`review approve` 只记一条记录，不写批准标记、不开工（spec-guard 不认它）；如实告诉用户，请用户在本会话亲手批准或经决策收件箱再批准一次。决策收件箱转来的批准照常写标记，提交说明里会带待决事项号 #H。
 - **提请批准一个模块一条**：`module-crew review batch --for-hub [--parallel-with <H>]` 给每个就绪模块各生成一个正文文件，逐条用 bodyFile 原样发给决策收件箱，不要合成一条。
   正文里的交审原文、审查原文文件在 `<状态库>/originals/` 下，对应的待决事项结项前不删不改。审查中、返工中的交审不会出现在里面。
