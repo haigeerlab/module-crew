@@ -42,7 +42,14 @@ def make_worktree(repo: Path, name: str) -> Path:
 class RepoCase(unittest.TestCase):
     """Each test gets a fresh repo under the system temp dir; nothing else is touched."""
 
+    SESSION_VARS = ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")
+
     def setUp(self) -> None:
+        # 0.9.4: the conversation running the tests must not leak into them (start prepare binds the coordinator
+        # from these); tests that need one set it explicitly. Restored afterwards; subprocesses inherit the removal.
+        for key in self.SESSION_VARS:
+            if key in os.environ:
+                self.addCleanup(os.environ.__setitem__, key, os.environ.pop(key))
         self.tmp = Path(tempfile.mkdtemp(prefix="crew-test-")).resolve()
         assert self.tmp.is_relative_to(_TMP_ROOT), self.tmp
         self.addCleanup(shutil.rmtree, self.tmp, True)

@@ -31,3 +31,4 @@
 ## 记录
 
 - 2026-10-18 spec-guard 负责人通知 map-startable 已实现并验收（0.68.0 发版），输出与夹具一致；细节：Build order 第一个未完成模块算 in_progress，不进 startable.modules；`paths` 取较具体路径，`apps/bill/` 与 `apps/billing/` 不算重叠。
+- [x] 修订（2026-10-22 追加，职责边界审查第 1 条）：提交前缀改为项目配置 `commitPrefix`，默认 `chore(crew): `，`start prepare --commit-prefix` 设定（三类提交共用 `commits.message`）——`CommitPrefixTest` 3 个（默认、空串、命令行设自定义）

@@ -224,7 +224,7 @@ def validate(project: Path, modules: list[str], original: str, short: str | None
 
 
 def prepare(project: str | os.PathLike, modules: list[str], original: str, short: str | None = None,
-            max_modules: int | None = None, host: str = "claude") -> PrepareResult:
+            max_modules: int | None = None, host: str = "claude", commit_prefix: str | None = None) -> PrepareResult:
     project = Path(project)
     if host not in HOSTS:
         return PrepareResult(3, ["没有执行，原因：", f"宿主只能是 {'／'.join(HOSTS)}，不是 {host!r}"])
@@ -242,6 +242,9 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             tx.put("config", "main", {**(tx.get("config", "main") or {}), **cfg, "pluginVersion": plugin_version(),
                                       "reviewCadence": proposal.cadence},
                    action="set")
+        if commit_prefix is not None:       # 0.9.4: project configuration, '' means no prefix
+            tx.put("config", "main", {**(tx.get("config", "main") or {}), "commitPrefix": commit_prefix}, action="set",
+                   data={"commitPrefix": commit_prefix})
         if not any(v.get("role") == "coordinator" and v.get("status") == "active" for v in tx.records("session").values()):
             from module_crew.hooks import own_session_id
             sid = own_session_id()          # crew-routing-fixes: the coordinator running start binds itself

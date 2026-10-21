@@ -1,4 +1,5 @@
-<!-- spec-guard: review approved 2f13bc03e836 -->
+<!-- spec-guard: review approved cccaa355647c -->
+
 # Spec: crew-shared-changes
 
 > 能力图模块 `crew-shared-changes`。需求来源：`docs/requirements-record.md` B3（公共文件变更）、B1（协调会话管集成基线与公共文件）、上游 Boundaries 的 Ask first；
@@ -45,7 +46,7 @@
    迁移按路径里含 `migration`（不分大小写），冲突按「另一条 `open` 请求的文件清单有交集」。
 5. **给请求方的回复用同步基线通知加「回复：#N」首行**：契约里协调会话没有别的回复类型；`render_coordination_notice` 生成后在前面加这一行，再用 `protocol.parse` 自检（契约第 2 节允许开头的回复行）。
 6. **其他模块收到的是同一份依据、不带回复行的通知**；退役的会话不发。
-- **提交信息与提交钩子**（2026-10-18 修订）：提交信息一律以 `chore(crew): ` 开头（符合 Conventional Commits，首行不超过 100 字符），后面照旧写中文说明与编号；提交失败且仓库启用了提交钩子时，原因写「提交钩子拒绝：<钩子输出首行>」，不并入其他原因。（2026-10-18 修订）请求摘要在提交信息里截到 40 字。
+- **提交信息与提交钩子**（2026-10-18 修订）：提交信息默认以 `chore(crew): ` 开头（符合 Conventional Commits，首行不超过 100 字符；0.9.4 起前缀是项目配置 `commitPrefix`，`start prepare --commit-prefix <值>` 设定，空字符串表示不加，没设过按默认），后面照旧写中文说明与编号；提交失败且仓库启用了提交钩子时，原因写「提交钩子拒绝：<钩子输出首行>」，不并入其他原因。（2026-10-18 修订）请求摘要在提交信息里截到 40 字。
 
 
 ## 接口约定
@@ -120,7 +121,7 @@ python3 -m unittest discover -s tests -v
 8. `change answer`：生成【用户答复】给请求方、请求关为 `declined`、等待单关闭（原因 3），集成基线不变。
 9. `inbox add` 收到合格【公共变更请求】仍返回 4；协调会话 skill 收件表写明「改用 `change add`」，并有「公共变更请求」一节：`change add` → 看提示与 Spec 范围决定是否问用户 → 在集成 checkout 改 → `change land` 或 `change answer` → 按输出发送 → 影响已批准 Spec 时追加变更记录。
 - 集成 checkout 装只认 `类型(范围): ` 开头的 commit-msg 钩子时 `change land` 照常提交；钩子拒绝时退出码 4、请求不关、输出含「提交钩子拒绝」。（2026-10-18 修订）
-
+（0.9.4）`commitPrefix`：没设过时三类提交（公共变更、批准、合并）都以 `chore(crew): ` 开头，和以前一字不差；`start prepare --commit-prefix ""` 后不加前缀；设成 `feat(crew): ` 后按它写；首行仍不超过 100 字符。
 
 ## 未决问题
 
@@ -133,3 +134,4 @@ README 增加「公共文件怎么改」一小节；本模块不另写文档。
 ## 变更记录
 
 - 2026-10-18：`change land` 的提交信息加 `chore(crew): ` 前缀、摘要截到 40 字，提交钩子拒绝时单独标原因；增加对应验收。原因：module-crew 的提交过不了前端的 commitlint；来源：联合演练批 2 准备（前端 husky 跑 `@commitlint/config-conventional`，lint-staged 对全部暂存文件跑 `oxfmt --check`），用户 2026-10-18 批准先修再发 0.1.1。
+- 2026-10-22：提交前缀从写死的 `chore(crew): ` 改为项目配置 `commitPrefix`（默认值不变、可设为空），只为 LIVE-SAAS 的 commitlint 写死的规矩不再强加给所有项目；行为对现有项目不变。来源：本会话职责边界审查第 1 条，用户 2026-10-22 选「默认仍是 chore(crew): ，可配置；各自追加到对应模块」。

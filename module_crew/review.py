@@ -963,7 +963,7 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
     nodes = "、".join(f"{rec['module']} 的 {NODE_NAME[rec['node']]}" for _, rec in picked)
     _git(checkout, "add", "--", *written)
     hub = f"（待决事项 #{src['item']}）" if src.get("kind") == "hub" else ""
-    commit_run = _git(checkout, "commit", "-q", "-m", commits.message(f"用户批准事项 C{approval_no}{hub}：批准 {nodes}"))
+    commit_run = _git(checkout, "commit", "-q", "-m", commits.message(f"用户批准事项 C{approval_no}{hub}：批准 {nodes}", commits.prefix_of(db)))
     if commit_run.returncode != 0:
         return ApproveResult(4, [commits.failure(checkout, commit_run, "集成分支提交失败"),
                                  "已改、已暂存的文件：" + "、".join(written)])

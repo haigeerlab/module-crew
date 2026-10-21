@@ -306,3 +306,42 @@ class HookIdentityTest(ReviewCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CommitPrefixTest(ReviewCase):
+    """0.9.4 (boundary review 1): the commit prefix is project configuration, `chore(crew): ` by default."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+
+    def land(self, rid, path):
+        n = changes.add(self.db, request([path]), "shop-b", rid).number
+        (self.repo / path).write_text(f"{path}\n", encoding="utf-8")
+        self.assertEqual(changes.land(self.repo, n).code, 0)
+        return subprocess.run(["git", "-C", str(self.repo), "log", "-1", "--format=%s"], capture_output=True,
+                              text=True).stdout.strip()
+
+    def approve_spec(self):
+        n = review.add(self.db, self.spec_review("b"), "shop-b", 5001).number
+        self.assertEqual(review.approve(self.repo, [n], "批准").code, 0)
+        return subprocess.run(["git", "-C", str(self.repo), "log", "-1", "--format=%s"], capture_output=True,
+                              text=True).stdout.strip()
+
+    def test_default_unchanged(self):
+        self.assertTrue(self.land(4700, "a.json").startswith("chore(crew): 公共变更请求 C"))
+        self.assertTrue(self.approve_spec().startswith("chore(crew): 用户批准事项 C"))
+
+    def test_empty_and_custom(self):
+        self.assertEqual(start.prepare(self.repo, ["d"], "开 d", short="shop", commit_prefix="").code, 0)
+        self.assertTrue(self.land(4700, "a.json").startswith("公共变更请求 C"))
+        self.assertTrue(self.approve_spec().startswith("用户批准事项 C"))
+
+    def test_cli_sets_custom_prefix(self):
+        out = self.run_cli("start", "prepare", "d", "--original", "开 d", "--project-short", "shop",
+                           "--commit-prefix", "feat(crew): ", cwd=self.repo)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(store.get(self.db, "config", "main")["commitPrefix"], "feat(crew): ")
+        subject = self.land(4701, "b.json")
+        self.assertTrue(subject.startswith("feat(crew): 公共变更请求 C"))
+        self.assertLessEqual(len(subject), 100)

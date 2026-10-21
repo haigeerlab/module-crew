@@ -1,0 +1,84 @@
+# 更新记录
+
+各版本的变化，最新的在前。README 只写最新一版。
+
+## 0.9.3 的变化（审查修复）
+
+- `change land` 和 `merge run` 用同一条规则决定谁不收同步基线：已批准合并在队列里的、已合并的、等最终验收的、挂起中的都不发。原来 `change land` 会通知已批准合并的模块，照做后合并被拒、用户批过的验收作废。
+- `bind` 只能在登记对应的目录里运行（模块会话在自己的 worktree，模块协调在集成 checkout）；登记模块协调身份要带用户原话（`--original-file`），`start prepare` 时的自动登记不变。集成 checkout 里的陌生会话不再被提示「先运行 bind」。
+
+## 0.9.2 的变化
+
+- `review note` 只认收到这条交审的审查者：发件人不在送审对象里（包括这条交审没有送审）时拒收、什么都不写，说明里写清 C<N> 送给了谁；和 0.9.0 的「按负责范围送审」配成一对。
+
+## 0.9.1 的变化（演练修复）
+
+- 模块协调自开的等待记录 `--about C<N>`，在 `review approve`、`merge approve` 答到这个交审时也会自动关，并给出「你开的等待记录 W<号> 等的事已发生」一行；原来只有 `answer` 认 C 编号，批准命令只认收件箱事项号 #H，在本会话亲口批准时一条都不关。
+- 交决策收件箱的卡片收齐审查建议：审查结论的要点里有「建议N：」行时，「注意」写全部建议原文；原来只取要点第一行，审查者先写总评时建议进不了卡片。
+
+## 0.9.0 的变化（收发对象收窄）
+
+- 【交审】只送给负责这个模块和节点的审查者，不再抄送给所有审查者：`source add <名> --kind lead` 必须带 `--modules <模块,…|全部>` 与 `--nodes <spec,plan,interface,final|全部>`，`source list` 显示范围。之前登记、没有范围的审查者不再收交审，`review add` 会提醒；用 `source scope <名> --modules … --nodes …` 补上。
+- 公共变更落地后的同步基线通知不发给挂起中的模块（提出这条请求的模块照常收到回复），恢复时 `resume` 的通知会写明挂起期间落地的公共变更。
+- 钩子按会话认身份：会话自己运行 `module-crew bind <邮箱名>` 登记（开工说明、恢复说明里都有这一步，模块协调跑 `start prepare` 时自动登记）；只有登记的那个会话才被注入「你是模块协调／你是模块 X 的模块会话」，同一目录里的其他会话只在启动时收到一句「你不是它的登记会话」。升级后已在跑的会话要各跑一次 `bind`，`status` 里标「未登记身份」。`takeover` 会清掉旧身份，新会话再 `bind`。
+
+## 0.8.1 的变化
+
+- `module-crew sessions --json` 少起 git 进程：同一条查询只问一次，答复前后的 todo 一次读完。crew-rehearsal 上从 137 个降到 36 个，输出不变。起因：机器负载高时它跑到 15～40 秒，超过决策收件箱的 15 秒上限，按模块判断停滞就失灵。
+
+## 0.8.0 的变化（阶段丙补修，R22）
+
+- 模块交了最终验收、还在等结果时，`merge run`、`change land` 不再给它发同步通知——同步会改动它的分支，让用户已经批过的验收作废；最终验收被退回或用户答 B 时，模块改完先 `module-crew sync` 再重交。
+- `merge approve` 记新的合并批准时，同一模块还开着的旧批准自动作废，命令输出里说明；和 0.6.0 的「重交审作废旧批准」一起，合并队列里每个模块至多一个批准。
+- 权限预配给模块 worktree 放行 worktree 内的编辑（`Edit(//<worktree>/**)`，覆盖 Write），并禁止编辑它的 `.claude/`；集成 checkout 不变。已经 apply 过的项目，重新跑一次 `permissions apply` 补上。
+- 消息格式升到 session-protocol v2.4：【等待用户】紧跟「要点」带「模块：<模块 id>」（线级事项写「无」）；`review batch --for-hub` 自动写，`source add --protocol` 可写 2.4。旧版收件箱照收这一行。
+- 协调 skill：发请示前先查后问，已答过、已亲口批过的不再提请；提请批准只发 for-hub 正文，不手写、不跨模块合并。
+
+## 0.7.0 的变化（决策卡片字段）
+
+- 消息格式升到 session-protocol v2.3：`protocol check` 认识「类型」的九种取值（能力图审阅、Spec、Plan、Spec 与 Plan、中途检查点、最终验收、接口提案、卡住选做法、去会话操作）、
+  「注意」「推荐理由」「批了会怎样」三个字段，以及各类要点里的固定小项。v2.2 的写法照旧合格。
+- `source add <名> --kind hub --protocol 2.3` 登记决策收件箱支持的版本（不写按 2.2），`source list` 显示。
+  **登记的 hub 全是 2.3 时**，`review batch --for-hub` 才写「类型」「注意」「推荐理由」「批了会怎样」，「批准会发生什么」不再写在要点里；否则与 0.6.0 一字不差。
+- **升级顺序**：先把决策收件箱升到 v2.3，再经用户同意 `source remove` 后 `source add … --protocol 2.3` 重新登记；顺序反了，v2.2 的收件箱会把带新「类型」的请示整条退回。
+- 协调 skill 与模块 skill 写明卡住选做法、能力图审阅、中途检查点按类别写，接口提案交审写「改了哪个接口」「哪些模块要跟着改」。
+
+## 0.6.0 的变化（演练修复）
+
+- 新命令 `module-crew sync`（模块会话在自己的 worktree 里跑）：把集成分支合进模块分支，本模块的 Spec 与 tasks 冲突自动取集成分支版本，别的冲突留给模块解决（退出码 2）。
+  开工、同步基线、恢复通知改为「单独执行 `module-crew sync`」，不再叫模块自己敲 `git merge`——它不在放行范围里，写法稍有不同（如 `git merge main --no-edit`）就会弹窗。
+- 新命令 `module-crew review show C<号> [--submission]`（只读）：输出审查原文全文与 sha256；返工通知和开工通知里写明这条命令，模块不再去集成 checkout 的 git 目录里找原文。
+- 撤回合并批准时，已经被重交审取代的交审不再重新打开；最终验收重交审时，旧的合并批准自动作废，不再排在合并队列里挡住新批准。
+- 新命令 `module-crew wait add`：模块协调把自己发出的【等待其他会话】记账；所等事项的答复转达时，命令输出给出要发的【已恢复】并关掉记录。
+- 发给模块会话的命令，输出末尾提醒核对对方是否停在权限弹窗；协调 skill 写明派活后用 agent-relay 查会话状态，卡住就报「去会话操作」。
+
+## 0.5.3 的变化
+
+- `permissions plan`／`apply` 提示别处的 ask 或禁止规则会盖过 module-crew 写的放行（读 checkout 自己的设置、worktree 的主 checkout 设置、用户设置与托管设置，只读不改），每条写成「⚠️ 会被盖过：<放行> ← <文件> 的 ask｜禁止 <规则>」。起因：集成 checkout 里别的插件写的 ask `Bash(npm install *)` 盖过了模块 worktree 的放行，模块 worktree 的会话也读主 checkout 的本地设置。
+
+## 0.5.2 的变化（决定 67）
+
+- 文字更正：去掉「代开会话里 ask 确认不会出现、写 ask 就等同放行」的说法（E3 会话记录显示 ask 会弹、是被点了允许）；不可逆操作仍写禁止，理由改为一次「允许」就会执行。规则行为不变。
+
+## 0.5.1 的变化（决定 62：装包放宽）
+
+- 权限预配：往项目里加新包也放行（`npm install <包名>`、`pnpm add`、`yarn add`、`uv add`、`uv pip install`、`.venv/bin/pip install`），新增依赖由 spec-guard SG-5 在最终验收列出；裸 `pip install <包名>` 仍交宿主默认确认；全局安装禁止补全到 `-g`／`--global` 在任意位置、`yarn global`、`uv --system`（代价：`npm ls -g` 这类只读查询也被拒）。Codex 侧加新包仍不写规则（前缀规则挡不住后置的 `-g`）。
+- skill：去掉「Plan 没列的依赖只问一次」，加新包直接装。
+
+## 0.5.0 的变化（R21 模块打转）
+
+- 权限预配：按锁文件或清单装依赖放行，加新包不写规则（宿主默认确认＋先问一次），全局安装仍禁止；Codex 规则同步。
+- skill：已批范围内直接做、不讨小许可、小步骤不送审、Plan 没列的依赖只问一次；碰到宿主确认经模块协调告诉用户去哪个会话点什么。
+- 契约钉到 session-protocol v2.2：模块会话碰到宿主确认时发「类型：去会话操作」的【等待用户】，模块协调原样转给决策收件箱（没有就直接告诉用户去哪点）。
+- `sessions --json` 加 `answers`：每次「你的答复」之后的提交数与 todo 勾选增量，供决策收件箱判断打转。
+
+## 0.4.1 的变化
+
+- 评审节奏优先读 spec-guard（0.73.0 起）`/map --json` 的顶层 `reviewCadence`，`status` 写明来源；spec-guard 较旧时照旧读 `.agent/config.json`。
+- `permissions remove` 把 `.claude/settings.local.json` 逐字还原为 apply 之前的原文。
+
+## 0.4.0 的变化
+
+- **停滞事实出口**（R14）：`sessions --json` 每个模块加开工时间、最近一次产出提交、同一节点问过你几次（带每次的时间）、合并退回、模块报来的【等待用户】；只给事实，判断与提问归决策收件箱。见 [spec/crew-stall-signals.md](spec/crew-stall-signals.md)。
+- **权限预配与推送守门**（R16）：`module-crew permissions plan|apply|verify|remove`，把常规操作写进宿主认的放行规则，推送、删除等写成禁止，再用 pre-push 钩子守住推送；推送只经 `merge push`。见下文「权限预配」与 [spec/crew-host-permissions.md](spec/crew-host-permissions.md)。
+- **术语改名**：README、skill、命令说明与输出按术语表 v1.1；等待记录编号改写 `W<号>`（命令参数 `W25`、`C25`、`25` 都认）。契约标签、字段名、命令与选项名不变，状态库照旧可用。

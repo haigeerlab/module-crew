@@ -194,12 +194,12 @@ def _start_plan(as_json: bool) -> int:
 
 
 def _start_prepare(modules: list[str], original: str | None, original_file: str | None, short: str | None,
-                   max_modules: int | None, as_json: bool, host: str = "claude") -> int:
+                   max_modules: int | None, as_json: bool, host: str = "claude", commit_prefix: str | None = None) -> int:
     if original_file is not None:
         original = _read(original_file)
         if original is None:
             return 2
-    res = start.prepare(".", modules, original, short, max_modules, host)
+    res = start.prepare(".", modules, original, short, max_modules, host, commit_prefix)
     if as_json:
         print(json.dumps({"code": res.code, "approval": res.approval, "lines": res.lines,
                           "prepared": [{k: str(v) if isinstance(v, Path) else v for k, v in p.items()}
@@ -593,6 +593,7 @@ def _main(argv: list[str] | None = None) -> int:
     spr.add_argument("--project-short")
     spr.add_argument("--max", type=int)
     spr.add_argument("--host", choices=("claude", "codex"), default="claude")
+    spr.add_argument("--commit-prefix", help="module-crew 提交信息的前缀（项目配置；不设按 chore(crew): ，空字符串表示不加）")
     spr.add_argument("--json", action="store_true")
     rv = sub.add_parser("review", help="交审与批量批准")
     rvs = rv.add_subparsers(dest="action", required=True)
@@ -979,7 +980,7 @@ def _run(args) -> int:
             if args.action == "plan":
                 return _start_plan(args.json)
             return _start_prepare(args.modules, args.original, args.original_file, args.project_short, args.max, args.json,
-                                  args.host)
+                                  args.host, args.commit_prefix)
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 2

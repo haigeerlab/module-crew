@@ -177,7 +177,12 @@ def _own_commits(path: Path, integration: str, since: str) -> list[tuple[str, da
 
 def _tick_counts(path: Path, module: str, bounds: list[datetime | None]) -> dict[datetime | None, int]:
     """Checked todo items at each bound: in the last first-parent commit at or before it, or in the working tree
-    for None. One `git log` and one `git cat-file --batch` for all bounds together."""
+    for None. One `git log` and one `git cat-file --batch` for all bounds together.
+
+    What counts as checked is spec-guard's rule (its `/map --json` progressFacts); spec-guard only reports the
+    current value, not the value at each answer, so the history is read here. The current value is not taken from
+    `/map` either: `sessions --json` must stay under the decision inbox's 15 s limit (0.8.1). Re-check this when
+    spec-guard changes how todo items are written (spec/crew-stall-signals.md, 2026-10-22)."""
     rel = f"tasks/{module}/todo.md"
     out: dict[datetime | None, int] = {}
     if None in bounds:

@@ -256,7 +256,7 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
         _write_config(db, cfg)
 
     result = RunResult(0, approval=n)
-    merged = _git(checkout, "merge", "--no-ff", "--no-edit", "-m", commits.message(f"合并批准事项 C{n}：合入 {m}"), m)
+    merged = _git(checkout, "merge", "--no-ff", "--no-edit", "-m", commits.message(f"合并批准事项 C{n}：合入 {m}", commits.prefix_of(db)), m)
     reset_to = None
     if merged.returncode != 0:
         conflicted = _git(checkout, "diff", "--name-only", "--diff-filter=U").stdout.split()
@@ -285,7 +285,7 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
                 return RunResult(4, [f"C{n}（{m}）{first}；撤销合并失败：{undo.stderr.strip()[:200]}",
                                      "集成 checkout 状态未知，交用户决定"], approval=n, merge_commit=result.merge_commit)
 
-    tick_line, tick_hooks = (None, []) if reason else _tick(checkout, m, n)[1:]
+    tick_line, tick_hooks = (None, []) if reason else _tick(checkout, m, n, commits.prefix_of(db))[1:]
     with db.transaction(actor="coordinator") as tx:
         current = tx.get("item", str(n))
         if reason:
@@ -344,7 +344,7 @@ def renotice(db: store.Store, approval: int, kind: str) -> Reply:
     return Reply(rec["from"], None, body, db.path / meta["path"])
 
 
-def _tick(checkout: Path, module: str, approval: int) -> tuple[str | None, str | None, list[str]]:
+def _tick(checkout: Path, module: str, approval: int, prefix: str = commits.PREFIX) -> tuple[str | None, str | None, list[str]]:
     """Tick the module's only unchecked todo item on the integration branch; (commit, report line)."""
     path = checkout / "tasks" / module / "todo.md"
     try:
@@ -362,7 +362,7 @@ def _tick(checkout: Path, module: str, approval: int) -> tuple[str | None, str |
     path.write_text("".join(lines), encoding="utf-8")
     rel = f"tasks/{module}/todo.md"
     _git(checkout, "add", "--", rel)
-    done = _git(checkout, "commit", "-q", "-m", commits.message(f"合并批准事项 C{approval}：勾选 {module} 的最终验收"))
+    done = _git(checkout, "commit", "-q", "-m", commits.message(f"合并批准事项 C{approval}：勾选 {module} 的最终验收", prefix))
     if done.returncode != 0:
         _git(checkout, "reset", "-q", "--", rel)
         _git(checkout, "checkout", "--", rel)
@@ -386,7 +386,7 @@ def tick(project: str | os.PathLike, module: str, original: str) -> str:
     if checkout is None or not _clean(checkout):
         raise AnswerRefused("集成分支所在的 checkout 不干净或集成分支没有被检出")
     n = merged[-1]
-    commit, line, _ = _tick(checkout, module, n)
+    commit, line, _ = _tick(checkout, module, n, commits.prefix_of(db))
     if commit is None:
         raise AnswerRefused(line or f"tasks/{module}/todo.md 没有未勾项，不需要补勾")
     with db.transaction(actor="coordinator") as tx:

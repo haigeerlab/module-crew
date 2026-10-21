@@ -1,8 +1,9 @@
 """Commit messages and commit-hook failures for module-crew's own commits.
 
-Projects such as the LIVE-SAAS frontend run husky: commitlint (Conventional Commits) on commit-msg and
-lint-staged on pre-commit.  Every commit module-crew makes therefore starts with a Conventional type, and a
-commit refused by a hook is reported as such instead of being folded into another reason.
+The subject prefix is project configuration (`commitPrefix`, set by `start prepare --commit-prefix`; 0.9.4).
+It defaults to a Conventional Commits type because the first project, the LIVE-SAAS frontend, runs commitlint
+on commit-msg; an empty prefix means none.  A commit refused by a hook is reported as such instead of being
+folded into another reason.
 """
 
 from __future__ import annotations
@@ -15,9 +16,16 @@ PREFIX = "chore(crew): "
 HOOKS = ("pre-commit", "pre-merge-commit", "prepare-commit-msg", "commit-msg")
 
 
-def message(text: str) -> str:
-    """A Conventional Commits subject (header at most 100 characters)."""
-    head = PREFIX + text
+def prefix_of(db) -> str:
+    """The project's commit prefix: `commitPrefix` from the run configuration, PREFIX when never set."""
+    from module_crew import store
+    cfg = store.get(db, "config", "main") or {}
+    return cfg["commitPrefix"] if isinstance(cfg.get("commitPrefix"), str) else PREFIX
+
+
+def message(text: str, prefix: str = PREFIX) -> str:
+    """The commit subject: prefix + text, at most 100 characters."""
+    head = prefix + text
     return head if len(head) <= 100 else head[:99] + "…"
 
 
