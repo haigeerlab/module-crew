@@ -166,3 +166,32 @@ class V23CardTest(CardCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AdviceLinesTest(CardCase):
+    """0.9.1 (rehearsal C261): advice written as 「建议N：」 lines after a summary line reaches the card in full."""
+
+    protocol_version = "2.4"
+
+    def test_advice_lines_reach_the_card(self):
+        p = review.add(self.db, self.plan_review("b"), "shop-b", 4002).number
+        advice = ("建议1：Task 1 的 RED 是「模块不存在导致 import 失败」，证明力弱于断言失败。可以先放一个返回 0 的空实现，"
+                  "看到 AC1/2/3 断言失败后再写真实现；不改也不影响通过。\n"
+                  "建议2：最终验收时顺手改或保留都可以，在交付报告里注明一句即可。\n本结论不是用户批准。\n")
+        review.note(self.db, p, "arch", conclusion(node="Plan", ref="R-kappa-2", verdict="通过，附建议2条", extra=advice)
+                    .replace("要点：接口清楚。", "要点：plan.md、todo.md 指纹核对一致，不加依赖。"))
+        [(_, _, text)] = review.for_hub(self.repo)
+        msg = protocol.parse(text)
+        self.assertTrue(msg.ok, msg.problems)
+        note = msg.fields["注意"]
+        self.assertIn("建议1：Task 1 的 RED 是「模块不存在导致 import 失败」", note)
+        self.assertIn("在交付报告里注明一句即可", note)              # the whole advice, not cut
+        self.assertNotIn("指纹核对一致", note)
+        self.assertNotIn("本结论不是用户批准", note)
+        self.assertIn("建议1：Task 1", text.split("架构审查：", 1)[1].splitlines()[0])
+
+    def test_single_line_advice_unchanged(self):
+        s = review.add(self.db, self.spec_review("b"), "shop-b", 4001).number
+        review.note(self.db, s, "arch", conclusion(verdict="通过，附建议2条"))
+        [(_, _, text)] = review.for_hub(self.repo)
+        self.assertIn("审查建议：接口清楚。", protocol.parse(text).fields["注意"])

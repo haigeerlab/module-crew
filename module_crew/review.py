@@ -418,11 +418,17 @@ STATE_TEXT = {"reviewing": "审查中", "rework": "返工中", "timeout": "审�
               "decide": "待你决定", "none": "未审查"}
 
 
+_ADVICE_LINE = re.compile(r"^[-*\s]*建议\s*\d*\s*[：:]")
+
+
 def _advice(row: dict) -> str:
-    """First line of a passed-with-advice conclusion's points ('' otherwise)."""
+    """A passed-with-advice conclusion's advice ('' otherwise): every 「建议N：」 line of its points, joined;
+    without such lines, the first line (0.9.1: advice written after a summary line never reached the card)."""
     if protocol._review_line(row.get("verdict") or "")["status"] != "passed-with-advice":
         return ""
-    return ((row.get("points") or "").splitlines() or [""])[0].lstrip("- ").strip()
+    lines = [line.strip().lstrip("-* ").strip() for line in (row.get("points") or "").splitlines()]
+    advice = [line for line in lines if _ADVICE_LINE.match(line)]
+    return "；".join(advice) if advice else (lines or [""])[0]
 
 
 def _review_text(item: dict) -> str:
