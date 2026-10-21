@@ -303,7 +303,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
     if result.prepared:
         result.lines.append(f"开会话之前：模块协调先用 agent-relay bridge_register 注册邮箱名 {coord}（wake: \"auto\"），模块只和这个名字说话")
         if not (store.get(db, "session", coord) or {}).get("hostSession"):
-            result.lines.append(f"模块协调还没登记身份：在本会话运行 module-crew bind {coord}，钩子才认本会话")
+            result.lines.append(f"模块协调还没登记身份：请用户在本会话同意后运行 module-crew bind {coord} --original-file <原话文件>，钩子才认本会话")
     return result
 
 

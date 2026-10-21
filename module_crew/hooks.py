@@ -176,7 +176,7 @@ def stranger_line(role: Role) -> str:
         return (f"module-crew：本目录属于模块 {role.module}（登记会话 {role.name}）；你不是它的登记会话，不要按模块会话行事。"
                 f"如果你刚收到这个模块的开工说明或恢复说明，先按说明运行 module-crew bind {role.name}。")
     return (f"module-crew：本目录是 module-crew 的集成 checkout（模块协调 {role.name}）；你不是它的登记会话，不要按模块协调行事。"
-            f"如果用户指定你做模块协调，先运行 module-crew bind {role.name}。")
+            f"要换模块协调，请用户在本会话同意后运行 module-crew bind {role.name} --original-file <原话文件>。")
 
 
 EVENT_NAMES = {"session-start": "SessionStart", "prompt": "UserPromptSubmit"}
@@ -225,21 +225,44 @@ def own_session_id() -> str | None:
     return None
 
 
-def bind(db: store.Store, name: str, session_id: str | None) -> str:
-    """Record that the conversation running this command is the registered session `name` (crew-routing-fixes)."""
+def _home_of(db: store.Store, rec: dict) -> Path | None:
+    """The directory a registration belongs to: a module's worktree, or the coordinator's integration checkout."""
+    if rec.get("role") == "dev":
+        return Path(os.path.realpath(rec["worktree"])) if rec.get("worktree") else None
+    branch = (store.get(db, "config", "main") or {}).get("integrationBranch")
+    checkout = _checkout_of(db.path.parent, branch) if branch else None
+    return Path(os.path.realpath(checkout)) if checkout else None
+
+
+def bind(db: store.Store, name: str, session_id: str | None, cwd: str | os.PathLike, original: str | None = None) -> str:
+    """Record that the conversation running this command is the registered session `name` (crew-routing-fixes).
+
+    0.9.3: only from the registration's own directory, and a coordinator outside `start` only with the user's words."""
     if not session_id or not session_id.strip():
         raise BindRefused("读不到本会话的会话 id（CLAUDE_CODE_SESSION_ID／CODEX_THREAD_ID）：只能在模块会话或模块协调自己的命令里运行")
+    rec = store.get(db, "session", name)
+    if rec is None or rec.get("status") != "active":
+        raise BindRefused(f"{name} 不是状态库里在用的会话")
+    home = _home_of(db, rec)
+    if home is None or not _inside(os.path.realpath(cwd), str(home)):
+        here = detect(cwd)
+        owner = ("module-crew 登记以外的地方" if here is None else
+                 f"模块 {here.module} 的 worktree（{here.name}）" if here.kind == "dev" else f"集成 checkout（{here.name}）")
+        mine = (f"模块 {rec.get('module')} 的 worktree {home}" if rec.get("role") == "dev" else f"集成 checkout {home}")
+        raise BindRefused(f"{name} 只能在它自己的目录里登记：这个目录属于{owner}，{name} 的是{mine}")
+    coordinator = rec.get("role") == "coordinator"
+    if coordinator and not (original and original.strip()):
+        raise BindRefused(f"登记模块协调 {name} 的身份要用户原话：请用户在本会话同意后运行 module-crew bind {name} --original-file <原话文件>")
     with db.transaction(actor=name) as tx:
         rec = tx.get("session", name)
-        if rec is None or rec.get("status") != "active":
-            raise BindRefused(f"{name} 不是状态库里在用的会话")
         bound = (rec.get("hostSession") or {}).get("sessionId")
         if bound == session_id:
             return f"{name} 已是本会话，没有改动"
         if bound:
             raise BindRefused(f"{name} 已登记为另一个会话：换会话要先请用户同意接管（模块协调运行 module-crew takeover {name}）")
+        data = {"sessionId": session_id, **({"original": original} if coordinator else {})}
         tx.put("session", name, {**rec, "hostSession": {"sessionId": session_id, "boundAt": store.now()}},
-               action="bound", data={"sessionId": session_id})
+               action="bound", data=data)
     return f"已登记：本会话就是 {name}，module-crew 的钩子从现在起按这个会话注入角色"
 
 

@@ -195,19 +195,45 @@ class BindTest(ReviewCase):
         self.db = store.open_store(self.repo)
 
     def test_bind_rules(self):
-        self.assertIn("已登记", hooks.bind(self.db, "shop-b", "sid-b"))
+        self.assertIn("已登记", hooks.bind(self.db, "shop-b", "sid-b", self.wt["b"]))
         self.assertEqual(store.get(self.db, "session", "shop-b")["hostSession"]["sessionId"], "sid-b")
-        self.assertIn("已是本会话", hooks.bind(self.db, "shop-b", "sid-b"))
+        self.assertIn("已是本会话", hooks.bind(self.db, "shop-b", "sid-b", self.wt["b"]))
         with self.assertRaises(hooks.BindRefused) as ctx:
-            hooks.bind(self.db, "shop-b", "sid-other")
+            hooks.bind(self.db, "shop-b", "sid-other", self.wt["b"])
         self.assertIn("takeover", str(ctx.exception))
         for name, sid in (("shop-x", "sid"), ("shop-c", " ")):
             with self.assertRaises(hooks.BindRefused):
-                hooks.bind(self.db, name, sid)
+                hooks.bind(self.db, name, sid, self.wt["c"])
         hooks.takeover(self.db, "shop-b", "让新会话接管 b")
         self.assertNotIn("hostSession", store.get(self.db, "session", "shop-b"))
-        hooks.bind(self.db, "shop-b", "sid-new")
+        hooks.bind(self.db, "shop-b", "sid-new", self.wt["b"])
         self.assertEqual(store.get(self.db, "session", "shop-b")["hostSession"]["sessionId"], "sid-new")
+
+    def test_bind_only_in_its_own_directory(self):
+        # 0.9.3 (review finding 9): a session elsewhere cannot take over someone else's registration
+        for cwd in (self.wt["c"], self.repo, self.tmp):
+            with self.subTest(cwd=cwd), self.assertRaises(hooks.BindRefused) as ctx:
+                hooks.bind(self.db, "shop-b", "sid-b", cwd)
+            self.assertIn("这个目录属于", str(ctx.exception))
+        self.assertNotIn("hostSession", store.get(self.db, "session", "shop-b"))
+        hooks.bind(self.db, "shop-b", "sid-b", self.wt["b"] / "src")             # a subdirectory is fine
+        self.assertEqual(store.get(self.db, "session", "shop-b")["hostSession"]["sessionId"], "sid-b")
+
+    def test_coordinator_needs_the_users_words(self):
+        with self.db.transaction(actor="t") as tx:                                # an unbound coordinator (pre-0.9.0)
+            rec = {k: v for k, v in tx.get("session", "shop-coord").items() if k != "hostSession"}
+            tx.put("session", "shop-coord", rec, action="registered")
+        with self.assertRaises(hooks.BindRefused) as ctx:
+            hooks.bind(self.db, "shop-coord", "sid-3", self.repo)
+        self.assertIn("用户原话", str(ctx.exception))
+        with self.assertRaises(hooks.BindRefused):
+            hooks.bind(self.db, "shop-coord", "sid-3", self.wt["b"], original="你来做模块协调")
+        hooks.bind(self.db, "shop-coord", "sid-3", self.repo, original="你来做模块协调")
+        ev = store.events(self.db, key="shop-coord", kind="session")[-1]
+        self.assertEqual((ev["type"], ev["data"]["original"]), ("session.bound", "你来做模块协调"))
+        line = hooks.stranger_line(hooks.detect(self.repo))
+        self.assertNotIn("先运行 module-crew bind", line)
+        self.assertIn("--original-file", line)
 
     def test_invalid_identity_rejected_by_store(self):
         with self.assertRaises(store.StoreError):
@@ -217,14 +243,14 @@ class BindTest(ReviewCase):
 
     def test_cli_reads_own_environment(self):
         env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")}
-        none = self.run_cli("bind", "shop-c", cwd=self.repo, env=env)
+        none = self.run_cli("bind", "shop-c", cwd=self.wt["c"], env=env)
         self.assertEqual(none.returncode, 3)
-        ok = self.run_cli("bind", "shop-c", cwd=self.repo, env={**env, "CLAUDE_CODE_SESSION_ID": "sid-c"})
+        ok = self.run_cli("bind", "shop-c", cwd=self.wt["c"], env={**env, "CLAUDE_CODE_SESSION_ID": "sid-c"})
         self.assertEqual(ok.returncode, 0, ok.stderr)
-        codex = self.run_cli("bind", "shop-b", cwd=self.repo, env={**env, "CODEX_THREAD_ID": "thread-b"})
+        codex = self.run_cli("bind", "shop-b", cwd=self.wt["b"], env={**env, "CODEX_THREAD_ID": "thread-b"})
         self.assertEqual(codex.returncode, 0, codex.stderr)
         self.assertEqual(store.get(self.db, "session", "shop-b")["hostSession"]["sessionId"], "thread-b")
-        other = self.run_cli("bind", "shop-c", cwd=self.repo, env={**env, "CLAUDE_CODE_SESSION_ID": "sid-x"})
+        other = self.run_cli("bind", "shop-c", cwd=self.wt["c"], env={**env, "CLAUDE_CODE_SESSION_ID": "sid-x"})
         self.assertEqual(other.returncode, 3)
 
     def test_kickoff_recovery_and_status_mention_bind(self):

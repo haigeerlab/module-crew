@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -696,6 +697,9 @@ def _main(argv: list[str] | None = None) -> int:
     tcg.add_argument("--original-file")
     bd = sub.add_parser("bind", help="登记本会话就是状态库里的某个会话（钩子只给登记过的会话注入角色）")
     bd.add_argument("name", help="开工说明或恢复说明里写的邮箱名")
+    bg = bd.add_mutually_exclusive_group()
+    bg.add_argument("--original", help="用户原话（登记模块协调身份时必填）")
+    bg.add_argument("--original-file")
     tk = sub.add_parser("takeover", help="记录用户同意新会话接管邮箱名")
     tk.add_argument("name")
     tg = tk.add_mutually_exclusive_group(required=True)
@@ -926,7 +930,12 @@ def _run(args) -> int:
         return 0
     if args.group == "bind":
         try:
-            print(hooks.bind(store.open_store(), args.name, hooks.own_session_id()))
+            original = None
+            if args.original is not None or args.original_file is not None:
+                original = _original(args.original, args.original_file)
+                if original is None:
+                    return 2
+            print(hooks.bind(store.open_store(), args.name, hooks.own_session_id(), os.getcwd(), original))
         except hooks.BindRefused as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
