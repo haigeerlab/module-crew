@@ -122,6 +122,38 @@ for t in targets:
 '''
 
 
+FAKE_GATE_TICK = '''import argparse, re, sys
+from pathlib import Path
+# Stand-in for spec-guard interface 1.7 gateTick: the final gate is the last item that names a checkpoint
+# (最终验收 / Checkpoint / gate); it is ticked only when it is the first unchecked item.
+p = argparse.ArgumentParser()
+p.add_argument("--project", required=True)
+p.add_argument("--module", required=True)
+p.add_argument("--confirm", action="store_true")
+a = p.parse_args()
+path = Path(a.project) / "tasks" / a.module / "todo.md"
+if not path.exists():
+    print("todo-missing"); sys.exit(2)
+lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+item = re.compile(r"^(\\s*[-*] )\\[( |x)\\]( .*)$")
+rows = [(i, m) for i, line in enumerate(lines) if (m := item.match(line.rstrip("\\n")))]
+gates = [i for i, m in rows if re.search(r"最终验收|Checkpoint|gate", m.group(3))]
+if not gates:
+    print("no-gate"); sys.exit(2)
+final = gates[-1]
+open_rows = [i for i, m in rows if m.group(2) == " "]
+if final not in open_rows:
+    print("already ticked"); sys.exit(0)
+if open_rows[0] != final:
+    print("not-at-final-gate: " + item.match(lines[open_rows[0]].rstrip("\\n")).group(3).strip()); sys.exit(2)
+if a.confirm:
+    end = lines[final][len(lines[final].rstrip("\\n")):]
+    lines[final] = item.sub(r"\\1[x]\\3", lines[final].rstrip("\\n")) + end
+    path.write_text("".join(lines), encoding="utf-8")
+print("ticked; %d unchecked item(s) left" % (len(open_rows) - 1))
+'''
+
+
 class FakePlugins:
     """Fake Claude install records plus fake spec-guard / agent-relay install dirs under a temp dir."""
 
@@ -150,6 +182,7 @@ class FakePlugins:
             (path / "hooks" / "map_view.py").write_text(FAKE_MAP)
             (path / "hooks" / "review_mark.py").write_text(FAKE_REVIEW_MARK)
             (path / "hooks" / "checkout_role.py").write_text(FAKE_CHECKOUT_ROLE)
+            (path / "hooks" / "gate_tick.py").write_text(FAKE_GATE_TICK)
         entry = {"scope": scope, "installPath": str(path), "version": "9.9.9"}
         if project is not None:
             entry["projectPath"] = str(project)
@@ -196,6 +229,9 @@ def spec_guard_interface(version: str = "1.0", command: list | None = None, revi
     if version >= "1.1":
         doc["reviewMark"] = {"command": review_mark or REVIEW_MARK_COMMAND}
         doc["checkoutRole"] = {"commands": CHECKOUT_ROLE_COMMANDS}
+    if version >= "1.7":
+        doc["gateTick"] = {"command": ["python3", "-B", "hooks/gate_tick.py", "--project", "<project-root>",
+                                       "--module", "<module-id>"]}
     return doc
 
 
@@ -270,7 +306,7 @@ class StartCase(ProbeCase):
     def setUp(self) -> None:
         super().setUp()
         self.plugins.install("agent-relay", {"interface": "2.0"})
-        self.plugins.install("spec-guard", spec_guard_interface("1.1"), map_script=True)
+        self.plugins.install("spec-guard", spec_guard_interface("1.7"), map_script=True)
         self.map_file = self.tmp / "map.json"
         self.set_map(START_MAP)
         os.environ["FAKE_MAP_FILE"] = str(self.map_file)

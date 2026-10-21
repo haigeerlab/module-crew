@@ -285,7 +285,7 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
                 return RunResult(4, [f"C{n}（{m}）{first}；撤销合并失败：{undo.stderr.strip()[:200]}",
                                      "集成 checkout 状态未知，交用户决定"], approval=n, merge_commit=result.merge_commit)
 
-    tick_line, tick_hooks = (None, []) if reason else _tick(checkout, m, n, commits.prefix_of(db))[1:]
+    tick_line, tick_hooks = (None, []) if reason else _tick(project, checkout, m, n, commits.prefix_of(db))[2:]
     with db.transaction(actor="coordinator") as tx:
         current = tx.get("item", str(n))
         if reason:
@@ -319,9 +319,6 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
     return result
 
 
-_UNCHECKED = re.compile(r"^(\s*[-*] )\[ \]( .*)$")
-
-
 def _return_basis(n: int, first: str, reset_to: str | None) -> str:
     where = (f"已撤销合并：集成分支回到合并前的 {reset_to[:7]}，你的分支原样保留" if reset_to else "集成分支未改动")
     return f"最终验收的合并批准事项 C{n}；{first}；{where}"
@@ -344,31 +341,61 @@ def renotice(db: store.Store, approval: int, kind: str) -> Reply:
     return Reply(rec["from"], None, body, db.path / meta["path"])
 
 
-def _tick(checkout: Path, module: str, approval: int, prefix: str = commits.PREFIX) -> tuple[str | None, str | None, list[str]]:
-    """Tick the module's only unchecked todo item on the integration branch; (commit, report line)."""
-    path = checkout / "tasks" / module / "todo.md"
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-    except OSError:
-        return None, None, []
-    open_at = [i for i, line in enumerate(lines) if _UNCHECKED.match(line.rstrip("\n"))]
-    if not open_at:
-        return None, None, []
-    if len(open_at) > 1:
-        return None, f"tasks/{module}/todo.md 还有 {len(open_at)} 个未勾项，没有替它勾最终验收", []
-    i = open_at[0]
-    end = lines[i][len(lines[i].rstrip("\n")):]
-    lines[i] = _UNCHECKED.sub(r"\1[x]\2", lines[i].rstrip("\n")) + end
-    path.write_text("".join(lines), encoding="utf-8")
+GATE_TICK_MINOR = 7      # spec-guard interface 1.7 brings gateTick (0.9.6)
+
+
+def _gate_command(project: Path, checkout: Path, module: str) -> tuple[Path, list[str]] | str:
+    """spec-guard's gateTick command for this module, ready to run with --confirm; a str says why there is none."""
+    found = probe.find_plugin("spec-guard", project)
+    if isinstance(found, str):
+        return found
+    doc = probe.read_interface(found.root, probe.SPEC_GUARD_MAJOR)
+    if isinstance(doc, str):
+        return doc
+    if probe._version_tuple(doc) < (probe.SPEC_GUARD_MAJOR, GATE_TICK_MINOR) or "gateTick" not in doc:
+        return f"spec-guard 接口 {doc.get('interface')} 低于 1.7（没有 gateTick）"
+    cmd = probe.safe_command(found.root, doc, "gateTick", {"<project-root>": str(checkout), "<module-id>": module})
+    if isinstance(cmd, str):
+        return cmd
+    left = [x for x in cmd if x.startswith("<") and x.endswith(">")]
+    if left:
+        return f"gateTick.command 有不认识的占位符 {'、'.join(left)}，没有运行"
+    return found.root, cmd + ["--confirm"]
+
+
+def _tick(project: Path, checkout: Path, module: str, approval: int,
+          prefix: str = commits.PREFIX) -> tuple[str, str | None, str, list[str]]:
+    """Have spec-guard tick the module's final gate on the integration branch, then commit it (0.9.6: gateTick).
+
+    (status, commit, report line, hook lines); status is ticked / already / refused / unavailable / commit-failed.
+    module-crew never ticks a todo item itself: which line is the final gate is spec-guard's rule."""
     rel = f"tasks/{module}/todo.md"
+    got = _gate_command(project, checkout, module)
+    if isinstance(got, str):
+        return "unavailable", None, f"没有替 {module} 勾最终验收：{got}；升级 spec-guard 后用 module-crew merge tick {module} 补勾", []
+    root, cmd = got
+    try:
+        ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return "unavailable", None, f"没有替 {module} 勾最终验收：gateTick 没跑成（{exc}）", []
+    out = (ran.stdout.strip() or ran.stderr.strip()).splitlines()
+    first = out[0].strip() if out else f"退出码 {ran.returncode}"
+    if ran.returncode != 0:
+        return "refused", None, f"spec-guard 没有勾 {module} 的最终验收：{' '.join(x.strip() for x in out[:2]) or first}", []
+    if first.startswith("already ticked"):
+        return "already", None, f"{module} 的最终验收早已勾过，没有改动", []
+    if not first.startswith("ticked"):
+        return "refused", None, f"gateTick 的输出看不懂，没有提交：{first}", []
     _git(checkout, "add", "--", rel)
     done = _git(checkout, "commit", "-q", "-m", commits.message(f"合并批准事项 C{approval}：勾选 {module} 的最终验收", prefix))
     if done.returncode != 0:
         _git(checkout, "reset", "-q", "--", rel)
         _git(checkout, "checkout", "--", rel)
-        return None, commits.failure(checkout, done, f"勾选 {rel} 失败"), commits.hook_lines(checkout, done)
+        return "commit-failed", None, commits.failure(checkout, done, f"勾选 {rel} 失败"), commits.hook_lines(checkout, done)
     commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
-    return commit, f"已在集成分支勾选 {module} 的最终验收 {commit[:7]}", commits.hook_lines(checkout, done)
+    left = first.split(";", 1)[1].strip() if ";" in first else ""
+    return "ticked", commit, f"已在集成分支勾选 {module} 的最终验收 {commit[:7]}" + (f"（spec-guard：{left}）" if left else ""), \
+        commits.hook_lines(checkout, done)
 
 
 def tick(project: str | os.PathLike, module: str, original: str) -> str:
@@ -386,9 +413,11 @@ def tick(project: str | os.PathLike, module: str, original: str) -> str:
     if checkout is None or not _clean(checkout):
         raise AnswerRefused("集成分支所在的 checkout 不干净或集成分支没有被检出")
     n = merged[-1]
-    commit, line, _ = _tick(checkout, module, n, commits.prefix_of(db))
+    status, commit, line, _ = _tick(project, checkout, module, n, commits.prefix_of(db))
+    if status == "already":
+        return line
     if commit is None:
-        raise AnswerRefused(line or f"tasks/{module}/todo.md 没有未勾项，不需要补勾")
+        raise AnswerRefused(line)
     with db.transaction(actor="coordinator") as tx:
         tx.put("item", str(n), dict(tx.get("item", str(n)), tickCommit=commit), action="ticked",
                data={"original": original, "commit": commit})

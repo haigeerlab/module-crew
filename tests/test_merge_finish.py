@@ -68,7 +68,7 @@ class PushTest(MergeCase):
         self.assertEqual(plan.code, 0, plan.lines)
         self.assertTrue(plan.branch.startswith("crew/batch-"))
         self.assertEqual(plan.base, "main")
-        self.assertEqual(len(plan.commits), 4)   # merge, b's two commits, tick of b's todo
+        self.assertEqual(len(plan.commits), 3)   # merge, b's two commits (b's todo has no final gate to tick)
         self.assertIn("b", plan.body)
         self.assertNotIn("crew/", git(self.remote, "branch", "--list"))
 

@@ -100,8 +100,8 @@ class MergeTest(RunCase):
         parents = git(self.repo, "rev-list", "--parents", "-n", "1", res.merge_commit).split()
         self.assertEqual(len(parents), 3)                       # --no-ff: commit + two parents
         self.assertEqual(parents[1], before)
-        # merge + b's two commits + the tick of b's todo (todo.md now reaches the integration branch with the Plan)
-        self.assertEqual(git(self.repo, "rev-list", "--count", f"{before}..HEAD").strip(), "4")
+        # merge + b's two commits; b's todo has no final gate, so gateTick ticks nothing (0.9.6: no guessing)
+        self.assertEqual(git(self.repo, "rev-list", "--count", f"{before}..HEAD").strip(), "3")
         self.assertTrue((self.repo / "src" / "b.py").exists())
         self.assertFalse((self.repo / "src" / "c.py").exists())  # only the head of the queue
         rec = store.get(self.db, "item", str(n))

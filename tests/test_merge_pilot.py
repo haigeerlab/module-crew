@@ -2,7 +2,7 @@
 
 import unittest
 
-from helpers import MergeCase, git
+from helpers import spec_guard_interface, MergeCase, git
 
 from module_crew import merge, protocol, review, start, store
 
@@ -68,8 +68,26 @@ class TickTest(PilotCase):
         self.assertEqual(git(self.repo, "rev-parse", "HEAD").strip(), res.merge_commit)
         res = merge.run(self.repo, self.check)
         self.assertEqual(git(self.repo, "rev-parse", "HEAD").strip(), res.merge_commit)
-        self.assertTrue(any("2 个未勾项" in line for line in res.lines), res.lines)
+        self.assertTrue(any("not-at-final-gate: Task 1" in line for line in res.lines), res.lines)   # spec-guard's short code
         self.assertNotIn("- [x] 最终验收", self.main_todo("c"))
+
+    def test_gate_with_items_after_it(self):
+        # 0.9.6: spec-guard decides; a gate followed by ordinary items is ticked and the rest is reported
+        todo(self.wt["b"], "b", (True, "Task 1"), (False, "最终验收（gate）"), (False, "发版后核对"))
+        self.approve_final("b", 1)
+        res = merge.run(self.repo, self.check)
+        self.assertIn("- [x] 最终验收（gate）", self.main_todo("b"))
+        self.assertIn("- [ ] 发版后核对", self.main_todo("b"))
+        self.assertTrue(any("1 unchecked item(s) left" in line for line in res.lines), res.lines)
+
+    def test_old_spec_guard_does_not_tick(self):
+        self.plugins.install("spec-guard", spec_guard_interface("1.6"), map_script=True, project=self.repo)
+        todo(self.wt["b"], "b", (True, "Task 1"), (False, "最终验收（gate）"))
+        self.approve_final("b", 1)
+        res = merge.run(self.repo, self.check)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertIn("- [ ] 最终验收（gate）", self.main_todo("b"))
+        self.assertTrue(any("低于 1.7" in line and "merge tick b" in line for line in res.lines), res.lines)
 
     def test_no_tick_when_returned(self):
         todo(self.wt["b"], "b", (False, "最终验收"))
@@ -96,8 +114,7 @@ class TickCommandTest(PilotCase):
         self.assertIn("勾选 b", line)
         self.assertIn("- [x] 最终验收", self.main_todo("b"))
         self.assertEqual(store.events(self.db, key=str(n))[-1]["type"], "item.ticked")
-        with self.assertRaises(merge.AnswerRefused):
-            merge.tick(self.repo, "b", "再补一次")
+        self.assertIn("早已勾过", merge.tick(self.repo, "b", "再补一次"))     # gateTick: already ticked, exit 0
 
     def test_cli(self):
         out = self.run_cli("merge", "tick", "b", "--original", "补勾", cwd=self.repo)
