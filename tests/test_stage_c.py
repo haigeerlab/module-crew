@@ -45,6 +45,24 @@ class SyncSkipTest(MergeCase):
         (self.repo / "other.json").write_text("{}\n")
         self.assertEqual({x["to"] for x in changes.land(self.repo, m).sends}, {"shop-c"})
 
+    def test_change_land_skips_approved_and_merged(self):
+        # 0.9.3 (review finding 8): change land used to skip only open final reviews and suspended modules
+        self.approve_final("b", 1)                                               # b approved, waiting in the queue
+        n = changes.add(self.db, change_request(["tsconfig.base.json"], "c"), "shop-c", 4700).number
+        (self.repo / "tsconfig.base.json").write_text('{"strict": true}\n')
+        res = changes.land(self.repo, n)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual({x["to"] for x in res.sends}, {"shop-c"})
+        self.assertEqual(merge.run(self.repo, self.check).code, 0)              # b merges: its head did not move
+        m = changes.add(self.db, change_request(["other.json"], "c"), "shop-c", 4701).number
+        (self.repo / "other.json").write_text("{}\n")
+        self.assertEqual({x["to"] for x in changes.land(self.repo, m).sends}, {"shop-c"})   # merged b: nothing
+
+    def test_one_rule_for_both(self):
+        self.approve_final("b", 1)
+        with self.db.transaction(actor="t") as tx:
+            self.assertEqual(merge.no_sync(tx), {"b"})
+
 
 class ApprovalSupersedeTest(MergeCase):
     """Task 2 (MC-11): a new merge approval replaces the module's older open one (Spec acceptance 2, 3)."""

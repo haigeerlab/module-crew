@@ -182,12 +182,12 @@ def land(project: str | os.PathLike, number: int, original: str | None = None) -
                action="landed", data={"commit": commit})
         _close_ticket(tx, rec)
         from module_crew import merge
-        waiting = merge.awaiting_final(tx)     # MC-10: they sync after their final acceptance is settled
+        skip = merge.no_sync(tx)               # same rule as merge run (0.9.3); the requester still gets its reply
         for name, sess in sorted(tx.records("session").items()):
             if sess.get("role") != "dev" or sess.get("status") != "active":
                 continue
-            if (sess.get("module") in waiting or sess.get("suspended")) and name != rec["from"]:
-                continue          # a suspended module is told on resume (crew-routing-fixes); the requester still gets its reply
+            if sess.get("module") in skip and name != rec["from"]:
+                continue
             text = protocol.render_coordination_notice(kind="sync-baseline", basis=basis, todo=todo)
             reply_to = rec["relayId"] if name == rec["from"] else None
             if reply_to is not None:

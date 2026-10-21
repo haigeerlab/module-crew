@@ -78,6 +78,16 @@ def awaiting_final(tx) -> set[str]:
             if v.get("kind") == "review" and v.get("node") == "final" and v.get("state") == "open"}
 
 
+def no_sync(tx) -> set[str]:
+    """Modules that get no sync-baseline notice now, the one rule for `merge run` and `change land` (0.9.3):
+    an open or merged merge approval (syncing voids it or is pointless), an open final review (MC-10), or suspended
+    (resume says what happened meanwhile)."""
+    approved = {v.get("module") for v in tx.records("item").values() if v.get("kind") == "merge-approval"
+                and (v.get("state") == "open" or v.get("closedReason") == "merged")}
+    suspended = {s.get("module") for s in tx.records("session").values() if s.get("role") == "dev" and s.get("suspended")}
+    return approved | awaiting_final(tx) | suspended
+
+
 @dataclass(frozen=True)
 class Revoked(Reply):
     superseded_by: int | None = None          # the newer submission that keeps the old one closed (MC-6)
@@ -295,11 +305,10 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
             _notice(tx, db, result, rec["from"], "wrap-up",
                     basis=f"最终验收的合并批准事项 C{n}；已合入集成分支 {short}",
                     todo="停止在本 worktree 开发，等模块协调收回 worktree")
-            busy = {v.get("module") for v in tx.records("item").values() if v.get("kind") == "merge-approval"
-                    and (v.get("state") == "open" or v.get("closedReason") == "merged")} | awaiting_final(tx)
+            skip = no_sync(tx)
             for name, s in sorted(tx.records("session").items()):
                 if (s.get("role") == "dev" and s.get("status") == "active" and name != rec["from"]
-                        and s.get("module") not in busy and not s.get("suspended")):  # resume sends it later
+                        and s.get("module") not in skip):  # a suspended module is told on resume
                     _notice(tx, db, result, name, "sync-baseline",
                             basis=f"模块 {m} 已合入集成分支 {short}（合并批准记录 C{n}）",
                             todo=f"{sync.STEP}，跑完整检查后继续")
