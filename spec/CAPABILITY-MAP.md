@@ -10,6 +10,7 @@
 会话中断或压缩后能从文件恢复。第一版只支持 Claude 桌面版，给已启用 spec-guard、模块多且彼此独立的项目用。
 第六版起协调会话管项目里所有派活：用户明说才升级、一个仓库只一个；单个需求与 bug 走轻流程（不写 Spec、各自 worktree），
 和模块一样只从合并队列进集成分支；没升级的会话一切照常。
+第七版补上换手与呈现：命令入口跟着安装的插件走（Codex 用固定启动脚本），会话重开与接管有明确做法、只认登记的会话；契约钉到 session-protocol v2.6，审批消息按 spec-guard 的格式呈现。
 
 <!-- 这一段是 Proposal 评审的目标指纹底本（`spec-digest.py` 计算）。
      改写目标会让已发布的 Proposal 被判为过期，所以改了先人工评审；追加模块不需要改这里。
@@ -44,8 +45,12 @@
 | crew-light-task | 第六版：轻流程——写任务单、开 worktree 与会话、交回带测试结果与实际改的文件（bug 先补复现测试）、进合并队列由用户批准并通知同步、升格／缩小／取消、回滚按轻任务走；不写 Spec、不调 spec-guard | crew-task-ledger, crew-start, crew-merge |
 | crew-unqueued-commits | 第六版：不经队列的提交——发现集成分支上不是经合并队列合入的提交，告诉用户并照常通知各模块同步 | crew-merge, crew-coordinator-switch |
 | crew-background-checks | 第六版：后台检查——合并时的完整检查改后台运行、协调会话照常回话，同一时间只跑一个合并 | crew-merge, crew-onboarding |
+| crew-command-entry | 第七版：命令入口——Codex 会话改用状态库里不带版本号的固定启动脚本（每次转给当前安装的那份），bin/module-crew 不再让当前目录的代码盖过插件自己的代码 | crew-codex-host, crew-host-permissions, crew-recovery-hooks |
+| crew-session-handover | 第七版：会话换手——写明怎么重开、跨目录接管模块协调（用户原话，旧会话登记作废）、模块协调的写命令核对调用者会话、同一角色两个活着的会话时 status 报阻塞 | crew-coordinator-switch, crew-recovery-hooks, crew-background-checks |
+| crew-contract-v26 | 第七版：钉住 session-protocol v2.6——新样例、C<交审号>-<序号> 待定编号与只发 v2.6 以上收件箱、答复块写法、「验收结果」改名、Spec／Plan 新小项与要点 points；钉住后回报契约负责人 | crew-protocol, crew-hub-bridge, crew-hub-card-fields |
+| crew-review-display | 第七版：审批呈现——最终验收按 spec-guard reviewKinds.final 由 review batch 从模块分支生成、开工／公共变更／卡住选做法三种模板、多模块按 Build order 分节、决定内容写在下一步框之前 | crew-review-batch, crew-contract-v26 |
 
-Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby → crew-stall-signals → crew-host-permissions → crew-glossary-rename → crew-pilot-fixes → crew-hub-card-fields → crew-stage-c-fixes → crew-routing-fixes → crew-coordinator-switch → crew-task-ledger → crew-light-task → crew-unqueued-commits → crew-background-checks
+Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby → crew-stall-signals → crew-host-permissions → crew-glossary-rename → crew-pilot-fixes → crew-hub-card-fields → crew-stage-c-fixes → crew-routing-fixes → crew-coordinator-switch → crew-task-ledger → crew-light-task → crew-unqueued-commits → crew-background-checks → crew-command-entry → crew-session-handover → crew-contract-v26 → crew-review-display
 
 <!-- Spec Guard 按严格串行推进。为兼容上游格式，逗号分组会按左到右顺序展开为单模块步骤，不代表并行授权。 -->
 
@@ -84,3 +89,4 @@ Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → cr
 - 2026-10-19：插入第四版三个模块 crew-stall-signals（依赖 crew-hub-bridge、crew-review-nearby）、crew-host-permissions（依赖 crew-start、crew-merge）、crew-glossary-rename（依赖前两个），依次排在 crew-review-nearby 之后。原因：0.3.0 放到下一版的 R14 停滞检测、R16 宿主权限与术语表 v1.1 全面改名（livesaas-integration/REQ-REVIEW-NEARBY.md、GLOSSARY.md）；来源：用户 2026-10-19 确认 19 条假设并批准插入。
 - 2026-10-20：插入第五版模块 crew-routing-fixes（依赖 crew-recovery-hooks、crew-failure、crew-hub-bridge、crew-stage-c-fixes，排在最后）。原因：收发规则（点对点、沿上下级）自查与总协调排查查到的三处收件对象过宽；来源：用户 2026-10-20 在本会话批准插入与 Spec。
 - 2026-10-22：「目标」一节追加第六版范围（协调会话管所有派活）；插入第六版五个模块 crew-coordinator-switch、crew-task-ledger、crew-light-task、crew-unqueued-commits、crew-background-checks，依次排在最后。原因：插件只覆盖多模块并行，单需求与 bug 只能用原生关联会话做，和合并队列两套规则冲突（需求记录第 14 节）；来源：用户 2026-10-22 在本会话经拷问确认需求，并批准五个模块与直接改目标（本仓库没用过 Proposal）。
+- 2026-10-22：「目标」一节追加第七版范围；插入第七版四个模块 crew-command-entry、crew-session-handover、crew-contract-v26、crew-review-display，依次排在最后。原因：0.11.1 试用留下的 Codex 命令入口与源码仓库加载问题、spec-guard 负责人试用观测 O9（会话换手）、契约 v2.6 定稿（92309e7）与回显评审（需求记录第 15、16 节）；来源：用户 2026-10-22 在本会话确认 12 项需求并批准四个模块的划分与顺序。
