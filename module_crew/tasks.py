@@ -42,6 +42,60 @@ def _caused(value: str | None) -> str | None:
     return f"{m.group(1).upper()}{m.group(2)}"
 
 
+ACTIVE = ("dispatched", "working", "returned", "escalated")    # 在做
+HOLDING = ("ready",) + ACTIVE                                    # take part in the overlap check
+FINAL = ("merged", "promoted", "cancelled")
+GIT_TIMEOUT = 20
+
+
+def clash(a: str, b: str) -> bool:
+    """Same path, or one is a directory (trailing /) holding the other."""
+    if a == b:
+        return True
+    return (a.endswith("/") and b.startswith(a)) or (b.endswith("/") and a.startswith(b))
+
+
+def _module_files(db: store.Store, project: Path) -> tuple[dict[str, list[str]], list[str]]:
+    """Files each in-use module branch already changed relative to the integration branch; notes for branches not read."""
+    import subprocess
+    branch = (store.get(db, "config", "main") or {}).get("integrationBranch")
+    out, notes = {}, []
+    for name, s in sorted(store.records(db, "session").items()):
+        if s.get("role") != "dev" or s.get("status") != "active" or not s.get("module"):
+            continue
+        mod = s["module"]
+        try:
+            run = subprocess.run(["git", "-C", str(project), "diff", "--name-only", f"{branch}...{mod}"],
+                                 capture_output=True, text=True, timeout=GIT_TIMEOUT)
+        except (subprocess.TimeoutExpired, OSError):
+            notes.append(f"模块 {mod} 的分支读不出改动（超时或 git 不可用），没有比较")
+            continue
+        if run.returncode != 0:
+            notes.append(f"模块 {mod} 的分支读不出改动（{run.stderr.strip()[:80]}），没有比较")
+            continue
+        out[mod] = [line for line in run.stdout.splitlines() if line.strip()]
+    return out, notes
+
+
+def overlaps(db: store.Store, project: str | os.PathLike, files: list[str],
+             exclude: int | None = None) -> tuple[list[str], list[str]]:
+    """(clashes, notes) of `files` against tasks holding files and in-use module branches. Read-only."""
+    clashes = []
+    for k, t in sorted(store.records(db, "task").items(), key=lambda kv: int(kv[0])):
+        if t.get("state") not in HOLDING or (exclude is not None and int(k) == exclude):
+            continue
+        theirs = list(t.get("expectedFiles") or []) + list(((t.get("result") or {}).get("files")) or [])
+        hit = sorted({f for f in files for o in theirs if clash(f, o)})
+        clashes += [f"{label(k)}：{f}" for f in hit]
+    changed, notes = _module_files(db, Path(project))
+    for mod, theirs in changed.items():
+        hit = sorted({f for f in files for o in theirs if clash(f, o)})
+        clashes += [f"模块 {mod}：{f}" for f in hit]
+        if not hit:
+            notes.append(f"模块 {mod} 还在开发，以后可能碰到同样的文件（只比了它已经改过的）")
+    return clashes, notes
+
+
 def add(db: store.Store, project: str | os.PathLike, kind: str, title: str, what: str, expect: list[str], done: str,
         original: str, caused_by: str | None = None) -> AddResult:
     """Record a task the user asked for; `ready` when nothing in progress touches its files, otherwise `queued`."""
@@ -58,13 +112,15 @@ def add(db: store.Store, project: str | os.PathLike, kind: str, title: str, what
     if bad:
         raise TaskRefused("预计文件要写仓库内的相对路径（不含 ..）：" + "、".join(bad))
     caused = _caused(caused_by)
+    clashes, notes = overlaps(db, project, files)
+    state = "queued" if clashes else "ready"
     with db.transaction(actor="coordinator") as tx:
         n = tx.allocate_number()
-        rec = {"type": kind, "title": title, "what": what, "expectedFiles": files, "done": done, "state": "ready",
+        rec = {"type": kind, "title": title, "what": what, "expectedFiles": files, "done": done, "state": state,
                "causedBy": caused, "assignee": None, "worktree": None, "branch": None, "result": None,
                "original": original, "createdAt": store.now()}
         tx.put("task", str(n), rec, action="added", data={"original": original})
-    return AddResult(n, "ready")
+    return AddResult(n, state, clashes, notes)
 
 
 def label(n: int | str) -> str:
