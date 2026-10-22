@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 VERSION = 1
-KINDS = ("config", "session", "item", "request", "ticket", "body", "sighting", "handover")
+KINDS = ("config", "session", "item", "request", "ticket", "body", "sighting", "handover", "task")
 NUMBERED = ("item", "request", "ticket", "body")
 ROLES = ("coordinator", "dev")
 HOSTS = ("claude-desktop", "codex-desktop")   # coordinators are Claude desktop only (crew-codex-host)
@@ -344,6 +344,34 @@ def _validate_session(key: str, rec: dict, others: dict) -> None:
             raise bad(f"模块 {rec.get('module')} 已有在用的模块会话 {other_key}")
 
 
+TASK_TYPES = ("feature", "bug")
+TASK_STATES = ("queued", "ready", "dispatched", "working", "returned", "escalated", "merged", "promoted", "cancelled")
+_REF_RE = re.compile(r"^[TC][1-9]\d*$")
+
+
+def task_path_ok(path: object) -> bool:
+    """A repository-relative path: no absolute path, no `..` part, not empty; a trailing / means a directory."""
+    if not isinstance(path, str) or not path.strip() or path.startswith("/") or "\\" in path:
+        return False
+    return all(part not in ("..", "") for part in path.rstrip("/").split("/"))
+
+
+def _validate_task(key: str, rec: dict) -> None:
+    def bad(msg: str) -> InvalidRecord:
+        return InvalidRecord(f"任务记录不合法（T{key}）：{msg}")
+
+    if rec.get("type") not in TASK_TYPES:
+        raise bad(f"type 只能是 {'／'.join(TASK_TYPES)}")
+    if rec.get("state") not in TASK_STATES:
+        raise bad(f"state 只能是 {'／'.join(TASK_STATES)}")
+    files = rec.get("expectedFiles")
+    if not isinstance(files, list) or not files or not all(task_path_ok(f) for f in files):
+        raise bad("expectedFiles 必须是非空列表，每项是仓库内的相对路径（不含 ..）")
+    caused = rec.get("causedBy")
+    if caused is not None and not (isinstance(caused, str) and _REF_RE.match(caused)):
+        raise bad("causedBy 只能是 T<号> 或 C<号>")
+
+
 _SOURCE: contextvars.ContextVar[dict | None] = contextvars.ContextVar("approval_source", default=None)
 
 
@@ -451,6 +479,8 @@ class Transaction:
             raise InvalidRecord("data 必须是对象，且不能含 record")
         if kind == "session":
             _validate_session(key, record, self._views["session"].records)
+        if kind == "task":
+            _validate_task(key, record)
         try:
             body = json.loads(json.dumps(record, ensure_ascii=False))
         except (TypeError, ValueError) as exc:
