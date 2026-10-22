@@ -283,5 +283,58 @@ class TaskMergeTest(MergeCase):
         self.assertEqual(merge.cleanup(self.repo, f"T{n}", "收回").code, 3)
 
 
+def escalation(n):
+    return "\n".join(["【等待用户】", "结束：无", "来自：轻任务会话", f"要你决定：轻任务 T{n} 超出任务单，升格、缩小还是取消",
+                      "要点：出了什么事：做了一半", "剩下要改 src/cache.py，不在任务单里", f"任务：T{n}", "类型：卡住选做法",
+                      "选项与我的建议：", "推荐 A：升格为模块", "  选了会怎样：按模块写 Spec 再做",
+                      "B：缩小", "  选了会怎样：只交已做的部分", "C：取消", "  选了会怎样：丢弃改动",
+                      "你该回：A", "是否完全停住：是"]) + "\n"
+
+
+class EscalationTest(TaskWorkCase):
+    """Acceptance 6."""
+
+    def escalate(self):
+        from module_crew import inbox
+        n, d = self.start_task()
+        out = inbox.add(self.db, escalation(n), d.relay, 700)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertEqual(store.get(self.db, "task", str(n))["state"], "escalated")
+        self.assertEqual(store.get(self.db, "item", str(out.number))["task"], n)
+        return n, d, out.number
+
+    def test_a_promotes(self):
+        from module_crew import inbox
+        n, d, item = self.escalate()
+        reply = inbox.answer(self.db, item, "升格吧", "A")
+        self.assertEqual(store.get(self.db, "task", str(n))["state"], "promoted")
+        self.assertTrue(any("add-module" in x for x in reply.notes), reply.notes)
+
+    def test_b_then_scope(self):
+        from module_crew import inbox
+        n, d, item = self.escalate()
+        reply = inbox.answer(self.db, item, "缩小", "B")
+        self.assertEqual(store.get(self.db, "task", str(n))["state"], "escalated")
+        self.assertTrue(any("task scope" in x for x in reply.notes), reply.notes)
+        r = tasks.scope(self.db, n, ["docs/t.md"], "只交说明", "只交已做的")
+        t = store.get(self.db, "task", str(n))
+        self.assertEqual((t["state"], t["expectedFiles"], t["done"]), ("working", ["docs/t.md"], "只交说明"))
+        self.assertIn("只交说明", Path(r.path).read_text(encoding="utf-8"))
+        with self.assertRaises(tasks.TaskRefused):
+            tasks.scope(self.db, n, ["docs/t.md"], "再缩", "再缩")
+
+    def test_c_cancels(self):
+        from module_crew import inbox
+        n, d, item = self.escalate()
+        reply = inbox.answer(self.db, item, "取消", "C")
+        self.assertEqual(store.get(self.db, "task", str(n))["state"], "cancelled")
+        self.assertTrue(any(f"merge cleanup T{n}" in x for x in reply.notes), reply.notes)
+
+    def test_other_task_number_refused(self):
+        from module_crew import inbox
+        n, d = self.start_task()
+        self.assertEqual(inbox.add(self.db, escalation(n + 100), d.relay, 701).code, 3)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -30,8 +30,9 @@ class Outcome:
 
 
 def _active_dev(db: store.Store, sender: str) -> bool:
+    """A module session, or a light task's session (crew-light-task)."""
     rec = store.get(db, "session", sender)
-    return bool(rec) and rec.get("role") == "dev" and rec.get("status") == "active"
+    return bool(rec) and rec.get("role") in ("dev", "task") and rec.get("status") == "active"
 
 
 def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
@@ -46,6 +47,10 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         return Outcome(msg.kind, 4, lines=[f"合格；{msg.kind} 由 {RECORDED_ELSEWHERE[msg.kind]} 记账，本命令不记"])
     if msg.kind not in RECORDED_HERE:
         return Outcome(msg.kind, 3, lines=[f"{msg.kind} 不应由模块会话发来，拒收"])
+    me = store.get(db, "session", sender) or {}
+    task = msg.contract().get("task")
+    if task and (me.get("role") != "task" or task != f"T{me.get('task')}"):
+        return Outcome(msg.kind, 3, lines=[f"消息写的任务 {task} 不是 {sender} 负责的任务，拒收"])
     with db.transaction(actor=sender) as tx:
         out = Outcome(msg.kind, 0)
         if any(e["actor"] == sender and e["data"].get("relayId") == relay_id for e in store.events(db)):
@@ -143,9 +148,16 @@ def _wait_user(tx, msg: protocol.Message, text: str, sender: str, relay_id: int,
         "recommended": doc["recommended"], "fullyStopped": doc["fullyStopped"],
         "multiline": multiline, "closedReason": None, "answer": None,
         "waitKind": doc.get("waitKind"), "goToSession": doc.get("goToSession"),
+        **({"task": int(doc["task"][1:])} if doc.get("task") else {}),
     }, action="created", data={"relayId": relay_id})
     out.number = n
     out.lines.append(f"已记为事项 C{n}")
+    if doc.get("task") and doc.get("waitKind") == "stuck":       # crew-light-task: an escalation request
+        number = int(doc["task"][1:])
+        t = tx.get("task", str(number)) or {}
+        if t.get("state") in ("dispatched", "working", "returned"):
+            tx.put("task", str(number), {**t, "state": "escalated"}, action="escalated", data={"item": n})
+            out.lines.append(f"轻任务 {doc['task']} 停下来等升格、缩小或取消：把选项交用户决定")
     if doc.get("waitKind") == "go-to-session":
         g = doc["goToSession"]
         out.lines.append(f"这是去会话操作（契约 v2.2）：不用等答复。有决策收件箱就原样转给它；没有就直接告诉用户去「{g['session']}」"
@@ -162,6 +174,7 @@ class Reply:
     reply_to: int
     body: int
     path: Path
+    notes: tuple = ()          # what the coordinator does next (crew-light-task escalation answers)
 
 
 def answer(db: store.Store, number: int, original: str, option: str | None = None) -> Reply:
@@ -190,7 +203,26 @@ def answer(db: store.Store, number: int, original: str, option: str | None = Non
                       answer={"original": original, **store.source_field(), "option": option_text[0] if option_text else None,
                               "answeredAt": answered_at, "body": body})
         tx.put("item", str(number), closed, action="answered", data={"body": body})
-    return Reply(item["from"], item["relayId"], body, db.path / meta["path"])
+    notes = _task_answer(db, item, option_text[0] if option_text else None)
+    return Reply(item["from"], item["relayId"], body, db.path / meta["path"], tuple(notes))
+
+
+def _task_answer(db: store.Store, item: dict, letter: str | None) -> list[str]:
+    """An escalation answer moves the light task: A promoted, B narrowed by `task scope`, C cancelled."""
+    from module_crew import tasks
+    n = item.get("task")
+    t = store.get(db, "task", str(n)) if n else None
+    if not t or t.get("state") != "escalated" or letter not in ("A", "B", "C"):
+        return []
+    if letter == "A":
+        tasks.advance(db, n, "promoted")
+        return [f"T{n} 已升格：和用户一起用 /spec-guard:add-module 加模块（任务分支 {t.get('branch')} 留作参考），"
+                f"之后用户同意时 module-crew merge cleanup T{n} 收回 worktree"]
+    if letter == "B":
+        return [f"T{n} 要缩小：和用户定好新的任务单后运行 module-crew task scope T{n} --expect … --done … --original-file <原话文件>，"
+                "再把它输出的正文发给做事的会话"]
+    tasks.advance(db, n, "cancelled")
+    return [f"T{n} 已取消：用户同意时 module-crew merge cleanup T{n} 收回 worktree（分支保留）"]
 
 
 _ABOUT = re.compile(r"^(#\d+|C\d+)$")

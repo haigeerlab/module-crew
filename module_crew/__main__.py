@@ -158,7 +158,7 @@ def _task_line(n: int, t: dict) -> str:
 def _task(args) -> int:
     from module_crew import tasks
     db = store.open_store()
-    if args.action == "add" or args.action == "cancel":
+    if args.action in ("add", "cancel", "scope"):
         original = _original(args.original, args.original_file)
         if original is None:
             return 2
@@ -179,6 +179,10 @@ def _task(args) -> int:
         if args.action == "cancel":
             tasks.cancel(db, args.number, original)
             print(f"已取消 T{args.number}；已派出的话，告诉做事的会话停下")
+            return 0
+        if args.action == "scope":
+            r = tasks.scope(db, args.number, args.expect.split(","), args.done, original)
+            print(f"T{r.number} 的任务单已缩小，回到在做；把正文发给做事的会话：{r.path}")
             return 0
         if args.action == "dispatch":
             d = tasks.dispatch(db, ".", args.number)
@@ -277,6 +281,8 @@ def _answer(number: int, original: str | None, original_file: str | None, option
     _sent(reply.to)
     print(f"replyTo：{reply.reply_to}")
     print(f"正文文件：{reply.path}")
+    for note in reply.notes:
+        print(note)
     src = store.source_field().get("source")
     for x in inbox.resume_own_waits_now(store.open_store(), [f"C{number}"] + ([f"#{src['item']}"] if src else [])):
         print(f"你开的等待记录 W{x['wait']} 等的事已发生：发送 【已恢复】 → {x['to']}，正文文件：{x['path']}")
@@ -828,11 +834,15 @@ def _main(argv: list[str] | None = None) -> int:
     tash = tas.add_parser("show")
     tash.add_argument("number", type=refs.parse)
     tas.add_parser("next", help="把排队里已不重叠的提为可开（bug 在前）")
+    tsc = tas.add_parser("scope", help="升格请求选了缩小：改任务单，任务回到在做")
+    tsc.add_argument("number", type=refs.parse)
+    tsc.add_argument("--expect", required=True)
+    tsc.add_argument("--done", required=True)
     tad = tas.add_parser("dispatch", help="派出可开的任务：建 worktree 与分支、登记轻任务会话、生成开工说明")
     tad.add_argument("number", type=refs.parse)
     tac = tas.add_parser("cancel")
     tac.add_argument("number", type=refs.parse)
-    for c in (taa, tac):
+    for c in (taa, tac, tsc):
         g = c.add_mutually_exclusive_group(required=True)
         g.add_argument("--original")
         g.add_argument("--original-file")

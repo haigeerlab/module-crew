@@ -283,6 +283,33 @@ def dispatch(db: store.Store, project: str | os.PathLike, number: int) -> Dispat
     return result
 
 
+@dataclass
+class Scoped:
+    number: int
+    body: int
+    path: str
+
+
+def scope(db: store.Store, number: int, expect: list[str], done: str, original: str) -> Scoped:
+    """After an escalation answered 「缩小」: rewrite the task card and send it back to work."""
+    t = store.get(db, "task", str(number))
+    if t is None or t.get("state") != "escalated":
+        raise TaskRefused(f"{label(number)} 不在等升格决定，不能缩小")
+    original, done = _clean(original, "用户原话"), _clean(done, "完成标准")
+    files = [f.strip() for f in expect or [] if f.strip()]
+    if not files or not all(store.task_path_ok(f) for f in files):
+        raise TaskRefused("预计文件要写仓库内的相对路径（不含 ..），不能为空")
+    text = "\n".join([f"轻任务 {label(number)} 已按用户的决定缩小，新的任务单：",
+                      f"- 做什么：{t['what']}", f"- 预计改的文件：{'、'.join(files)}", f"- 做到什么程度算完：{done}",
+                      "超出这份任务单的改动不要再做，做完按原来的写法交回最终验收【交审】。"]) + "\n"
+    with db.transaction(actor="coordinator") as tx:
+        tx.put("task", str(number), {**t, "expectedFiles": files, "done": done, "state": "working"},
+               action="scoped", data={"original": original})
+        body = tx.allocate_number()
+        meta = tx.write_body(body, text)
+    return Scoped(number, body, str(db.path / meta["path"]))
+
+
 def bound(db: store.Store, name: str) -> None:
     """A task session bound its identity: the task is being worked on."""
     rec = store.get(db, "session", name) or {}
