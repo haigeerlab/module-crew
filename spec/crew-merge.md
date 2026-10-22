@@ -1,4 +1,4 @@
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 7de76670d231 -->
 
 # Spec: crew-merge
 
