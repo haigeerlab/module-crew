@@ -175,6 +175,9 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 
 ## 出状况时
 
+- **集成分支上有不经合并队列的提交**（`status` 显示数量，或 `merge run` 输出里列出）：把这一行告诉用户一次（哪几个提交、谁提交的），
+  不追问、不要求解释；`status` 里看到时运行 `module-crew unqueued --notify` 通知各模块同步（`merge run` 已经自动做了就不用再做）。不要撤回这些提交。
+
 - **谁悄悄停下了**：`module-crew sessions` 只列事实（最后动静、未关等待记录与事项、当前档位、挂起原因），不下结论；
   结合 agent-relay 在线状态自己判断，拿不准就问那个会话或问用户，不要替用户认定它已停下。
 - **等外部条件**（等设计稿、等别人交付）：用户同意后 `module-crew suspend <模块> --reason "<原因>" --original-file <原话文件>`，

@@ -117,7 +117,8 @@ class PrepareTest(StartCase):
         from module_crew.hostcheck import plugin_version
         self.assertEqual(cfg, {"projectShort": "shop", "integrationBranch": "main", "maxModules": 2, "crewDir": str(crew),
                                "pluginVersion": plugin_version(),    # recorded for host-check (crew-codex-host)
-                               "reviewCadence": "separate"})          # the project's cadence (crew-review-nearby)
+                               "reviewCadence": "separate",           # the project's cadence (crew-review-nearby)
+                               "integrationSeen": git(self.repo, "rev-parse", "main").strip()})   # crew-unqueued-commits
         for m in ("b", "c"):
             wt = crew / m
             self.assertTrue((wt / "README.md").exists())

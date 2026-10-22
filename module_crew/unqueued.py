@@ -34,7 +34,7 @@ def mark(db: store.Store, checkout: str | os.PathLike, source: str, only_if_unse
         if (only_if_unset and old) or old == new:
             return old
         tx.put("config", "main", {**cfg, "integrationSeen": new}, action="integration-seen",
-               data={"old": old, "new": new, "source": source})
+               data={"old": old, "new": new, "by": source})   # not "source": that key is the approval source
     return new
 
 

@@ -9,6 +9,7 @@
 
 - 轻任务的完整流程：`task dispatch` 派出、轻任务会话交回、和模块同一个合并队列（bug 任务优先）、升格／缩小／取消；契约钉到 session-protocol v2.5（「任务」字段与 T 前缀）。
 - 修正：会话唯一性规则不再把两个轻任务会话当成同一个模块的会话。
+- 不经合并队列的提交：module-crew 记下自己认得的集成分支顶端，之后别人直接提交的会在 `status`、`unqueued`、`merge run` 里报一次，并通知各模块同步；不拦、不撤回。
 
 ## 0.10.1 的变化（热修）
 
@@ -114,6 +115,7 @@ bin/module-crew status
 |---|---|
 | 不知道哪个会话停下了 | `module-crew sessions` 列出每个模块会话的最后动静、未关的等待记录与事项、当前档位、挂起原因；只列事实，结合 agent-relay 在线状态自己判断 |
 | 某个模块会话在「等待审批」 | 权限弹窗只能用户去那个会话亲手点；模块协调醒来时会提醒，并核对各模块会话的权限模式有没有变宽 |
+| 集成分支上有不经合并队列的提交 | `status` 会显示数量；`module-crew unqueued` 列出（短号、作者、时间、标题），`--notify` 给在开发的模块与在做的轻任务发同步通知，同一批只报一次；`merge run` 合并前也会自动做这一步。插件不拦、不撤回 |
 | 消息发出去对方没反应 | 桌面版会停掉空闲会话，agent-relay 叫不醒（`pendingReason: offline`）；用桌面版跨会话消息发一句「去读 agent-relay 收件箱」 |
 | 模块在等外部条件（设计稿、别人交付） | 用户同意后 `module-crew suspend <模块> --reason "<原因>" --original-file <原话文件>`，不再占名额；按输出把挂起正文发给模块会话，它在自己的 worktree 里用 spec-guard 挂起。条件满足、用户同意后 `module-crew resume <模块> --original-file <原话文件>` |
 | 会话崩溃或要换新会话 | `module-crew resume-kit <模块>` 生成恢复说明；用户同意后 `module-crew takeover <邮箱名> --original-file <原话文件>`，在原 worktree 开新会话，第一条消息用恢复说明，新会话用同一个邮箱名重新注册 |
@@ -158,6 +160,7 @@ module-crew 自己的编号对外一律写 C 前缀（如 C15），`#数字` 只
 module-crew status [--json]                      体检与全貌（只读）
 module-crew coordinator up|down --original(-file)  把本会话升级为模块协调／关闭（一个仓库一个）
 module-crew task add|list|show|next|cancel       轻任务记录（单个需求或 bug，T 编号）：预计文件和在做的活重叠就排队，bug 在前
+module-crew unqueued [--notify] [--json]         集成分支上不经合并队列的提交：列出／通知各模块同步
 module-crew task dispatch|scope                  派出可开的轻任务（worktree、登记、开工说明）／升格请求选缩小后改任务单
 module-crew store init|check                     状态库
 module-crew protocol check <文件>                消息自检
