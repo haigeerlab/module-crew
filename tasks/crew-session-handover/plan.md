@@ -1,6 +1,6 @@
 # Implementation Plan: crew-session-handover
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-session-handover.md`（用户 2026-10-22 批准，含关键决策 4）。任务清单：`tasks/crew-session-handover/todo.md`。
 
