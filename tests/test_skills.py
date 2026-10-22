@@ -247,7 +247,7 @@ class CodexPackageTest(unittest.TestCase):
         for words in self.COMMON:
             self.assertIn(words, claude)
             self.assertIn(words, codex)
-        for words in ("提权", "用**原名**重新注册", "host-check", "没有钩子", "绝对路径"):
+        for words in ("提权", "用**原名**重新注册", "host-check", "没有钩子", "固定入口"):
             self.assertIn(words, codex)
         self.assertNotIn("SendMessage", codex)
         self.assertNotIn("CLAUDE.md", codex)
