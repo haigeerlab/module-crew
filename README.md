@@ -69,6 +69,7 @@ bin/module-crew status
 4. **公共文件**：模块会话不改公共文件，发【公共变更请求】；模块协调 `change add` → 在集成 checkout 改 → `change land`，其他模块收到同步基线通知。
 5. **合并**
    - 模块做完发最终验收【交审】，用户批准后 `module-crew merge approve <交审编号> --original-file <原话文件>`。
+     提请批准时按 spec-guard 的最终验收小项排：做了什么、验收结果、改了哪些文件（文档表、代码文件表——新增／修改／删除与行数，超出 Plan 的标出——、提交表、新增依赖表），以及 Spec 中途改过吗（改过就附差异）；这几张表由 module-crew 从版本库算出，不用模块自己报。
    - `module-crew merge run`（第一次带 `--check-command "<完整检查命令>"`）：按 Build order 一次只合一个，`--no-ff` 合入本地集成分支后跑完整检查；
      不过就把集成分支重置回合并前（模块分支原样保留）并退回该模块，冲突就中止并退回。
    - 合并成功：该模块收到收尾通知，其他在用模块收到同步基线通知。
@@ -146,6 +147,8 @@ bin/module-crew status
 4. `module-crew source map <H>` 查一个待决事项批准了哪些 C 编号。
    待定问题（契约 v2.6）：决策收件箱登记为 2.6 及以上、或没有决策收件箱时，给用户看的待定问题编成 `C<交审号>-<序号>`（如 C15-1），登记低于 2.6 时照旧用 D；答复块一块只答一件事（如「C16 A；C16-1 B」）。登记 2.6：`source add <邮箱名> --kind hub --protocol 2.6 --original-file <原话>`。
 5. 外部插件读 `module-crew sessions --json`（`schemaVersion` 1：module、relayName、worktree、stage、stageText、suspended、lastActivity、review；0.4.0 起加停滞事实 startedAt、commits、asks、returns、waitUser，见 [spec/crew-stall-signals.md](spec/crew-stall-signals.md)，只给事实、不判断是否卡住），出口与契约版本登记在根目录 `interface.json`。
+
+**并行边界重叠**（`review batch` 末尾）三种结论：有冲突就列出模块与路径；比对过且没有冲突写「无（已按交审中的 Spec 比对）」或「无（已按集成分支上的 Spec 比对）」；比不了写「未比对：<原因>」（例如交审中的 Spec 还没落到集成分支、spec-guard 低于 1.10 没有 scopeOverlap）。只有比对过才写「无」。
 
 **不配决策收件箱、不配审查者时**：一切照常在模块协调里由用户亲手批准；没有审查者就不送审、不返工，提请批准里写「未审查」；「待你决定」的问题由模块协调直接问用户。
 

@@ -241,5 +241,26 @@ class StuckCardTest(ReviewCase):
         self.assertEqual(block, f"C{n} A")
 
 
+class SectionTest(ReviewCase):
+    """Acceptance 4: several modules in one batch, a section per module in Build order."""
+
+    def test_build_order_sections(self):
+        db = store.open_store(self.repo)
+        review.add(db, self.spec_review("c"), "shop-c", 1)
+        review.add(db, self.spec_review("b"), "shop-b", 2)
+        self.assertEqual([g["module"] for g in review.batch(self.repo)["groups"]], ["b", "c"])
+        out = self.run_cli("review", "batch").stdout
+        self.assertLess(out.index("## b"), out.index("## c"))
+
+
+class SkillTest(unittest.TestCase):
+    """Acceptance 5."""
+
+    def test_coordinator_skill(self):
+        text = (Path(__file__).resolve().parents[1] / "skills" / "crew-coordinator" / "SKILL.md").read_text(encoding="utf-8")
+        for words in ("决定内容一律写在下一步框之前的正文里", "按钮至多对应前两块复制块", "给用户看的正文"):
+            self.assertIn(words, text)
+
+
 if __name__ == "__main__":
     unittest.main()
