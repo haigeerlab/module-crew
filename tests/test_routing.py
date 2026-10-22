@@ -294,7 +294,10 @@ class HookIdentityTest(ReviewCase):
         # Replays 38932d81／cb182a33: two parallel coordinators were both told 「本会话是模块协调」.
         text = hook("session-start", self.repo, "sid-parallel-3")
         self.assertNotIn("本会话是模块协调", text)
-        self.assertIn("集成 checkout（模块协调 shop-coord）；你不是它的登记会话", text)
+        # crew-coordinator-switch: a bound coordinator exists, so the stranger gets the one-time reminder
+        self.assertIn("这个项目已有模块协调", text)
+        self.assertIn("module-crew takeover shop-coord", text)
+        self.assertEqual(hook("session-start", self.repo, "sid-parallel-3"), "")
         self.assertEqual(hook("prompt", self.repo, "sid-parallel-4"), "")
 
     def test_unbound_registration(self):

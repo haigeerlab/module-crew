@@ -6,9 +6,9 @@ import json
 import os
 import unittest
 
-from helpers import ProbeCase, StartCase, git, spec_guard_interface
+from helpers import ProbeCase, ReviewCase, StartCase, git, make_worktree, spec_guard_interface
 
-from module_crew import coordinator, probe, start, store
+from module_crew import coordinator, hooks, probe, start, store
 
 
 class EnabledCheckTest(ProbeCase):
@@ -145,6 +145,136 @@ class DownTest(StartCase):
         self.assertEqual(again.returncode, 3)
         down = self.run_cli("coordinator", "down", "--original-file", str(words), env=env)
         self.assertEqual(down.returncode, 0, down.stdout + down.stderr)
+
+
+def run(event, cwd, sid=None, **extra):
+    payload = {"cwd": str(cwd), **({"session_id": sid} if sid else {}), **extra}
+    out = hooks.run_hook(event, json.dumps(payload))
+    return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+
+
+class QuietTest(ReviewCase):
+    """Acceptance 5: no coordinator registration in use -> nothing, anywhere."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        self.elsewhere = make_worktree(self.repo, "side")
+        with self.db.transaction(actor="t") as tx:
+            tx.put("session", "shop-coord", {**tx.get("session", "shop-coord"), "status": "retired"}, action="retired")
+
+    def test_silent_everywhere(self):
+        for cwd in (self.repo, self.wt["b"], self.elsewhere):
+            for event in ("session-start", "prompt", "session-end"):
+                self.assertEqual(run(event, cwd, "sid-x"), "", (cwd, event))
+
+    def test_silent_without_store(self):
+        os_repo = self.tmp / "plain"
+        os_repo.mkdir()
+        git(os_repo, "init", "-q")
+        self.assertEqual(run("session-start", os_repo, "sid-x"), "")
+
+
+class SightingTest(ReviewCase):
+    """Acceptance 6, 7, 9."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+        self.elsewhere = make_worktree(self.repo, "side")
+
+    def test_reminded_once(self):
+        text = run("session-start", self.elsewhere, "sid-s1")
+        self.assertIn("这个项目已有模块协调（在 " + str(self.repo) + "，分支 main）", text)
+        self.assertIn("第一次回复用户时顺带说一次", text)
+        self.assertNotIn("takeover", text)                          # not in the integration checkout
+        rec = store.get(self.db, "sighting", "sid-s1")
+        self.assertEqual((rec["cwd"], rec["branch"], rec["told"]), (str(self.elsewhere.resolve()), "side", False))
+        for source in ("resume", "compact", "startup"):
+            self.assertEqual(run("session-start", self.elsewhere, "sid-s1", source=source), "")
+        self.assertEqual(run("prompt", self.elsewhere, "sid-s1"), "")
+
+    def test_module_worktree_keeps_bind_hint(self):
+        text = run("session-start", self.wt["b"], "sid-new")
+        self.assertIn("本目录属于模块 b", text)
+        self.assertIsNone(store.get(self.db, "sighting", "sid-new"))
+
+    def test_registered_session_elsewhere_hears_nothing(self):
+        self.assertEqual(run("session-start", self.elsewhere, "sid-coord"), "")
+
+    def test_coordinator_told_once(self):
+        run("session-start", self.elsewhere, "sid-s1")
+        line = run("prompt", self.repo, "sid-coord")
+        self.assertIn("有 1 个没登记的会话在本项目活动：" + str(self.elsewhere.resolve()) + "（分支 side）", line)
+        self.assertTrue(store.get(self.db, "sighting", "sid-s1")["told"])
+        self.assertNotIn("没登记的会话", run("prompt", self.repo, "sid-coord"))
+
+    def test_unbound_coordinator_only_bind_hint(self):
+        hooks.takeover(self.db, "shop-coord", "换个会话")
+        self.assertIn("--original-file", run("session-start", self.repo, "sid-z"))
+        self.assertEqual(run("session-start", self.elsewhere, "sid-z2"), "")
+
+    def test_busy_store_is_silent(self):
+        import fcntl
+        fd = os.open(self.db.path / ".lock", os.O_RDWR)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        old = hooks.HOOK_WAIT
+        hooks.HOOK_WAIT = 0.2
+        self.addCleanup(setattr, hooks, "HOOK_WAIT", old)
+        self.assertEqual(run("session-start", self.elsewhere, "sid-busy"), "")
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        self.assertIsNone(store.get(self.db, "sighting", "sid-busy"))
+
+
+class ClearHandoverTest(ReviewCase):
+    """Acceptance 8, in the order measured on 2026-10-22: SessionEnd(old, clear) then SessionStart(new, clear)."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        hooks.bind(self.db, "shop-coord", "sid-old", self.repo, original="你来做模块协调")
+        hooks.bind(self.db, "shop-b", "sid-b-old", self.wt["b"])
+
+    def bound(self, name):
+        return store.get(self.db, "session", name)["hostSession"]["sessionId"]
+
+    def test_coordinator_rebound(self):
+        self.assertEqual(run("session-end", self.repo, "sid-old", reason="clear"), "")
+        text = run("session-start", self.repo, "sid-new", source="clear")
+        self.assertIn("本会话是模块协调", text)
+        self.assertIn("刚清空过", text)
+        self.assertEqual(self.bound("shop-coord"), "sid-new")
+        ev = store.events(self.db, key="shop-coord", kind="session")[-1]
+        self.assertEqual((ev["type"], ev["data"]["oldSessionId"]), ("session.rebound-after-clear", "sid-old"))
+
+    def test_module_rebound(self):
+        run("session-end", self.wt["b"], "sid-b-old", reason="clear")
+        self.assertIn("你是模块 b 的模块会话", run("session-start", self.wt["b"], "sid-b-new", source="clear"))
+        self.assertEqual(self.bound("shop-b"), "sid-b-new")
+
+    def test_not_rebound(self):
+        run("session-end", self.repo, "sid-old", reason="other")            # not a clear
+        run("session-start", self.repo, "sid-n1", source="clear")
+        self.assertEqual(self.bound("shop-coord"), "sid-old")
+        run("session-end", self.repo, "sid-old", reason="clear")
+        run("session-start", self.wt["b"], "sid-n2", source="clear")         # another directory
+        run("session-start", self.repo, "sid-n3", source="startup")          # not a clear start
+        self.assertEqual(self.bound("shop-coord"), "sid-old")
+
+    def test_window(self):
+        import time
+        hooks.end_for_clear(self.db, "sid-old", str(self.repo))
+        self.assertIsNone(hooks.rebind_after_clear(self.db, "sid-late", str(self.repo), now=time.time() + 31))
+        self.assertEqual(self.bound("shop-coord"), "sid-old")
+        self.assertIsNone(hooks.rebind_after_clear(self.db, "sid-later", str(self.repo), now=time.time() + 301))
+        self.assertEqual(store.get(self.db, "handover", "shop-coord")["closedReason"], "expired")
+
+    def test_hooks_json_has_session_end(self):
+        from helpers import PLUGIN_ROOT
+        doc = json.loads((PLUGIN_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        self.assertIn("hook session-end", doc["hooks"]["SessionEnd"][0]["hooks"][0]["command"])
 
 
 if __name__ == "__main__":

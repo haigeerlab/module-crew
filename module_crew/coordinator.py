@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 from module_crew import probe, start, store
-from module_crew.hooks import _home_of, own_session_id
+from module_crew.hooks import active_coordinator, own_session_id, where
 
 UP_CHECKS = ("git", "agent-relay", "spec-guard", "spec-guard-enabled", "baseline")
 
@@ -26,17 +26,7 @@ def _blockers(report: probe.Report) -> list[str]:
 
 
 def active(db: store.Store | None) -> tuple[str, dict] | None:
-    if db is None:
-        return None
-    return next(((n, s) for n, s in sorted(store.records(db, "session").items())
-                 if s.get("role") == "coordinator" and s.get("status") == "active"), None)
-
-
-def where(db: store.Store, rec: dict) -> str:
-    """'在 <dir>，分支 <branch>' for a coordinator registration."""
-    branch = (store.get(db, "config", "main") or {}).get("integrationBranch") or "?"
-    home = _home_of(db, rec)
-    return f"在 {home or '（集成分支没有被检出）'}，分支 {branch}"
+    return active_coordinator(db) if db is not None else None
 
 
 def up(project: str | os.PathLike, short: str | None, original: str,

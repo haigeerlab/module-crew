@@ -19,6 +19,16 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ROOT=\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}\"; BIN=\"$ROOT/bin/module-crew\"; if [ -n \"$ROOT\" ] && [ -x \"$BIN\" ]; then \"$BIN\" hook session-end || true; fi; exit 0"
+          }
+        ]
+      }
     ]
   }
 }

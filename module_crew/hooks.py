@@ -81,6 +81,14 @@ def detect(cwd: str | os.PathLike) -> Role | None:
     return None
 
 
+CLEAR_NOTE = "刚清空过：先跑 `module-crew status`、读未完成的事项，以状态库为准，不按清空前的印象重做已经做过的事。"
+HOOK_WAIT = 2.0          # seconds a hook may wait for the store lock before staying silent
+CLEAR_WINDOW = 30        # SessionStart(clear) must follow SessionEnd(clear) within this many seconds
+HANDOVER_TTL = 300       # an unclaimed handover is void after this many seconds
+REMINDER = ("提醒：这个项目已有模块协调（{where}），派活、并行和合入一般由它统一安排。你在这里直接改也可以，"
+            "只是这些改动不经它的合并队列，正在开发的模块要等它发现后才会收到同步通知。"
+            "要交给模块协调的话，告诉我，我把要做的事整理成一段话，你贴给它就行。")
+REMINDER_ASK = "（module-crew：请在你第一次回复用户时顺带说一次上面这段提醒，不要停下来问，之后照用户的意思做、不再重复。）"
 COMPACT_NOTE = "刚压缩过：先跑 `module-crew status`、读未完成的事项，以状态库为准，不按压缩前的记忆重做已经做过的事。"
 STAGE_WRITE = "写 Spec 与 Plan、发【交审】，收到开工通知之前不要构建"
 STAGE_BUILD = "Spec 与 Plan 已批准，可以构建；做完发最终验收【交审】"
@@ -151,6 +159,8 @@ def session_start(cwd: str | os.PathLike, source: str = "startup") -> str | None
                  "按 crew-coordinator skill 的规则做：只统筹不开发，只转达用户在本会话亲手输入的话。"]
     if source == "compact":
         lines.append(COMPACT_NOTE)
+    elif source == "clear":
+        lines.append(CLEAR_NOTE)
     return "\n".join(lines)
 
 
@@ -179,7 +189,153 @@ def stranger_line(role: Role) -> str:
             f"要换模块协调，请用户在本会话同意后运行 module-crew bind {role.name} --original-file <原话文件>。")
 
 
-EVENT_NAMES = {"session-start": "SessionStart", "prompt": "UserPromptSubmit"}
+# ---------------------------------------------------------------- crew-coordinator-switch
+
+def active_coordinator(db: store.Store) -> tuple[str, dict] | None:
+    """The coordinator registration in use (bound or not); None means module-crew stays silent here."""
+    return next(((n, s) for n, s in sorted(store.records(db, "session").items())
+                 if s.get("role") == "coordinator" and s.get("status") == "active"), None)
+
+
+def where(db: store.Store, rec: dict) -> str:
+    """'在 <dir>，分支 <branch>' for a coordinator registration."""
+    branch = (store.get(db, "config", "main") or {}).get("integrationBranch") or "?"
+    home = _home_of(db, rec)
+    return f"在 {home or '（集成分支没有被检出）'}，分支 {branch}"
+
+
+def _branch_here(cwd: str) -> str:
+    """The branch checked out at cwd, from git metadata files only; '?' when it cannot be read."""
+    root = marker.checkout_root(os.path.realpath(cwd))
+    if root is None:
+        return "?"
+    dotgit = Path(root) / ".git"
+    try:
+        gitdir = dotgit if dotgit.is_dir() else Path(dotgit.read_text(encoding="utf-8").split("gitdir:", 1)[1].strip())
+    except (OSError, IndexError):
+        return "?"
+    return _ref(gitdir / "HEAD") or "?"
+
+
+def _bound_sessions(db: store.Store) -> dict[str, str]:
+    """host session id -> registration name, for registrations in use."""
+    return {s["hostSession"]["sessionId"]: n for n, s in store.records(db, "session").items()
+            if s.get("status") == "active" and (s.get("hostSession") or {}).get("sessionId")}
+
+
+def _age(at: str, now: float) -> float:
+    from datetime import datetime
+    return now - datetime.fromisoformat(at.replace("Z", "+00:00")).timestamp()
+
+
+def sight(db: store.Store, session_id: str, cwd: str, now: str | None = None) -> bool:
+    """Record a conversation that is not a registered session; True only the first time (so it is reminded once)."""
+    with db.transaction(actor="hook", wait=HOOK_WAIT) as tx:
+        if tx.get("sighting", session_id) is not None:
+            return False
+        tx.put("sighting", session_id, {"cwd": os.path.realpath(cwd), "branch": _branch_here(cwd),
+                                        "firstSeen": now or store.now(), "told": False}, action="sighted")
+    return True
+
+
+def tell_sightings(db: store.Store) -> str | None:
+    """For the coordinator: conversations seen but not yet told about, then mark them told."""
+    with db.transaction(actor="hook", wait=HOOK_WAIT) as tx:
+        fresh = sorted(((k, v) for k, v in tx.records("sighting").items() if not v.get("told")),
+                       key=lambda kv: kv[1].get("firstSeen") or "")
+        for k, v in fresh:
+            tx.put("sighting", k, {**v, "told": True}, action="told")
+    if not fresh:
+        return None
+    seen = "；".join(f"{v.get('cwd')}（分支 {v.get('branch')}）" for _, v in fresh)
+    return f"module-crew：有 {len(fresh)} 个没登记的会话在本项目活动：{seen}。请在回复里顺带告诉用户一次。"
+
+
+def end_for_clear(db: store.Store, session_id: str | None, cwd: str, now: str | None = None) -> bool:
+    """SessionEnd(reason=clear) of a bound session: leave a handover for the conversation that replaces it."""
+    name = _bound_sessions(db).get(session_id or "")
+    if name is None:
+        return False
+    with db.transaction(actor="hook", wait=HOOK_WAIT) as tx:
+        tx.put("handover", name, {"oldSessionId": session_id, "cwd": os.path.realpath(cwd), "at": now or store.now(),
+                                  "state": "open"}, action="opened")
+    return True
+
+
+def rebind_after_clear(db: store.Store, session_id: str | None, cwd: str, now: float | None = None) -> str | None:
+    """SessionStart(source=clear): move the binding to the new session id when the pair matches; the name or None."""
+    import time
+    if not session_id:
+        return None
+    now = time.time() if now is None else now
+    here = os.path.realpath(cwd)
+    with db.transaction(actor="hook", wait=HOOK_WAIT) as tx:
+        for name, h in sorted(tx.records("handover").items()):
+            if h.get("state") != "open":
+                continue
+            age = _age(h["at"], now)
+            if age > HANDOVER_TTL:
+                tx.put("handover", name, {**h, "state": "closed", "closedReason": "expired"}, action="expired")
+                continue
+            rec = tx.get("session", name) or {}
+            if (h.get("cwd") != here or age > CLEAR_WINDOW or rec.get("status") != "active"
+                    or (rec.get("hostSession") or {}).get("sessionId") != h.get("oldSessionId")):
+                continue
+            tx.put("session", name, {**rec, "hostSession": {"sessionId": session_id, "boundAt": store.now()}},
+                   action="rebound-after-clear", data={"oldSessionId": h.get("oldSessionId"), "sessionId": session_id})
+            tx.put("handover", name, {**h, "state": "closed", "closedReason": "rebound"}, action="closed")
+            return name
+    return None
+
+
+def _store_at(cwd: str) -> store.Store | None:
+    try:
+        return store.open_store(cwd)
+    except store.StoreError:
+        return None
+
+
+EVENT_NAMES = {"session-start": "SessionStart", "prompt": "UserPromptSubmit", "session-end": "SessionEnd"}
+
+
+def _text_for(event: str, payload: dict, cwd: str) -> str | None:
+    db = _store_at(cwd)
+    if db is None:
+        return None
+    coord = active_coordinator(db)
+    if coord is None:                       # no coordinator in this repository: module-crew is off here
+        return None
+    sid = payload.get("session_id")
+    if event == "session-end":
+        if payload.get("reason") == "clear":
+            end_for_clear(db, sid, cwd)
+        return None
+    source = payload.get("source") or "startup"
+    if event == "session-start" and source == "clear":
+        rebind_after_clear(db, sid, cwd)
+    role = detect(cwd)
+    if role is not None and matches(role, sid):
+        if event == "session-start":
+            return session_start(cwd, source)
+        line = prompt_line(cwd)
+        if role.kind == "coordinator":
+            told = tell_sightings(db)
+            line = "\n".join(x for x in (line, told) if x)
+        return line
+    if event != "session-start" or sid in _bound_sessions(db):
+        return None                         # strangers hear once, at start; a registered session elsewhere hears nothing
+    if role is not None and role.kind == "dev":
+        return stranger_line(role)
+    name, rec = coord
+    if not (rec.get("hostSession") or {}).get("sessionId"):
+        return stranger_line(role) if role is not None else None   # taken over, not bound yet: the bind hint only
+    if not sid or not sight(db, sid, cwd):
+        return None
+    text = REMINDER.format(where=where(db, rec))
+    if role is not None:                    # in the integration checkout itself
+        text += (f"要把本会话换成模块协调，请用户明说接管后运行 module-crew takeover {name} --original-file <原话文件>，"
+                 f"再在本会话运行 module-crew bind {name} --original-file <原话文件>。")
+    return "module-crew：" + text + "\n" + REMINDER_ASK
 
 
 def run_hook(event: str, stdin_text: str) -> str:
@@ -193,14 +349,8 @@ def run_hook(event: str, stdin_text: str) -> str:
         cwd = payload.get("cwd") or os.getcwd()
         if event not in EVENT_NAMES:
             return ""
-        role = detect(cwd)
-        if role is not None and not matches(role, payload.get("session_id")):
-            text = stranger_line(role) if event == "session-start" else None   # once, never every turn
-        elif event == "session-start":
-            text = session_start(cwd, payload.get("source") or "startup")
-        else:
-            text = prompt_line(cwd)
-        if not text:
+        text = _text_for(event, payload, cwd)
+        if not text or event == "session-end":
             return ""
         return json.dumps({"hookSpecificOutput": {"hookEventName": EVENT_NAMES[event], "additionalContext": text}},
                           ensure_ascii=False)

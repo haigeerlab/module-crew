@@ -13,13 +13,14 @@ import fcntl
 import hashlib
 import json
 import os
+import time
 import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
 
 VERSION = 1
-KINDS = ("config", "session", "item", "request", "ticket", "body")
+KINDS = ("config", "session", "item", "request", "ticket", "body", "sighting", "handover")
 NUMBERED = ("item", "request", "ticket", "body")
 ROLES = ("coordinator", "dev")
 HOSTS = ("claude-desktop", "codex-desktop")   # coordinators are Claude desktop only (crew-codex-host)
@@ -30,6 +31,10 @@ _NUMBER_RE = re.compile(r"^[1-9][0-9]*$")
 
 class StoreError(Exception):
     """Base class for every store failure."""
+
+
+class StoreBusy(StoreError):
+    """The lock was not free within the caller's wait (hooks only)."""
 
 
 class NotInRepo(StoreError):
@@ -230,8 +235,9 @@ class Store:
         self.path = path
         self.warnings: list[str] = []
 
-    def transaction(self, actor: str) -> "Transaction":
-        return Transaction(self, actor)
+    def transaction(self, actor: str, wait: float | None = None) -> "Transaction":
+        """`wait` caps the time spent waiting for the lock (StoreBusy after it); None waits as long as it takes."""
+        return Transaction(self, actor, wait)
 
 
 def open_store(cwd: str | os.PathLike | None = None) -> Store:
@@ -358,16 +364,30 @@ def source_field() -> dict:
 class Transaction:
     """Holds the store lock; on a clean exit writes bodies, then events, then snapshots."""
 
-    def __init__(self, db: Store, actor: str):
+    def __init__(self, db: Store, actor: str, wait: float | None = None):
         self.db = db
         self.actor = actor
+        self.wait = wait
         self.warnings: list[str] = []
         self._lock_fd: int | None = None
 
     def __enter__(self) -> "Transaction":
         path = self.db.path
         self._lock_fd = os.open(path / ".lock", os.O_RDWR | os.O_CREAT, 0o600)
-        fcntl.flock(self._lock_fd, fcntl.LOCK_EX)
+        if self.wait is None:
+            fcntl.flock(self._lock_fd, fcntl.LOCK_EX)
+        else:
+            deadline = time.monotonic() + self.wait
+            while True:
+                try:
+                    fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        os.close(self._lock_fd)
+                        self._lock_fd = None
+                        raise StoreBusy(f"状态库被占用超过 {self.wait:g} 秒")
+                    time.sleep(0.05)
         try:
             _check_meta(path)
             self._log = _scan_log(path / "events.jsonl")

@@ -658,7 +658,7 @@ def _main(argv: list[str] | None = None) -> int:
         g.add_argument("--original")
         g.add_argument("--original-file")
     hk = sub.add_parser("hook", help="插件钩子入口（只读，永远退出码 0）")
-    hk.add_argument("event", choices=("session-start", "prompt"))
+    hk.add_argument("event", choices=("session-start", "prompt", "session-end"))
     so = sub.add_parser("source", help="可信批准来源白名单（决策收件箱、指定审查者）")
     sos = so.add_subparsers(dest="action", required=True)
     soa = sos.add_parser("add")
