@@ -80,5 +80,30 @@ class RegisterTest(NumberingCase):
         self.assertIn("2.6", sources.PROTOCOLS)
 
 
+class ReplyBlockTest(NumberingCase):
+    """Acceptance 5."""
+
+    def test_blocks_one_thing_each(self):
+        self.assertEqual(review.reply_blocks([("C4", "A", [("C4-1", "B"), ("C4-2", "A")]), ("C5", "A", [])]),
+                         ["C4 A；C4-1 B；C4-2 A", "C5 A"])
+
+    def test_batch_prints_blocks_and_no_placeholder(self):
+        n = self.reviewed()
+        c = self.submit(node="Plan")
+        out = self.run_cli("review", "batch", cwd=self.repo).stdout
+        self.assertIn("答复块（一块只答一件事", out)
+        self.assertIn(f"\n  C{n} A；C{n}-1 B；C{n}-2 A\n", out)
+        self.assertNotIn("<", out.split("答复块", 1)[1].split("\n\n", 1)[0])     # no placeholder in the blocks
+
+    def test_card_shows_review_numbers_only(self):
+        self.hub("2.6")
+        n = self.reviewed()
+        text = protocol.parse(review.for_hub(self.repo)[0][2]).fields
+        internal = [k for k, v in store.records(self.db, "item").items() if v.get("kind") != "review"]
+        for field in ("要你决定", "选项与我的建议", "你该回"):
+            for k in internal:
+                self.assertNotRegex(text.get(field, ""), rf"C{k}(?![0-9-])")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -509,10 +509,17 @@ def _review(args) -> int:
                     print(f"  审查状态：{review.STATE_TEXT[i['reviewState']]}（不进提请批准，等它有结论）")
                 elif i["round"]:
                     print(f"  经 {i['round']} 轮审查修改：{'；'.join(x for x in i['reworked'] if x)}")
-        questions = review.question_lines(review.numbered_decisions(b, review.decision_style(store.open_store())))
+        numbered = review.numbered_decisions(b, review.decision_style(store.open_store()))
+        questions = review.question_lines(numbered)
         if questions:
             print("待你决定（没有决策收件箱时直接问你；批准时每个待定问题都要答到）：")
             print("\n".join(questions))
+        blocks = review.batch_reply_blocks(b, numbered)
+        if blocks:                          # crew-contract-v26: each block its own code block for the user to copy
+            print("答复块（一块只答一件事，各放一个代码块给用户复制；待定问题按倾向填好，用户可改字母；"
+                  "要退回就请用户写一句修改意见，不给占位块）：")
+            print("\n".join(f"  {x}" for x in blocks))
+            print()
         if not b["dependencyIssues"]:
             print("依赖：全部就绪")
         if not b["conflicts"]:

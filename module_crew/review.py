@@ -798,6 +798,20 @@ def numbered_decisions(b: dict, style: str = "d") -> list[tuple[str, tuple[int, 
     return out
 
 
+def reply_blocks(entries: list[tuple[str, str, list[tuple[str, str]]]]) -> list[str]:
+    """Contract v2.6 section 6: one block per thing — 「<编号> <字母>」, its pending questions after 「；」."""
+    return [f"{ref} {letter}" + "".join(f"；{q} {a}" for q, a in qs) for ref, letter, qs in entries]
+
+
+def batch_reply_blocks(b: dict, numbered: list) -> list[str]:
+    """The shortest approve reply for each ready review, leaning answers filled in (the user may change a letter)."""
+    by_review: dict[int, list] = {}
+    for k, (n, _), d in numbered:
+        by_review.setdefault(n, []).append((k, d["lean"] or "A"))
+    return reply_blocks([(f"C{i['number']}", "A", by_review.get(i["number"], []))
+                         for g in b["groups"] for i in (x for x in b["items"] if x["number"] in g["items"]) if i["ready"]])
+
+
 def question_lines(numbered: list) -> list[str]:
     lines = []
     for k, _, d in numbered:
