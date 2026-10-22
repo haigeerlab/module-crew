@@ -8,6 +8,8 @@
 
 让多个 Claude 会话在同一项目里同时开发多个模块：一个协调会话统筹，模块会话各在自己的 worktree 开发，公共文件与合并由协调会话管，
 会话中断或压缩后能从文件恢复。第一版只支持 Claude 桌面版，给已启用 spec-guard、模块多且彼此独立的项目用。
+第六版起协调会话管项目里所有派活：用户明说才升级、一个仓库只一个；单个需求与 bug 走轻流程（不写 Spec、各自 worktree），
+和模块一样只从合并队列进集成分支；没升级的会话一切照常。
 
 <!-- 这一段是 Proposal 评审的目标指纹底本（`spec-digest.py` 计算）。
      改写目标会让已发布的 Proposal 被判为过期，所以改了先人工评审；追加模块不需要改这里。
@@ -37,8 +39,13 @@
 | crew-hub-card-fields | 第五版：决策卡片字段——交给决策收件箱的【等待用户】按 session-protocol v2.3 写「类型」与各类小项，「注意」「推荐理由」「批了会怎样」由 module-crew 生成，模块协调自己提的请示按类别写；契约 v2.3 定稿后写 Spec | crew-hub-bridge, crew-review-nearby, crew-glossary-rename |
 | crew-stage-c-fixes | 第五版：阶段丙补修（R22）——【等待用户】带「模块」、已交最终验收的模块不再收同步通知、新合并批准取代旧批准、不重复提请已答过的事、权限预配放行本 worktree 内的编辑、提请批准只发 for-hub 正文不手写合问 | crew-pilot-fixes, crew-hub-card-fields |
 | crew-routing-fixes | 第五版：收发对象收窄——【交审】只送负责该模块或节点的审查者（登记审查者时写明负责范围）、公共变更后的同步基线通知跳过挂起模块并在恢复时补发、启动钩子只给会话登记里的那个会话注入角色 | crew-recovery-hooks, crew-failure, crew-hub-bridge, crew-stage-c-fixes |
+| crew-coordinator-switch | 第六版：协调会话开关——用户明说才升级（前提同开工体检、不要求能力图）、一个仓库只一个协调会话、没有协调会话时完全安静、普通会话首次回复提醒一次并告知协调会话、/clear 后身份交接、多模块上限默认改为 2 | crew-probe, crew-recovery-hooks, crew-routing-fixes |
+| crew-task-ledger | 第六版：任务记录——状态库新增任务（类型需求／bug、派给谁、worktree 与分支、预计改的文件、状态、结果、由哪个任务带进来），status 显示、takeover 一并接管，预计文件与在做的活重叠就排队、bug 排前 | crew-store, crew-coordinator-switch |
+| crew-light-task | 第六版：轻流程——写任务单、开 worktree 与会话、交回带测试结果与实际改的文件（bug 先补复现测试）、进合并队列由用户批准并通知同步、升格／缩小／取消、回滚按轻任务走；不写 Spec、不调 spec-guard | crew-task-ledger, crew-start, crew-merge |
+| crew-unqueued-commits | 第六版：不经队列的提交——发现集成分支上不是经合并队列合入的提交，告诉用户并照常通知各模块同步 | crew-merge, crew-coordinator-switch |
+| crew-background-checks | 第六版：后台检查——合并时的完整检查改后台运行、协调会话照常回话，同一时间只跑一个合并 | crew-merge, crew-onboarding |
 
-Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby → crew-stall-signals → crew-host-permissions → crew-glossary-rename → crew-pilot-fixes → crew-hub-card-fields → crew-stage-c-fixes → crew-routing-fixes
+Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby → crew-stall-signals → crew-host-permissions → crew-glossary-rename → crew-pilot-fixes → crew-hub-card-fields → crew-stage-c-fixes → crew-routing-fixes → crew-coordinator-switch → crew-task-ledger → crew-light-task → crew-unqueued-commits → crew-background-checks
 
 <!-- Spec Guard 按严格串行推进。为兼容上游格式，逗号分组会按左到右顺序展开为单模块步骤，不代表并行授权。 -->
 
@@ -76,3 +83,4 @@ Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → cr
 - 2026-10-19：插入第三版模块 crew-review-nearby（依赖 crew-protocol、crew-review-batch、crew-merge、crew-hub-bridge，排在 crew-codex-host 之后）。原因：用户决定 41–43「审查就近、决策集中」与批 2 暴露的问题（livesaas-integration/REQ-REVIEW-NEARBY.md 的 R1–R9）；来源：用户 2026-10-19 确认 21 条假设并批准插入。
 - 2026-10-19：插入第四版三个模块 crew-stall-signals（依赖 crew-hub-bridge、crew-review-nearby）、crew-host-permissions（依赖 crew-start、crew-merge）、crew-glossary-rename（依赖前两个），依次排在 crew-review-nearby 之后。原因：0.3.0 放到下一版的 R14 停滞检测、R16 宿主权限与术语表 v1.1 全面改名（livesaas-integration/REQ-REVIEW-NEARBY.md、GLOSSARY.md）；来源：用户 2026-10-19 确认 19 条假设并批准插入。
 - 2026-10-20：插入第五版模块 crew-routing-fixes（依赖 crew-recovery-hooks、crew-failure、crew-hub-bridge、crew-stage-c-fixes，排在最后）。原因：收发规则（点对点、沿上下级）自查与总协调排查查到的三处收件对象过宽；来源：用户 2026-10-20 在本会话批准插入与 Spec。
+- 2026-10-22：「目标」一节追加第六版范围（协调会话管所有派活）；插入第六版五个模块 crew-coordinator-switch、crew-task-ledger、crew-light-task、crew-unqueued-commits、crew-background-checks，依次排在最后。原因：插件只覆盖多模块并行，单需求与 bug 只能用原生关联会话做，和合并队列两套规则冲突（需求记录第 14 节）；来源：用户 2026-10-22 在本会话经拷问确认需求，并批准五个模块与直接改目标（本仓库没用过 Proposal）。
