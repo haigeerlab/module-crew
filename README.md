@@ -5,6 +5,11 @@
 
 > 版本 0.10.0。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
+## 下一版（未发版，第六版进行中）
+
+- 轻任务的完整流程：`task dispatch` 派出、轻任务会话交回、和模块同一个合并队列（bug 任务优先）、升格／缩小／取消；契约钉到 session-protocol v2.5（「任务」字段与 T 前缀）。
+- 修正：会话唯一性规则不再把两个轻任务会话当成同一个模块的会话。
+
 ## 0.10.0 的变化（第六版第一步：模块协调按会话开关）
 
 - **装了不等于开了**：用户在某个会话里明说，`module-crew coordinator up --short <简称> --original-file <原话文件>` 才把它升级为本项目的模块协调；一个仓库最多一个，第二个会话要升级会被拒并告诉你接管办法。前提同开工体检，但不要求能力图。`coordinator down` 可以关掉（没有在用的模块会话时）。
@@ -13,7 +18,7 @@
 - **`/clear` 之后身份自动接上**：清空会换会话编号（2026-10-22 实测）。新增的 `SessionEnd` 钩子留下交接记录：命令行版把登记转给同一目录 30 秒内以 clear 开始的新会话；桌面版绑定时记下桌面版会话编号（`CLAUDE_CODE_HOST_SESSION_ID`，清空后不变），旧进程结束后同目录、同编号的新会话接上登记（桌面版里实测通过）。
 - 多模块并行默认上限从 3 改为 2（已开工项目的上限不变）。
 - 体检新增 `spec-guard-enabled`（项目有没有 `.agent/config.json`）；`status` 加「模块协调」「没登记的会话」两段。
-- 轻任务记录：`module-crew task add` 记下单个需求或 bug（T 编号，任务单写做什么、预计改哪些文件、做到什么程度算完）；预计文件和在做的任务或模块分支已改的文件重叠就排队，`task next` 按 bug 在前提为可开；`status` 加「任务」段。派会话做轻任务的流程在下一步补上。
+- 轻任务记录：`module-crew task add` 记下单个需求或 bug（T 编号，任务单写做什么、预计改哪些文件、做到什么程度算完）；预计文件和在做的任务或模块分支已改的文件重叠就排队，`task next` 按 bug 在前提为可开；`status` 加「任务」段。派会话做轻任务的流程不在 0.10.0 里，见上面「下一版」与下面「轻任务」一节。
 - 钩子开始写状态库，只写「见到」记录、清空交接记录与登记字段，等锁最多 2 秒，失败就不说话。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。
@@ -28,7 +33,7 @@
 | 项目 | git 仓库，能建 worktree；有一条能在本地跑完的完整检查命令，合并后用它判断集成是否通过 |
 | 运行环境 | Python 3（只用标准库） |
 
-消息格式以 [session-protocol](../session-protocol) 契约为准（现钉住 v1.9）。
+消息格式以 [session-protocol](../session-protocol) 契约为准（现钉住 v2.5）。
 
 ## 安装
 
@@ -83,6 +88,20 @@ bin/module-crew status
    - **远端合并始终由用户做**；不开自动合并，不推集成分支本身。
 
 每条要发的消息，命令都会生成正文文件；模块协调用 `bridge_send` 的 `bodyFile` 原样发出，不改一字。
+
+## 轻任务（单个需求或 bug，第六版）
+
+不值得开模块的活走轻流程，不写 Spec、不调 spec-guard，但和模块一样只从合并队列进集成分支：
+
+1. **记任务**（模块协调）：用户明说要做后 `module-crew task add --type feature|bug --title … --what … --expect <预计文件> --done <完成标准> --original-file <原话文件>`。
+   预计文件和在做的任务或模块分支已改的文件重叠就排队，`task next` 按 bug 在前提为可开。
+2. **派出**：`module-crew task dispatch T<号>` 建 `task/t<号>` 分支与 worktree、登记轻任务会话（不占多模块名额）、生成开工说明；模块协调用桌面版开会话，第一条消息用开工说明全文。
+3. **做与交回**（轻任务会话，`crew-dev` skill 的「轻任务」一节）：bug 先补复现测试；完整检查通过后发最终验收【交审】（`模块：无`，带「任务：T<号>」）。
+   `review add` 会比对实际改动和任务单，多改的文件和越界重叠写进交审。
+4. **批准与合并**：用户点一次批准，`merge approve` → `merge run`。队列顺序：bug 任务、模块（Build order）、需求任务。合入后在用的模块和在做的任务收到同步通知；`merge cleanup T<号>` 收回 worktree（分支保留）。
+5. **做大了**：轻任务会话停下发升格请求（【等待用户】「卡住选做法」），用户选 A 升格（`/spec-guard:add-module`）、B 缩小（`task scope`）或 C 取消。
+
+决策收件箱升到契约 v2.5 之前，轻任务的提请批准不经过它，模块协调在会话里直接问用户。
 
 ## Codex 模块会话
 
@@ -145,6 +164,7 @@ module-crew 自己的编号对外一律写 C 前缀（如 C15），`#数字` 只
 module-crew status [--json]                      体检与全貌（只读）
 module-crew coordinator up|down --original(-file)  把本会话升级为模块协调／关闭（一个仓库一个）
 module-crew task add|list|show|next|cancel       轻任务记录（单个需求或 bug，T 编号）：预计文件和在做的活重叠就排队，bug 在前
+module-crew task dispatch|scope                  派出可开的轻任务（worktree、登记、开工说明）／升格请求选缩小后改任务单
 module-crew store init|check                     状态库
 module-crew protocol check <文件>                消息自检
 module-crew inbox add <文件> --from --relay-id   收件记账
