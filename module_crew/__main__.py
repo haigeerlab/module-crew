@@ -113,6 +113,10 @@ def _status(as_json: bool) -> int:
         state = ("已关闭" if coord["state"] != "active" else "已绑定会话" if coord["bound"]
                  else "未绑定会话（该会话运行 module-crew bind）")
         print(f"  {coord['name']}：在 {coord['home'] or '（集成分支没有被检出）'}，分支 {coord['branch'] or '?'}；{state}")
+    stale = (report.store or {}).get("permissionsStale")
+    if stale:
+        print(f"  ⚠️ 权限规则只放行别的 module-crew 路径，当前入口会弹权限框：{'、'.join(stale)}；"
+              "经用户原话再跑 module-crew permissions apply 补放行当前入口")
     lock = (report.store or {}).get("mergeLock")
     if lock:
         took = f"已跑 {lock['minutes']} 分钟" if lock["minutes"] is not None else "开始时间读不出"
@@ -433,7 +437,7 @@ def _review(args) -> int:
         return out.code
     if args.action == "show":
         try:
-            print("\n".join(review.show(db, args.number, args.submission)))
+            print("\n".join(review.show(db, args.number, args.submission, args.spec_diff)))
         except review.ShowRefused as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
@@ -799,6 +803,7 @@ def _main(argv: list[str] | None = None) -> int:
     rsh = rvs.add_parser("show", help="只读：交审的审查原文全文与 sha256")
     rsh.add_argument("number", type=refs.parse)
     rsh.add_argument("--submission", action="store_true", help="另外输出交审原文")
+    rsh.add_argument("--spec-diff", action="store_true", help="只输出最终验收时 Spec 相对集成分支的改动差异")
     for name in ("approve", "answer"):
         r = rvs.add_parser(name)
         if name == "approve":

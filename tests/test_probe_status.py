@@ -53,7 +53,7 @@ class ReportTest(StatusCase):
     def test_check_ids_fixed(self):
         report = probe.run(self.repo)
         self.assertEqual(list(report.checks), ["git", "agent-relay", "spec-guard", "spec-guard-enabled", "spec-guard-planning",
-                                               "baseline", "store"])
+                                               "baseline", "store", "module-crew"])  # 0.11.1: crew-probe decision 6
 
     def test_run_is_read_only(self):
         db = self.seed_store()

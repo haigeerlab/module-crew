@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved 590f6c4af9f1 -->
+<!-- spec-guard: review approved 4044f3be3066 -->
 
 # Spec: crew-merge
 
@@ -57,6 +57,7 @@
    挂起中的模块也不发（2026-10-18 修订）：「继续」与挂起矛盾；它恢复时由 `resume` 补发一条同步基线（见 crew-failure）。
 8. **最终验收由协调会话在集成分支勾选**（2026-10-18 修订；0.9.6 改为经 spec-guard 勾）：合入并通过完整检查后，调 spec-guard 接口 1.7 的 `gateTick`（`--project <集成 checkout> --module <模块> --confirm`，与 `reviewMark` 同样从 interface.json 取命令）由 spec-guard 勾上这个模块的最终验收那一格，module-crew 不再自己找「唯一未勾项」。gateTick 退出码 0 且输出是「ticked」：单独提交 `tasks/<模块>/todo.md`（「勾选 <模块> 的最终验收（合并批准事项 #N）」），输出照抄它报的「还剩几项」；「already ticked」：不提交；退出码 2：把它开头的短码（如 `not-at-final-gate`，连同它打印的第一个未勾项）原样写进输出，不勾、不提交，也不自己补勾。装的 spec-guard 接口低于 1.7（没有 gateTick）：不勾，输出写明「spec-guard 低于 1.7，没有替 <模块> 勾最终验收，升级后用 merge tick 补勾」。gateTick 不判断用户是否批准，调用时机就是用户已批准、已合入并通过检查之后。模块会话获批后不再自己勾（crew-dev skill）。
 9. **提交信息与提交钩子**：提交信息默认以 `chore(crew): ` 开头（符合 Conventional Commits，首行不超过 100 字符；0.9.4 起前缀是项目配置 `commitPrefix`，`start prepare --commit-prefix <值>` 设定，空字符串表示不加，没设过按默认），后面照旧写中文说明与编号；提交失败且仓库启用了提交钩子时，原因写「提交钩子拒绝：<钩子输出首行>」，不并入其他原因。（2026-10-18 修订）`merge run` 的 `--no-ff` 合并被钩子拒绝时（失败但没有冲突文件），`git merge --abort` 回到合并前、**不退回模块**、合并批准保持未关、退出码 4，交用户决定；补勾提交被拒时撤回勾选、只报告。
+10. **构建中修订过的 Spec，合入时替用户记下批准**（2026-10-22 新增，0.11.1）：`review add` 收到最终验收交审时，比对模块分支交审提交里的 `spec/<模块>.md` 与集成分支上的同一文件（去掉评审标记行再比）；集成分支上有这份 Spec 且两边不同，就在交审事项记 `specRevised`（路径与差异），输出提醒：提请用户批准最终验收时附上这段差异，写明一次批准同时批准修订后的 Spec。`merge approve` 把它记进合并批准事项（`specRevisionApproved`）。`merge run` 合入并通过完整检查后、gateTick 之前，合并确实改到了这份 Spec 时，调 spec-guard 的 `reviewMark`（`--target spec --state approved --confirm`，在集成 checkout 上）记下批准，单独提交「合并批准事项 C<号>：记下 <模块> 修订后 Spec 的批准」；已是批准状态不提交；reviewMark 失败或提交被拒只报告（撤回本次改的标记行），不撤销合并、不退回模块。轻任务没有 Spec，跳过。
 
 
 ## 接口约定
@@ -151,6 +152,8 @@ python3 -m unittest discover -s tests -v
 19. 集成分支顶端在检查期间被别的提交推进（不是本次合并提交）：不重置、退出码 4、集成分支不变。
 20. 挂起中的模块 d：b 合入后不收同步基线；另一个在开发的模块 e 照常收到。
 21. 集成 checkout 装一个只认 `类型(范围): ` 开头的 commit-msg 钩子：合并、补勾提交都通过；改成拒绝一切的钩子后 `merge run` 退出码 4、集成分支不变、合并批准仍是 open、没有退回通知、输出含「提交钩子拒绝」、不含「冲突」。
+22. 模块在构建中改了 Spec 后交最终验收：`review add` 输出要附 Spec 差异的提醒、交审事项记 `specRevised`；`merge approve` 后合并批准事项记 `specRevisionApproved`；`merge run` 合入通过检查后，集成分支多一个只改 `spec/<模块>.md` 评审标记行的提交，标记为已批准，排在勾选提交之前。没改 Spec 的模块不多这个提交。
+23. 记批准标记失败（reviewMark 拒绝或提交钩子拒绝）：合并照常算成功、不退回，输出写明没记上和原因，集成 checkout 干净。
 
 
 ## 未决问题
@@ -172,3 +175,4 @@ README「一次完整流程」补上合并、退回、收尾、推送与 PR 一�
 - 2026-10-19：合并检查失败的退回通知分「模块需要修改」「检查环境出了问题」两种（检查命令运行不了或超时为后者），合并批准记 `returnKind`；新增 `merge renotice <C号> --env|--module` 按另一种原因重发；`merge run` 的合并提交与勾选提交在启用提交钩子时输出钩子退出码与最后 10 行。原因：用户决定 51（R20⑤⑥，批 2 观察 O-return-env、O-hook-output-hidden）；来源：用户 2026-10-19 批准补 R20 后的 crew-review-nearby Spec 与 Plan（Task 14），随它的最终验收复审。
 - 2026-10-22：提交前缀从写死的 `chore(crew): ` 改为项目配置 `commitPrefix`（默认值不变、可设为空），只为 LIVE-SAAS 的 commitlint 写死的规矩不再强加给所有项目；行为对现有项目不变。来源：本会话职责边界审查第 1 条，用户 2026-10-22 选「默认仍是 chore(crew): ，可配置；各自追加到对应模块」。
 - 2026-10-22：最终验收的勾选改为调 spec-guard 接口 1.7 的 `gateTick`（关键决策 8、`tick`、验收 13、15），不再用自己的正则找「唯一未勾项」；spec-guard 低于 1.7 时不勾、提示升级后补勾；发 0.9.6。原因：todo 的勾选规则归 spec-guard，自己勾会和它的判定不一致（职责边界审查第 3 条）；来源：spec-guard 负责人经总协调答复并告知 0.83.0（v0.83.0 = af39a0b，interface 1.7）已发 gateTick，用户在 spec-guard 侧选「新增 gateTick」。
+- 2026-10-22：新增关键决策 10 与验收 22、23：构建中修订过的 Spec 在交最终验收时比对并记 `specRevised`，`merge approve` 记 `specRevisionApproved`，`merge run` 合入通过检查后经 spec-guard `reviewMark` 在集成分支记下修订后 Spec 的批准并单独提交，失败只报告；发 0.11.1。原因：修订后的 Spec 合入集成分支后评审标记仍是旧的或待批准，spec-guard 判为未批准，要人手动补 review-mark；来源：用户 2026-10-22 批准（「1 批准」）。

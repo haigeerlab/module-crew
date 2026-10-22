@@ -3,14 +3,13 @@
 让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.11.0。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.11.1。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
-## 0.11.0 的变化（第六版：一个模块协调管所有派活）
+## 0.11.1 的变化（热修）
 
-- 轻任务的完整流程：`task dispatch` 派出、轻任务会话交回、和模块同一个合并队列（bug 任务优先）、升格／缩小／取消；契约钉到 session-protocol v2.5（「任务」字段与 T 前缀）。
-- 修正：会话唯一性规则不再把两个轻任务会话当成同一个模块的会话。
-- 合并放后台跑：`merge run` 拿合并锁，跑的时候 `change land`、`review approve` 等写命令退出码 6；进程不在了的锁在集成 checkout 干净时自动清；`status` 显示正在跑的合并。
-- 不经合并队列的提交：module-crew 记下自己认得的集成分支顶端，之后别人直接提交的会在 `status`、`unqueued`、`merge run` 里报一次，并通知各模块同步；不拦、不撤回。
+- 构建中修订过的 Spec，合入时替用户记下批准：`review add` 比对模块分支与集成分支上的 Spec，不一样就提醒附上差异（`review show C<号> --spec-diff`）；`merge approve` 记下一并批准；`merge run` 合入通过检查后经 spec-guard 的 reviewMark 在集成分支记下批准，单独一个提交，记不上只报告。原来要人手动补 review-mark。
+- 命令入口跟着插件走：钩子在会话启动、压缩、清空时给出「module-crew 命令入口：<当前加载的插件目录>/bin/module-crew（版本 X）」，skill 与开工说明不再写具体路径；`status` 新增检查项 `module-crew`，正在运行的版本和装着的不同时报阻塞；权限规则只放行旧路径时提示再跑 `permissions apply`。原来模块协调会一直用第一次记下的旧版本路径，升级后修复不生效。
+- 升级后：在用的会话重开一次；写过权限规则的项目凭用户原话再跑一次 `module-crew permissions apply`。Codex 会话没有钩子，新路径由模块协调转告。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。
 

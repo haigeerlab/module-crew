@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from module_crew import refs, store
-from module_crew.hooks import active_coordinator
+from module_crew.hooks import ENTRY_LINE, active_coordinator
 
 
 class TaskRefused(Exception):
@@ -222,6 +222,7 @@ def render_kickoff(n: int, t: dict, worktree: Path, branch: str, cfg: dict, rela
         f"邮箱名：{relay}，用 agent-relay bridge_register 注册，wake: \"auto\"",
         f"注册后先运行 module-crew bind {relay}：登记本会话的身份，module-crew 的钩子只认登记过的会话",
         f"模块协调：{coord}（你只和它说话）",
+        ENTRY_LINE,
         "",
         *bug,
         f"做完、提交、跑完整检查（{check}）全部通过后才交回。交回发最终验收【交审】，样子是：",
