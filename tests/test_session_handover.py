@@ -144,5 +144,30 @@ class GuardTest(HandoverCase):
         self.assertNotEqual(self.cli(("merge", "run", "--check-command", "python3 -c pass"), "sid-other").returncode, 7)
 
 
+class StatusSelfTest(GuardTest):
+    """Acceptance 5."""
+
+    def test_marks_this_session(self):
+        r = self.cli(("status",), "sid-coord")
+        line = next(x for x in r.stdout.splitlines() if x.strip().startswith("shop-coord"))
+        self.assertIn("← 本会话", line)
+        self.assertNotIn("本会话不是登记的模块协调", r.stdout)
+        doc = json.loads(self.cli(("status", "--json"), "sid-coord").stdout)
+        self.assertEqual({s["name"]: s["self"] for s in doc["store"]["sessions"]}["shop-coord"], True)
+        self.assertIs(doc["store"]["selfIsCoordinator"], True)
+
+    def test_other_session_told(self):
+        r = self.cli(("status",), "sid-other")
+        self.assertNotIn("← 本会话", r.stdout)
+        self.assertIn("本会话不是登记的模块协调 shop-coord", r.stdout)
+        self.assertIn("bind shop-coord --takeover", r.stdout)
+        self.assertIs(json.loads(self.cli(("status", "--json"), "sid-other").stdout)["store"]["selfIsCoordinator"], False)
+
+    def test_no_session_id(self):
+        r = self.cli(("status",), None)
+        self.assertNotIn("本会话", r.stdout)
+        self.assertIsNone(json.loads(self.cli(("status", "--json"), None).stdout)["store"]["selfIsCoordinator"])
+
+
 if __name__ == "__main__":
     unittest.main()

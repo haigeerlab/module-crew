@@ -97,7 +97,12 @@ def _status(as_json: bool) -> int:
             extra = f"（{s.get('role')}{'，' + s['module'] if s.get('module') else ''}）" if s.get("role") else ""
             perm_fact = ("　" + permissions.status_fact(perm, s["name"])) if s.get("role") == "dev" else ""
             unbound = "　未登记身份（该会话运行 module-crew bind）" if s.get("role") and not s.get("bound") else ""
-            print(f"  {s['name']}{extra}{unbound}{_stall_facts(facts.get(s['name']))}{perm_fact}")
+            me = "　← 本会话" if s.get("self") else ""
+            print(f"  {s['name']}{extra}{me}{unbound}{_stall_facts(facts.get(s['name']))}{perm_fact}")
+        coord_row = next((s for s in report.store["sessions"] if s.get("role") == "coordinator" and s.get("bound")), None)
+        if coord_row and report.store.get("selfIsCoordinator") is False and not any(s.get("self") for s in report.store["sessions"]):
+            print(f"  本会话不是登记的模块协调 {coord_row['name']}（它登记在另一个会话上）：模块协调的写命令在这里会被拒；"
+                  f"要由本会话接手，请用户同意后运行 module-crew bind {coord_row['name']} --takeover --original-file <原话文件>")
         print("  未关：" + "、".join(f"{_KIND_NAME[k]} {n}" for k, n in report.store["open"].items()))
         own = inbox.own_waits(store.open_store())
         if own:

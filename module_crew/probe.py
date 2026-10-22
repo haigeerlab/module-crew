@@ -327,8 +327,13 @@ def summarize_store(project: Path) -> tuple[Check, dict | None]:
                        for k in OPEN_KINDS}
     except store.StoreError as exc:
         return Check("store", "warning", f"状态库读不出：{exc}", "运行 module-crew store check 排查"), None
-    active = [{"name": name, **{k: rec.get(k) for k in ("role", "module", "worktree")}, "bound": bool(rec.get("hostSession"))}
+    from module_crew.hooks import own_session_id     # crew-session-handover: which row is the calling conversation
+    me = own_session_id()
+    active = [{"name": name, **{k: rec.get(k) for k in ("role", "module", "worktree")}, "bound": bool(rec.get("hostSession")),
+               "self": bool(me) and (rec.get("hostSession") or {}).get("sessionId") == me}
               for name, rec in sorted(sessions.items()) if rec.get("status") == "active"]
+    coord_rec = next((r for r in sessions.values() if r.get("role") == "coordinator" and r.get("status") == "active"), None)
+    self_coord = None if not me else bool(coord_rec) and (coord_rec.get("hostSession") or {}).get("sessionId") == me
     try:
         coord, seen = _coordinator_summary(db, sessions)
     except store.StoreError as exc:
@@ -348,7 +353,7 @@ def summarize_store(project: Path) -> tuple[Check, dict | None]:
     return Check("store", "ok", str(db.path)), {"sessions": active, "open": open_counts,
                                                 "coordinator": coord, "sightings": seen, "tasks": task_rows,
                                                 "unqueued": unq, "mergeLock": _merge_lock(db),
-                                                "permissionsStale": _stale_permissions(db)}
+                                                "permissionsStale": _stale_permissions(db), "selfIsCoordinator": self_coord}
 
 
 def _stale_permissions(db: store.Store) -> list[str]:
