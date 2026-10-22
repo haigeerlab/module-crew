@@ -282,6 +282,13 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
         _write_config(db, cfg)
 
     result = RunResult(0, approval=n)
+    from module_crew import unqueued        # crew-unqueued-commits: tell, ask for sync, then merge as usual
+    found = unqueued.find(db, project)
+    if found.commits:
+        result.lines.append(unqueued.describe(found) + "：告诉用户一次，已给在开发的模块发同步通知")
+        result.sends += unqueued.notify(db, project)
+    elif found.missing_seen:
+        unqueued.mark_integration(db, project, "merge-run")
     merged = _git(checkout, "merge", "--no-ff", "--no-edit", "-m", commits.message(f"合并批准事项 C{n}：合入 {unit}", commits.prefix_of(db)), m)
     reset_to = None
     if merged.returncode != 0:

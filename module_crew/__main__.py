@@ -113,6 +113,12 @@ def _status(as_json: bool) -> int:
         state = ("已关闭" if coord["state"] != "active" else "已绑定会话" if coord["bound"]
                  else "未绑定会话（该会话运行 module-crew bind）")
         print(f"  {coord['name']}：在 {coord['home'] or '（集成分支没有被检出）'}，分支 {coord['branch'] or '?'}；{state}")
+    unq = (report.store or {}).get("unqueued")
+    if unq and unq["missingSeen"]:
+        print("  集成分支：还没有记下认得的顶端（下次 merge run 或 module-crew unqueued 时记下）")
+    elif unq and (unq["count"] or unq["notInHistory"]):
+        print(f"  集成分支上有 {unq['count']} 个不经合并队列的提交：告诉用户一次，module-crew unqueued --notify 通知各模块同步"
+              + ("（认得的顶端已不在集成分支上，请用户核对）" if unq["notInHistory"] else ""))
     seen = (report.store or {}).get("sightings") or {"count": 0, "recent": []}
     print(f"没登记的会话：{seen['count']} 个" + ("（最近 10 个）" if seen["count"] > len(seen["recent"]) else ""))
     for r in seen["recent"]:

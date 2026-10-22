@@ -159,5 +159,43 @@ class NotifyTest(MergeCase):
         self.assertEqual([x["to"] for x in unqueued.notify(self.db, self.repo)], ["shop-c"])
 
 
+class MergeRunTest(MergeCase):
+    """Acceptance 4."""
+
+    def test_merge_run_notifies_then_merges(self):
+        db = store.open_store(self.repo)
+        self.approve_final("b", 5000)
+        manual_commit(self.repo, "a.txt")
+        res = merge.run(self.repo, check_command=self.check_script())
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertTrue(any("1 个不经合并队列的提交" in l for l in res.lines), res.lines)
+        unq = [x for x in res.sends if "不经合并队列" in open(x["path"], encoding="utf-8").read()]
+        self.assertEqual([x["to"] for x in unq], ["shop-c"])             # b is being merged
+        self.assertEqual(seen(db), head(self.repo))
+
+
+class StatusLineTest(MergeCase):
+    """Acceptance 5."""
+
+    def test_status_line_read_only(self):
+        db = store.open_store(self.repo)
+        manual_commit(self.repo, "a.txt")
+        before = len(store.events(db))
+        out = self.run_cli("status")
+        self.assertIn("集成分支上有 1 个不经合并队列的提交", out.stdout)
+        self.assertEqual(len(store.events(db)), before)
+        doc = json.loads(self.run_cli("status", "--json").stdout)
+        self.assertEqual(doc["store"]["unqueued"]["count"], 1)
+
+    def test_status_without_seen(self):
+        db = store.open_store(self.repo)
+        with db.transaction(actor="t") as tx:
+            cfg = dict(tx.get("config", "main"))
+            cfg.pop("integrationSeen")
+            tx.put("config", "main", cfg, action="test")
+        self.assertIn("还没有记下认得的顶端", self.run_cli("status").stdout)
+        self.assertIsNone(seen(db))
+
+
 if __name__ == "__main__":
     unittest.main()
