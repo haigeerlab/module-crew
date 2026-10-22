@@ -1,4 +1,4 @@
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 0482b4db7a91 -->
 
 # Spec: crew-contract-v26
 
