@@ -133,6 +133,17 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
 _MARKER = "<!-- spec-guard: review"
 
 
+def _restore(checkout: Path) -> list[str]:
+    """Decision 4 (0.11.2): put the integration checkout back after a failed approve. It was clean before (baseline
+    check), so every tracked change is ours and goes back to the branch; new files are unstaged and kept, never deleted."""
+    _git(checkout, "reset", "-q")
+    _git(checkout, "checkout", "--", ".")
+    new = [line[3:] for line in _git(checkout, "status", "--porcelain", "--untracked-files=all").stdout.splitlines()
+           if line.startswith("?? ")]
+    return (["状态库与集成分支都没有变化；集成 checkout 里原有的文件已恢复成集成分支上的内容"]
+            + (["这次新建、没有删除的文件（未暂存，交用户决定）：" + "、".join(new)] if new else []))
+
+
 def _unmarked(text: str) -> list[str]:
     return [x for x in text.splitlines(keepends=True) if not x.startswith(_MARKER)]
 
@@ -1081,9 +1092,8 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
         cmd = probe.safe_command(root, doc, "reviewMark", _mark_fill(checkout, rec["module"], target)) + ["--confirm"]
         ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
         if ran.returncode != 0:
-            return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{ran.stderr.strip()[:200]}",
-                                     "集成 checkout 里已改、未提交的文件：" + "、".join(written),
-                                     "状态库与集成分支都没有变化；这些文件留着，交用户决定"])
+            return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{(ran.stderr.strip() or ran.stdout.strip())[:200]}"]
+                                 + _restore(checkout))
     approval_no = _next_number(db)
     modules = list(dict.fromkeys(rec["module"] for _, rec in picked))
     nodes = "、".join(f"{rec['module']} 的 {NODE_NAME[rec['node']]}" for _, rec in picked)
@@ -1091,8 +1101,7 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
     hub = f"（待决事项 #{src['item']}）" if src.get("kind") == "hub" else ""
     commit_run = _git(checkout, "commit", "-q", "-m", commits.message(f"用户批准事项 C{approval_no}{hub}：批准 {nodes}", commits.prefix_of(db)))
     if commit_run.returncode != 0:
-        return ApproveResult(4, [commits.failure(checkout, commit_run, "集成分支提交失败"),
-                                 "已改、已暂存的文件：" + "、".join(written)])
+        return ApproveResult(4, [commits.failure(checkout, commit_run, "集成分支提交失败")] + _restore(checkout))
     commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
     from module_crew import unqueued
     unqueued.mark(db, checkout, "review-approve")    # crew-unqueued-commits: module-crew's own commit
