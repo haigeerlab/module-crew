@@ -1,6 +1,6 @@
 {
   "name": "module-crew",
-  "version": "0.9.7",
+  "version": "0.10.0",
   "description": "多模块并行开发的运行层：协调会话统筹，模块会话各在自己的 worktree 开发，中断后可从状态库恢复。",
   "author": {
     "name": "haigeerlab"

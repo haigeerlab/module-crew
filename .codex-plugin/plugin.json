@@ -1,6 +1,6 @@
 {
   "name": "module-crew",
-  "version": "0.9.7",
+  "version": "0.10.0",
   "description": "多模块并行开发的运行层（Codex 侧只提供模块会话 skill；协调会话在 Claude 桌面版）。",
   "skills": "./codex-skills/"
 }

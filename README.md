@@ -3,12 +3,17 @@
 让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.9.7。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.10.0。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
-## 0.9.7 的变化（职责边界审查修复）
+## 0.10.0 的变化（第六版第一步：模块协调按会话开关）
 
-- 体检读 Claude 插件安装记录时，结构和预期不同（宿主可能改了格式）就照实报出路径和哪里不对，不再误报「本机没有安装」；条目缺 `installPath` 时也不会再把当前目录当成安装目录。
-- 写死 spec-guard 路径约定的地方加了说明（spec-guard 的接口没有给路径字段）。
+- **装了不等于开了**：用户在某个会话里明说，`module-crew coordinator up --short <简称> --original-file <原话文件>` 才把它升级为本项目的模块协调；一个仓库最多一个，第二个会话要升级会被拒并告诉你接管办法。前提同开工体检，但不要求能力图。`coordinator down` 可以关掉（没有在用的模块会话时）。
+- **没有模块协调时插件完全安静**：钩子对任何会话都不注入。
+- **有模块协调时，别的普通会话提醒一次**：它第一次回复你时顺带说「这个项目已有模块协调，派活与合入一般由它安排；在这里直接改也可以，只是不经合并队列」，之后照你的意思做、不再重复；模块协调下一轮也会告诉你有这个会话。插件不拦它。
+- **`/clear` 之后身份自动接上**：清空会换会话编号（2026-10-22 实测），新增的 `SessionEnd` 钩子把登记转给同一目录 30 秒内开始的新会话。
+- 多模块并行默认上限从 3 改为 2（已开工项目的上限不变）。
+- 体检新增 `spec-guard-enabled`（项目有没有 `.agent/config.json`）；`status` 加「模块协调」「没登记的会话」两段。
+- 钩子开始写状态库，只写「见到」记录、清空交接记录与登记字段，等锁最多 2 秒，失败就不说话。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -42,7 +47,9 @@
 bin/module-crew status
 ```
 
-它检查 git、agent-relay、spec-guard、spec-guard 规划层、集成分支与状态库六项，任何一项阻塞都会写明原因。
+它检查 git、agent-relay、spec-guard、项目是否启用 spec-guard、spec-guard 规划层、集成分支与状态库七项，任何一项阻塞都会写明原因。
+
+然后在你想让它统筹的那个会话里，明说「把本会话升级为模块协调」，由它运行 `module-crew coordinator up`。没升级的会话照常用，插件不管；有了模块协调之后，别的会话会被提醒一次。
 
 ## 角色
 
@@ -54,7 +61,7 @@ bin/module-crew status
 ## 一次完整流程
 
 1. **开工**（模块协调）
-   - `module-crew start plan`：按能力图的 Build order 提议可开的模块（不超过空位，默认上限 3）。
+   - `module-crew start plan`：按能力图的 Build order 提议可开的模块（不超过空位，默认上限 2）。
    - 只问用户一次「开这 N 个吗？」，用户答应后
      `module-crew start prepare <模块>… --original-file <原话文件> --project-short <简称>`：为每个模块建 worktree（`<仓库名>-crew/<模块>`）、登记会话、生成开工说明。
    - 用桌面版在每个 worktree 里开新会话，第一条消息用开工说明全文。
@@ -135,6 +142,7 @@ module-crew 自己的编号对外一律写 C 前缀（如 C15），`#数字` 只
 
 ```text
 module-crew status [--json]                      体检与全貌（只读）
+module-crew coordinator up|down --original(-file)  把本会话升级为模块协调／关闭（一个仓库一个）
 module-crew store init|check                     状态库
 module-crew protocol check <文件>                消息自检
 module-crew inbox add <文件> --from --relay-id   收件记账
@@ -152,7 +160,7 @@ module-crew wait add --file --to --relay-id --about  记下模块协调自己发
 module-crew sync                                 模块 worktree 里合入集成分支（模块会话用）
 module-crew review show <C号> [--submission]     审查原文全文与 sha256（只读）
 module-crew permissions plan|apply|verify|remove  宿主权限预配与推送守门
-module-crew hook session-start|prompt            插件钩子入口（只读，永远退出码 0）
+module-crew hook session-start|prompt|session-end  插件钩子入口（永远退出码 0；只写见到记录与清空交接）
 ```
 
 需要用户批准的命令都要 `--original` 或 `--original-file`：只记用户在模块协调里亲手输入的话，别的会话转来的话不算批准。
@@ -185,4 +193,5 @@ spec-guard 的命令入口路径带版本号，暂不放进放行清单。细节
 - 用 `gh` 真正开 PR（试点远端是本机裸仓库，只打印 PR 正文）。
 - 权限预配的放行规则：在本机宿主上和不写规则时看不出差别（0.8.0 对照实测），是否真的减少弹窗还没证实。
 - 0.9.0 起的钩子按会话认身份：只用钩子事件数据做过测试，没在真实桌面会话里看过注入出来的文字。
+- 桌面版里 `/clear` 后身份是否自动接上：命令行版实测了事件顺序，桌面版没测。
 - 桌面版整个退出重开后会话 id 是否不变：压缩、`claude --resume` 接上都实测不变，退出整个桌面版这一种没测。

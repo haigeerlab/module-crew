@@ -2,6 +2,11 @@
 
 各版本的变化，最新的在前。README 只写最新一版。
 
+## 0.9.7 的变化（职责边界审查修复）
+
+- 体检读 Claude 插件安装记录时，结构和预期不同（宿主可能改了格式）就照实报出路径和哪里不对，不再误报「本机没有安装」；条目缺 `installPath` 时也不会再把当前目录当成安装目录。
+- 写死 spec-guard 路径约定的地方加了说明（spec-guard 的接口没有给路径字段）。
+
 ## 0.9.6 的变化（职责边界审查修复）
 
 - 合并后勾最终验收改由 spec-guard 来勾：`merge run` 和 `merge tick` 调 spec-guard 接口 1.7 的 gateTick，module-crew 不再自己找「唯一未勾项」。spec-guard 不肯勾时把它的短码原样报出来、不自己改；装的 spec-guard 低于 1.7 时不勾，提示升级后用 `merge tick` 补勾。需要 spec-guard 0.83.0 及以上才会自动勾。
