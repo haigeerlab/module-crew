@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import socket
@@ -37,46 +38,48 @@ class LockTest(MergeCase):
     def test_acquire_release(self):
         lock = mergelock.acquire(self.db, 12, "b")
         info = mergelock.read(self.db)
-        self.assertEqual((info["approval"], info["unit"], info["pid"], info["host"]), (12, "b", os.getpid(), socket.gethostname()))
+        self.assertEqual((info["approval"], info["unit"], info["pid"]), (12, "b", os.getpid()))
+        self.assertTrue(mergelock.locked(self.db))
         self.assertIsInstance(mergelock.acquire(self.db, 13, "c"), mergelock.Held)
         mergelock.release(self.db, lock)
         self.assertIsNone(mergelock.read(self.db))
+        self.assertFalse(mergelock.locked(self.db))
         mergelock.release(self.db, lock)              # releasing twice is harmless
-
-    def test_release_only_own(self):
-        lock = mergelock.acquire(self.db, 12, "b")
-        other = mergelock.Lock(12, "b", os.getpid() + 1, lock.started_at)
-        mergelock.release(self.db, other)
-        self.assertIsNotNone(mergelock.read(self.db))
-
-    def write(self, **over):
-        info = {"approval": 9, "unit": "b", "pid": os.getpid(), "host": socket.gethostname(), "startedAt": store.now(), **over}
-        (self.db.path / "merge.lock").write_text(json.dumps(info), encoding="utf-8")
+        self.assertTrue((self.db.path / "merge.lock").exists())      # nothing is deleted
 
     def test_guard_live_lock(self):
-        self.write()
+        lock = mergelock.acquire(self.db, 9, "b")
+        self.addCleanup(mergelock.release, self.db, lock)
         reason, note = mergelock.guard(self.db, self.repo)
         self.assertIn("合并 C9（b）正在后台跑", reason)
 
+    def stale_record(self):
+        info = {"running": True, "approval": 9, "unit": "b", "pid": dead_pid(), "host": socket.gethostname(),
+                "startedAt": store.now()}
+        (self.db.path / "merge-running.json").write_text(json.dumps(info), encoding="utf-8")
+
     def test_stale_lock_cleared_when_clean(self):
-        self.write(pid=dead_pid())
+        self.stale_record()
         reason, note = mergelock.guard(self.db, self.repo)
         self.assertIsNone(reason)
         self.assertIn("失效", note)
         self.assertIsNone(mergelock.read(self.db))
 
     def test_stale_lock_kept_when_dirty_or_mid_merge(self):
-        self.write(pid=dead_pid())
+        self.stale_record()
         (self.repo / "half.txt").write_text("x")
         reason, _ = mergelock.guard(self.db, self.repo)
         self.assertIn("不干净", reason)
         self.assertIsNotNone(mergelock.read(self.db))
 
-    def test_other_host_not_cleared(self):
-        self.write(pid=dead_pid(), host="another-mac")
-        reason, _ = mergelock.guard(self.db, self.repo)
-        self.assertIn("another-mac", reason)
-        self.assertIsNotNone(mergelock.read(self.db))
+    def test_lock_goes_with_the_process(self):
+        child = subprocess.run([sys.executable, "-c", (
+            "import sys; sys.path.insert(0, %r)\n"
+            "from module_crew import mergelock, store\n"
+            "mergelock.acquire(store.open_store(%r), 7, 'c')\n") % (str(PLUGIN_ROOT), str(self.repo))])
+        self.assertEqual(child.returncode, 0)
+        self.assertFalse(mergelock.locked(self.db))                   # the system let go when the process ended
+        self.assertTrue(mergelock.stale(self.db, mergelock.read(self.db)))
 
 
 class MergeRunLockTest(MergeCase):
@@ -130,8 +133,8 @@ class GuardedCommandsTest(MergeCase):
     def setUp(self):
         super().setUp()
         self.db = store.open_store(self.repo)
-        info = {"approval": 9, "unit": "b", "pid": os.getpid(), "host": socket.gethostname(), "startedAt": store.now()}
-        (self.db.path / "merge.lock").write_text(json.dumps(info), encoding="utf-8")
+        lock = mergelock.acquire(self.db, 9, "b")
+        self.addCleanup(mergelock.release, self.db, lock)
         self.words = self.tmp / "w.txt"
         self.words.write_text("同意", encoding="utf-8")
 
@@ -158,14 +161,14 @@ class StatusLockTest(MergeCase):
 
     def test_status_shows_lock(self):
         db = store.open_store(self.repo)
-        info = {"approval": 9, "unit": "b", "pid": os.getpid(), "host": socket.gethostname(), "startedAt": store.now()}
-        (db.path / "merge.lock").write_text(json.dumps(info), encoding="utf-8")
+        held = mergelock.acquire(db, 9, "b")
         self.assertIn("合并 C9（b）正在后台跑", self.run_cli("status").stdout)
         lock = json.loads(self.run_cli("status", "--json").stdout)["store"]["mergeLock"]
         self.assertEqual((lock["approval"], lock["unit"], lock["stale"]), (9, "b", False))
-        (db.path / "merge.lock").write_text(json.dumps({**info, "pid": dead_pid()}), encoding="utf-8")
+        fcntl.flock(held.fd, fcntl.LOCK_UN)                   # as if the merge process died without cleaning up
         self.assertIn("失效", self.run_cli("status").stdout)
         self.assertIsNotNone(mergelock.read(db))              # status only reads
+        os.close(held.fd)
 
     def test_status_without_lock(self):
         doc = json.loads(self.run_cli("status", "--json").stdout)

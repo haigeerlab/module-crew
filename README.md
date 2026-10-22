@@ -9,6 +9,7 @@
 
 - 轻任务的完整流程：`task dispatch` 派出、轻任务会话交回、和模块同一个合并队列（bug 任务优先）、升格／缩小／取消；契约钉到 session-protocol v2.5（「任务」字段与 T 前缀）。
 - 修正：会话唯一性规则不再把两个轻任务会话当成同一个模块的会话。
+- 合并放后台跑：`merge run` 拿合并锁，跑的时候 `change land`、`review approve` 等写命令退出码 6；进程不在了的锁在集成 checkout 干净时自动清；`status` 显示正在跑的合并。
 - 不经合并队列的提交：module-crew 记下自己认得的集成分支顶端，之后别人直接提交的会在 `status`、`unqueued`、`merge run` 里报一次，并通知各模块同步；不拦、不撤回。
 
 ## 0.10.2 的变化（热修）
@@ -76,6 +77,7 @@ bin/module-crew status
    - `module-crew merge run`（第一次带 `--check-command "<完整检查命令>"`）：按 Build order 一次只合一个，`--no-ff` 合入本地集成分支后跑完整检查；
      不过就把集成分支重置回合并前（模块分支原样保留）并退回该模块，冲突就中止并退回。
    - 合并成功：该模块收到收尾通知，其他在用模块收到同步基线通知。
+   - 完整检查可能很慢：模块协调把 `merge run` 放后台跑，照常回话；跑的时候别的写集成 checkout 的命令会被合并锁挡住（退出码 6），`status` 显示正在跑的合并。
 6. **收尾与推送**
    - 用户同意后 `module-crew merge cleanup <模块> --original-file <原话文件>` 收回 worktree（分支保留）。
    - `module-crew merge push-plan` 预告；用户明确授权后 `module-crew merge push --original-file <原话文件>`，推到远端新分支 `crew/batch-<号>` 并开一个 PR。

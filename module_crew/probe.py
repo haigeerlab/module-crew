@@ -333,7 +333,7 @@ def _merge_lock(db: store.Store) -> dict | None:
     if info is None:
         return None
     return {"approval": info.get("approval"), "unit": info.get("unit"), "startedAt": info.get("startedAt"),
-            "minutes": mergelock.minutes(info), "stale": mergelock.stale(info), "host": info.get("host")}
+            "minutes": mergelock.minutes(info), "stale": mergelock.stale(db, info), "host": info.get("host")}
 
 
 SIGHTINGS_SHOWN = 10

@@ -159,7 +159,10 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
    合入并通过检查后，`merge run` 请 spec-guard（接口 1.7 的 gateTick）在集成分支勾上这个模块的最终验收那一格，再单独提交；模块会话不再自己勾。
    spec-guard 不肯勾时（输出里带 `not-at-final-gate` 之类的短码），照实告诉用户，**不要自己去改 todo**；判断错了就报给 spec-guard 插件那边。spec-guard 低于 1.7 时不勾，升级后补勾。
    修订前合并、漏勾了的模块，或上面没勾上的：用户同意后 `module-crew merge tick <模块> --original-file <原话文件>` 补勾（早已勾过时什么都不改）。
-3. `module-crew merge run`（第一次加 `--check-command "<项目 Spec 里的完整检查命令>"`）：一次只合队首一个（队列按模块在 Build order 里的位置排，不按批准先后）；按输出逐条发通知，发完再跑下一次。
+3. **`merge run` 一律放后台跑**（Bash 的后台运行，跑完宿主会叫醒你）：完整检查可能要几分钟到半小时，跑的时候你照常回用户和别的会话的话、记账、跑只读命令（`status`、`sessions`、`review batch`、`task list`、`unqueued`）。
+   这时 `change land`、`review approve`、`merge tick`、`merge cleanup`、`unqueued --notify`、`coordinator down` 和第二个 `merge run` 会被合并锁挡住（退出码 6），告诉对方「等合并结束」，不要绕过；跑完读输出文件，再按下面的做。
+   `status` 显示锁「已失效」时，下一个写命令会在集成 checkout 干净时自动清掉；不干净就照输出交用户。
+   `module-crew merge run`（第一次加 `--check-command "<项目 Spec 里的完整检查命令>"`）：一次只合队首一个（队列按模块在 Build order 里的位置排，不按批准先后）；按输出逐条发通知，发完再跑下一次。
    - 退出码 5：模块被退回（检查失败时集成分支已重置回合并前、模块分支原样保留，或冲突已中止），把退回类【协调通知】发给它，通知里带失败的检查行；
      退回分两种（输出里写明）：「模块需要修改」——检查跑了没过或冲突；「检查环境出了问题」——检查命令运行不了或超时，通知里告诉模块不用改代码、等你说环境恢复后用原提交重新交审。
      自动判断错了（例如失败其实与模块无关），用 `module-crew merge renotice <C号> --env|--module` 按另一种原因重发退回通知；环境修好后告诉模块重新交审。

@@ -1,12 +1,14 @@
 """One merge at a time while `merge run` runs in the background (see spec/crew-background-checks.md).
 
-The lock is a file next to the store (`merge.lock`), created with O_EXCL so only one process can hold it.
-Writing commands check it first; a lock whose process is gone on this machine is stale and is cleared only when
-the integration checkout is clean and no merge is half done.
+`merge.lock` next to the store is held with flock by the running `merge run` for its whole life; the system lets it
+go when that process ends, however it ends. What is running is written beside it in `merge-running.json`
+(replaced atomically, never deleted — the store deletes nothing). Running but not locked means the process is gone:
+that record is cleared only when the integration checkout is clean and no merge is half done.
 """
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import socket
@@ -16,15 +18,15 @@ from pathlib import Path
 
 from module_crew import probe, store
 
-NAME = "merge.lock"
+LOCK = "merge.lock"
+INFO = "merge-running.json"
 
 
-@dataclass(frozen=True)
+@dataclass
 class Lock:
     approval: int
     unit: str
-    pid: int
-    started_at: str
+    fd: int
 
 
 @dataclass(frozen=True)
@@ -32,51 +34,59 @@ class Held:
     info: dict
 
 
-def _path(db: store.Store) -> Path:
-    return db.path / NAME
-
-
 def read(db: store.Store) -> dict | None:
+    """What a merge recorded as running; None when nothing is."""
     try:
-        return json.loads(_path(db).read_text(encoding="utf-8"))
+        info = json.loads((db.path / INFO).read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
     except (OSError, ValueError):
-        return {"unreadable": True}
+        return {"running": True, "unreadable": True}
+    return info if info.get("running") else None
+
+
+def _write(db: store.Store, info: dict) -> None:
+    store._atomic_write_bytes(db.path / INFO, json.dumps(info, ensure_ascii=False).encode("utf-8"))
+
+
+def locked(db: store.Store) -> bool:
+    """Whether some process holds the merge lock right now."""
+    fd = os.open(db.path / LOCK, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    else:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return False
+    finally:
+        os.close(fd)
 
 
 def acquire(db: store.Store, approval: int, unit: str) -> Lock | Held:
-    lock = Lock(approval, unit, os.getpid(), store.now())
-    info = {"approval": approval, "unit": unit, "pid": lock.pid, "host": socket.gethostname(), "startedAt": lock.started_at}
+    fd = os.open(db.path / LOCK, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        fd = os.open(_path(db), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
         return Held(read(db) or {})
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(info, f, ensure_ascii=False)
-    return lock
+    _write(db, {"running": True, "approval": approval, "unit": unit, "pid": os.getpid(), "host": socket.gethostname(),
+                "startedAt": store.now()})
+    return Lock(approval, unit, fd)
 
 
 def release(db: store.Store, lock: Lock) -> None:
-    """Remove the lock only when it is still the one this call took."""
-    info = read(db)
-    if info and info.get("pid") == lock.pid and info.get("startedAt") == lock.started_at:
-        try:
-            _path(db).unlink()
-        except FileNotFoundError:
-            pass
+    if lock.fd < 0:
+        return
+    _write(db, {"running": False, "approval": lock.approval, "unit": lock.unit, "endedAt": store.now()})
+    fcntl.flock(lock.fd, fcntl.LOCK_UN)
+    os.close(lock.fd)
+    lock.fd = -1
 
 
-def stale(info: dict) -> bool:
-    if info.get("host") != socket.gethostname() or not isinstance(info.get("pid"), int):
-        return False
-    try:
-        os.kill(info["pid"], 0)
-    except ProcessLookupError:
-        return True
-    except PermissionError:
-        return False
-    return False
+def stale(db: store.Store, info: dict) -> bool:
+    """Recorded as running, but nobody holds the lock: the merge process is gone."""
+    return bool(info) and not locked(db)
 
 
 def minutes(info: dict) -> int | None:
@@ -88,34 +98,29 @@ def minutes(info: dict) -> int | None:
 
 
 def describe(info: dict) -> str:
-    unit = info.get("unit") or "?"
     took = minutes(info)
-    return f"合并 C{info.get('approval')}（{unit}）正在后台跑" + (f"（已跑 {took} 分钟）" if took is not None else "")
+    return (f"合并 C{info.get('approval')}（{info.get('unit') or '?'}）正在后台跑"
+            + (f"（已跑 {took} 分钟）" if took is not None else ""))
 
 
 def guard(db: store.Store, project: str | os.PathLike) -> tuple[str | None, str | None]:
     """(reason to refuse, note) for a command about to write the integration checkout."""
     info = read(db)
-    if info is None:
+    if info is None and not locked(db):
         return None, None
-    if info.get("unreadable"):
-        return f"合并锁 {_path(db)} 读不出：请用户核对后删除它", None
-    if not stale(info):
-        if info.get("host") != socket.gethostname():
-            return f"合并锁是另一台机器（{info.get('host')}）留下的：{describe(info)}；请用户核对", None
+    if info is None or info.get("unreadable"):
+        return f"合并锁被占着，但记录读不出（{db.path / INFO}）：等它结束，或请用户核对", None
+    if not stale(db, info):
         return describe(info) + "，等它结束再做", None
     branch = (store.get(db, "config", "main") or {}).get("integrationBranch")
     checkout = probe._checkout_of(Path(project), branch) if branch else None
     if checkout is None:
-        return "合并锁已失效（进程不在了），但找不到集成 checkout：请用户核对", None
+        return "合并锁已失效（合并进程不在了），但找不到集成 checkout：请用户核对", None
     gitdir = probe._git(checkout, "rev-parse", "--git-dir").stdout.strip()
     mid = (Path(checkout) / gitdir / "MERGE_HEAD").exists() if gitdir else False
     dirty = bool(probe._git(checkout, "status", "--porcelain").stdout.strip())
     if mid or dirty:
-        return (f"合并锁已失效（C{info.get('approval')} 的进程不在了），集成 checkout {checkout} "
+        return (f"合并锁已失效（C{info.get('approval')} 的合并进程不在了），集成 checkout {checkout} "
                 + ("有做到一半的合并" if mid else "不干净") + "：没有清锁，请用户核对"), None
-    try:
-        _path(db).unlink()
-    except FileNotFoundError:
-        pass
-    return None, f"合并锁已失效（C{info.get('approval')} 的进程不在了），集成 checkout 干净，已清掉"
+    _write(db, {**info, "running": False, "clearedAt": store.now(), "cleared": "stale"})
+    return None, f"合并锁已失效（C{info.get('approval')} 的合并进程不在了），集成 checkout 干净，已清掉"
