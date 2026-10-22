@@ -156,6 +156,7 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 
 1. 模块发来最终验收【交审】：照常 `review add`，把交付、实际验证结果、没验证的范围写在正文里交用户审。
    输出说「spec/<模块>.md 在构建中改过」时，用 `review show <交审编号> --spec-diff` 取出 Spec 的改动差异，附在提请批准的正文里，写明「这次批准同时批准修订后的 Spec」；合入后 `merge run` 会替用户在集成分支记下它的批准（单独一个提交），输出说没记上时照实告诉用户。
+   Plan 交审带着修订过的 Spec 时（`review add` 同样提醒），也照这样附差异、写明一并批准；`review approve` 会一次记下 Spec 与 Plan 两份批准。只差批准标记的 Spec 不会被拷进集成分支，已批准的那份保持原样。
 2. 用户批准（批准即授权合入本地集成分支）：`module-crew merge approve <交审编号>… --original-file <原话文件>`（可一次给多个编号），逐条发出输出的【用户答复】。
    合入并通过检查后，`merge run` 请 spec-guard（接口 1.7 的 gateTick）在集成分支勾上这个模块的最终验收那一格，再单独提交；模块会话不再自己勾。
    spec-guard 不肯勾时（输出里带 `not-at-final-gate` 之类的短码），照实告诉用户，**不要自己去改 todo**；判断错了就报给 spec-guard 插件那边。spec-guard 低于 1.7 时不勾，升级后补勾。
