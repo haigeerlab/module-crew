@@ -149,6 +149,34 @@ def _status(as_json: bool) -> int:
     return 3 if report.blocked else 0
 
 
+def _unqueued(args) -> int:
+    from module_crew import unqueued
+    db = store.open_store()
+    found = unqueued.find(db, ".")
+    if found.missing_seen:
+        unqueued.mark_integration(db, ".", "unqueued")
+        print("还没有记下 module-crew 认得的集成分支顶端：现在记下，以后的提交从这里算")
+        return 0
+    if args.json and not args.notify:
+        print(json.dumps({"seen": found.seen, "head": found.head, "notInHistory": found.not_in_history,
+                          "commits": found.commits}, ensure_ascii=False, indent=2))
+        return 3 if found.commits else 0
+    if found.not_in_history:
+        print(f"module-crew 认得的顶端 {found.seen[:7]} 不在集成分支上（历史可能被改写过）：只列出当前顶端，请用户核对")
+    print(unqueued.describe(found))
+    for c in found.commits:
+        print(f"  {c['short']} {c['at']} {c['author']}：{c['subject']}")
+    if not found.commits:
+        return 0
+    if not args.notify:
+        print("告诉用户一次；要通知各模块同步就加 --notify")
+        return 3
+    for x in unqueued.notify(db, "."):
+        print(f"发送 同步基线通知 → {x['to']}，正文文件：{x['path']}")
+    print("已记下当前顶端，这些提交不会再报")
+    return 0
+
+
 def _task_line(n: int, t: dict) -> str:
     from module_crew import tasks
     who = f"，派给 {t['assignee']}" if t.get("assignee") else ""
@@ -820,6 +848,9 @@ def _main(argv: list[str] | None = None) -> int:
     tcg = tcc.add_mutually_exclusive_group(required=True)
     tcg.add_argument("--original")
     tcg.add_argument("--original-file")
+    uq = sub.add_parser("unqueued", help="集成分支上不经合并队列的提交：列出，或 --notify 通知各模块同步")
+    uq.add_argument("--notify", action="store_true")
+    uq.add_argument("--json", action="store_true")
     ta = sub.add_parser("task", help="模块协调的轻任务记录（单个需求或 bug，T 编号）")
     tas = ta.add_subparsers(dest="action", required=True)
     taa = tas.add_parser("add", help="记下用户要做的一件事；预计文件和在做的活重叠就排队")
@@ -1094,6 +1125,12 @@ def _run(args) -> int:
             return 2
         print(f"已关等待记录 {refs.wait(args.number)}（理由 {code}）")
         return 0
+    if args.group == "unqueued":
+        try:
+            return _unqueued(args)
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
     if args.group == "task":
         try:
             return _task(args)

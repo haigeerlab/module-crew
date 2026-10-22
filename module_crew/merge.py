@@ -89,6 +89,21 @@ def no_sync(tx) -> set[str]:
     return approved | awaiting_final(tx) | suspended
 
 
+def sync_targets(tx, exclude: str | None = None) -> list[tuple[str, int | None]]:
+    """Who gets a sync-baseline notice now: in-use module sessions outside `no_sync`, and light tasks being worked on
+    (with their task number). One list for `merge run` and `unqueued --notify` (crew-unqueued-commits)."""
+    skip = no_sync(tx)
+    out = []
+    for name, s in sorted(tx.records("session").items()):
+        if s.get("status") != "active" or name == exclude:
+            continue
+        if s.get("role") == "dev" and s.get("module") not in skip:     # a suspended module is told on resume
+            out.append((name, None))
+        elif s.get("role") == "task" and (tx.get("task", str(s.get("task"))) or {}).get("state") == "working":
+            out.append((name, s.get("task")))
+    return out
+
+
 @dataclass(frozen=True)
 class Revoked(Reply):
     superseded_by: int | None = None          # the newer submission that keeps the old one closed (MC-6)
@@ -317,19 +332,11 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
             _notice(tx, db, result, rec["from"], "wrap-up",
                     basis=f"最终验收的合并批准事项 C{n}；已合入集成分支 {short}",
                     todo="停止在本 worktree 开发，等模块协调收回 worktree", task=task)
-            skip = no_sync(tx)
             what = f"轻任务 {unit}" if task else f"模块 {m}"
-            for name, s in sorted(tx.records("session").items()):
-                if (s.get("role") == "dev" and s.get("status") == "active" and name != rec["from"]
-                        and s.get("module") not in skip):  # a suspended module is told on resume
-                    _notice(tx, db, result, name, "sync-baseline",
-                            basis=f"{what} 已合入集成分支 {short}（合并批准记录 C{n}）",
-                            todo=f"{sync.STEP}，跑完整检查后继续")
-                elif (s.get("role") == "task" and s.get("status") == "active" and name != rec["from"]
-                        and (tx.get("task", str(s.get("task"))) or {}).get("state") == "working"):
-                    _notice(tx, db, result, name, "sync-baseline",
-                            basis=f"{what} 已合入集成分支 {short}（合并批准记录 C{n}）",
-                            todo=f"{sync.STEP}，跑完整检查后继续", task=s.get("task"))
+            for name, target_task in sync_targets(tx, exclude=rec["from"]):
+                _notice(tx, db, result, name, "sync-baseline",
+                        basis=f"{what} 已合入集成分支 {short}（合并批准记录 C{n}）",
+                        todo=f"{sync.STEP}，跑完整检查后继续", task=target_task)
             result.lines.append(f"C{n}（{unit}）已合入集成分支 {short}")
             if tick_line:
                 result.lines.append(tick_line)
