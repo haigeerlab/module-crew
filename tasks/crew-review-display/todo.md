@@ -10,3 +10,8 @@
 - [ ] Task 5：全量测试与旧称扫描（Spec 验收 7）
 - [ ] Checkpoint 2（gate）：最终验收
 - [ ] 回告：总协调（local_d7434023）与 spec-guard 负责人（local_0a689563）
+
+## 外部审查意见
+
+<!-- spec-guard: external-review declined -->
+用户 2026-10-23 批准 Plan 时说「不用外部复核」。

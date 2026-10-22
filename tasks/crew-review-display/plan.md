@@ -1,6 +1,6 @@
 # Implementation Plan: crew-review-display
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-review-display.md`（用户 2026-10-23 批准，假设照写）。任务清单：`tasks/crew-review-display/todo.md`。
 
