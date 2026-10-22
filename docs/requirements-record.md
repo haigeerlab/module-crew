@@ -236,3 +236,8 @@ Codex 模块会话（先过 B7 清单）；停止钩子与巡视；审查者外�
 - 本机 decision-inbox 已是 0.0.37（契约 2.6），用户原话「升级本机 decision-inbox 到 0.0.37 并登记为 v2.6」；module-crew 0.11.1 的 `sources.PROTOCOLS` 只到 2.5，登记不了。
 - 第七版发出后：把决策收件箱 di-p0-hub 的登记改为 `--protocol 2.6`（写那个项目的状态库，动手前问用户），再把 module-crew 版本号与 `source list` 里 di-p0-hub 显示的版本回给契约负责人。
 - 登记为 v2.6 之前，不往决策收件箱发带 C 编号待定问题的卡。
+
+**第 13 项的接口（spec-guard 负责人 2026-10-22 通知：interface 1.10 定稿，随 spec-guard 0.84.0 发版，发版后再通知）**
+- 声明 `scopeOverlap`；命令（相对插件根）`python3 -B hooks/module_scope.py overlap [--project <项目根>] [--spec <模块id>=<文件> ...]`，两者至少给一个、`--spec` 可重复；只读，不看 moduleConcurrency。
+- 退出码 0 输出 JSON、2 用法错误不输出；JSON：`conflicts[]`（`modules` 按 Build order、`paths` 排序、`sources` 写每个模块取自哪份文件或 project）与 `errors[]`（`module`、`source`、`error`，九个码：no-boundary、missing-exclusive、bad-path、bad-category、duplicate-section、unknown-line、unreadable、no-capability-map、map-unreadable）。
+- 判据与 `/map` 的 `startable.conflicts` 共用；没报 conflicts 不等于没冲突，要连 errors 一起看。用法：交审提交里的 Spec 用 git show 存成临时文件以 `--spec` 传入，并带 `--project <集成 checkout>`；同一模块两边都有时以 `--spec` 为准。声明全文在 spec-guard 的 `spec/scope-overlap-interface.md` C3。
