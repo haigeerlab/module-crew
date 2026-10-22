@@ -126,7 +126,7 @@ def revoke(db: store.Store, approval: int, original: str) -> Revoked:
         body = tx.allocate_number()
         meta = tx.write_body(body, protocol.render_coordination_notice(
             "approval-revoked", f"C{approval}（用户撤回批准 C{record}；交审 C{rec['review']}）", REVOKE_TODO))
-    return Revoked(rec["from"], None, body, db.path / meta["path"], max(newer) if newer else None)
+    return Revoked(rec["from"], None, body, db.path / meta["path"], superseded_by=max(newer) if newer else None)
 
 
 def _build_order(project: Path) -> list[str] | None:
