@@ -1,6 +1,6 @@
 # Implementation Plan: crew-command-entry
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-command-entry.md`（用户 2026-10-22 批准）。任务清单：`tasks/crew-command-entry/todo.md`。
 
