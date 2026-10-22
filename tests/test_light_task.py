@@ -336,5 +336,46 @@ class EscalationTest(TaskWorkCase):
         self.assertEqual(inbox.add(self.db, escalation(n + 100), d.relay, 701).code, 3)
 
 
+class EndToEndTest(MergeCase):
+    """Acceptance 9: the whole light flow through the command line in a real temporary repository."""
+
+    def test_light_flow(self):
+        db = store.open_store(self.repo)
+        env = dict(os.environ, CLAUDE_CODE_SESSION_ID="sid-coord")
+        words = self.tmp / "w.txt"
+        words.write_text("同意", encoding="utf-8")
+        ok = lambda out: self.assertEqual(out.returncode, 0, out.stdout + out.stderr) or out
+        ok(self.run_cli("bind", "shop-coord", "--original-file", str(words), env=env))
+        ok(self.run_cli("task", "add", "--type", "bug", "--title", "空输入崩溃", "--what", "修空输入", "--expect",
+                        "src/parse.py,tests/", "--done", "空输入不崩", "--original-file", str(words), env=env))
+        n = max(int(k) for k in store.records(db, "task"))
+        d = json.loads(ok(self.run_cli("task", "dispatch", f"T{n}", "--json", env=env)).stdout)
+        wt = Path(d["worktree"])
+        ok(self.run_cli("bind", d["relay"], cwd=wt, env=dict(os.environ, CLAUDE_CODE_SESSION_ID="sid-task")))
+        self.assertEqual(store.get(db, "task", str(n))["state"], "working")
+        (wt / "src").mkdir(exist_ok=True)
+        (wt / "src" / "parse.py").write_text("def parse(x):\n    return x or ''\n", encoding="utf-8")
+        git(wt, "add", "-A")
+        git(wt, "commit", "-q", "-m", "修空输入")
+        msg = self.tmp / "handback.txt"
+        msg.write_text(hand_back(n, wt, ["src/parse.py"], points=("- 修了空输入", "- 复现测试：test_empty",
+                                                                   "- 实测：python3 -m unittest，OK")), encoding="utf-8")
+        checked = self.run_cli("protocol", "check", str(msg))
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+        added = ok(self.run_cli("review", "add", str(msg), "--from", d["relay"], "--relay-id", "900", env=env))
+        review_no = int(added.stdout.split("交审事项 C")[1].split("（")[0])
+        ok(self.run_cli("merge", "approve", f"C{review_no}", "--original-file", str(words), env=env))
+        run_out = ok(self.run_cli("merge", "run", "--check-command", self.check_script(), env=env))
+        self.assertIn(f"T{n}", run_out.stdout)
+        self.assertEqual(store.get(db, "task", str(n))["state"], "merged")
+        self.assertTrue((self.repo / "src" / "parse.py").exists())
+        sends = [e for e in store.events(db) if e["type"] == "item.merged"]
+        self.assertTrue(sends)
+        self.assertIn("shop-b", run_out.stdout)
+        self.assertIn("shop-c", run_out.stdout)
+        ok(self.run_cli("merge", "cleanup", f"T{n}", "--original-file", str(words), env=env))
+        self.assertIn(f"T{n}", self.run_cli("task", "list", "--all").stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
