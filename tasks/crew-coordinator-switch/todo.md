@@ -12,7 +12,7 @@
 - [x] Task 6：skill、README、CHANGELOG、版本 0.10.0、全量测试（Spec 验收 12）——全量 526 个测试通过（含旧称扫描）；三处清单版本同步为 0.10.0；未打标签、未升级本机
 - [x] Checkpoint 2（gate）：实地验证前停下问用户——用户 2026-10-22 同意在临时仓库开测试会话、升级并清空它，不升级本机插件
 - [x] Task 7：实地 `/clear` 验证（Spec 验收 13）——首测不通过：桌面版清空时旧进程 `SessionEnd reason:"other"`、新进程等下一条消息才以 `source:"startup"` 启动，clear 配对认不出；钩子进程的 `CLAUDE_CODE_HOST_SESSION_ID` 是 `local_` 编号、清空后不变。用户选 A 修订 Spec 决策 8（桌面版按该编号交接），改代码与测试（全量 535 个通过）后复测通过：事件 `handover.opened`→`session.rebound-after-clear`（via desktop），新会话注入模块协调身份与「刚清空过」，没登记的会话 0 个。测试环境里本机 0.9.6 钩子同时在跑，多注入了一行旧版陌生提示，升级本机后不会出现
-- [ ] Checkpoint 3（gate）：最终验收
+- [x] Checkpoint 3（gate）：最终验收——用户 2026-10-22 批准（含构建中补改决策 8 的 Spec）；不算 spec/tasks 24 个文件 +863 −53（644305a..bad53f3）
 - [ ] 回告：完成情况发给总协调（local_d7434023）
 
 ## 外部审查意见

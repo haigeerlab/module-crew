@@ -1,6 +1,6 @@
 # Spec: crew-coordinator-switch
 
-<!-- spec-guard: review approved 616342cd1c9d -->
+<!-- spec-guard: review approved a018243b1051 -->
 
 > 能力图模块 `crew-coordinator-switch`（第六版第 1 个）。需求来源：`docs/requirements-record.md` 第 14 节第 1、2、4、5、7、8 条（用户 2026-10-22 经拷问确认）。
 > 假设见下文，均来自那一节；标「新」的是写 Spec 时补的实现取舍，请重点审。
