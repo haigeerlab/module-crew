@@ -10,3 +10,8 @@
 - [ ] Task 5：skill、README、全量测试（Spec 验收 6、7）
 - [ ] Checkpoint 2（gate）：最终验收
 - [ ] 回告：总协调（local_d7434023）与契约负责人（local_e1431df1）
+
+## 外部审查意见
+
+<!-- spec-guard: external-review declined -->
+用户 2026-10-22 批准 Plan 时说「不用外部复核」。

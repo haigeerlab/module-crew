@@ -1,6 +1,6 @@
 # Implementation Plan: crew-contract-v26
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-contract-v26.md`（用户 2026-10-22 批准）。任务清单：`tasks/crew-contract-v26/todo.md`。
 
