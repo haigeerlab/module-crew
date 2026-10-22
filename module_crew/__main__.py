@@ -696,6 +696,16 @@ def _main(argv: list[str] | None = None) -> int:
     tcg = tcc.add_mutually_exclusive_group(required=True)
     tcg.add_argument("--original")
     tcg.add_argument("--original-file")
+    co = sub.add_parser("coordinator", help="把本会话升级为本项目的模块协调，或关闭它（都要用户原话）")
+    cos = co.add_subparsers(dest="action", required=True)
+    cou = cos.add_parser("up", help="升级：一个仓库只一个模块协调；前提同开工体检，不要求能力图")
+    cou.add_argument("--short", help="项目简称（第一次升级必填）：小写字母、数字、连字符")
+    cod = cos.add_parser("down", help="关闭：没有在用的模块会话时才可以；状态库保留")
+    for c in (cou, cod):
+        g = c.add_mutually_exclusive_group(required=True)
+        g.add_argument("--original")
+        g.add_argument("--original-file")
+        c.add_argument("--json", action="store_true")
     bd = sub.add_parser("bind", help="登记本会话就是状态库里的某个会话（钩子只给登记过的会话注入角色）")
     bd.add_argument("name", help="开工说明或恢复说明里写的邮箱名")
     bg = bd.add_mutually_exclusive_group()
@@ -932,6 +942,22 @@ def _run(args) -> int:
             return 2
         print(f"已关等待记录 {refs.wait(args.number)}（理由 {code}）")
         return 0
+    if args.group == "coordinator":
+        original = _original(args.original, args.original_file)
+        if original is None:
+            return 2
+        from module_crew import coordinator
+        try:
+            code, lines = (coordinator.up(".", args.short, original) if args.action == "up"
+                           else coordinator.down(".", original))
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps({"code": code, "lines": lines}, ensure_ascii=False, indent=2))
+        else:
+            print("\n".join(lines))
+        return code
     if args.group == "bind":
         try:
             original = None

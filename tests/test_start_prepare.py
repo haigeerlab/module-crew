@@ -115,7 +115,7 @@ class PrepareTest(StartCase):
         cfg = store.get(db, "config", "main")
         crew = self.tmp / "repo-crew"
         from module_crew.hostcheck import plugin_version
-        self.assertEqual(cfg, {"projectShort": "shop", "integrationBranch": "main", "maxModules": 3, "crewDir": str(crew),
+        self.assertEqual(cfg, {"projectShort": "shop", "integrationBranch": "main", "maxModules": 2, "crewDir": str(crew),
                                "pluginVersion": plugin_version(),    # recorded for host-check (crew-codex-host)
                                "reviewCadence": "separate"})          # the project's cadence (crew-review-nearby)
         for m in ("b", "c"):
@@ -138,7 +138,7 @@ class PrepareTest(StartCase):
         self.assertTrue(any("bridge_register 注册邮箱名 shop-coord" in line for line in res.lines), res.lines)
 
     def test_kickoff_text(self):
-        res = self.run_prepare()
+        res = self.run_prepare(max_modules=3)   # room for d below
         db = store.open_store(self.repo)
         b = res.prepared[0]
         text = store.read_body(db, b["kickoff"])

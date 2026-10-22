@@ -342,7 +342,7 @@ class ReviewCase(StartCase):
     def setUp(self) -> None:
         super().setUp()
         from module_crew import start
-        res = start.prepare(self.repo, ["b", "c"], "开 b 和 c", short="shop")
+        res = start.prepare(self.repo, ["b", "c"], "开 b 和 c", short="shop", max_modules=3)  # room for a third
         assert res.code == 0, res.lines
         self.wt = {p["id"]: Path(p["worktree"]) for p in res.prepared}
         for m, wt in self.wt.items():

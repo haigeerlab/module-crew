@@ -13,7 +13,7 @@ from pathlib import Path
 
 from module_crew import probe, role, store
 
-DEFAULT_MAX = 3
+DEFAULT_MAX = 2   # crew-coordinator-switch: the plugin is new, two modules at a time is the safer default
 
 
 @dataclass
