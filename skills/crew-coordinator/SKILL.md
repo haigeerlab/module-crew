@@ -132,6 +132,7 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 
 4. 按输出逐条 `bridge_send`（`bodyFile`，不改一字）：请求方那条带 `replyTo`，其他在用模块收到同步基线通知。
 5. `change land` 退出码 3：清单外有改动或没有改动，什么都没提交——把多余的改动挪走，或让请求方补一条请求。
+   清单里还有文件没改也是退出码 3（输出列出它们）：改完再 land；用户同意先落地已改的部分时加 `--partial --original-file <原话文件>`，请求保持打开，改完剩下的再 land 才关闭。
 6. 改动影响已批准的 Spec 时，按 spec-guard 规则在那份 Spec 末尾「变更记录」追加一行，复审时一并呈现。
 
 ## 审查就近（登记了审查者时）

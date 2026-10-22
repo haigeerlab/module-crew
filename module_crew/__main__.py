@@ -518,7 +518,7 @@ def _change(args) -> int:
         return 0
     if args.original_file is not None and original is None:
         return 2
-    res = changes.land(".", args.number, original)
+    res = changes.land(".", args.number, original, partial=getattr(args, "partial", False))
     for line in res.lines:
         print(line)
     for x in res.sends:
@@ -737,6 +737,8 @@ def _main(argv: list[str] | None = None) -> int:
         g = c.add_mutually_exclusive_group(required=(name == "answer"))
         g.add_argument("--original")
         g.add_argument("--original-file")
+        if name == "land":
+            c.add_argument("--partial", action="store_true", help="清单里还有文件没改时，先落地已改的部分（要用户原话），请求保持打开")
     mg = sub.add_parser("merge", help="本地合并、收尾与远端 PR")
     mgs = mg.add_subparsers(dest="action", required=True)
     for name in ("queue", "push-plan"):

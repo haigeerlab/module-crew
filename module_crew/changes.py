@@ -145,7 +145,7 @@ def _changed_paths(checkout: Path) -> list[str]:
     return paths
 
 
-def land(project: str | os.PathLike, number: int, original: str | None = None) -> LandResult:
+def land(project: str | os.PathLike, number: int, original: str | None = None, partial: bool = False) -> LandResult:
     """Commit the coordinator's edits for one request on the integration baseline and prepare the notices."""
     project = Path(project)
     db = store.open_store(project)
@@ -164,6 +164,13 @@ def land(project: str | os.PathLike, number: int, original: str | None = None) -
         return LandResult(3, ["集成 checkout 里有清单外的改动，没有提交：" + "、".join(outside)])
     if not changed:
         return LandResult(3, [f"清单里的文件都没有改动：{'、'.join(rec['files'])}"])
+    done_before = {f for p in rec.get("partial") or [] for f in p["files"]}
+    left = [p for p in rec["files"] if p not in changed and p not in done_before]
+    if left and not partial:       # 0.10.2 (spec-guard trial, C42): a half-landed request must not be closed
+        return LandResult(3, [f"公共变更请求 C{number} 清单里还有 {len(left)} 个文件没改：{'、'.join(left)}；没有提交",
+                              "全部改完再 change land；确实要先落地已改的部分，请用户同意后加 --partial --original-file <原话文件>"])
+    if left and not (original and original.strip()):
+        return LandResult(3, ["部分落地要用户原话：请用户同意后加 --original-file <原话文件>"])
     probe._git(checkout, "add", "-A", "--", *changed)
     done = probe._git(checkout, "commit", "-q", "-m",
                       commits.message(f"公共变更请求 C{number}（{rec['from']}）：{rec['what'][:40]}", commits.prefix_of(db)))
@@ -171,16 +178,25 @@ def land(project: str | os.PathLike, number: int, original: str | None = None) -
         return LandResult(4, [commits.failure(checkout, done, "集成分支提交失败"), "已暂存的文件：" + "、".join(changed)])
     commit = probe._git(checkout, "rev-parse", "HEAD").stdout.strip()
     result = LandResult(0, commit=commit)
-    result.lines.append(f"公共变更请求 C{number} 已在集成分支提交 {commit[:7]}")
+    if left:
+        result.lines.append(f"公共变更请求 C{number} 部分落地 {commit[:7]}，还剩 {'、'.join(left)}；请求保持打开，改完再 change land")
+    else:
+        result.lines.append(f"公共变更请求 C{number} 已在集成分支提交 {commit[:7]}")
     if original is None and _asks_user(rec.get("hints", [])):
         result.lines.append("提醒：这条请求带「要问用户」提示，但没有记下用户原话")
-    basis = f"公共变更请求 C{number} 已在集成分支提交 {commit[:7]}"
+    basis = (f"公共变更请求 C{number} 部分落地 {commit[:7]}（还剩 {'、'.join(left)}）" if left
+             else f"公共变更请求 C{number} 已在集成分支提交 {commit[:7]}")
     todo = f"{sync.STEP}，跑完整检查后继续"
     with db.transaction(actor="coordinator") as tx:
         answer_rec = {"original": original, "answeredAt": store.now(), **store.source_field()} if original is not None else None
-        tx.put("request", str(number), dict(rec, state="closed", closedReason="landed", commit=commit, answer=answer_rec),
-               action="landed", data={"commit": commit})
-        _close_ticket(tx, rec)
+        if left:
+            parts = list(rec.get("partial") or []) + [{"commit": commit, "files": changed, "answer": answer_rec}]
+            tx.put("request", str(number), dict(rec, partial=parts), action="partly-landed",
+                   data={"commit": commit, "left": left})
+        else:
+            tx.put("request", str(number), dict(rec, state="closed", closedReason="landed", commit=commit, answer=answer_rec),
+                   action="landed", data={"commit": commit})
+            _close_ticket(tx, rec)
         from module_crew import merge
         skip = merge.no_sync(tx)               # same rule as merge run (0.9.3); the requester still gets its reply
         for name, sess in sorted(tx.records("session").items()):
