@@ -52,7 +52,7 @@ class ReportTest(StatusCase):
 
     def test_check_ids_fixed(self):
         report = probe.run(self.repo)
-        self.assertEqual(list(report.checks), ["git", "agent-relay", "spec-guard", "spec-guard-planning",
+        self.assertEqual(list(report.checks), ["git", "agent-relay", "spec-guard", "spec-guard-enabled", "spec-guard-planning",
                                                "baseline", "store"])
 
     def test_run_is_read_only(self):

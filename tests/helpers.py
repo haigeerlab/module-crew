@@ -28,7 +28,9 @@ def make_repo(parent: Path) -> Path:
     git(repo, "config", "user.name", "t")
     git(repo, "config", "user.email", "t@t")
     (repo / "README.md").write_text("x\n")
-    git(repo, "add", "README.md")
+    (repo / ".agent").mkdir()        # crew-coordinator-switch: a spec-guard-enabled project (setup-convention ran)
+    (repo / ".agent" / "config.json").write_text('{"version": 1}\n')
+    git(repo, "add", "README.md", ".agent/config.json")
     git(repo, "commit", "-q", "-m", "init")
     return repo
 

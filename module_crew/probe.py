@@ -20,6 +20,7 @@ SPEC_GUARD_MAJOR = 1
 PLANNING_MINOR = 1  # spec-guard interface 1.1 brings the planning layer
 MAP_TIMEOUT = 10
 MIN_GIT = (2, 31)
+NO_MAP = "/map --json 报告项目没有能力图"
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,7 @@ class Check:
     state: str  # ok / blocker / warning
     reason: str = ""
     fix: str = ""
+    code: str = ""   # machine-readable cause for callers that tolerate one (crew-coordinator-switch)
 
 
 @dataclass(frozen=True)
@@ -166,7 +168,7 @@ def run_map(root: Path, doc: dict, project: Path, timeout: float = MAP_TIMEOUT) 
     except OSError as exc:
         return f"/map --json 运行不了：{exc}"
     if out.returncode == 3:
-        return "/map --json 报告项目没有能力图"
+        return NO_MAP
     if out.returncode != 0:
         return f"/map --json 退出码 {out.returncode}：{out.stderr.strip()[:200]}"
     try:
@@ -192,11 +194,20 @@ def check_spec_guard(project: str | os.PathLike, timeout: float = MAP_TIMEOUT) -
                 Check("spec-guard-planning", "blocker", "spec-guard 不可用", "安装接口 1.x 的 spec-guard"), None)
     result = run_map(found.root, doc, project, timeout)
     if isinstance(result, str):
-        fix = "按原因处理；没有能力图时先用 /spec 写能力图" if "能力图" in result else "检查 spec-guard 安装是否完整"
-        return (Check("spec-guard", "blocker", result, fix),
+        no_map = result == NO_MAP
+        fix = "按原因处理；没有能力图时先用 /spec 写能力图" if no_map else "检查 spec-guard 安装是否完整"
+        return (Check("spec-guard", "blocker", result, fix, "no-capability-map" if no_map else ""),
                 Check("spec-guard-planning", "blocker", "/map --json 不可用", fix), None)
     sg = Check("spec-guard", "ok", f"spec-guard {found.version or '?'}，接口 {doc['interface']}")
     return sg, _planning(doc, result), result
+
+
+def check_enabled(project: Path) -> Check:
+    """spec-guard is enabled for this project once setup-convention wrote .agent/config.json (crew-coordinator-switch)."""
+    if (Path(project) / ".agent" / "config.json").is_file():
+        return Check("spec-guard-enabled", "ok", "项目已启用 spec-guard")
+    return Check("spec-guard-enabled", "blocker", "项目还没启用 spec-guard（没有 .agent/config.json）",
+                 "先在本仓库运行 /spec-guard:setup-convention")
 
 
 def _planning(doc: dict, result: dict) -> Check:
@@ -331,8 +342,9 @@ def run(project: str | os.PathLike | None = None, timeout: float = MAP_TIMEOUT) 
     root = Path(_git(project, "rev-parse", "--show-toplevel").stdout.strip() or project)
     relay = check_relay(root)
     sg, planning, map_doc = check_spec_guard(root, timeout)
+    enabled = check_enabled(root)
     baseline = check_baseline(root) if git_check.state == "ok" else Check("baseline", "blocker", "git 不可用")
     store_check, summary = summarize_store(root)
-    checks = {c.id: c for c in (git_check, relay, sg, planning, baseline, store_check)}
+    checks = {c.id: c for c in (git_check, relay, sg, enabled, planning, baseline, store_check)}
     startable = map_doc.get("startable") if map_doc and planning.state == "ok" else None
     return Report(checks, summary, map_doc, startable)
