@@ -422,6 +422,10 @@ def _review(args) -> int:
         return 0
     if args.action == "batch" and args.for_hub:
         made = review.for_hub(".", args.parallel_with)
+        held = review.held_for_old_hub(store.open_store(), ".")
+        if held:        # crew-light-task: an inbox older than v2.5 may read T numbers as item numbers
+            print("轻任务的提请批准没有交给决策收件箱（它的契约低于 v2.5）：在本会话直接问用户 "
+                  + "、".join(f"C{n}" for n in held))
         if not made:
             print("没有可以提请批准的交审（审查中、返工中的不算）")
             return 3

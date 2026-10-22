@@ -56,6 +56,8 @@ def _missing_files(module: str, node: str, files: list[dict]) -> list[str]:
 def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
     """Judge one 【交审】 and record it; nothing is written unless the code is 0."""
     msg = protocol.parse(text)
+    if msg.kind == "review-request" and msg.contract().get("task"):
+        return _add_task(db, msg, text, sender, relay_id)
     session = _session(db, sender)
     if session is None:
         return Outcome(msg.kind, 3, lines=[f"发件人 {sender} 不是状态库里登记的在用模块会话，拒收"])
@@ -117,6 +119,77 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         if out.closed:
             out.lines.append("取代了 " + "、".join(f"C{k}" for k in out.closed))
         return out
+
+
+def _add_task(db: store.Store, msg, text: str, sender: str, relay_id: int) -> Outcome:
+    """crew-light-task: a light task's final acceptance (「模块：无」 + 「任务」, contract v2.5)."""
+    from module_crew import tasks
+    n = int(msg.contract()["task"][1:])
+    session = store.get(db, "session", sender) or {}
+    if session.get("role") != "task" or session.get("status") != "active" or session.get("task") != n:
+        return Outcome(msg.kind, 3, lines=[f"发件人 {sender} 不是轻任务 T{n} 登记的在用会话，拒收"])
+    if not msg.ok:
+        return Outcome(msg.kind, 3, lines=["消息不合格，请退回：" + "、".join(msg.problems)])
+    sub = msg.contract()["submission"]
+    if sub["node"] != "final":
+        return Outcome(msg.kind, 3, lines=["轻任务只交最终验收（节点：最终验收）"])
+    t = store.get(db, "task", str(n)) or {}
+    if t.get("state") != "working":
+        return Outcome(msg.kind, 3, lines=[f"T{n} 现在是「{tasks.STATE_NAMES.get(t.get('state'), '?')}」，不在做，拒收"])
+    worktree = Path(session["worktree"])
+    reasons = _check_files(worktree, sub["files"])
+    if reasons:
+        return Outcome(msg.kind, 3, lines=["拒收，请退回："] + reasons)
+    if any(e["actor"] == sender and e["data"].get("relayId") == relay_id for e in store.events(db)):
+        return Outcome(msg.kind, 0, lines=[f"已记过：{sender} 的邮箱消息 #{relay_id}，没有重复记账"])
+    branch = (store.get(db, "config", "main") or {}).get("integrationBranch")
+    changed = [l for l in _git(worktree, "diff", "--name-only", f"{branch}...HEAD").stdout.splitlines() if l.strip()]
+    extra = sorted(f for f in changed if not any(tasks.clash(f, e) for e in t["expectedFiles"]))
+    clashes, _ = tasks.overlaps(db, worktree, extra, exclude=n) if extra else ([], [])   # any checkout of the repo
+    commit = _git(worktree, "rev-parse", "HEAD").stdout.strip()
+    out = Outcome(msg.kind, 0)
+    with db.transaction(actor=sender) as tx:
+        number = tx.allocate_number()
+        for key, ap in sorted(tx.records("item").items(), key=lambda kv: int(kv[0])):
+            if ap.get("kind") in ("review", "merge-approval") and ap.get("state") == "open" and ap.get("task") == n:
+                tx.put("item", key, dict(ap, state="closed", closedReason="superseded", supersededBy=number),
+                       action="superseded", data={"by": number})
+                out.closed.append(int(key))
+        tx.put("item", str(number), {
+            "state": "open", "kind": "review", "from": sender, "relayId": relay_id, "text": text, "module": None,
+            "task": n, "node": "final", "files": sub["files"], "commit": commit, "changedFiles": changed,
+            "extraFiles": extra, "overlapExtra": clashes, "closedReason": None, "answer": None},
+            action="created", data={"relayId": relay_id})
+    tasks.advance(db, n, "returned", result={**(t.get("result") or {}), "files": changed, "commit": commit})
+    out.number = number
+    out.lines.append(f"已记为交审事项 C{number}（轻任务 T{n} 的最终验收）；实际改了 {len(changed)} 个文件")
+    if extra:
+        out.lines.append("任务单以外多改了：" + "、".join(extra))
+    if clashes:
+        out.lines.append("越界重叠：多改的文件和在做的活重叠（" + "、".join(clashes) + "），建议走升格，交审时写明")
+    if t["type"] == "bug" and "复现测试" not in msg.fields.get("要点", ""):
+        out.lines.append("提示：这是 bug，「要点」里没写复现测试；问做事的会话补没补能复现问题的测试")
+    if out.closed:
+        out.lines.append("取代了 " + "、".join(f"C{k}" for k in out.closed))
+    return out
+
+
+def _unit(v: dict) -> str:
+    """A review's group: its module, or 「T<号>」 for a light task (crew-light-task)."""
+    return v.get("module") or f"T{v.get('task')}"
+
+
+def held_for_old_hub(db: store.Store, project: str | os.PathLike) -> list[int]:
+    """Ready light-task reviews kept out of for-hub because a registered inbox speaks a contract older than v2.5."""
+    from module_crew import sources
+    if not _old_hub(db):
+        return []
+    return [i["number"] for i in batch(project)["items"] if i["ready"] and i.get("task")]
+
+
+def _old_hub(db: store.Store) -> bool:
+    from module_crew import sources
+    return any(r.get("kind") == "hub" and sources.hub_protocol(r) < "2.5" for r in sources.listing(db))
 
 
 REVIEW_TIMEOUT = timedelta(minutes=15)
@@ -223,13 +296,13 @@ def batch(project: str | os.PathLike) -> dict:
     approved = _approved_nodes(db)
     in_batch = {v["module"] for _, v in open_items if v["node"] in ("spec", "interface")}
     issues = []
-    for mod in dict.fromkeys(v["module"] for _, v in open_items):
+    for mod in dict.fromkeys(v["module"] for _, v in open_items if v.get("module")):
         missing = [d for d in modules.get(mod, {}).get("dependsOn") or []
                    if modules.get(d, {}).get("status") != "done" and d not in in_batch
                    and not ({"spec", "interface"} & approved.get(d, set()))]
         if missing:
             issues.append({"module": mod, "missing": missing})
-    batch_mods = {v["module"] for _, v in open_items}
+    batch_mods = {v["module"] for _, v in open_items if v.get("module")}
     conflicts = [c for c in (report.map or {}).get("startable", {}).get("conflicts", [])
                  if batch_mods & set(c.get("modules", []))]
     # Present module by module in Build order, and within a module Spec → interface → Plan (user request, 2026-10-18).
@@ -238,14 +311,15 @@ def batch(project: str | os.PathLike) -> dict:
     open_items.sort(key=lambda kv: (rank.get(kv[1]["module"], len(rank)), NODE_RANK.get(kv[1]["node"], 9), kv[0]))
     groups: list[dict] = []
     for n, v in open_items:
-        if not groups or groups[-1]["module"] != v["module"]:
-            groups.append({"module": v["module"], "responsibility": modules.get(v["module"], {}).get("responsibility", ""),
-                           "items": []})
+        if not groups or groups[-1]["module"] != _unit(v):
+            groups.append({"module": _unit(v), "task": v.get("task"),
+                           "responsibility": modules.get(v["module"], {}).get("responsibility", "") if v.get("module")
+                           else (store.get(db, "task", str(v.get("task"))) or {}).get("title", ""), "items": []})
         groups[-1]["items"].append(n)
     items = []
     for n, v in open_items:
         state = review_state(db, n)
-        items.append({"number": n, "ref": f"C{n}", "module": v["module"], "node": v["node"], "from": v["from"],
+        items.append({"number": n, "ref": f"C{n}", "module": v["module"], "task": v.get("task"), "node": v["node"], "from": v["from"],
                       "files": v["files"], "points": _points(v["text"]), "reviews": list(v.get("reviews") or []),
                       "reviewState": state, "round": _rounds(db, v["module"], v["node"]), "ready": state in READY,
                       "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state)})
@@ -467,7 +541,10 @@ def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> lis
     ready = {i["number"]: i for i in b["items"] if i["ready"]}
     combined = start.review_cadence(project) == "combined"
     out = []
+    old_hub = _old_hub(db)
     for g in b["groups"]:
+        if g.get("task") and old_hub:       # crew-light-task: T numbers need an inbox on contract v2.5
+            continue
         mine = [ready[n] for n in g["items"] if n in ready]
         if not mine:
             continue
@@ -512,11 +589,13 @@ def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict]
     points += _card_fields(db, part, missing)     # 0.9.5: the v2.2 card is gone; every inbox here speaks v2.3+
     lines = [f"【与 #{parallel_with} 并行】"] if parallel_with is not None else []
     top = Path(probe._git(project, "rev-parse", "--show-toplevel").stdout.strip() or project)
+    what = f"轻任务 {g['module']}" if g.get("task") else g["module"]
     lines += ["【等待用户】", "结束：无", f"来自：{coord}", f"项目：{top.name}",
-              f"要你决定：批准 {g['module']} 的 {nodes}（{refs}）吗", "要点："] + points
-    # contract v2.4: 「模块」 right after 要点 (older parsers fold it into 要点, which is harmless; after 类型 it is not)
+              f"要你决定：批准 {what} 的 {nodes}（{refs}）吗", "要点："] + points
+    # contract v2.4: 「模块」 right after 要点 (older parsers fold it into 要点, which is harmless; after 类型 it is not);
+    # v2.5: a light task writes 「任务」 there instead and no 「模块」
     at = next((k for k, x in enumerate(lines) if x.startswith("类型：")), len(lines))
-    lines.insert(at, f"模块：{g['module']}")
+    lines.insert(at, f"任务：{g['module']}" if g.get("task") else f"模块：{g['module']}")
     lines += ["产物："] + artifacts + ["交审原文："] + subs + (["审查原文："] + revs if revs else [])
     if numbered:
         lines += ["待用户决定："] + question_lines(numbered)

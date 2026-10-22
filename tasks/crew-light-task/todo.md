@@ -2,10 +2,10 @@
 
 > 依据 `tasks/crew-light-task/plan.md`。
 
-- [ ] Task 1：契约钉到 v2.5（Spec 验收 1）
-- [ ] Task 2：`task` 登记角色、名额只数模块、钩子认任务 worktree
-- [ ] Task 3：`task dispatch` 与开工说明；`bind` 后 `working`（Spec 验收 2、3）
-- [ ] Checkpoint 1（report）：契约与派出就位
+- [x] Task 1：契约钉到 v2.5（Spec 验收 1）——v2.5 样例 110 个解析全过（先红后绿），v2.2～v2.4 照旧
+- [x] Task 2：`task` 登记角色、名额只数模块、钩子认任务 worktree——测试先红后绿
+- [x] Task 3：`task dispatch` 与开工说明；`bind` 后 `working`（Spec 验收 2、3）——测试先红后绿
+- [x] Checkpoint 1（report）：契约与派出就位——任务、钩子、路由、权限、开工、模块协调开关相关测试全过
 - [ ] Task 4：交回记账、比对、提请批准与 hub 分流（Spec 验收 4、7）
 - [ ] Task 5：合并队列与任务合并、收回（Spec 验收 5、8）
 - [ ] Task 6：升格请求与答复、`task scope`（Spec 验收 6）

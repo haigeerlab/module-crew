@@ -127,5 +127,87 @@ class DispatchTest(ReviewCase):
         self.assertTrue(Path(doc["kickoffPath"]).exists())
 
 
+def hand_back(n, wt, files, points=("- 做了：补说明", "- 实测：python3 -m unittest，OK", "- 没验证：无")):
+    import hashlib
+    lines = [f"- {f} sha256:{hashlib.sha256((Path(wt) / f).read_bytes()).hexdigest()[:16]}" for f in files]
+    return "\n".join(["【交审】", "结束：无", "模块：无", "节点：最终验收", "文件：", *lines, "要点：", *points,
+                      f"任务：T{n}", "改动统计：", "  1 file changed", "越界检查：与任务单一致"]) + "\n"
+
+
+class TaskWorkCase(ReviewCase):
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+
+    def start_task(self, expect=("docs/t.md",), kind="feature", write=("docs/t.md",)):
+        n = new_task(self.db, self.repo, expect=expect, kind=kind)
+        d = tasks.dispatch(self.db, self.repo, n)
+        hooks.bind(self.db, d.relay, f"sid-t{n}", d.worktree)
+        wt = Path(d.worktree)
+        for f in write:
+            (wt / f).parent.mkdir(parents=True, exist_ok=True)
+            (wt / f).write_text(f"{f}\n", encoding="utf-8")
+        git(wt, "add", "-A")
+        git(wt, "commit", "-q", "-m", f"T{n}")
+        return n, d
+
+
+class HandBackTest(TaskWorkCase):
+    """Acceptance 4, 7."""
+
+    def test_recorded_and_returned(self):
+        from module_crew import review
+        n, d = self.start_task()
+        out = review.add(self.db, hand_back(n, d.worktree, ["docs/t.md"]), d.relay, 501)
+        self.assertEqual(out.code, 0, out.lines)
+        rec = store.get(self.db, "item", str(out.number))
+        self.assertEqual((rec["task"], rec["module"], rec["node"], rec["extraFiles"]), (n, None, "final", []))
+        t = store.get(self.db, "task", str(n))
+        self.assertEqual((t["state"], t["result"]["files"]), ("returned", ["docs/t.md"]))
+        self.assertIn(f"T{n}", "\n".join(out.lines))
+
+    def test_extra_files_and_overlap(self):
+        from module_crew import review
+        n, d = self.start_task(write=("docs/t.md", "docs/extra.md", "spec/b.md"))
+        out = review.add(self.db, hand_back(n, d.worktree, ["docs/t.md"]), d.relay, 502)
+        self.assertEqual(out.code, 0, out.lines)
+        rec = store.get(self.db, "item", str(out.number))
+        self.assertEqual(rec["extraFiles"], ["docs/extra.md", "spec/b.md"])
+        self.assertEqual(rec["overlapExtra"], ["模块 b：spec/b.md"])
+        self.assertTrue(any("越界重叠" in l and "升格" in l for l in out.lines), out.lines)
+
+    def test_refusals(self):
+        from module_crew import review
+        n, d = self.start_task()
+        text = hand_back(n, d.worktree, ["docs/t.md"])
+        self.assertEqual(review.add(self.db, text, "shop-b", 503).code, 3)          # a module session
+        tasks.advance(self.db, n, "escalated")
+        self.assertEqual(review.add(self.db, text, d.relay, 504).code, 3)           # not working
+
+    def test_bug_without_repro_hint(self):
+        from module_crew import review
+        n, d = self.start_task(kind="bug")
+        out = review.add(self.db, hand_back(n, d.worktree, ["docs/t.md"]), d.relay, 505)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertTrue(any("复现测试" in l for l in out.lines), out.lines)
+
+    def test_batch_and_hub(self):
+        from module_crew import review, sources
+        n, d = self.start_task()
+        out = review.add(self.db, hand_back(n, d.worktree, ["docs/t.md"]), d.relay, 506)
+        groups = review.batch(self.repo)["groups"]
+        self.assertIn(f"T{n}", [g["module"] for g in groups])
+        sources.add(self.db, "hub-a", "hub", "登记收件箱", protocol="2.4")
+        bodies = [t for _, _, t in review.for_hub(self.repo)]
+        self.assertFalse(any(f"任务：T{n}" in t for t in bodies))
+        self.assertIn(out.number, review.held_for_old_hub(self.db, self.repo))
+        sources.remove(self.db, "hub-a", "换成新版收件箱")
+        sources.add(self.db, "hub-b", "hub", "登记新收件箱", protocol="2.5")
+        texts = [t for _, _, t in review.for_hub(self.repo) if f"任务：T{n}" in t]
+        self.assertEqual(len(texts), 1)
+        self.assertNotIn("模块：", texts[0])
+
+
 if __name__ == "__main__":
     unittest.main()
