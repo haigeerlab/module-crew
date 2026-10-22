@@ -1,4 +1,4 @@
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 5555b48e6923 -->
 
 # Spec: crew-review-batch
 
