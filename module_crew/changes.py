@@ -170,6 +170,8 @@ def land(project: str | os.PathLike, number: int, original: str | None = None) -
     if done.returncode != 0:
         return LandResult(4, [commits.failure(checkout, done, "集成分支提交失败"), "已暂存的文件：" + "、".join(changed)])
     commit = probe._git(checkout, "rev-parse", "HEAD").stdout.strip()
+    from module_crew import unqueued
+    unqueued.mark(db, checkout, "change-land")       # crew-unqueued-commits: module-crew's own commit
     result = LandResult(0, commit=commit)
     result.lines.append(f"公共变更请求 C{number} 已在集成分支提交 {commit[:7]}")
     if original is None and _asks_user(rec.get("hints", [])):

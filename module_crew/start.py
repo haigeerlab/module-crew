@@ -257,6 +257,8 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             "closedReason": "answered", "answer": {"original": original, "answeredAt": store.now(), **store.source_field()},
             **({"host": host_id} if host_id != "claude-desktop" else {}),
         }, action="start-approved")
+    from module_crew import unqueued
+    unqueued.mark_integration(db, project, "start-prepare", only_if_unset=True)
     result = PrepareResult(0, approval=approval)
     result.lines.append(f"开工批准事项 C{approval}：{'、'.join(modules)}")
     for m in modules:

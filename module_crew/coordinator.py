@@ -65,6 +65,8 @@ def up(project: str | os.PathLike, short: str | None, original: str,
         tx.put("session", coord, {"role": "coordinator", "host": "claude-desktop", "status": "active",
                                   "hostSession": identity(sid)},
                action="coordinator-up", data={"original": original, "sessionId": sid})
+    from module_crew import unqueued
+    unqueued.mark_integration(db, project, "coordinator-up", only_if_unset=True)
     return 0, [f"已升级：本会话是本项目的模块协调 {coord}（{where(db, store.get(db, 'session', coord))}）",
                f"多模块并行上限 {(store.get(db, 'config', 'main') or {}).get('maxModules')}",
                f"下一步：用 agent-relay bridge_register 注册邮箱名 {coord}（wake: \"auto\"），再跑 module-crew status"]

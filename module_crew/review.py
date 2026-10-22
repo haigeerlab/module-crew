@@ -1043,6 +1043,8 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
         return ApproveResult(4, [commits.failure(checkout, commit_run, "集成分支提交失败"),
                                  "已改、已暂存的文件：" + "、".join(written)])
     commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
+    from module_crew import unqueued
+    unqueued.mark(db, checkout, "review-approve")    # crew-unqueued-commits: module-crew's own commit
     result = ApproveResult(0, commit=commit)
     answered_at = store.now()
     approved_before = _approved_nodes(db)

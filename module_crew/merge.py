@@ -337,6 +337,9 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
     if task:
         from module_crew import tasks
         tasks.advance(db, task, "working" if reason else "merged")
+    if not reason:                  # crew-unqueued-commits: the merge (and tick) commits are module-crew's own
+        from module_crew import unqueued
+        unqueued.mark(db, checkout, "merge-run")
     return result
 
 
@@ -415,6 +418,8 @@ def _tick(project: Path, checkout: Path, module: str, approval: int,
         _git(checkout, "checkout", "--", rel)
         return "commit-failed", None, commits.failure(checkout, done, f"勾选 {rel} 失败"), commits.hook_lines(checkout, done)
     commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
+    from module_crew import unqueued
+    unqueued.mark(store.open_store(project), checkout, "merge-tick")
     left = done_line.split(";", 1)[1].strip()
     return "ticked", commit, f"已在集成分支勾选 {module} 的最终验收 {commit[:7]}" + (f"（spec-guard：{left}）" if left else ""), \
         commits.hook_lines(checkout, done)
