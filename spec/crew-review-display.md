@@ -1,4 +1,4 @@
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 95209d55ef03 -->
 
 # Spec: crew-review-display
 
