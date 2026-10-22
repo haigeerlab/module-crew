@@ -8,9 +8,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import PLUGIN_ROOT, FakePlugins, RepoCase
+from helpers import PLUGIN_ROOT, FakePlugins, RepoCase, StartCase
 
-from module_crew import launcher, probe
+from module_crew import coordinator, launcher, probe, start, store
 
 BIN = PLUGIN_ROOT / "bin" / "module-crew"
 
@@ -129,6 +129,35 @@ class AgreeTest(LauncherCase):
             step()
             with self.subTest(step=i):
                 self.assertEqual(launcher.locate(self.repo), probe.find_plugin("module-crew", self.repo).root)
+
+
+class InstallTest(StartCase):
+    """Acceptance 1."""
+
+    def target(self):
+        return launcher.entry(store.open_store(self.repo).path)
+
+    def test_prepare_writes_once(self):
+        res = start.prepare(self.repo, ["b"], "开 b", short="shop")
+        self.assertEqual(res.code, 0, res.lines)
+        path = self.target()
+        self.assertEqual(path.read_bytes(), Path(launcher.__file__).read_bytes())
+        self.assertTrue(os.access(path, os.X_OK))
+        self.assertIn(f"Codex 会话的固定入口：{path}（已写入）", res.lines)
+        before = path.stat().st_mtime_ns
+        self.assertEqual(launcher.install(path.parent.parent), (path, False))
+        self.assertEqual(path.stat().st_mtime_ns, before)
+        path.write_text("# old template\n")
+        self.assertEqual(launcher.install(path.parent.parent), (path, True))
+        self.assertEqual(path.read_bytes(), Path(launcher.__file__).read_bytes())
+
+    def test_coordinator_up_writes(self):
+        code, lines = coordinator.up(self.repo, "shop", "升级为模块协调", session_id="sid-1")
+        self.assertEqual(code, 0, lines)
+        self.assertIn(f"Codex 会话的固定入口：{self.target()}（已写入）", lines)
+        code, lines = coordinator.up(self.repo, None, "再升级", session_id="sid-1")
+        self.assertEqual(code, 0, lines)
+        self.assertIn(f"Codex 会话的固定入口：{self.target()}（没有变化）", lines)
 
 
 if __name__ == "__main__":

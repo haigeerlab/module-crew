@@ -45,7 +45,7 @@ def up(project: str | os.PathLike, short: str | None, original: str,
         name, rec = existing
         bound = (rec.get("hostSession") or {}).get("sessionId")
         if bound == sid:
-            return 0, [f"本会话已是模块协调 {name}，没有改动"]
+            return 0, [f"本会话已是模块协调 {name}，没有改动", start.launcher_line(db)]
         state = "已绑定另一个会话" if bound else "还没绑定会话"
         return 3, ["没有升级，原因：", f"本项目已有模块协调 {name}（{where(db, rec)}，{state}）；一个仓库只能有一个",
                    f"要换成本会话：请用户明说接管后运行 module-crew takeover {name} --original-file <原话文件>，"
@@ -69,6 +69,7 @@ def up(project: str | os.PathLike, short: str | None, original: str,
     unqueued.mark_integration(db, project, "coordinator-up", only_if_unset=True)
     return 0, [f"已升级：本会话是本项目的模块协调 {coord}（{where(db, store.get(db, 'session', coord))}）",
                f"多模块并行上限 {(store.get(db, 'config', 'main') or {}).get('maxModules')}",
+               start.launcher_line(db),
                f"下一步：用 agent-relay bridge_register 注册邮箱名 {coord}（wake: \"auto\"），再跑 module-crew status"]
 
 

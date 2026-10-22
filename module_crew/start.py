@@ -223,6 +223,13 @@ def validate(project: Path, modules: list[str], original: str, short: str | None
     return reasons, cfg, proposal
 
 
+def launcher_line(db: store.Store) -> str:
+    """crew-command-entry decision 3: (re)write the fixed entry Codex sessions use, and say so."""
+    from module_crew import launcher
+    path, changed = launcher.install(db.path)
+    return f"Codex 会话的固定入口：{path}（{'已写入' if changed else '没有变化'}）"
+
+
 def prepare(project: str | os.PathLike, modules: list[str], original: str, short: str | None = None,
             max_modules: int | None = None, host: str = "claude", commit_prefix: str | None = None) -> PrepareResult:
     project = Path(project)
@@ -261,6 +268,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
     unqueued.mark_integration(db, project, "start-prepare", only_if_unset=True)
     result = PrepareResult(0, approval=approval)
     result.lines.append(f"开工批准事项 C{approval}：{'、'.join(modules)}")
+    result.lines.append(launcher_line(db))
     for m in modules:
         path = Path(cfg["crewDir"]) / m
         if path.exists():  # checked again: git would create the branch before refusing a busy directory

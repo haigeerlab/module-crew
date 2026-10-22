@@ -83,7 +83,9 @@ class UpTest(StartCase):
 
     def test_one_coordinator(self):
         self.assertEqual(self.up()[0], 0)
-        self.assertEqual(self.up(), (0, ["本会话已是模块协调 shop-coord，没有改动"]))
+        code, lines = self.up()            # crew-command-entry: also keeps the Codex launcher current
+        self.assertEqual((code, lines[0]), (0, "本会话已是模块协调 shop-coord，没有改动"))
+        self.assertTrue(lines[1].endswith("（没有变化）"), lines)
         code, lines = self.up(sid="sid-2")
         self.assertEqual(code, 3)
         text = "\n".join(lines)
