@@ -1,4 +1,4 @@
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved ce10f668804e -->
 
 # Spec: crew-session-handover
 
@@ -48,7 +48,7 @@
    只读命令（`status`、`sessions`、`review batch`／`show`、`task list`／`show`／`next`、`unqueued` 不带 `--notify`、`permissions plan`、`start plan`、`protocol`、`source list`、`map`），
    模块与轻任务会话自己用的（`bind`、`sync`、`host-check`），以及 `hook`。只在三者同时成立时拒绝：项目有在用的模块协调、它登记了会话编号、调用者读得到会话编号且不同。
    拒绝时退出码 7，输出「本会话不是登记的模块协调 <邮箱名>：……要接手，请用户同意后运行 module-crew bind <邮箱名> --takeover --original-file <原话文件>」，什么都不写。
-4. **（新）不做「两个活着的会话」检测，改为标出本会话**（与需求第 12 条原文「status 报阻塞」不同，请定夺）：module-crew 无从知道宿主里哪个会话还开着，按钩子目击时间猜会误报（普通会话路过也会被目击）。
+4. **（新）不做「两个活着的会话」检测，改为标出本会话**（与需求第 12 条原文「status 报阻塞」不同，用户已接受）：module-crew 无从知道宿主里哪个会话还开着，按钩子目击时间猜会误报（普通会话路过也会被目击）。
    写命令已经只认登记的会话，第二个会话动不了集成分支；`status` 改为标出「← 本会话」，调用者不是登记的模块协调时写明，并给出接管命令。
 5. **旧会话的一行提示读登记上的 `previousSessions`**，不翻事件日志，保持钩子快（每轮一行仍只读文件）。
 
@@ -113,7 +113,7 @@ PYTHONPATH=tests python3 -m unittest test_session_handover
 
 ## 未决问题
 
-- 关键决策 4：需求第 12 条原写「同一角色两个活着的会话时 status 报阻塞」，这里改为「写命令只认登记的会话 + status 标出本会话」，请定夺是否接受。
+- 无。关键决策 4（不做「两个活着的会话」检测，改为写命令只认登记的会话、status 标出本会话）用户 2026-10-22 批准 Spec 时接受。
 
 ## 文档建议
 
