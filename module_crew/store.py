@@ -22,7 +22,7 @@ from pathlib import Path
 VERSION = 1
 KINDS = ("config", "session", "item", "request", "ticket", "body", "sighting", "handover", "task")
 NUMBERED = ("item", "request", "ticket", "body", "task")
-ROLES = ("coordinator", "dev")
+ROLES = ("coordinator", "dev", "task")   # task: a light task's session (crew-light-task)
 HOSTS = ("claude-desktop", "codex-desktop")   # coordinators are Claude desktop only (crew-codex-host)
 SESSION_STATUSES = ("active", "retired")
 _ACTION_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -333,9 +333,18 @@ def _validate_session(key: str, rec: dict, others: dict) -> None:
             raise bad("dev 必填 module")
         if not isinstance(worktree, str) or not os.path.isabs(worktree):
             raise bad("dev 必填 worktree，且必须是绝对路径")
+    if role == "task":
+        number, worktree = rec.get("task"), rec.get("worktree")
+        if not isinstance(number, int) or isinstance(number, bool) or number < 1:
+            raise bad("task 角色必填 task（正整数任务号）")
+        if not isinstance(worktree, str) or not os.path.isabs(worktree):
+            raise bad("task 角色必填 worktree，且必须是绝对路径")
     if status != "active":
         return
     for other_key, other in others.items():
+        if role == "task" and other_key != key and other.get("status") == "active" and other.get("role") == "task" \
+                and other.get("task") == rec.get("task"):
+            raise bad(f"任务 T{rec.get('task')} 已有在用的会话 {other_key}")
         if other_key == key or other.get("status") != "active" or other.get("role") != role:
             continue
         if role == "coordinator":

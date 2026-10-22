@@ -16,10 +16,11 @@ from module_crew import store
 
 @dataclass(frozen=True)
 class Role:
-    kind: str                     # dev / coordinator
+    kind: str                     # dev / coordinator / task
     name: str                     # relay name
     module: str | None
     db: store.Store
+    task: int | None = None       # crew-light-task: the task number of a task session
 
 
 def _inside(path: str, root: str) -> bool:
@@ -67,6 +68,10 @@ def detect(cwd: str | os.PathLike) -> Role | None:
         name = next((n for n, s in sorted(sessions.items())
                      if s.get("role") == "coordinator" and s.get("status") == "active"), None)
         return Role("coordinator", name, None, db) if name else None
+    for name, s in sorted(sessions.items()):            # crew-light-task: a light task's own worktree
+        if s.get("role") == "task" and s.get("status") == "active" and s.get("worktree"):
+            if _inside(here, os.path.realpath(s["worktree"])):
+                return Role("task", name, None, db, s.get("task"))
     for name, s in sorted(sessions.items()):
         if s.get("role") == "dev" and s.get("status") == "active" and s.get("worktree"):
             if _inside(here, os.path.realpath(s["worktree"])):
@@ -147,7 +152,13 @@ def session_start(cwd: str | os.PathLike, source: str = "startup") -> str | None
     role = detect(cwd)
     if role is None:
         return None
-    if role.kind == "dev":
+    if role.kind == "task":
+        t = store.get(role.db, "task", str(role.task)) or {}
+        lines = [f"module-crew：你是轻任务 T{role.task} 的会话（邮箱名 {role.name}），模块协调是 {_coordinator_name(role.db)}，你只和它说话。",
+                 "按 crew-dev skill 的「轻任务」一节做：只做任务单里的事，测试全过才交回，做大了就停下发升格请求。",
+                 f"任务单：{t.get('what', '?')}；预计文件：{'、'.join(t.get('expectedFiles') or [])}；完成标准：{t.get('done', '?')}",
+                 f"当前：{_task_stage(t)}"]
+    elif role.kind == "dev":
         tickets = sorted(int(k) for k, v in store.records(role.db, "ticket").items()
                          if v.get("from") == role.name and v.get("state") == "open")
         lines = [f"module-crew：你是模块 {role.module} 的模块会话（邮箱名 {role.name}），模块协调是 {_coordinator_name(role.db)}，你只和它说话。",
@@ -165,10 +176,17 @@ def session_start(cwd: str | os.PathLike, source: str = "startup") -> str | None
     return "\n".join(lines)
 
 
+def _task_stage(t: dict) -> str:
+    from module_crew.tasks import STATE_NAMES
+    return STATE_NAMES.get(t.get("state"), t.get("state") or "?")
+
+
 def prompt_line(cwd: str | os.PathLike) -> str | None:
     role = detect(cwd)
     if role is None:
         return None
+    if role.kind == "task":
+        return f"module-crew：你是轻任务 T{role.task} 的会话（{role.name}），当前：{_task_stage(store.get(role.db, 'task', str(role.task)) or {})}"
     if role.kind == "dev":
         stage = _stage(store.records(role.db, "item"), role.module).split("，")[0].split("（")[0]
         return f"module-crew：你是 {role.module} 的模块会话（{role.name}），当前：{stage}"
@@ -183,6 +201,9 @@ def matches(role: Role, session_id: str | None) -> bool:
 
 def stranger_line(role: Role) -> str:
     """The one line for any other conversation in a registered directory: whose it is, and that it is not you."""
+    if role.kind == "task":
+        return (f"module-crew：本目录属于轻任务 T{role.task}（登记会话 {role.name}）；你不是它的登记会话，不要按轻任务会话行事。"
+                f"如果你刚收到这个任务的开工说明，先按说明运行 module-crew bind {role.name}。")
     if role.kind == "dev":
         return (f"module-crew：本目录属于模块 {role.module}（登记会话 {role.name}）；你不是它的登记会话，不要按模块会话行事。"
                 f"如果你刚收到这个模块的开工说明或恢复说明，先按说明运行 module-crew bind {role.name}。")
@@ -346,7 +367,7 @@ def _text_for(event: str, payload: dict, cwd: str) -> str | None:
         return line
     if event != "session-start" or sid in _bound_sessions(db):
         return None                         # strangers hear once, at start; a registered session elsewhere hears nothing
-    if role is not None and role.kind == "dev":
+    if role is not None and role.kind in ("dev", "task"):
         return stranger_line(role)
     name, rec = coord
     if not (rec.get("hostSession") or {}).get("sessionId"):
@@ -414,7 +435,7 @@ def own_session_id() -> str | None:
 
 def _home_of(db: store.Store, rec: dict) -> Path | None:
     """The directory a registration belongs to: a module's worktree, or the coordinator's integration checkout."""
-    if rec.get("role") == "dev":
+    if rec.get("role") in ("dev", "task"):
         return Path(os.path.realpath(rec["worktree"])) if rec.get("worktree") else None
     branch = (store.get(db, "config", "main") or {}).get("integrationBranch")
     checkout = _checkout_of(db.path.parent, branch) if branch else None
@@ -435,7 +456,8 @@ def bind(db: store.Store, name: str, session_id: str | None, cwd: str | os.PathL
         here = detect(cwd)
         owner = ("module-crew 登记以外的地方" if here is None else
                  f"模块 {here.module} 的 worktree（{here.name}）" if here.kind == "dev" else f"集成 checkout（{here.name}）")
-        mine = (f"模块 {rec.get('module')} 的 worktree {home}" if rec.get("role") == "dev" else f"集成 checkout {home}")
+        mine = (f"模块 {rec.get('module')} 的 worktree {home}" if rec.get("role") == "dev" else
+                f"轻任务 T{rec.get('task')} 的 worktree {home}" if rec.get("role") == "task" else f"集成 checkout {home}")
         raise BindRefused(f"{name} 只能在它自己的目录里登记：这个目录属于{owner}，{name} 的是{mine}")
     coordinator = rec.get("role") == "coordinator"
     if coordinator and not (original and original.strip()):
