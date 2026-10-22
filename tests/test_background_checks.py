@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 import os
 import socket
+import subprocess
+import sys
+import time
 import unittest
 
-from helpers import MergeCase, git
+from helpers import PLUGIN_ROOT, MergeCase, git
 
-from module_crew import mergelock, store
+from module_crew import merge, mergelock, store
 
 
 def dead_pid() -> int:
@@ -74,6 +77,51 @@ class LockTest(MergeCase):
         reason, _ = mergelock.guard(self.db, self.repo)
         self.assertIn("another-mac", reason)
         self.assertIsNotNone(mergelock.read(self.db))
+
+
+class MergeRunLockTest(MergeCase):
+    """Acceptance 1, 2: merge run holds the lock while it runs and always lets it go."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+
+    def background_run(self, check):
+        """`merge run` in another process; returns once its lock file exists."""
+        proc = subprocess.Popen([str(PLUGIN_ROOT / "bin" / "module-crew"), "merge", "run", "--check-command", check],
+                                cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+        deadline = time.time() + 30
+        while mergelock.read(self.db) is None and time.time() < deadline:
+            time.sleep(0.05)
+        self.assertIsNotNone(mergelock.read(self.db), "the background merge never took the lock")
+        return proc
+
+    def test_lock_held_and_released(self):
+        approval = self.approve_final("b", 5100)
+        proc = self.background_run(self.check_script(sleep=4))
+        info = mergelock.read(self.db)
+        self.assertEqual((info["approval"], info["unit"]), (approval, "b"))
+        second = self.run_cli("merge", "run")
+        self.assertEqual(second.returncode, 6, second.stdout + second.stderr)
+        self.assertIn("正在后台跑", second.stdout + second.stderr)
+        out, err = proc.communicate(timeout=120)
+        self.assertEqual(proc.returncode, 0, out + err)
+        self.assertIsNone(mergelock.read(self.db))
+
+    def test_released_on_every_ending(self):
+        self.approve_final("b", 5101, path="BROKEN")
+        self.assertEqual(merge.run(self.repo, check_command=self.check_script(fail_if="BROKEN")).code, 5)   # returned
+        self.assertIsNone(mergelock.read(self.db))
+        self.approve_final("c", 5102)
+        original = merge._run_check
+        def boom(*a, **k):
+            raise RuntimeError("检查进程崩了")
+        merge._run_check = boom
+        self.addCleanup(setattr, merge, "_run_check", original)
+        with self.assertRaises(RuntimeError):
+            merge.run(self.repo)
+        self.assertIsNone(mergelock.read(self.db))
 
 
 if __name__ == "__main__":

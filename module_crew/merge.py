@@ -252,8 +252,32 @@ def _notice(tx, db: store.Store, result: RunResult, to: str, kind: str, basis: s
 
 
 def run(project: str | os.PathLike, check_command: str | None = None, replace: bool = False) -> RunResult:
-    """Merge the head of the queue, run the full check, and reset or abort on failure."""
+    """Merge the head of the queue, run the full check, and reset or abort on failure.
+
+    crew-background-checks: one merge at a time — the merge lock is taken before anything is touched and always let go."""
+    from module_crew import mergelock
     project = Path(project)
+    db = store.open_store(project)
+    rows = queue(project)
+    if not rows:
+        return RunResult(3, ["合并队列是空的"])
+    reason, note = mergelock.guard(db, project)
+    if reason:
+        return RunResult(6, [reason])
+    n, rec = rows[0]
+    lock = mergelock.acquire(db, n, f"T{rec['task']}" if rec.get("task") else rec["module"])
+    if isinstance(lock, mergelock.Held):
+        return RunResult(6, [mergelock.describe(lock.info) + "，等它结束再做"])
+    try:
+        result = _run(project, check_command, replace)
+    finally:
+        mergelock.release(db, lock)
+    if note:
+        result.lines.insert(0, note)
+    return result
+
+
+def _run(project: Path, check_command: str | None, replace: bool) -> RunResult:
     db = store.open_store(project)
     cfg, reasons, pending_write = _check_config(db, check_command, replace)
     if reasons:
