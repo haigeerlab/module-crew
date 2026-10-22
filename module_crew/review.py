@@ -140,7 +140,7 @@ def _restore(checkout: Path) -> list[str]:
     _git(checkout, "checkout", "--", ".")
     new = [line[3:] for line in _git(checkout, "status", "--porcelain", "--untracked-files=all").stdout.splitlines()
            if line.startswith("?? ")]
-    return (["状态库与集成分支都没有变化；集成 checkout 里原有的文件已恢复成集成分支上的内容"]
+    return (["状态库与集成分支都没有变化；集成 checkout 里原有的文件已还原成集成分支上的内容"]
             + (["这次新建、没有删除的文件（未暂存，交用户决定）：" + "、".join(new)] if new else []))
 
 
