@@ -5,7 +5,7 @@ description: 本会话是 module-crew 的模块协调时使用：开工说明点
 
 # module-crew 模块协调
 
-规则来自 module-crew 插件，**不要抄进 worktree 的 CLAUDE.md**。命令入口：插件目录下的 `bin/module-crew`。
+规则来自 module-crew 插件，**不要抄进 worktree 的 CLAUDE.md**。命令入口：以 module-crew 钩子在会话启动、压缩、清空时注入的「module-crew 命令入口」那一行为准；不要把带版本号的绝对路径记进记忆、开工背景或转给别的会话的文字。
 
 ## 名称
 

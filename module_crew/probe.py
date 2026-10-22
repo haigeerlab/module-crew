@@ -101,6 +101,30 @@ def find_plugin(name: str, project: str | os.PathLike) -> Plugin | str:
     return live or Plugin(Path(chosen["installPath"]), chosen.get("version"))
 
 
+RUNNING_ROOT = Path(__file__).resolve().parents[1]    # the module-crew copy running this command
+
+
+def plugin_version(root: Path) -> str | None:
+    try:
+        return json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")).get("version")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def check_self(project: str | os.PathLike) -> Check:
+    """crew-probe decision 6: the module-crew running now against the one installed for this project."""
+    mine = plugin_version(RUNNING_ROOT)
+    entry = RUNNING_ROOT / "bin" / "module-crew"
+    found = find_plugin("module-crew", project)
+    if isinstance(found, str):
+        return Check("module-crew", "warning", f"正在运行 {entry}（版本 {mine or '未知'}）；安装记录里找不到 module-crew：{found}",
+                     "确认 module-crew 插件已安装")
+    if mine and found.version and mine != found.version:
+        return Check("module-crew", "blocker", f"正在运行的是 {mine}（{entry}），装着的是 {found.version}（{found.root}）",
+                     f"改用 {found.root / 'bin' / 'module-crew'}；已开的会话重开，或按钩子注入的命令入口换")
+    return Check("module-crew", "ok", f"module-crew {mine or '?'}（{entry}）")
+
+
 def read_interface(root: Path, major: int) -> dict | str:
     """interface.json of a dependency when its major version matches; a str is the reason it cannot be used."""
     path = root / "interface.json"
@@ -323,7 +347,31 @@ def summarize_store(project: Path) -> tuple[Check, dict | None]:
         return Check("store", "warning", f"状态库读不出：{exc}", "运行 module-crew store check 排查"), None
     return Check("store", "ok", str(db.path)), {"sessions": active, "open": open_counts,
                                                 "coordinator": coord, "sightings": seen, "tasks": task_rows,
-                                                "unqueued": unq, "mergeLock": _merge_lock(db)}
+                                                "unqueued": unq, "mergeLock": _merge_lock(db),
+                                                "permissionsStale": _stale_permissions(db)}
+
+
+def _stale_permissions(db: store.Store) -> list[str]:
+    """crew-probe decision 6: rule files module-crew wrote that do not let the running module-crew through."""
+    from module_crew import permissions
+    record = (store.get(db, "config", "main") or {}).get("permissions") or {}
+    if not record.get("applied"):
+        return []
+    stale = []
+    for name in sorted(record.get("files") or {}):
+        try:
+            allow = (json.loads(Path(name).read_text(encoding="utf-8")).get("permissions") or {}).get("allow") or []
+        except (OSError, ValueError, AttributeError):
+            continue
+        if not any(isinstance(e, str) and e.startswith("Bash(") and permissions.CREW_BIN in e for e in allow):
+            stale.append(name)
+    for name in record.get("codexFiles") or []:
+        try:
+            if permissions.CREW_BIN not in Path(name).read_text(encoding="utf-8"):
+                stale.append(name)
+        except OSError:
+            continue
+    return stale
 
 
 def _merge_lock(db: store.Store) -> dict | None:
@@ -393,6 +441,6 @@ def run(project: str | os.PathLike | None = None, timeout: float = MAP_TIMEOUT) 
     enabled = check_enabled(root)
     baseline = check_baseline(root) if git_check.state == "ok" else Check("baseline", "blocker", "git 不可用")
     store_check, summary = summarize_store(root)
-    checks = {c.id: c for c in (git_check, relay, sg, enabled, planning, baseline, store_check)}
+    checks = {c.id: c for c in (git_check, relay, sg, enabled, planning, baseline, store_check, check_self(root))}
     startable = map_doc.get("startable") if map_doc and planning.state == "ok" else None
     return Report(checks, summary, map_doc, startable)

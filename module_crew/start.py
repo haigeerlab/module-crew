@@ -361,6 +361,7 @@ def _first_step(module: str, cadence: str) -> str:
 def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: str, coord: str, approval: int,
                    host: str = "claude-desktop") -> str:
     deps = "\n".join(f"spec/{d}.md" for d in info.get("dependsOn") or []) or "无"
+    from module_crew.hooks import ENTRY_LINE
     extra = codex_lines(relay) if host == "codex-desktop" else []
     return "\n".join([
         f"你是 module-crew 的模块会话，负责模块 {module}：{info.get('responsibility', '')}。",
@@ -370,6 +371,7 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
         f"邮箱名：{relay}，用 agent-relay bridge_register 注册，wake: \"auto\"",
         f"注册后先运行 module-crew bind {relay}：登记本会话的身份，module-crew 的钩子只认登记过的会话",
         f"模块协调：{coord}（你只和它说话）",
+        *([] if host == "codex-desktop" else [ENTRY_LINE]),   # Codex has no hooks: codex_lines gives the path
         f"开会话依据：用户批准事项 C{approval}",
         "",
         _first_step(module, cfg.get("reviewCadence", "separate")),

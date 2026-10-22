@@ -113,6 +113,10 @@ def _status(as_json: bool) -> int:
         state = ("已关闭" if coord["state"] != "active" else "已绑定会话" if coord["bound"]
                  else "未绑定会话（该会话运行 module-crew bind）")
         print(f"  {coord['name']}：在 {coord['home'] or '（集成分支没有被检出）'}，分支 {coord['branch'] or '?'}；{state}")
+    stale = (report.store or {}).get("permissionsStale")
+    if stale:
+        print(f"  ⚠️ 权限规则只放行别的 module-crew 路径，当前入口会弹权限框：{'、'.join(stale)}；"
+              "经用户原话再跑 module-crew permissions apply 补放行当前入口")
     lock = (report.store or {}).get("mergeLock")
     if lock:
         took = f"已跑 {lock['minutes']} 分钟" if lock["minutes"] is not None else "开始时间读不出"
