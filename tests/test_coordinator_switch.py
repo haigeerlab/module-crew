@@ -202,8 +202,12 @@ class SightingTest(ReviewCase):
         self.assertIn("本目录属于模块 b", text)
         self.assertIsNone(store.get(self.db, "sighting", "sid-new"))
 
-    def test_registered_session_elsewhere_hears_nothing(self):
-        self.assertEqual(run("session-start", self.elsewhere, "sid-coord"), "")
+    def test_registered_session_elsewhere_hears_its_role(self):
+        # crew-session-handover: identity by session id; it is told its role and both directories, never the reminder
+        text = run("session-start", self.elsewhere, "sid-coord")
+        self.assertIn("本会话是模块协调（shop-coord）", text)
+        self.assertIn("登记的目录是", text)
+        self.assertNotIn("提醒：这个项目已有模块协调", text)
 
     def test_coordinator_told_once(self):
         run("session-start", self.elsewhere, "sid-s1")

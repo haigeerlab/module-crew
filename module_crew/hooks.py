@@ -164,8 +164,8 @@ def command_entry() -> str:
             "用这一行，不用记忆、开工背景或别的会话给的路径")
 
 
-def session_start(cwd: str | os.PathLike, source: str = "startup") -> str | None:
-    role = detect(cwd)
+def session_start(cwd: str | os.PathLike, source: str = "startup", role: Role | None = None) -> str | None:
+    role = role or detect(cwd)
     if role is None:
         return None
     if role.kind == "task":
@@ -198,8 +198,8 @@ def _task_stage(t: dict) -> str:
     return STATE_NAMES.get(t.get("state"), t.get("state") or "?")
 
 
-def prompt_line(cwd: str | os.PathLike) -> str | None:
-    role = detect(cwd)
+def prompt_line(cwd: str | os.PathLike, role: Role | None = None) -> str | None:
+    role = role or detect(cwd)
     if role is None:
         return None
     if role.kind == "task":
@@ -208,6 +208,29 @@ def prompt_line(cwd: str | os.PathLike) -> str | None:
         stage = _stage(store.records(role.db, "item"), role.module).split("，")[0].split("（")[0]
         return f"module-crew：你是 {role.module} 的模块会话（{role.name}），当前：{stage}"
     return f"module-crew：模块协调；{_count_text(_counts(role.db))}"
+
+
+def registration_of(db: store.Store, session_id: str | None) -> tuple[str, dict] | None:
+    """crew-session-handover decision 1: the registration in use that this conversation is bound to, wherever it runs."""
+    if not session_id:
+        return None
+    return next(((n, s) for n, s in sorted(store.records(db, "session").items())
+                 if s.get("status") == "active" and (s.get("hostSession") or {}).get("sessionId") == session_id), None)
+
+
+def role_of(db: store.Store, name: str, rec: dict) -> Role:
+    kind = rec.get("role")
+    return Role(kind, name, rec.get("module") if kind == "dev" else None, db, rec.get("task") if kind == "task" else None)
+
+
+def elsewhere_line(db: store.Store, name: str, rec: dict, cwd: str | os.PathLike) -> str | None:
+    """One line when a registered conversation runs outside its registered directory (desktop sessions bring their own)."""
+    home = _home_of(db, rec)
+    here = os.path.realpath(cwd)
+    if home is None or _inside(here, str(home)):
+        return None
+    return (f"module-crew：本会话在 {here}，{name} 登记的目录是 {home}：module-crew 命令在本仓库任一目录都能运行，"
+            "改文件的事到登记目录做。")
 
 
 def matches(role: Role, session_id: str | None) -> bool:
@@ -373,6 +396,16 @@ def _text_for(event: str, payload: dict, cwd: str) -> str | None:
     source = payload.get("source") or "startup"
     if event == "session-start" and rebind(db, sid, cwd, source):    # also closes a handover whose old id came back
         source = "clear"                    # say 「刚清空过」 whichever path matched
+    reg = registration_of(db, sid)
+    if reg is not None:                     # identity by session id, not by directory (crew-session-handover)
+        role = role_of(db, *reg)
+        if event == "session-start":
+            return "\n".join(x for x in (session_start(cwd, source, role), elsewhere_line(db, *reg, cwd)) if x)
+        line = prompt_line(cwd, role)
+        if role.kind == "coordinator":
+            told = tell_sightings(db)
+            line = "\n".join(x for x in (line, told) if x)
+        return line
     role = detect(cwd)
     if role is not None and matches(role, sid):
         if event == "session-start":
