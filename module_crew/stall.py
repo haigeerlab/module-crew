@@ -27,12 +27,18 @@ def _git(worktree: Path, *args: str) -> subprocess.CompletedProcess:
     return _SEEN[key]
 
 
+def _iso(text: str) -> str:
+    """git's %cI writes a UTC date as ...Z, which datetime.fromisoformat only accepts from Python 3.11 (0.10.1)."""
+    text = text.strip()
+    return text[:-1] + "+00:00" if text.endswith("Z") else text
+
+
 def _first_parents(path: Path) -> list[tuple[str, datetime]] | None:
     """HEAD's whole first-parent chain with commit dates, in walk order (one git process)."""
     out = _git(path, "log", "--first-parent", "--format=%H%x00%cI", "HEAD")
     if out.returncode != 0:
         return None
-    return [(c, datetime.fromisoformat(t)) for c, t in (line.split("\0") for line in out.stdout.splitlines())]
+    return [(c, datetime.fromisoformat(_iso(t))) for c, t in (line.split("\0") for line in out.stdout.splitlines())]
 
 
 def _blobs(path: Path, specs: list[str]) -> dict[str, str | None]:
@@ -89,14 +95,14 @@ def commit_facts(worktree: str | None, integration: str | None, since: str | Non
         hit = next((line.split("\0") for line in own.stdout.splitlines() if line.split("\0")[0] not in skip), None)
         if hit is None:
             return {"ahead": ahead, "last": None, "error": None}
-        return {"ahead": ahead, "last": {"commit": hit[0], "at": hit[1]}, "error": None}
+        return {"ahead": ahead, "last": {"commit": hit[0], "at": _iso(hit[1])}, "error": None}
     commit = _git(path, "rev-list", "-1", span).stdout.strip() or None
     if commit is None:
         return {"ahead": ahead, "last": None, "error": None}
     at = _git(path, "log", "-1", "--format=%cI", commit)
     if at.returncode != 0:
         return {**failed, "error": _error(at)}
-    return {"ahead": ahead, "last": {"commit": commit, "at": at.stdout.strip()}, "error": None}
+    return {"ahead": ahead, "last": {"commit": commit, "at": _iso(at.stdout)}, "error": None}
 
 
 def started_at(events: list[dict], name: str) -> str | None:
@@ -171,7 +177,7 @@ def _own_commits(path: Path, integration: str, since: str) -> list[tuple[str, da
     if own.returncode != 0 or theirs.returncode != 0:
         return None
     skip = set(theirs.stdout.split())
-    return [(c, datetime.fromisoformat(t)) for c, t in (line.split("\0") for line in own.stdout.splitlines())
+    return [(c, datetime.fromisoformat(_iso(t))) for c, t in (line.split("\0") for line in own.stdout.splitlines())
             if c not in skip]
 
 
