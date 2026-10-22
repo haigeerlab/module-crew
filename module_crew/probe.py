@@ -309,8 +309,13 @@ def summarize_store(project: Path) -> tuple[Check, dict | None]:
         coord, seen = _coordinator_summary(db, sessions)
     except store.StoreError as exc:
         return Check("store", "warning", f"状态库读不出：{exc}", "运行 module-crew store check 排查"), None
+    try:
+        from module_crew import tasks
+        task_rows = tasks.summary(db, project)
+    except store.StoreError as exc:
+        return Check("store", "warning", f"状态库读不出：{exc}", "运行 module-crew store check 排查"), None
     return Check("store", "ok", str(db.path)), {"sessions": active, "open": open_counts,
-                                                "coordinator": coord, "sightings": seen}
+                                                "coordinator": coord, "sightings": seen, "tasks": task_rows}
 
 
 SIGHTINGS_SHOWN = 10

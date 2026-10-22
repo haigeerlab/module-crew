@@ -127,6 +127,21 @@ def label(n: int | str) -> str:
     return refs.task(int(n))
 
 
+RECENT_SHOWN = 5
+
+
+def summary(db: store.Store, project: str | os.PathLike) -> dict:
+    """For status: tasks in progress (and ready), queued ones with what they clash with, the latest finished. Read-only."""
+    rows = sorted((int(k), t) for k, t in store.records(db, "task").items())
+    pick = lambda n, t, **extra: {"number": n, "label": label(n), "type": t["type"], "title": t["title"],
+                                  "state": t["state"], "assignee": t.get("assignee"), **extra}
+    active = [pick(n, t) for n, t in rows if t["state"] in HOLDING]
+    queued = [pick(n, t, clashes=overlaps(db, project, t["expectedFiles"], exclude=n)[0])
+              for n, t in rows if t["state"] == "queued"]
+    recent = [pick(n, t) for n, t in reversed(rows) if t["state"] in FINAL][:RECENT_SHOWN]
+    return {"active": active, "queued": queued, "recent": recent}
+
+
 TRANSITIONS = {
     "queued": {"ready", "cancelled"},
     "ready": {"queued", "dispatched", "cancelled"},

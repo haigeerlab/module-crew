@@ -117,6 +117,20 @@ def _status(as_json: bool) -> int:
     print(f"没登记的会话：{seen['count']} 个" + ("（最近 10 个）" if seen["count"] > len(seen["recent"]) else ""))
     for r in seen["recent"]:
         print(f"  {r['cwd']}（分支 {r['branch']}），首次 {r['firstSeen']}" + ("" if r["told"] else "，还没告诉用户"))
+    rows = (report.store or {}).get("tasks")
+    if rows is not None:
+        from module_crew import tasks as task_mod
+        print("任务")
+        if not (rows["active"] or rows["queued"] or rows["recent"]):
+            print("  没有（模块协调用 module-crew task add 记下要派的单个需求或 bug）")
+        for t in rows["active"] + rows["queued"]:
+            who = f"，派给 {t['assignee']}" if t.get("assignee") else ""
+            line = f"  {t['label']}（{'bug' if t['type'] == 'bug' else '需求'}）{t['title']}：{task_mod.STATE_NAMES[t['state']]}{who}"
+            if t.get("clashes"):
+                line += "；和 " + "、".join(t["clashes"]) + " 重叠"
+            print(line)
+        if rows["recent"]:
+            print("  最近完成：" + "、".join(f"{t['label']} {task_mod.STATE_NAMES[t['state']]}" for t in rows["recent"]))
     m = probe.summarize_map(report.map)
     print("模块进度")
     if m is None:

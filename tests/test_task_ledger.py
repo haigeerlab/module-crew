@@ -237,5 +237,28 @@ class CliTest(CoordCase):
         self.assertEqual(store.records(self.db, "task"), before)
 
 
+class StatusTest(CoordCase):
+    """Acceptance 7: the task section, read-only."""
+
+    def test_status_sections(self):
+        a = add(self.db, self.repo, expect=("src/",))
+        tasks.advance(self.db, a.number, "dispatched", assignee="shop-t1")
+        b = add(self.db, self.repo, kind="bug", expect=("src/x.py",))
+        c = add(self.db, self.repo, expect=("docs/c.md",))
+        tasks.cancel(self.db, c.number, "不做")
+        before = store.records(self.db, "task")
+        out = self.run_cli("status").stdout
+        self.assertIn("任务", out)
+        self.assertIn(f"T{a.number}（需求）导出按钮：已派出，派给 shop-t1", out)
+        self.assertIn(f"T{b.number}（bug）导出按钮：排队", out)
+        self.assertIn(f"T{a.number}：src/x.py", out)
+        self.assertIn(f"T{c.number}", out)
+        doc = json.loads(self.run_cli("status", "--json").stdout)["store"]["tasks"]
+        self.assertEqual([t["number"] for t in doc["active"]], [a.number])
+        self.assertEqual([t["number"] for t in doc["queued"]], [b.number])
+        self.assertEqual([t["number"] for t in doc["recent"]], [c.number])
+        self.assertEqual(store.records(self.db, "task"), before)
+
+
 if __name__ == "__main__":
     unittest.main()
