@@ -34,17 +34,17 @@
 
 ## 关键决策与取舍（请重点审）
 
-1. **（新）锁放在状态库目录里的单独文件 `merge.lock`**（JSON：`approval`、`unit`、`pid`、`host`、`startedAt`），用 `O_CREAT|O_EXCL` 创建，不进事件日志；
-   锁文件跟状态库同在 git 公共目录下，所有 worktree 看到的是同一把；合并本身照旧在合并批准事项里留记录，锁不另记事件。
-2. **失效判断只看进程号**：同一台机器（`host` 与本机相同）上该进程不在了，就认定失效；`host` 不同或读不出时不自动清，照实交用户（第一版只支持同一台 Mac）。
-   清失效锁时检查集成 checkout：干净就清掉并说明；有合并进行中（`MERGE_HEAD`）或不干净就不清，列出状态交用户决定。
+1. **（新，构建中修订）锁是状态库目录里的 `merge.lock`，用 flock 持锁**：`merge run` 在合并前清单通过后拿锁、整段持有，进程一结束（不论怎样结束）系统就放掉；
+   正在跑什么（批准事项号、单位、进程号、主机、开始时间）写在旁边的 `merge-running.json`，原子替换写入，放锁时改成「没在跑」，**不删除任何文件**（状态库不删除的约束）。
+   锁文件跟状态库同在 git 公共目录下，所有 worktree 看到的是同一把；合并本身照旧在合并批准事项里留记录。
+2. **失效判断**：记录写着「正在跑」而锁没人持有，就是合并进程不在了。清失效记录前检查集成 checkout：干净就清并说明；有 `MERGE_HEAD` 或不干净就不清，列出状态交用户决定。
 3. **被挡住的命令退出码 6**，输出「合并 C<号> 正在后台跑（已跑 N 分钟），等它结束再做」；不排队、不等待。
 4. **`merge run` 照旧一次只合一个**，结束时（成功、退回、冲突、出错）都放锁，用 `try/finally`。
 5. **skill 的做法**：`merge run` 用 Bash 的后台运行；输出很长时按输出文件读结果；跑的时候能做的事写清楚（回话、记账、只读命令），不能做的事（上面那几条写命令）也写清楚，被挡住就告诉对方「等合并结束」。
 
 ## 接口约定
 
-- 状态库目录新增文件 `merge.lock`（不进事件日志）。
+- 状态库目录新增文件 `merge.lock`（flock 用）与 `merge-running.json`（正在跑什么），都不进事件日志、不删除。
 - 退出码：被锁挡住的写命令 `6`。
 - `status --json` 的 `store` 多 `mergeLock`：`null` 或 `{"approval", "unit", "startedAt", "minutes", "stale"}`。
 
@@ -74,7 +74,7 @@ PYTHONPATH=tests python3 -m unittest test_background_checks
 
 - 锁：`merge run` 跑检查时（检查脚本睡几秒）另起进程跑第二个 `merge run`、`change land`、`review approve`、`merge tick`、`merge cleanup`、`unqueued --notify`，都退出码 6、什么都不写；只读命令照常。
 - 放锁：成功、检查失败退回、冲突、检查超时、异常各一次，结束后锁都不在。
-- 失效：写一个进程号不存在的锁 → 下一个写命令清锁并说明；集成 checkout 有 `MERGE_HEAD` 时不清、交用户；`host` 不同不清。
+- 失效：记录写着在跑、锁没人持有（持锁的子进程已结束）→ 下一个写命令清掉并说明；集成 checkout 不干净或有 `MERGE_HEAD` 时不清、交用户。
 - `status`：显示正在跑与分钟数；失效锁显示「失效」。
 - 回归：全量测试通过。
 
@@ -82,13 +82,13 @@ PYTHONPATH=tests python3 -m unittest test_background_checks
 
 - **始终**：锁只挡写集成 checkout 的命令；结束一定放锁。
 - **先问**：让检查交给关联会话跑；改默认超时。
-- **绝不**：后台合并跑着时改集成 checkout；自动清掉 `host` 不同或集成 checkout 不干净时的锁。
+- **绝不**：后台合并跑着时改集成 checkout；集成 checkout 不干净时自动清锁；删除锁文件。
 
 ## 验收标准
 
 1. `merge run` 运行期间锁文件存在且内容正确；结束（成功、退回、冲突、超时、异常）后锁不在。
 2. 锁被占时第二个 `merge run`、`change land`、`review approve`、`merge tick`、`merge cleanup`、`unqueued --notify`、`coordinator down` 退出码 6、状态库与集成分支不变；只读命令照常。
-3. 进程已不在的锁：集成 checkout 干净时下一个写命令清掉并说明；有 `MERGE_HEAD` 或不干净时不清、交用户；`host` 不同不清。
+3. 进程已不在的锁（记录写着在跑、锁没人持有）：集成 checkout 干净时下一个写命令清掉并说明；有 `MERGE_HEAD` 或不干净时不清、交用户。
 4. `status` 显示正在后台跑的合并与已跑分钟数、失效锁；`--json` 有 `mergeLock`。
 5. skill 写明后台运行 `merge run`、跑时能做与不能做的事。
 6. 全量测试通过。
