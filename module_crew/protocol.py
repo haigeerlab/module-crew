@@ -678,7 +678,8 @@ def render_resumed(items: list[int], note: str) -> str:
     return text
 
 
-def render_coordination_notice(kind: str, basis: str, todo: str, reason: str | None = None, round: int | None = None) -> str:
+def render_coordination_notice(kind: str, basis: str, todo: str, reason: str | None = None, round: int | None = None,
+                               task: str | None = None) -> str:
     """【协调通知】 from the coordinator; not an approval, never asks for a reply."""
     labels = {code: label for label, code in NOTICE_KINDS.items()}
     if kind not in labels:
@@ -696,8 +697,9 @@ def render_coordination_notice(kind: str, basis: str, todo: str, reason: str | N
         raise ValueError("「原因」只用于挂起类，且挂起类必填")
     head = ["【协调通知】", f"类型：{labels[kind]}"] + ([f"原因：{reason}"] if kind == "suspend" else [])
     text = "\n".join(head + [f"依据：{basis}"] + ([f"轮次：{round}"] if kind == "rework" else [])
-                     + [f"要你做什么：{todo}"]) + "\n"
-    expected = {"依据": basis, "要你做什么": todo, **({"原因": reason} if kind == "suspend" else {})}
+                     + [f"要你做什么：{todo}"] + ([f"任务：{task}"] if task else [])) + "\n"   # v2.5: 「任务」 last
+    expected = {"依据": basis, "要你做什么": todo, **({"原因": reason} if kind == "suspend" else {}),
+                **({"任务": task} if task else {})}
     return _self_check(text, "coordination-notice", expected)
 
 

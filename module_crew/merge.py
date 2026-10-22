@@ -53,12 +53,13 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
     approval = tx.allocate_number()
     replaced = []
     for key, old in sorted(tx.records("item").items(), key=lambda kv: int(kv[0])):
-        if old.get("kind") == "merge-approval" and old.get("state") == "open" and old.get("module") == rec["module"]:
+        if (old.get("kind") == "merge-approval" and old.get("state") == "open" and old.get("module") == rec["module"]
+                and old.get("task") == rec.get("task")):
             tx.put("item", key, dict(old, state="closed", closedReason="superseded", supersededBy=approval),
                    action="superseded", data={"by": approval})
             replaced.append(int(key))
     tx.put("item", str(approval), {
-        "state": "open", "kind": "merge-approval", "module": rec["module"], "review": review_no,
+        "state": "open", "kind": "merge-approval", "module": rec["module"], "task": rec.get("task"), "review": review_no,
         "commit": rec["commit"], "from": rec["from"], "relayId": rec["relayId"],
         "answer": {"original": original, "answeredAt": answered_at, **store.source_field()},
         "closedReason": None, "mergeCommit": None, "revertCommit": None, "resetTo": None, "reason": None,
@@ -143,7 +144,14 @@ def queue(project: str | os.PathLike) -> list[tuple[int, dict]]:
             if v.get("kind") == "merge-approval" and v.get("state") == "open"]
     order = _build_order(project) or []
     pos = {m: i for i, m in enumerate(order)}
-    return sorted(rows, key=lambda kv: (pos.get(kv[1]["module"], len(pos)), kv[0]))
+    kinds = {k: v.get("type") for k, v in store.records(db, "task").items()}
+
+    def key(kv):        # crew-light-task: bug tasks, then modules in Build order, then feature tasks
+        n, v = kv
+        if v.get("task"):
+            return (0 if kinds.get(str(v["task"])) == "bug" else 2, 0, n)
+        return (1, pos.get(v["module"], len(pos)), n)
+    return sorted(rows, key=key)
 
 
 @dataclass
@@ -220,8 +228,9 @@ def _failed_lines(reason: str) -> str:
     return f"（{'；'.join(hits)}）" if hits else ""
 
 
-def _notice(tx, db: store.Store, result: RunResult, to: str, kind: str, basis: str, todo: str) -> None:
-    text = protocol.render_coordination_notice(kind=kind, basis=basis, todo=todo)
+def _notice(tx, db: store.Store, result: RunResult, to: str, kind: str, basis: str, todo: str,
+            task: int | None = None) -> None:
+    text = protocol.render_coordination_notice(kind=kind, basis=basis, todo=todo, task=f"T{task}" if task else None)
     body = tx.allocate_number()
     meta = tx.write_body(body, text)
     result.sends.append({"to": to, "kind": kind, "body": body, "path": db.path / meta["path"]})
@@ -238,25 +247,27 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
     if not rows:
         return RunResult(3, ["合并队列是空的"])
     n, rec = rows[0]
-    m = rec["module"]
+    task = rec.get("task")
+    m = f"task/t{task}" if task else rec["module"]          # the branch to merge
+    unit = f"T{task}" if task else m
     session = store.get(db, "session", rec["from"]) or {}
     worktree = Path(session.get("worktree", "/nonexistent"))
     checkout = probe._checkout_of(project, cfg.get("integrationBranch", ""))
     problems = []
     head = _git(project, "rev-parse", f"refs/heads/{m}").stdout.strip()
     if head != rec["commit"]:
-        problems.append(f"模块分支 {m} 在最终验收交审之后又有提交（交审时 {rec['commit'][:7]}，现在 {head[:7]}），须重新交审")
+        problems.append(f"{'任务' if task else '模块'}分支 {m} 在最终验收交审之后又有提交（交审时 {rec['commit'][:7]}，现在 {head[:7]}），须重新交审")
     if not worktree.is_dir() or not _clean(worktree):
-        problems.append(f"模块 {m} 的 worktree 不干净或不存在：{worktree}")
+        problems.append(f"{unit} 的 worktree 不干净或不存在：{worktree}")
     if checkout is None or not _clean(checkout):
         problems.append("集成分支所在的 checkout 不干净或集成分支没有被检出")
     if problems:
-        return RunResult(3, [f"C{n}（{m}）没有合并："] + problems, approval=n)
+        return RunResult(3, [f"C{n}（{unit}）没有合并："] + problems, approval=n)
     if pending_write:
         _write_config(db, cfg)
 
     result = RunResult(0, approval=n)
-    merged = _git(checkout, "merge", "--no-ff", "--no-edit", "-m", commits.message(f"合并批准事项 C{n}：合入 {m}", commits.prefix_of(db)), m)
+    merged = _git(checkout, "merge", "--no-ff", "--no-edit", "-m", commits.message(f"合并批准事项 C{n}：合入 {unit}", commits.prefix_of(db)), m)
     reset_to = None
     if merged.returncode != 0:
         conflicted = _git(checkout, "diff", "--name-only", "--diff-filter=U").stdout.split()
@@ -285,7 +296,8 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
                 return RunResult(4, [f"C{n}（{m}）{first}；撤销合并失败：{undo.stderr.strip()[:200]}",
                                      "集成 checkout 状态未知，交用户决定"], approval=n, merge_commit=result.merge_commit)
 
-    tick_line, tick_hooks = (None, []) if reason else _tick(project, checkout, m, n, commits.prefix_of(db))[2:]
+    # a light task has no todo for spec-guard to tick (crew-light-task)
+    tick_line, tick_hooks = (None, []) if reason or task else _tick(project, checkout, m, n, commits.prefix_of(db))[2:]
     with db.transaction(actor="coordinator") as tx:
         current = tx.get("item", str(n))
         if reason:
@@ -296,26 +308,35 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
                                         mergeCommit=result.merge_commit, resetTo=reset_to, returnKind=kind),
                    action="returned")
             _notice(tx, db, result, rec["from"], "returned", basis=_return_basis(n, first, reset_to),
-                    todo=ENV_TODO if kind == "env" else MODULE_TODO)
-            result.lines.append(f"C{n}（{m}）已退回（{'检查环境出了问题，模块不用改代码' if kind == 'env' else '模块需要修改'}）：{first}")
+                    todo=ENV_TODO if kind == "env" else MODULE_TODO, task=task)
+            result.lines.append(f"C{n}（{unit}）已退回（{'检查环境出了问题，模块不用改代码' if kind == 'env' else '模块需要修改'}）：{first}")
         else:
             tx.put("item", str(n), dict(current, state="closed", closedReason="merged", mergeCommit=result.merge_commit),
                    action="merged")
             short = result.merge_commit[:7]
             _notice(tx, db, result, rec["from"], "wrap-up",
                     basis=f"最终验收的合并批准事项 C{n}；已合入集成分支 {short}",
-                    todo="停止在本 worktree 开发，等模块协调收回 worktree")
+                    todo="停止在本 worktree 开发，等模块协调收回 worktree", task=task)
             skip = no_sync(tx)
+            what = f"轻任务 {unit}" if task else f"模块 {m}"
             for name, s in sorted(tx.records("session").items()):
                 if (s.get("role") == "dev" and s.get("status") == "active" and name != rec["from"]
                         and s.get("module") not in skip):  # a suspended module is told on resume
                     _notice(tx, db, result, name, "sync-baseline",
-                            basis=f"模块 {m} 已合入集成分支 {short}（合并批准记录 C{n}）",
+                            basis=f"{what} 已合入集成分支 {short}（合并批准记录 C{n}）",
                             todo=f"{sync.STEP}，跑完整检查后继续")
-            result.lines.append(f"C{n}（{m}）已合入集成分支 {short}")
+                elif (s.get("role") == "task" and s.get("status") == "active" and name != rec["from"]
+                        and (tx.get("task", str(s.get("task"))) or {}).get("state") == "working"):
+                    _notice(tx, db, result, name, "sync-baseline",
+                            basis=f"{what} 已合入集成分支 {short}（合并批准记录 C{n}）",
+                            todo=f"{sync.STEP}，跑完整检查后继续", task=s.get("task"))
+            result.lines.append(f"C{n}（{unit}）已合入集成分支 {short}")
             if tick_line:
                 result.lines.append(tick_line)
             result.lines += tick_hooks
+    if task:
+        from module_crew import tasks
+        tasks.advance(db, task, "working" if reason else "merged")
     return result
 
 
@@ -437,6 +458,9 @@ def cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
     db = store.open_store(project)
     if not original or not original.strip():
         return Simple(3, ["用户原话不能为空：收回 worktree 要用户明确同意"])
+    import re
+    if re.match(r"^[Tt][1-9]\d*$", module):
+        return _cleanup_task(project, db, int(module[1:]), original)
     merged = [v for v in store.records(db, "item").values()
               if v.get("kind") == "merge-approval" and v.get("module") == module and v.get("closedReason") == "merged"]
     if not merged:
@@ -463,6 +487,28 @@ def cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
         lines.append("这个模块还开着的等待记录：" + "、".join(f"W{n}" for n in tickets)
                      + "（它已不能再发已结项（契约标签【已恢复】）：所等的事已办好就 ticket close --reason happened，用户说关就 --reason user）")
     return Simple(0, lines)
+
+
+def _cleanup_task(project: Path, db: store.Store, n: int, original: str) -> Simple:
+    """crew-light-task: remove a finished light task's worktree (branch kept) and retire its session."""
+    t = store.get(db, "task", str(n))
+    if t is None or t.get("state") not in ("merged", "cancelled", "promoted"):
+        return Simple(3, [f"T{n} 还没有合入、取消或升格，不能收回"])
+    name, session = next(((k, v) for k, v in store.records(db, "session").items()
+                          if v.get("role") == "task" and v.get("task") == n and v.get("status") == "active"), (None, None))
+    if session is None:
+        return Simple(3, [f"T{n} 没有在用的会话登记"])
+    worktree = Path(session["worktree"])
+    if not worktree.is_dir() or not _clean(worktree):
+        return Simple(3, [f"{worktree} 不存在或不干净，没有收回"])
+    removed = _git(project, "worktree", "remove", str(worktree))
+    if removed.returncode != 0:
+        return Simple(3, [f"git worktree remove 失败：{removed.stderr.strip()[:200]}"])
+    with db.transaction(actor="coordinator") as tx:
+        tx.put("session", name, dict(session, status="retired"), action="retired",
+               data={"original": original, "reason": t["state"]})
+    return Simple(0, [f"已收回 {worktree}（分支 {t.get('branch')} 保留），会话 {name} 改为退役",
+                      f"待退役的邮箱名：{name}（列给用户确认；用户同意后由用户在 Claude Code 里用 /agent-relay:collaboration 退役）"])
 
 
 @dataclass

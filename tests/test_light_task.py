@@ -7,7 +7,7 @@ import os
 import unittest
 from pathlib import Path
 
-from helpers import ReviewCase, git, make_worktree
+from helpers import MergeCase, ReviewCase, git, make_worktree
 
 from module_crew import hooks, start, store, tasks
 
@@ -207,6 +207,80 @@ class HandBackTest(TaskWorkCase):
         texts = [t for _, _, t in review.for_hub(self.repo) if f"任务：T{n}" in t]
         self.assertEqual(len(texts), 1)
         self.assertNotIn("模块：", texts[0])
+
+
+class TaskMergeTest(MergeCase):
+    """Acceptance 5, 8."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+        self.check = self.check_script(fail_if="BROKEN")
+
+    start_task = TaskWorkCase.start_task
+
+    def approve_task(self, kind="feature", write=("docs/t.md",), rid=600):
+        from module_crew import merge, review
+        n, d = self.start_task(kind=kind, expect=write, write=write)
+        out = review.add(self.db, hand_back(n, d.worktree, list(write)), d.relay, rid)
+        assert out.code == 0, out.lines
+        return n, d, merge.approve(self.db, out.number, f"T{n} 验收通过").approval
+
+    def test_queue_order(self):
+        from module_crew import merge
+        feat, _, a_feat = self.approve_task(write=("docs/f.md",), rid=601)
+        mod = self.approve_final("c", 602)
+        mod_b = self.approve_final("b", 603)
+        bug, _, a_bug = self.approve_task(kind="bug", write=("docs/g.md",), rid=604)
+        order = [n for n, _ in merge.queue(self.repo)]
+        self.assertEqual(order, [a_bug, mod_b, mod, a_feat])        # bug, modules in Build order, feature
+
+    def test_task_merge(self):
+        from module_crew import merge
+        n, d, approval = self.approve_task()
+        res = merge.run(self.repo, check_command=self.check)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(store.get(self.db, "task", str(n))["state"], "merged")
+        self.assertTrue((self.repo / "docs" / "t.md").exists())
+        kinds = {(x["to"], x["kind"]) for x in res.sends}
+        self.assertIn((d.relay, "wrap-up"), kinds)
+        self.assertIn(("shop-b", "sync-baseline"), kinds)
+        self.assertIn(("shop-c", "sync-baseline"), kinds)
+        wrap = next(x for x in res.sends if x["to"] == d.relay)
+        self.assertTrue(Path(wrap["path"]).read_text(encoding="utf-8").rstrip().endswith(f"任务：T{n}"))
+        self.assertFalse(any("最终验收那一格" in l or "gateTick" in l for l in res.lines), res.lines)
+        cleaned = merge.cleanup(self.repo, f"T{n}", "收回")
+        self.assertEqual(cleaned.code, 0, cleaned.lines)
+        self.assertFalse(Path(d.worktree).exists())
+        self.assertEqual(git(self.repo, "rev-parse", "--verify", f"task/t{n}").strip() != "", True)
+        self.assertEqual(store.get(self.db, "session", d.relay)["status"], "retired")
+
+    def test_task_returned_on_failed_check(self):
+        from module_crew import merge, protocol
+        n, d, approval = self.approve_task(write=("BROKEN",))
+        before = git(self.repo, "rev-parse", "main")
+        res = merge.run(self.repo, check_command=self.check)
+        self.assertEqual(res.code, 5, res.lines)
+        self.assertEqual(git(self.repo, "rev-parse", "main"), before)
+        self.assertEqual(store.get(self.db, "task", str(n))["state"], "working")
+        notice = Path(next(x for x in res.sends if x["to"] == d.relay)["path"]).read_text(encoding="utf-8")
+        msg = protocol.parse(notice)
+        self.assertTrue(msg.ok, msg.problems)
+        self.assertEqual(msg.contract()["task"], f"T{n}")
+
+    def test_working_task_gets_sync_notice(self):
+        from module_crew import merge
+        other, od = self.start_task(expect=("docs/o.md",), write=("docs/o.md",))
+        self.approve_final("b", 610)
+        res = merge.run(self.repo, check_command=self.check)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertIn((od.relay, "sync-baseline"), {(x["to"], x["kind"]) for x in res.sends})
+
+    def test_cleanup_needs_merged(self):
+        from module_crew import merge
+        n, d = self.start_task()
+        self.assertEqual(merge.cleanup(self.repo, f"T{n}", "收回").code, 3)
 
 
 if __name__ == "__main__":

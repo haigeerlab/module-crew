@@ -263,11 +263,17 @@ def dispatch(db: store.Store, project: str | os.PathLike, number: int) -> Dispat
     if added.returncode != 0:
         raise TaskRefused(f"建 worktree 失败：{added.stderr.strip()[:200]}")
     text = render_kickoff(number, t, worktree, branch, cfg, relay, coord[0])
-    with db.transaction(actor=coord[0]) as tx:
-        tx.put("session", relay, {"role": "task", "host": "claude-desktop", "status": "active", "task": number,
-                                  "worktree": str(worktree)}, action="registered")
-        body = tx.allocate_number()
-        tx.write_body(body, text)
+    try:
+        with db.transaction(actor=coord[0]) as tx:
+            tx.put("session", relay, {"role": "task", "host": "claude-desktop", "status": "active", "task": number,
+                                      "worktree": str(worktree)}, action="registered")
+            body = tx.allocate_number()
+            tx.write_body(body, text)
+    except store.StoreError:            # nothing recorded: take the fresh worktree and branch back
+        subprocess.run(["git", "-C", str(project), "worktree", "remove", "--force", str(worktree)],
+                       capture_output=True, timeout=60)
+        subprocess.run(["git", "-C", str(project), "branch", "-D", branch], capture_output=True, timeout=60)
+        raise
     advance(db, number, "dispatched", assignee=relay, worktree=str(worktree), branch=branch)
     result = Dispatched(number, str(worktree), branch, relay, body, str(db.path / "bodies" / f"{body}.txt"))
     from module_crew import permissions

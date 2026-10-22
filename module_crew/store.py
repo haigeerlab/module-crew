@@ -349,7 +349,7 @@ def _validate_session(key: str, rec: dict, others: dict) -> None:
             continue
         if role == "coordinator":
             raise bad(f"已有在用的模块协调 {other_key}")
-        if other.get("module") == rec.get("module"):
+        if role == "dev" and other.get("module") == rec.get("module"):
             raise bad(f"模块 {rec.get('module')} 已有在用的模块会话 {other_key}")
 
 
