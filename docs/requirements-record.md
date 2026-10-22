@@ -231,3 +231,8 @@ Codex 模块会话（先过 B7 清单）；停止钩子与巡视；审查者外�
 **第 13 项（sg-coord 报的漏检，spec-guard 负责人查了根因；用户 2026-10-22 选 A，并进 crew-review-display）**
 13. `review batch` 的「并行边界重叠」用的是 spec-guard 进度表的 `startable.conflicts`，它只读已落到集成分支上的 Spec；交审中的 Spec 还在模块分支，独占重叠查不出却写「无」（C139、C140 实例）。
     做法：请 spec-guard 提供「给几份 Spec 文件，返回独占重叠」的接口，module-crew 用交审提交里的 Spec 原文去比（也与集成分支上已开的模块比）；先改掉误报——交审中的 Spec 还没落到集成分支时写「未比对」而不是「无」。
+
+**第 6 项的补充（契约负责人 2026-10-22；负责人已换成会话 local_e1431df1，旧会话 local_a9d06942 归档）**
+- 本机 decision-inbox 已是 0.0.37（契约 2.6），用户原话「升级本机 decision-inbox 到 0.0.37 并登记为 v2.6」；module-crew 0.11.1 的 `sources.PROTOCOLS` 只到 2.5，登记不了。
+- 第七版发出后：把决策收件箱 di-p0-hub 的登记改为 `--protocol 2.6`（写那个项目的状态库，动手前问用户），再把 module-crew 版本号与 `source list` 里 di-p0-hub 显示的版本回给契约负责人。
+- 登记为 v2.6 之前，不往决策收件箱发带 C 编号待定问题的卡。
