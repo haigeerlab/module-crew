@@ -50,8 +50,11 @@ def _write(db: store.Store, info: dict) -> None:
 
 
 def locked(db: store.Store) -> bool:
-    """Whether some process holds the merge lock right now."""
-    fd = os.open(db.path / LOCK, os.O_RDWR | os.O_CREAT, 0o600)
+    """Whether some process holds the merge lock right now (read only: never creates the lock file)."""
+    try:
+        fd = os.open(db.path / LOCK, os.O_RDWR)
+    except FileNotFoundError:
+        return False
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:

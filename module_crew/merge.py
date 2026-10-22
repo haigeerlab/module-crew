@@ -261,23 +261,24 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
     rows = queue(project)
     if not rows:
         return RunResult(3, ["合并队列是空的"])
-    reason, note = mergelock.guard(db, project)
-    if reason:
-        return RunResult(6, [reason])
-    n, rec = rows[0]
-    lock = mergelock.acquire(db, n, f"T{rec['task']}" if rec.get("task") else rec["module"])
-    if isinstance(lock, mergelock.Held):
-        return RunResult(6, [mergelock.describe(lock.info) + "，等它结束再做"])
+    if mergelock.read(db) is not None or mergelock.locked(db):
+        reason, note = mergelock.guard(db, project)
+        if reason:
+            return RunResult(6, [reason])
+    else:
+        note = None
+    holder: dict = {}
     try:
-        result = _run(project, check_command, replace)
+        result = _run(project, check_command, replace, holder)
     finally:
-        mergelock.release(db, lock)
+        if holder.get("lock"):
+            mergelock.release(db, holder["lock"])
     if note:
         result.lines.insert(0, note)
     return result
 
 
-def _run(project: Path, check_command: str | None, replace: bool) -> RunResult:
+def _run(project: Path, check_command: str | None, replace: bool, holder: dict) -> RunResult:
     db = store.open_store(project)
     cfg, reasons, pending_write = _check_config(db, check_command, replace)
     if reasons:
@@ -302,6 +303,11 @@ def _run(project: Path, check_command: str | None, replace: bool) -> RunResult:
         problems.append("集成分支所在的 checkout 不干净或集成分支没有被检出")
     if problems:
         return RunResult(3, [f"C{n}（{unit}）没有合并："] + problems, approval=n)
+    from module_crew import mergelock      # taken only once the checklist passed: a refusal writes nothing
+    lock = mergelock.acquire(db, n, unit)
+    if isinstance(lock, mergelock.Held):
+        return RunResult(6, [mergelock.describe(lock.info) + "，等它结束再做"], approval=n)
+    holder["lock"] = lock
     if pending_write:
         _write_config(db, cfg)
 
