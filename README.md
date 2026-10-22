@@ -3,12 +3,12 @@
 让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.11.2。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.11.3。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
-## 0.11.2 的变化（热修）
+## 0.11.3 的变化（热修）
 
-- Plan 交审带着修订过的 Spec 时，`review add` 提醒附上 Spec 的改动差异（`review show C<号> --spec-diff`），`review approve` 一次记下 Spec 与 Plan 两份批准；只差批准标记的 Spec 不再从模块分支拷过来，集成分支上已批准的那份保持原样。原来只写 Plan 标记会被 spec-guard 拒绝，重跑还会用旧标记盖掉补好的 Spec。
-- `review approve` 中途失败（写标记失败、提交被拒）时把集成 checkout 还原：原有的文件恢复成集成分支上的内容，这次新建的文件只取消暂存、不删，在输出里列出。
+- `merge push` 的推送用完整检查的超时（`checkTimeout`，默认 30 分钟），项目的 pre-push 钩子跑检查不再被 30 秒掐断；超时或推送失败一律退出码 4、给出可读原因，不再抛 Python 栈。
+- `merge push-plan` 的 PR 目标：`--pr-base` → 配置 `prBase` → 远端有跟踪分支的集成分支 → 远端默认分支；提交只列相对目标多出的那些；都取不到时退出码 3，请用户用 `--pr-base <分支>` 指定（`push` 同样可带）。
 - 升级后：在用的 module-crew 会话在原会话里 `/clear` 或退出应用再打开（不要新开会话）。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。

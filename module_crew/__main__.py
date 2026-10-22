@@ -620,7 +620,7 @@ def _merge(args) -> int:
                 print("合并队列是空的")
         return 0 if rows else 3
     if args.action == "push-plan":
-        plan = merge.push_plan(".")
+        plan = merge.push_plan(".", args.pr_base)
         if args.json:
             print(json.dumps({"code": plan.code, "remote": plan.remote, "branch": plan.branch, "base": plan.base,
                               "commits": plan.commits, "title": plan.title, "body": plan.body}, ensure_ascii=False, indent=2))
@@ -705,7 +705,7 @@ def _merge(args) -> int:
     if args.action == "cleanup":
         res = merge.cleanup(".", args.module, original)
     else:
-        res = merge.push(".", original)
+        res = merge.push(".", original, args.pr_base)
     for line in res.lines:
         print(line)
     return res.code
@@ -880,6 +880,7 @@ def _main(argv: list[str] | None = None) -> int:
     mgs = mg.add_subparsers(dest="action", required=True)
     for name in ("queue", "push-plan"):
         mgs.add_parser(name).add_argument("--json", action="store_true")
+    mgs.choices["push-plan"].add_argument("--pr-base", help="PR 开向哪个远端分支（只用于这一次）")
     mr = mgs.add_parser("run")
     mr.add_argument("--check-command")
     mr.add_argument("--replace-check", action="store_true")
@@ -896,6 +897,8 @@ def _main(argv: list[str] | None = None) -> int:
         g = c.add_mutually_exclusive_group(required=True)
         g.add_argument("--original")
         g.add_argument("--original-file")
+        if name == "push":
+            c.add_argument("--pr-base", help="PR 开向哪个远端分支（只用于这一次）")
     hk = sub.add_parser("hook", help="插件钩子入口（只读，永远退出码 0）")
     hk.add_argument("event", choices=("session-start", "prompt", "session-end"))
     so = sub.add_parser("source", help="可信批准来源白名单（决策收件箱、指定审查者）")

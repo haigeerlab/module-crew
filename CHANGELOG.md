@@ -2,6 +2,12 @@
 
 各版本的变化，最新的在前。README 只写最新一版。
 
+## 0.11.2 的变化（热修）
+
+- Plan 交审带着修订过的 Spec 时，`review add` 提醒附上 Spec 的改动差异（`review show C<号> --spec-diff`），`review approve` 一次记下 Spec 与 Plan 两份批准；只差批准标记的 Spec 不再从模块分支拷过来，集成分支上已批准的那份保持原样。原来只写 Plan 标记会被 spec-guard 拒绝，重跑还会用旧标记盖掉补好的 Spec。
+- `review approve` 中途失败（写标记失败、提交被拒）时把集成 checkout 还原：原有的文件恢复成集成分支上的内容，这次新建的文件只取消暂存、不删，在输出里列出。
+- 升级后：在用的 module-crew 会话在原会话里 `/clear` 或退出应用再打开（不要新开会话）。
+
 ## 0.11.1 的变化（热修）
 
 - 构建中修订过的 Spec，合入时替用户记下批准：`review add` 比对模块分支与集成分支上的 Spec，不一样就提醒附上差异（`review show C<号> --spec-diff`）；`merge approve` 记下一并批准；`merge run` 合入通过检查后经 spec-guard 的 reviewMark 在集成分支记下批准，单独一个提交，记不上只报告。原来要人手动补 review-mark。

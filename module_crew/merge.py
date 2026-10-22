@@ -620,7 +620,26 @@ def _next_number(db: store.Store) -> int:
                 if e["type"].split(".")[0] in store.NUMBERED and e["key"].isdigit()), default=0) + 1
 
 
-def push_plan(project: str | os.PathLike) -> PushPlan:
+def push_timeout(cfg: dict) -> int:
+    """Decision 11 (0.11.3): a project's pre-push hook may run the full check, so the push gets the check's timeout."""
+    return int(cfg.get("checkTimeout") or DEFAULT_CHECK_TIMEOUT)
+
+
+def _pr_base(project: Path, cfg: dict, remote: str, integration: str, given: str | None) -> tuple[str | None, str]:
+    """Decision 1 (0.11.3): (PR base, where it came from); None when nothing names one."""
+    if given:
+        return given, "命令参数 --pr-base"
+    if cfg.get("prBase"):
+        return cfg["prBase"], "配置 prBase"
+    if _git(project, "rev-parse", "--verify", "--quiet", f"refs/remotes/{remote}/{integration}").returncode == 0:
+        return integration, "集成分支（远端有它的跟踪分支）"
+    head = _git(project, "symbolic-ref", "--quiet", "--short", f"refs/remotes/{remote}/HEAD").stdout.strip()
+    if head.startswith(f"{remote}/"):
+        return head.split("/", 1)[1], "远端默认分支"
+    return None, ""
+
+
+def push_plan(project: str | os.PathLike, pr_base: str | None = None) -> PushPlan:
     """Read-only preview of the push: remote, new branch, PR base, commits and PR text."""
     project = Path(project)
     db = store.open_store(project)
@@ -631,12 +650,15 @@ def push_plan(project: str | os.PathLike) -> PushPlan:
         return PushPlan(3, ["还没有运行配置（先 start prepare）"])
     if _git(project, "remote", "get-url", remote).returncode != 0:
         return PushPlan(3, [f"没有远端 {remote}：推送与开 PR 交用户自己处理"])
-    base = cfg.get("prBase") or integration
+    base, why = _pr_base(project, cfg, remote, integration, pr_base)
+    if base is None:
+        return PushPlan(3, [f"集成分支 {integration} 在远端 {remote} 没有跟踪分支，也读不出远端的默认分支：PR 开向哪里请用户指定，"
+                            f"再带 --pr-base <分支> 重跑（先 git fetch {remote} 也可能取得到）"], remote=remote)
     tracking = f"refs/remotes/{remote}/{base}"
-    if _git(project, "rev-parse", "--verify", "--quiet", tracking).returncode == 0:
-        span, note = [integration, f"^{tracking}"], None
-    else:
-        span, note = [integration], f"本地没有 {remote}/{base} 的跟踪分支，列出的是集成分支的全部提交"
+    if _git(project, "rev-parse", "--verify", "--quiet", tracking).returncode != 0:
+        return PushPlan(3, [f"远端 {remote} 没有 {base} 的跟踪分支（PR 目标取自{why}）：先 git fetch {remote}，或带 --pr-base 指定"],
+                        remote=remote, base=base)
+    span, note = [integration, f"^{tracking}"], f"PR 目标取自{why}"
     commits = _git(project, "log", "--format=%h %s", *span).stdout.strip().splitlines()
     if not commits:
         return PushPlan(3, ["没有要推送的提交"], remote=remote, base=base)
@@ -672,12 +694,12 @@ def _gh() -> str | None:
     return shutil.which("gh")
 
 
-def push(project: str | os.PathLike, original: str) -> PushResult:
+def push(project: str | os.PathLike, original: str, pr_base: str | None = None) -> PushResult:
     """With the user's explicit words: push the integration branch to a new remote branch and open one PR."""
     project = Path(project)
     if not original or not original.strip():
         return PushResult(3, ["用户原话不能为空：推送要用户明确授权"])
-    plan = push_plan(project)
+    plan = push_plan(project, pr_base)
     if plan.code != 0:
         return PushResult(plan.code, plan.lines)
     db = store.open_store(project)
@@ -685,12 +707,21 @@ def push(project: str | os.PathLike, original: str) -> PushResult:
     from module_crew import prepush
     # crew-host-permissions: a one-time pass for the pre-push guard, spent whatever happens
     prepush.write_token(db.path, f"refs/heads/{plan.branch}")
+    limit = push_timeout(cfg)
     try:
-        pushed = _git(project, "push", plan.remote, f"{cfg['integrationBranch']}:refs/heads/{plan.branch}")
+        pushed = subprocess.run(["git", "-C", str(project), "push", plan.remote,
+                                 f"{cfg['integrationBranch']}:refs/heads/{plan.branch}"],
+                                capture_output=True, text=True, timeout=limit)
+    except subprocess.TimeoutExpired:
+        return PushResult(4, [f"推送超时（{limit} 秒）：多半是项目的 pre-push 钩子在跑检查，git 已被停下；远端可能没有 {plan.branch}，"
+                              f"看钩子的输出后再决定重推，或把 checkTimeout 调大"])
+    except OSError as exc:
+        return PushResult(4, [f"推送没有跑起来：{exc}"])
     finally:
         prepush.spend_token(db.path)
     if pushed.returncode != 0:
-        return PushResult(4, [f"推送失败：{pushed.stderr.strip()[:300]}"])
+        why = (pushed.stderr.strip() or pushed.stdout.strip() or f"git 退出码 {pushed.returncode}")[:300]
+        return PushResult(4, [f"推送失败：{why}"])
     result = PushResult(0, [f"已推送到 {plan.remote}/{plan.branch}"], branch=plan.branch)
     # the body has to be on disk before gh reads it, so the push record is committed first
     with db.transaction(actor="coordinator") as tx:
