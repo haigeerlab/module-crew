@@ -175,6 +175,7 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
    逐个交给用户确认，用户同意后由用户在 Claude Code 里用 `/agent-relay:collaboration` 退役（Codex 用 collaboration-ops skill，或用户自己运行 agent-relay 的退役脚本）；
    不要自己去找或猜 agent-relay 脚本的路径。输出里列出的还开着的等待记录，按下面「等待记录」一节处理。
 5. 一批合完：`module-crew merge push-plan` 把远端、新分支、提交与 PR 正文给用户看；用户明确授权后 `module-crew merge push --original-file <原话文件>`。
+   push-plan 会写明 PR 开向哪个分支、是从哪里取的；集成分支只在本地、又读不出远端默认分支时它会停下，请用户说 PR 开向哪里，两条命令都带 `--pr-base <分支>`。项目的 pre-push 钩子会跑检查时推送要等较久（超时同完整检查），`merge push` 用后台方式运行；退出码 4 就把原因照实告诉用户。
    推送去的是新分支 `crew/batch-<号>`，PR 由用户在远端合并；不开自动合并，不推集成分支本身。
 6. **合并前先复述**：每次 `merge run` 前，先把队首要合并的模块向用户复述一句（有决策收件箱时写进状态即可，不另问）。
    用户答错了、要收回还没合并的批准：用户同意后 `module-crew merge revoke <C号> --original-file <原话文件>`，把输出的撤销批准通知发给模块；已合并的撤不回，告诉用户只能另走回退。
