@@ -622,7 +622,8 @@ def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict]
                   if s.get("role") == "coordinator" and s.get("status") == "active"), "模块协调")
     refs = "、".join(f"C{i['number']}" for i in part)
     nodes = "、".join(NODE_NAME.get(i["node"], i["node"]) for i in part)
-    numbered = [(f"D{k}", (i["number"], j), d) for k, (i, j, d) in
+    style = decision_style(db)
+    numbered = [(decision_id(style, k, i["number"], j), (i["number"], j), d) for k, (i, j, d) in
                 enumerate(((i, j, d) for i in part for j, d in enumerate(i["decisions"])), 1)]
     points, artifacts, subs, revs = [], [], [], []
     for i in part:
@@ -773,15 +774,27 @@ def _what_happens(part: list[dict]) -> list[str]:
     return out
 
 
-def numbered_decisions(b: dict) -> list[tuple[str, tuple[int, int], dict]]:
-    """(D号, (交审号, 序号), 问题) for the reviews that may go to the user, in the order the batch shows them."""
+def decision_style(db: store.Store) -> str:
+    """crew-contract-v26 decision 2: "c" (C<交审号>-<序号>, contract v2.6) unless a registered inbox speaks older."""
+    from module_crew import sources
+    hubs = [r for r in sources.listing(db) if r.get("kind") == "hub"]
+    return "d" if any(sources.hub_protocol(r) < "2.6" for r in hubs) else "c"
+
+
+def decision_id(style: str, k: int, n: int, j: int) -> str:
+    """The user-facing number of review n's j-th pending question (k-th in the batch)."""
+    return f"C{n}-{j + 1}" if style == "c" else f"D{k}"
+
+
+def numbered_decisions(b: dict, style: str = "d") -> list[tuple[str, tuple[int, int], dict]]:
+    """(待定编号, (交审号, 序号), 问题) for the reviews that may go to the user, in the order the batch shows them."""
     by_number = {i["number"]: i for i in b["items"] if i["ready"]}
     out, k = [], 0
     for g in b["groups"]:
         for n in g["items"]:
             for j, d in enumerate(by_number[n]["decisions"] if n in by_number else []):
                 k += 1
-                out.append((f"D{k}", (n, j), d))
+                out.append((decision_id(style, k, n, j), (n, j), d))
     return out
 
 
@@ -922,7 +935,8 @@ class ApproveResult:
     sends: list[dict] = field(default_factory=list)   # {"kind", "to", "replyTo", "body", "path"}
 
 
-_ANSWER_RE = re.compile(r"D\s*(\d+)\s*[：:]?\s*(?:选\s*)?([A-Za-z])(?![A-Za-z])")
+# 「D1 B」「D1：B」「D1 选 B」, and since contract v2.6 the same for 「C15-1 B」
+_ANSWER_RE = re.compile(r"(?<![A-Za-z0-9])(D\s*\d+|C\d+-\d+)\s*[：:]?\s*(?:选\s*)?([A-Za-z])(?![A-Za-z])")
 
 
 @dataclass
@@ -939,17 +953,18 @@ def split_decisions(project: str | os.PathLike, numbers: list[int], original: st
     b = batch(Path(project))
     order = [i for i in b["items"] if i["number"] in numbers]
     known = {i["number"] for i in order}
-    answers = {f"D{k}": v.upper() for k, v in _ANSWER_RE.findall(original or "")}
+    answers = {re.sub(r"\s+", "", k): v.upper() for k, v in _ANSWER_RE.findall(original or "")}
+    style = decision_style(store.open_store(Path(project)))
     out, k = Split(), 0
     out.approve = [n for n in numbers if n not in known]          # not open reviews: let the caller refuse them
     for i in order:
         verdict = "approve"
-        for d in i["decisions"]:
+        for j, d in enumerate(i["decisions"]):
             k += 1
             letters = [o["letter"] for o in d["options"]]
-            got = answers.get(f"D{k}")
+            got = answers.get(f"C{i['number']}-{j + 1}") or answers.get(f"D{k}")     # either numbering it was shown in
             if got not in letters:
-                out.missing += question_lines([(f"D{k}", None, d)])
+                out.missing += question_lines([(decision_id(style, k, i["number"], j), None, d)])
                 continue
             if d["kind"] in ("disagree", "over-limit") and got == "B":
                 verdict = "back"
@@ -961,7 +976,8 @@ def split_decisions(project: str | os.PathLike, numbers: list[int], original: st
 
 def chase_lines(split: Split) -> list[str]:
     """What to ask again when a D is unanswered: never fill in the reviewer's lean."""
-    missing = sorted({line.split("：", 1)[0] for line in split.missing if line[:1] == "D"}, key=lambda x: int(x[1:]))
+    ids = [line.split("：", 1)[0] for line in split.missing if line[:1] in "DC" and not line.startswith(" ")]
+    missing = list(dict.fromkeys(ids))
     return ([f"待决问题没答全：{'、'.join(missing)}；没有执行。请把下面的问题再问用户一次（有决策收件箱时补发【等待用户】只问这几条），"
              "用户答全后连同原来的答复一起重跑："] + split.missing)
 

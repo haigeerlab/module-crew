@@ -328,12 +328,12 @@ class BatchTest(NearbyCase):
     def test_decisions_field(self):
         n = self.submit()
         review.note(self.db, n, "arch", conclusion("通过", DECISIONS))
-        [(text, msg)] = self.bodies()
-        self.assertEqual([d["id"] for d in msg.contract()["decisions"]], ["D1", "D2"])
+        [(text, msg)] = self.bodies()            # no inbox registered: C<交审号>-<序号> (crew-contract-v26)
+        self.assertEqual([d["id"] for d in msg.contract()["decisions"]], [f"C{n}-1", f"C{n}-2"])
         self.assertEqual(msg.contract()["decisions"][0]["lean"], "B")
-        self.assertEqual(msg.fields["你该回"].strip(), "A；D1 B；D2 A")
+        self.assertEqual(msg.fields["你该回"].strip(), f"A；C{n}-1 B；C{n}-2 A")
         rec = [v for v in store.records(self.db, "item").values() if v.get("kind") == "hub-batch"][-1]
-        self.assertEqual(rec["decisions"]["D2"]["review"], n)
+        self.assertEqual(rec["decisions"][f"C{n}-2"]["review"], n)
 
     def test_timeout_and_disagree_questions(self):
         n = self.submit()
@@ -384,7 +384,7 @@ class DecisionTest(NearbyCase):
         before = (store.events(self.db), git(self.repo, "rev-parse", "HEAD"))
         res = review.approve(self.repo, [n], "A；D1 B")
         self.assertEqual(res.code, 3, res.lines)
-        self.assertIn("D2", " ".join(res.lines))
+        self.assertIn(f"C{n}-2", " ".join(res.lines))            # asked again in the numbering in use (no inbox: C)
         self.assertIn("要不要支持空字符串", " ".join(res.lines))                     # the question to chase
         self.assertEqual((store.events(self.db), git(self.repo, "rev-parse", "HEAD")), before)
 
@@ -420,8 +420,8 @@ class DecisionTest(NearbyCase):
         n = self.submit()
         review.note(self.db, n, "arch", conclusion("通过", DECISIONS))
         out = self.run_cli("review", "batch", cwd=self.repo).stdout
-        self.assertIn("待你决定（没有决策收件箱时直接问你；批准时每个 D 都要答到）", out)
-        self.assertIn("D1：alpha 首字母要不要大写？", out)
+        self.assertIn("待你决定（没有决策收件箱时直接问你；批准时每个待定问题都要答到）", out)
+        self.assertIn(f"C{n}-1：alpha 首字母要不要大写？", out)
         self.assertIn("- 不做：后台", out)                                        # points in full
 
     def test_timeout_hold(self):
@@ -443,8 +443,8 @@ class MergeDecisionTest(MergeCase):
             tx.put("item", str(n), dict(rec, sentAt="2026-01-01T00:00:00+08:00"), action="aged")
         out = self.run_cli("merge", "approve", f"C{n}", "--original", "A", cwd=self.repo)
         self.assertEqual(out.returncode, 3, out.stdout)
-        self.assertIn("D1", out.stdout + out.stderr)
-        out = self.run_cli("merge", "approve", f"C{n}", "--original", "A；D1 A", cwd=self.repo)
+        self.assertIn(f"C{n}-1", out.stdout + out.stderr)
+        out = self.run_cli("merge", "approve", f"C{n}", "--original", f"A；C{n}-1 A", cwd=self.repo)
         self.assertEqual(out.returncode, 0, out.stderr)
 
 

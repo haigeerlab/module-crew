@@ -509,9 +509,9 @@ def _review(args) -> int:
                     print(f"  审查状态：{review.STATE_TEXT[i['reviewState']]}（不进提请批准，等它有结论）")
                 elif i["round"]:
                     print(f"  经 {i['round']} 轮审查修改：{'；'.join(x for x in i['reworked'] if x)}")
-        questions = review.question_lines(review.numbered_decisions(b))
+        questions = review.question_lines(review.numbered_decisions(b, review.decision_style(store.open_store())))
         if questions:
-            print("待你决定（没有决策收件箱时直接问你；批准时每个 D 都要答到）：")
+            print("待你决定（没有决策收件箱时直接问你；批准时每个待定问题都要答到）：")
             print("\n".join(questions))
         if not b["dependencyIssues"]:
             print("依赖：全部就绪")
