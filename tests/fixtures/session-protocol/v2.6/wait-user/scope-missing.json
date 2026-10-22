@@ -1,0 +1,57 @@
+{
+  "parse": {
+    "type": "wait-user",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "来自": "总协调",
+      "要你决定": "订单状态字段统一用哪套命名",
+      "要点": "- 前端和 API 现在各用一套\n- 统一后要改两边",
+      "适用会话": "前端、API",
+      "各线范围": "- 前端：只改类型定义和展示映射",
+      "选项与我的建议": "推荐 A：统一用 snake_case\n  选了会怎样：前端改映射，API 加兼容字段\nB：统一用 camelCase\n  选了会怎样：API 全量改名，前端不动",
+      "你该回": "31 A",
+      "是否完全停住": "是"
+    },
+    "options": [
+      {
+        "letter": "A",
+        "text": "统一用 snake_case",
+        "consequence": "前端改映射，API 加兼容字段"
+      },
+      {
+        "letter": "B",
+        "text": "统一用 camelCase",
+        "consequence": "API 全量改名，前端不动"
+      }
+    ],
+    "recommended": "A",
+    "suggestedReply": "31 A",
+    "fullyStopped": true,
+    "linesInScope": [
+      "前端",
+      "API"
+    ],
+    "scopes": {
+      "前端": "只改类型定义和展示映射"
+    },
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "scope-missing:API"
+    ],
+    "hints": []
+  }
+}

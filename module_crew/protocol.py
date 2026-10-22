@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-CONTRACT_VERSION = "2.4"
+CONTRACT_VERSION = "2.6"
 
 KIND_TAGS = {
     "等待用户": "wait-user",
@@ -77,7 +77,7 @@ _VERDICT_FORMS = (
     (re.compile(r"^通过[，,]\s*附建议(\d+)条"), "passed-with-advice"),
     (re.compile(r"^有须修改项(?:(\d+)条)?$"), "changes-required"),
 )
-_DECISION_HEAD_RE = re.compile(rf"^(D\d+)\s*{_COLON}\s*(.+)$")
+_DECISION_HEAD_RE = re.compile(rf"^(D\d+|C\d+-\d+)\s*{_COLON}\s*(.+)$")   # v2.6: C<交审号>-<序号> too
 _DECISION_OPTION_RE = re.compile(r"^([A-Z])\s*[.．、：:)）]\s*(.+)$")
 _DECISION_LEAN_RE = re.compile(rf"^倾向\s*{_COLON}\s*([A-Z])\s*(?:（(.*)）)?\s*$")
 _DISPUTE_RE = re.compile(rf"^(R-?\d+)\s*{_COLON}\s*(.+)$")
@@ -506,7 +506,8 @@ def parse(text: str) -> Message:
             problems.append("bad-file-line")
         if fields.get("要点", "").strip() and _brief_thin(fields["要点"]):
             hints.append("brief-thin")
-        extra = {"submission": {"module": fields.get("模块", "").strip() or None, "node": node, "files": files}}
+        extra = {"submission": {"module": fields.get("模块", "").strip() or None, "node": node, "files": files},
+                 "points": _points(fields.get("要点", ""), REVIEW_POINTS.get(node, ()))}   # v2.6: 要点 by node
         if "不同意" in fields:
             disputes, bad = [], False
             for line in _lines(fields["不同意"]):
@@ -706,8 +707,9 @@ def render_coordination_notice(kind: str, basis: str, todo: str, reason: str | N
 GO_TO_SESSION_REQUIRED = ("会话", "被拦的操作", "点哪个按钮", "为什么批不了")
 
 
-_SPEC_POINTS = ("目标", "做／不做", "要你确认的假设", "验收标准", "附带的小决定")
-_PLAN_POINTS = ("分几步", "会改哪些文件", "风险", "中途会停下来问你的地方")
+# v2.6: the upstream names (边界, 未决问题; Plan's 架构决定 and 未决问题) next to the old ones; each is kept as written.
+_SPEC_POINTS = ("目标", "做／不做", "边界", "要你确认的假设", "验收标准", "附带的小决定", "未决问题")
+_PLAN_POINTS = ("架构决定", "分几步", "会改哪些文件", "风险", "中途会停下来问你的地方", "未决问题")
 # v2.3: 「类型」 name → (code, the fixed 要点 items in order); 去会话操作 is v2.2's and has none.
 WAIT_KINDS = {
     "去会话操作": ("go-to-session", ()),
@@ -721,6 +723,8 @@ WAIT_KINDS = {
     "卡住选做法": ("stuck", ("出了什么事",)),
 }
 WAIT_KIND_NAME = {code: name for name, (code, _) in WAIT_KINDS.items()}
+REVIEW_POINTS = {code: names for code, names in ((c, n) for c, n in WAIT_KINDS.values())
+                 if code in ("spec", "plan", "interface", "final")}
 
 
 def _point_names(names: tuple[str, ...]) -> list[tuple[re.Pattern, str]]:

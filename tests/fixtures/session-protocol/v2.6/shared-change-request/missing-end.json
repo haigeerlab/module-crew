@@ -1,0 +1,43 @@
+{
+  "parse": {
+    "type": "shared-change-request",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "来自": "crew-store",
+      "文件": "tsconfig.base.json",
+      "改什么": "打开 strict",
+      "为什么": "状态库的类型要严格检查",
+      "是否完全停住": "是"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": true,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "missing-end"
+    ],
+    "hints": [],
+    "changeRequest": {
+      "files": [
+        "tsconfig.base.json"
+      ]
+    }
+  }
+}

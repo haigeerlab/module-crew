@@ -1,0 +1,40 @@
+{
+  "parse": {
+    "type": "coordination-notice",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "类型": "退回",
+      "依据": "最终验收批准事项 #31（crew-store）；合入时与集成基线冲突：src/x.ts，已中止合并",
+      "要你做什么": "同步集成基线并解决冲突，重新发最终验收【交审】"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "notice": {
+      "kind": "returned",
+      "refs": [
+        31
+      ]
+    }
+  }
+}

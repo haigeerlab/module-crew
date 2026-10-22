@@ -1,0 +1,48 @@
+{
+  "parse": {
+    "type": "review-request",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "模块": "crew-store",
+      "节点": "最终验收",
+      "文件": "docs/acceptance/crew-store.md sha256:9e0b44d21c7a5f30",
+      "要点": "- 交付了状态库与 32 个测试，全部通过\n- 没验证：断电时的恢复",
+      "改动统计": "7 files changed, 412 insertions(+), 3 deletions(-)"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "missing-field:越界检查"
+    ],
+    "hints": [],
+    "submission": {
+      "module": "crew-store",
+      "node": "final",
+      "files": [
+        {
+          "path": "docs/acceptance/crew-store.md",
+          "fingerprint": "sha256:9e0b44d21c7a5f30"
+        }
+      ]
+    }
+  }
+}
