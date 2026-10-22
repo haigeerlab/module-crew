@@ -72,7 +72,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
     worktree = Path(session["worktree"])
     reasons = _missing_files(sub["module"], sub["node"], sub["files"]) + _check_files(worktree, sub["files"])
     if sub["node"] == "final" and not _evidence(msg.fields.get("要点", "")):
-        reasons.append(f"最终验收的「要点」里缺「{EVIDENCE}」一节：按 Spec 的验收标准逐条写「<编号或原文>：<证据>」，没有证据写「无」")
+        reasons.append(f"最终验收的「要点」里缺「{EVIDENCE}」一节：按 Spec 的验收标准逐条写结果与证据「<编号或原文>：<结果与证据>」，没有证据写「无」")
     if not reasons and sub.get("disputes"):
         reasons = _disagree_reasons(db, worktree, sub)
     if reasons:
@@ -248,13 +248,14 @@ def _old_hub(db: store.Store) -> bool:
 
 
 REVIEW_TIMEOUT = timedelta(minutes=15)
-EVIDENCE = "验收标准与证据"
+EVIDENCE = "验收结果"                       # contract v2.6; the older heading is still taken
+EVIDENCE_NAMES = (EVIDENCE, "验收标准与证据")
 
 
 def _evidence(points: str) -> list[str]:
-    """R17: the 「验收标准与证据」 section of a final review's points — its heading and lines up to the next blank line."""
+    """R17: the 「验收结果」 (or older 「验收标准与证据」) section of a final review's points — heading and lines up to a blank."""
     lines = points.splitlines()
-    at = next((k for k, line in enumerate(lines) if line.strip().lstrip("#").strip().startswith(EVIDENCE)), None)
+    at = next((k for k, line in enumerate(lines) if line.strip().lstrip("#").strip().startswith(EVIDENCE_NAMES)), None)
     if at is None:
         return []
     out = [lines[at].strip()]

@@ -2,7 +2,7 @@
 
 import unittest
 
-from helpers import git
+from helpers import MergeCase, git
 from test_review_nearby import DECISIONS, NearbyCase, NoteTest, conclusion
 
 from module_crew import protocol, review, sources, store
@@ -103,6 +103,26 @@ class ReplyBlockTest(NumberingCase):
         for field in ("要你决定", "选项与我的建议", "你该回"):
             for k in internal:
                 self.assertNotRegex(text.get(field, ""), rf"C{k}(?![0-9-])")
+
+
+class ResultNameTest(MergeCase):
+    """Acceptance 6: 「验收结果」 (v2.6) and the old 「验收标准与证据」 are both taken; neither is refused."""
+
+    def final(self, heading):
+        text = self.finish("b").replace("验收标准与证据：", heading, 1)
+        return review.add(store.open_store(self.repo), text, "shop-b", 9100)
+
+    def test_new_name(self):
+        out = self.final("验收结果：")
+        self.assertEqual(out.code, 0, out.lines)
+
+    def test_old_name(self):
+        self.assertEqual(self.final("验收标准与证据：").code, 0)
+
+    def test_neither(self):
+        out = self.final("证据：")
+        self.assertEqual(out.code, 3)
+        self.assertIn("缺「验收结果」一节", " ".join(out.lines))
 
 
 if __name__ == "__main__":
