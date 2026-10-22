@@ -60,6 +60,7 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
             replaced.append(int(key))
     tx.put("item", str(approval), {
         "state": "open", "kind": "merge-approval", "module": rec["module"], "task": rec.get("task"), "review": review_no,
+        "specRevisionApproved": bool(rec.get("specRevised")),   # decision 10: one approval covers the revised Spec
         "commit": rec["commit"], "from": rec["from"], "relayId": rec["relayId"],
         "answer": {"original": original, "answeredAt": answered_at, **store.source_field()},
         "closedReason": None, "mergeCommit": None, "revertCommit": None, "resetTo": None, "reason": None,
@@ -348,7 +349,9 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
                 return RunResult(4, [f"C{n}（{m}）{first}；撤销合并失败：{undo.stderr.strip()[:200]}",
                                      "集成 checkout 状态未知，交用户决定"], approval=n, merge_commit=result.merge_commit)
 
-    # a light task has no todo for spec-guard to tick (crew-light-task)
+    # decision 10: record the revised Spec's approval before the tick; a light task has no Spec and no todo
+    mark_line = _mark_spec(project, checkout, m, n, result.merge_commit, commits.prefix_of(db)) \
+        if not reason and not task and rec.get("specRevisionApproved") else None
     tick_line, tick_hooks = (None, []) if reason or task else _tick(project, checkout, m, n, commits.prefix_of(db))[2:]
     with db.transaction(actor="coordinator") as tx:
         current = tx.get("item", str(n))
@@ -375,6 +378,8 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
                         basis=f"{what} 已合入集成分支 {short}（合并批准记录 C{n}）",
                         todo=f"{sync.STEP}，跑完整检查后继续", task=target_task)
             result.lines.append(f"C{n}（{unit}）已合入集成分支 {short}")
+            if mark_line:
+                result.lines.append(mark_line)
             if tick_line:
                 result.lines.append(tick_line)
             result.lines += tick_hooks
@@ -407,6 +412,43 @@ def renotice(db: store.Store, approval: int, kind: str) -> Reply:
             ENV_TODO if kind == "env" else MODULE_TODO))
         tx.put("item", str(approval), dict(rec, returnKind=kind), action="renoticed", data={"body": body, "returnKind": kind})
     return Reply(rec["from"], None, body, db.path / meta["path"])
+
+
+def _mark_spec(project: Path, checkout: Path, module: str, approval: int, merge_commit: str,
+               prefix: str = commits.PREFIX) -> str | None:
+    """crew-merge decision 10: have spec-guard mark the merged, revised Spec approved, in a commit of its own.
+    Failure is only reported: the merge stands and the marker line is put back as it was."""
+    rel = f"spec/{module}.md"
+    if _git(checkout, "diff", "--quiet", f"{merge_commit}^1", merge_commit, "--", rel).returncode == 0:
+        return None                     # the merge did not touch the Spec
+    missed = f"没有记上 {module} 修订后 Spec 的批准"
+    later = f"；用 /spec-guard:review-mark 在集成 checkout {checkout} 补记"
+    from module_crew import review
+    got = review._mark_command(project)
+    if isinstance(got, str):
+        return f"{missed}：{got}{later}"
+    root, doc = got
+    cmd = probe.safe_command(root, doc, "reviewMark", review._mark_fill(checkout, module, "spec")) + ["--confirm"]
+    try:
+        ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        ran = None
+        why = str(exc)
+    if ran is None or ran.returncode != 0:
+        _git(checkout, "checkout", "--", rel)
+        if ran is not None:
+            out = [x.strip() for x in (ran.stdout.strip() or ran.stderr.strip()).splitlines() if x.strip()]
+            why = out[0] if out else f"reviewMark 退出码 {ran.returncode}"
+        return f"{missed}：{why}{later}"
+    if _git(checkout, "diff", "--quiet", "--", rel).returncode == 0:
+        return f"{rel} 早已是批准状态，没有改动"
+    _git(checkout, "add", "--", rel)
+    done = _git(checkout, "commit", "-q", "-m", commits.message(f"合并批准事项 C{approval}：记下 {module} 修订后 Spec 的批准", prefix))
+    if done.returncode != 0:
+        _git(checkout, "reset", "-q", "--", rel)
+        _git(checkout, "checkout", "--", rel)
+        return f"{missed}：" + commits.failure(checkout, done, "提交失败") + later
+    return f"已在集成分支记下 {module} 修订后 Spec 的批准 {_git(checkout, 'rev-parse', '--short=7', 'HEAD').stdout.strip()}"
 
 
 GATE_TICK_MINOR = 7      # spec-guard interface 1.7 brings gateTick (0.9.6)

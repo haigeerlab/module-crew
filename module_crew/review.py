@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import os
 from datetime import datetime, timedelta
@@ -77,6 +78,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
     if reasons:
         return Outcome(msg.kind, 3, lines=["拒收，请退回："] + reasons)
     commit = _git(worktree, "rev-parse", "HEAD").stdout.strip()
+    revised = _spec_revision(db, worktree, sub["module"], commit) if sub["node"] == "final" else None
     with db.transaction(actor=sender) as tx:
         out = Outcome(msg.kind, 0)
         if any(e["actor"] == sender and e["data"].get("relayId") == relay_id for e in store.events(db)):
@@ -104,6 +106,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             out.lines += _unrouted(db, sub["module"], sub["node"], reviewers)
         if sub.get("disputes"):
             rec["disputes"] = sub["disputes"]
+        if revised:
+            rec["specRevised"] = revised
         if reviewers:                      # 送审: the 【交审】 goes unchanged to the reviewers whose scope covers it
             body = tx.allocate_number()
             meta = tx.write_body(body, text)
@@ -118,7 +122,32 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             out.lines.append(f"模块不同意审查 {refs}：不再返工，作为待你决定（D 编号）的问题提请批准")
         if out.closed:
             out.lines.append("取代了 " + "、".join(f"C{k}" for k in out.closed))
+        if revised:
+            out.lines.append(f"{revised['path']} 在构建中改过（和集成分支上已批准的不同）：提请用户批准这次最终验收时附上 Spec 的改动差异"
+                             f"（review show C{n} --spec-diff），写明一次批准同时批准修订后的 Spec；合入后由 merge run 记下它的批准")
         return out
+
+
+_MARKER = "<!-- spec-guard: review"
+
+
+def _spec_revision(db: store.Store, worktree: Path, module: str, commit: str) -> dict | None:
+    """crew-merge decision 10: the module's Spec at the final review differs from the approved one on the integration
+    branch (marker lines aside). None when they match, or when the integration branch has no such Spec."""
+    rel = f"spec/{module}.md"
+    branch = (store.get(db, "config", "main") or {}).get("integrationBranch")
+    if not branch:
+        return None
+    base = _git(worktree, "show", f"refs/heads/{branch}:{rel}")
+    mine = _git(worktree, "show", f"{commit}:{rel}")
+    if base.returncode != 0 or mine.returncode != 0:
+        return None
+    strip = lambda s: [x for x in s.splitlines(keepends=True) if not x.startswith(_MARKER)]
+    if strip(base.stdout) == strip(mine.stdout):
+        return None
+    diff = "".join(difflib.unified_diff(base.stdout.splitlines(keepends=True), mine.stdout.splitlines(keepends=True),
+                                        f"a/{rel}（集成分支 {branch}）", f"b/{rel}（交审提交 {commit[:7]}）"))
+    return {"path": rel, "diff": diff}
 
 
 def _add_task(db: store.Store, msg, text: str, sender: str, relay_id: int) -> Outcome:
@@ -482,11 +511,14 @@ class ShowRefused(Exception):
     pass
 
 
-def show(db: store.Store, number: int, submission: bool = False) -> list[str]:
+def show(db: store.Store, number: int, submission: bool = False, spec_diff: bool = False) -> list[str]:
     """Review originals of submission C<number>, oldest round first, each with its sha256 (MC-4); read-only."""
     rec = store.get(db, "item", str(number))
     if rec is None or rec.get("kind") != "review":
         raise ShowRefused(f"C{number} 不是交审事项")
+    if spec_diff:
+        revised = rec.get("specRevised")
+        return [revised["diff"].rstrip("\n")] if revised else [f"C{number} 交审时 Spec 和集成分支上的一样，没有改动差异"]
     out = []
     if submission:
         out += [f"交审原文（C{number}，{rec['module']} 的 {NODE_NAME.get(rec['node'], rec['node'])}）"

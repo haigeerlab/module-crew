@@ -433,7 +433,7 @@ def _review(args) -> int:
         return out.code
     if args.action == "show":
         try:
-            print("\n".join(review.show(db, args.number, args.submission)))
+            print("\n".join(review.show(db, args.number, args.submission, args.spec_diff)))
         except review.ShowRefused as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
@@ -799,6 +799,7 @@ def _main(argv: list[str] | None = None) -> int:
     rsh = rvs.add_parser("show", help="只读：交审的审查原文全文与 sha256")
     rsh.add_argument("number", type=refs.parse)
     rsh.add_argument("--submission", action="store_true", help="另外输出交审原文")
+    rsh.add_argument("--spec-diff", action="store_true", help="只输出最终验收时 Spec 相对集成分支的改动差异")
     for name in ("approve", "answer"):
         r = rvs.add_parser(name)
         if name == "approve":
