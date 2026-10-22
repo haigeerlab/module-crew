@@ -36,6 +36,10 @@ class RecordTest(CoordCase):
         self.assertEqual((rec["type"], rec["state"], rec["expectedFiles"], rec["original"]),
                          ("feature", "ready", ["src/a.py"], "加个导出按钮"))
         self.assertEqual(refs.task(r.number), f"T{r.number}")
+        again = add(self.db, self.repo, expect=("src/other.py",))
+        self.assertEqual(again.number, r.number + 1)               # tasks advance the shared counter too
+        with self.db.transaction(actor="t") as tx:
+            self.assertEqual(tx.allocate_number(), again.number + 1)
 
     def test_refusals(self):
         for bad in ({"expect": ()}, {"expect": ("/abs/x",)}, {"expect": ("../x",)}, {"expect": ("a/../b",)},
@@ -119,6 +123,60 @@ class OverlapTest(ReviewCase):
         r = add(self.db, self.repo, expect=("docs/new.md",))
         self.assertEqual((r.state, r.clashes), ("ready", []))
         self.assertTrue(any("模块 b" in n and "以后可能" in n for n in r.notes), r.notes)
+
+
+class QueueTest(CoordCase):
+    """Acceptance 4, 5, 6."""
+
+    def test_next_bug_first_and_one_of_two(self):
+        holder = add(self.db, self.repo, expect=("src/",))
+        set_state(self.db, holder.number, "working")
+        feat = add(self.db, self.repo, expect=("src/a.py",))
+        bug = add(self.db, self.repo, kind="bug", expect=("src/a.py",))
+        other = add(self.db, self.repo, expect=("src/b.py",))
+        self.assertEqual([feat.state, bug.state, other.state], ["queued"] * 3)
+        self.assertEqual(tasks.next_ready(self.db, self.repo), [])              # still blocked
+        set_state(self.db, holder.number, "merged")
+        promoted = tasks.next_ready(self.db, self.repo)
+        self.assertEqual(promoted, [bug.number, other.number])                 # bug first; feat clashes with the bug
+        self.assertEqual(store.get(self.db, "task", str(feat.number))["state"], "queued")
+
+    def test_advance_checks_transitions(self):
+        t = add(self.db, self.repo)
+        tasks.advance(self.db, t.number, "dispatched", assignee="shop-t1")
+        tasks.advance(self.db, t.number, "working")
+        with self.assertRaises(tasks.TaskRefused):
+            tasks.advance(self.db, t.number, "promoted")
+        tasks.advance(self.db, t.number, "returned", result={"files": ["src/a.py"]})
+        tasks.advance(self.db, t.number, "merged")
+        with self.assertRaises(tasks.TaskRefused):
+            tasks.advance(self.db, t.number, "working")
+        rec = store.get(self.db, "task", str(t.number))
+        self.assertEqual((rec["state"], rec["assignee"]), ("merged", "shop-t1"))
+
+    def test_queued_cannot_jump_to_merged(self):
+        t = add(self.db, self.repo)
+        with self.assertRaises(tasks.TaskRefused):
+            tasks.advance(self.db, t.number, "merged")
+
+    def test_cancel(self):
+        t = add(self.db, self.repo)
+        tasks.cancel(self.db, t.number, "不做了")
+        rec = store.get(self.db, "task", str(t.number))
+        self.assertEqual(rec["state"], "cancelled")
+        ev = store.events(self.db, key=str(t.number), kind="task")[-1]
+        self.assertEqual(ev["data"]["original"], "不做了")
+        done = add(self.db, self.repo, expect=("x.py",))
+        for state in ("dispatched", "working", "returned", "merged"):
+            tasks.advance(self.db, done.number, state)
+        with self.assertRaises(tasks.TaskRefused):
+            tasks.cancel(self.db, done.number, "撤回")
+        with self.assertRaises(tasks.TaskRefused):
+            tasks.cancel(self.db, t.number, "")
+
+    def test_unknown_number(self):
+        with self.assertRaises(tasks.TaskRefused):
+            tasks.advance(self.db, 999, "working")
 
 
 if __name__ == "__main__":

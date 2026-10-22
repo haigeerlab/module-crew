@@ -125,3 +125,52 @@ def add(db: store.Store, project: str | os.PathLike, kind: str, title: str, what
 
 def label(n: int | str) -> str:
     return refs.task(int(n))
+
+
+TRANSITIONS = {
+    "queued": {"ready", "cancelled"},
+    "ready": {"queued", "dispatched", "cancelled"},
+    "dispatched": {"working", "escalated", "cancelled"},
+    "working": {"returned", "escalated", "cancelled"},
+    "returned": {"merged", "working", "escalated", "cancelled"},
+    "escalated": {"working", "promoted", "cancelled"},
+}
+FIELDS = ("assignee", "worktree", "branch", "result")
+
+
+def advance(db: store.Store, number: int, new_state: str, original: str | None = None, **fields) -> dict:
+    """Move a task along TRANSITIONS (crew-light-task calls this); anything else is refused."""
+    unknown = set(fields) - set(FIELDS)
+    if unknown:
+        raise TaskRefused("不认识的任务字段：" + "、".join(sorted(unknown)))
+    with db.transaction(actor="coordinator") as tx:
+        rec = tx.get("task", str(number))
+        if rec is None:
+            raise TaskRefused(f"{label(number)} 不是任务")
+        if new_state not in TRANSITIONS.get(rec["state"], set()):
+            raise TaskRefused(f"{label(number)} 现在是「{STATE_NAMES[rec['state']]}」，不能改成「{STATE_NAMES.get(new_state, new_state)}」")
+        rec = {**rec, **fields, "state": new_state}
+        tx.put("task", str(number), rec, action=new_state, data={"original": original} if original else None)
+    return rec
+
+
+def cancel(db: store.Store, number: int, original: str) -> dict:
+    """Cancel a task that has not been merged; the user's words are kept."""
+    return advance(db, number, "cancelled", original=_clean(original, "用户原话"))
+
+
+def next_ready(db: store.Store, project: str | os.PathLike) -> list[int]:
+    """Promote queued tasks that no longer clash, bugs first then by number; each promoted one holds its files."""
+    queued = sorted(((int(k), t) for k, t in store.records(db, "task").items() if t.get("state") == "queued"),
+                    key=lambda kv: (kv[1].get("type") != "bug", kv[0]))
+    promoted = []
+    for n, t in queued:
+        clashes, _ = overlaps(db, project, list(t.get("expectedFiles") or []), exclude=n)
+        if not clashes:
+            advance(db, n, "ready")
+            promoted.append(n)
+    return promoted
+
+
+STATE_NAMES = {"queued": "排队", "ready": "可开", "dispatched": "已派出", "working": "在做", "returned": "交回",
+               "escalated": "升格待定", "merged": "已合入", "promoted": "已升格", "cancelled": "已取消"}

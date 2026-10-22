@@ -21,7 +21,7 @@ from pathlib import Path
 
 VERSION = 1
 KINDS = ("config", "session", "item", "request", "ticket", "body", "sighting", "handover", "task")
-NUMBERED = ("item", "request", "ticket", "body")
+NUMBERED = ("item", "request", "ticket", "body", "task")
 ROLES = ("coordinator", "dev")
 HOSTS = ("claude-desktop", "codex-desktop")   # coordinators are Claude desktop only (crew-codex-host)
 SESSION_STATUSES = ("active", "retired")
