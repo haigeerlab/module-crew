@@ -3,13 +3,13 @@
 让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.11.1。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.11.2。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
-## 0.11.1 的变化（热修）
+## 0.11.2 的变化（热修）
 
-- 构建中修订过的 Spec，合入时替用户记下批准：`review add` 比对模块分支与集成分支上的 Spec，不一样就提醒附上差异（`review show C<号> --spec-diff`）；`merge approve` 记下一并批准；`merge run` 合入通过检查后经 spec-guard 的 reviewMark 在集成分支记下批准，单独一个提交，记不上只报告。原来要人手动补 review-mark。
-- 命令入口跟着插件走：钩子在会话启动、压缩、清空时给出「module-crew 命令入口：<当前加载的插件目录>/bin/module-crew（版本 X）」，skill 与开工说明不再写具体路径；`status` 新增检查项 `module-crew`，正在运行的版本和装着的不同时报阻塞；权限规则只放行旧路径时提示再跑 `permissions apply`。原来模块协调会一直用第一次记下的旧版本路径，升级后修复不生效。
-- 升级后：在用的会话重开一次；写过权限规则的项目凭用户原话再跑一次 `module-crew permissions apply`。Codex 会话没有钩子，新路径由模块协调转告。
+- Plan 交审带着修订过的 Spec 时，`review add` 提醒附上 Spec 的改动差异（`review show C<号> --spec-diff`），`review approve` 一次记下 Spec 与 Plan 两份批准；只差批准标记的 Spec 不再从模块分支拷过来，集成分支上已批准的那份保持原样。原来只写 Plan 标记会被 spec-guard 拒绝，重跑还会用旧标记盖掉补好的 Spec。
+- `review approve` 中途失败（写标记失败、提交被拒）时把集成 checkout 还原：原有的文件恢复成集成分支上的内容，这次新建的文件只取消暂存、不删，在输出里列出。
+- 升级后：在用的 module-crew 会话在原会话里 `/clear` 或退出应用再打开（不要新开会话）。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。
 

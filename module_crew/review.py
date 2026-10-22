@@ -78,7 +78,9 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
     if reasons:
         return Outcome(msg.kind, 3, lines=["拒收，请退回："] + reasons)
     commit = _git(worktree, "rev-parse", "HEAD").stdout.strip()
-    revised = _spec_revision(db, worktree, sub["module"], commit) if sub["node"] == "final" else None
+    carries_spec = sub["node"] == "plan" and any(f["path"] == f"spec/{sub['module']}.md" for f in sub["files"])
+    revised = (_spec_revision(db, worktree, sub["module"], commit)          # decision 10 (final), decision 7 (plan)
+               if sub["node"] == "final" or carries_spec else None)
     with db.transaction(actor=sender) as tx:
         out = Outcome(msg.kind, 0)
         if any(e["actor"] == sender and e["data"].get("relayId") == relay_id for e in store.events(db)):
@@ -129,6 +131,30 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
 
 
 _MARKER = "<!-- spec-guard: review"
+
+
+def _restore(checkout: Path) -> list[str]:
+    """Decision 4 (0.11.2): put the integration checkout back after a failed approve. It was clean before (baseline
+    check), so every tracked change is ours and goes back to the branch; new files are unstaged and kept, never deleted."""
+    _git(checkout, "reset", "-q")
+    _git(checkout, "checkout", "--", ".")
+    new = [line[3:] for line in _git(checkout, "status", "--porcelain", "--untracked-files=all").stdout.splitlines()
+           if line.startswith("?? ")]
+    return (["状态库与集成分支都没有变化；集成 checkout 里原有的文件已还原成集成分支上的内容"]
+            + (["这次新建、没有删除的文件（未暂存，交用户决定）：" + "、".join(new)] if new else []))
+
+
+def _unmarked(text: str) -> list[str]:
+    return [x for x in text.splitlines(keepends=True) if not x.startswith(_MARKER)]
+
+
+def _same_but_marker(path: Path, data: bytes) -> bool:
+    """A listed file already on the integration checkout that differs at most in its review marker line."""
+    try:
+        here = path.read_text(encoding="utf-8")
+        return here.encode("utf-8") != data and _unmarked(here) == _unmarked(data.decode("utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return False
 
 
 def _spec_revision(db: store.Store, worktree: Path, module: str, commit: str) -> dict | None:
@@ -1046,6 +1072,9 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
             shown = subprocess.run(["git", "-C", str(wt), "show", f"{rec['commit']}:{f['path']}"], capture_output=True)
             if shown.returncode != 0:
                 reasons.append(f"C{n} 的 {f['path']} 从提交 {rec['commit'][:7]} 里取不出")
+            elif (rec["node"] == "plan" and f["path"] == f"spec/{rec['module']}.md" and checkout is not None
+                  and _same_but_marker(checkout / f["path"], shown.stdout)):
+                continue        # decision 7: keep the approved copy on the integration branch, marker and all
             else:
                 contents.append((f["path"], shown.stdout))
     if reasons:
@@ -1059,12 +1088,12 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
         target.write_bytes(data)
         written.append(path)
     for n, rec in picked:
-        cmd = probe.safe_command(root, doc, "reviewMark", _mark_fill(checkout, rec["module"], MARK_TARGET[rec["node"]])) + ["--confirm"]
+        target = "both" if rec["node"] == "plan" and rec.get("specRevised") else MARK_TARGET[rec["node"]]   # decision 7
+        cmd = probe.safe_command(root, doc, "reviewMark", _mark_fill(checkout, rec["module"], target)) + ["--confirm"]
         ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
         if ran.returncode != 0:
-            return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{ran.stderr.strip()[:200]}",
-                                     "集成 checkout 里已改、未提交的文件：" + "、".join(written),
-                                     "状态库与集成分支都没有变化；这些文件留着，交用户决定"])
+            return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{(ran.stderr.strip() or ran.stdout.strip())[:200]}"]
+                                 + _restore(checkout))
     approval_no = _next_number(db)
     modules = list(dict.fromkeys(rec["module"] for _, rec in picked))
     nodes = "、".join(f"{rec['module']} 的 {NODE_NAME[rec['node']]}" for _, rec in picked)
@@ -1072,8 +1101,7 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
     hub = f"（待决事项 #{src['item']}）" if src.get("kind") == "hub" else ""
     commit_run = _git(checkout, "commit", "-q", "-m", commits.message(f"用户批准事项 C{approval_no}{hub}：批准 {nodes}", commits.prefix_of(db)))
     if commit_run.returncode != 0:
-        return ApproveResult(4, [commits.failure(checkout, commit_run, "集成分支提交失败"),
-                                 "已改、已暂存的文件：" + "、".join(written)])
+        return ApproveResult(4, [commits.failure(checkout, commit_run, "集成分支提交失败")] + _restore(checkout))
     commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
     from module_crew import unqueued
     unqueued.mark(db, checkout, "review-approve")    # crew-unqueued-commits: module-crew's own commit

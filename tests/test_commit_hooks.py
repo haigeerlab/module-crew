@@ -77,7 +77,8 @@ class HookRejectionTest(HookCase):
         self.assertIn("提交钩子拒绝", "\n".join(res.lines))
         n = changes.add(self.db, "【公共变更请求】\n结束：无\n来自：b\n文件：\nx.json\n改什么：改\n为什么：要\n"
                         "是否完全停住：否\n", "shop-b", 2).number
-        git(self.repo, "reset", "-q", "--hard")
+        self.assertIn("spec/b.md", "\n".join(res.lines))        # 0.11.2: the new file is kept and listed, not staged
+        (self.repo / "spec" / "b.md").unlink()                  # the user's call; here: drop it
         (self.repo / "x.json").write_text("{}\n")
         out = changes.land(self.repo, n)
         self.assertEqual(out.code, 4)

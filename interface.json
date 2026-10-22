@@ -1,7 +1,7 @@
 {
   "interface": "1.0",
   "plugin": "module-crew",
-  "version": "0.11.1",
+  "version": "0.11.2",
   "contract": "2.6",
   "sessions": {
     "command": [
