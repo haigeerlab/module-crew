@@ -2,6 +2,12 @@
 
 各版本的变化，最新的在前。README 只写最新一版。
 
+## 0.11.3 的变化（热修）
+
+- `merge push` 的推送用完整检查的超时（`checkTimeout`，默认 30 分钟），项目的 pre-push 钩子跑检查不再被 30 秒掐断；超时或推送失败一律退出码 4、给出可读原因，不再抛 Python 栈。
+- `merge push-plan` 的 PR 目标：`--pr-base` → 配置 `prBase` → 远端有跟踪分支的集成分支 → 远端默认分支；提交只列相对目标多出的那些；都取不到时退出码 3，请用户用 `--pr-base <分支>` 指定（`push` 同样可带）。
+- 升级后：在用的 module-crew 会话在原会话里 `/clear` 或退出应用再打开（不要新开会话）。
+
 ## 0.11.2 的变化（热修）
 
 - Plan 交审带着修订过的 Spec 时，`review add` 提醒附上 Spec 的改动差异（`review show C<号> --spec-diff`），`review approve` 一次记下 Spec 与 Plan 两份批准；只差批准标记的 Spec 不再从模块分支拷过来，集成分支上已批准的那份保持原样。原来只写 Plan 标记会被 spec-guard 拒绝，重跑还会用旧标记盖掉补好的 Spec。
