@@ -13,6 +13,7 @@
 - **`/clear` 之后身份自动接上**：清空会换会话编号（2026-10-22 实测）。新增的 `SessionEnd` 钩子留下交接记录：命令行版把登记转给同一目录 30 秒内以 clear 开始的新会话；桌面版绑定时记下桌面版会话编号（`CLAUDE_CODE_HOST_SESSION_ID`，清空后不变），旧进程结束后同目录、同编号的新会话接上登记（桌面版里实测通过）。
 - 多模块并行默认上限从 3 改为 2（已开工项目的上限不变）。
 - 体检新增 `spec-guard-enabled`（项目有没有 `.agent/config.json`）；`status` 加「模块协调」「没登记的会话」两段。
+- 轻任务记录：`module-crew task add` 记下单个需求或 bug（T 编号，任务单写做什么、预计改哪些文件、做到什么程度算完）；预计文件和在做的任务或模块分支已改的文件重叠就排队，`task next` 按 bug 在前提为可开；`status` 加「任务」段。派会话做轻任务的流程在下一步补上。
 - 钩子开始写状态库，只写「见到」记录、清空交接记录与登记字段，等锁最多 2 秒，失败就不说话。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。
@@ -143,6 +144,7 @@ module-crew 自己的编号对外一律写 C 前缀（如 C15），`#数字` 只
 ```text
 module-crew status [--json]                      体检与全貌（只读）
 module-crew coordinator up|down --original(-file)  把本会话升级为模块协调／关闭（一个仓库一个）
+module-crew task add|list|show|next|cancel       轻任务记录（单个需求或 bug，T 编号）：预计文件和在做的活重叠就排队，bug 在前
 module-crew store init|check                     状态库
 module-crew protocol check <文件>                消息自检
 module-crew inbox add <文件> --from --relay-id   收件记账
