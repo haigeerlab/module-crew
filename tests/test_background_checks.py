@@ -124,5 +124,34 @@ class MergeRunLockTest(MergeCase):
         self.assertIsNone(mergelock.read(self.db))
 
 
+class GuardedCommandsTest(MergeCase):
+    """Acceptance 2, 3: the other writing commands refuse while a merge runs; reading commands do not."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        info = {"approval": 9, "unit": "b", "pid": os.getpid(), "host": socket.gethostname(), "startedAt": store.now()}
+        (self.db.path / "merge.lock").write_text(json.dumps(info), encoding="utf-8")
+        self.words = self.tmp / "w.txt"
+        self.words.write_text("同意", encoding="utf-8")
+
+    def test_writing_commands_refused(self):
+        before = (len(store.events(self.db)), git(self.repo, "rev-parse", "HEAD"))
+        for args in (("change", "land", "1"), ("review", "approve", "1", "--original-file", str(self.words)),
+                     ("merge", "tick", "b", "--original-file", str(self.words)),
+                     ("merge", "cleanup", "b", "--original-file", str(self.words)),
+                     ("unqueued", "--notify"), ("coordinator", "down", "--original-file", str(self.words))):
+            with self.subTest(args=args):
+                out = self.run_cli(*args)
+                self.assertEqual(out.returncode, 6, out.stdout + out.stderr)
+                self.assertIn("正在后台跑", out.stdout + out.stderr)
+        self.assertEqual((len(store.events(self.db)), git(self.repo, "rev-parse", "HEAD")), before)
+
+    def test_reading_commands_work(self):
+        for args in (("status",), ("sessions",), ("review", "batch"), ("task", "list"), ("unqueued",), ("merge", "queue")):
+            with self.subTest(args=args):
+                self.assertNotEqual(self.run_cli(*args).returncode, 6)
+
+
 if __name__ == "__main__":
     unittest.main()

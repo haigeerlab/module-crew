@@ -710,6 +710,28 @@ def _remind() -> None:
               "卡住就按「去会话操作」报给决策收件箱（没有收件箱就告诉用户去哪个会话点）")
 
 
+# crew-background-checks: commands that write the integration checkout wait while a merge runs in the background
+_LOCKED = {("change", "land"), ("review", "approve"), ("merge", "tick"), ("merge", "cleanup"), ("coordinator", "down")}
+
+
+def _merge_lock_guard(args) -> int | None:
+    key = (args.group, getattr(args, "action", None))
+    if key not in _LOCKED and not (args.group == "unqueued" and getattr(args, "notify", False)):
+        return None
+    from module_crew import mergelock
+    try:
+        db = store.open_store()
+    except store.StoreError:
+        return None
+    reason, note = mergelock.guard(db, ".")
+    if note:
+        print(note)
+    if reason:
+        print(f"❌ {reason}", file=sys.stderr)
+        return 6
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     _SENT.clear()
     code = _main(argv)
@@ -942,6 +964,9 @@ def _main(argv: list[str] | None = None) -> int:
     seg.add_argument("--original-file")
     _add_source_options(parser)
     args = parser.parse_args(argv)
+    blocked = _merge_lock_guard(args)
+    if blocked is not None:
+        return blocked
     src = None
     if getattr(args, "source", None):
         if args.source_item is None or args.source_relay_id is None or not args.source_from:
