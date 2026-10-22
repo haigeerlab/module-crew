@@ -323,7 +323,17 @@ def summarize_store(project: Path) -> tuple[Check, dict | None]:
         return Check("store", "warning", f"状态库读不出：{exc}", "运行 module-crew store check 排查"), None
     return Check("store", "ok", str(db.path)), {"sessions": active, "open": open_counts,
                                                 "coordinator": coord, "sightings": seen, "tasks": task_rows,
-                                                "unqueued": unq}
+                                                "unqueued": unq, "mergeLock": _merge_lock(db)}
+
+
+def _merge_lock(db: store.Store) -> dict | None:
+    """crew-background-checks: the merge running in the background, read only."""
+    from module_crew import mergelock
+    info = mergelock.read(db)
+    if info is None:
+        return None
+    return {"approval": info.get("approval"), "unit": info.get("unit"), "startedAt": info.get("startedAt"),
+            "minutes": mergelock.minutes(info), "stale": mergelock.stale(info), "host": info.get("host")}
 
 
 SIGHTINGS_SHOWN = 10

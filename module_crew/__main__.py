@@ -113,6 +113,11 @@ def _status(as_json: bool) -> int:
         state = ("已关闭" if coord["state"] != "active" else "已绑定会话" if coord["bound"]
                  else "未绑定会话（该会话运行 module-crew bind）")
         print(f"  {coord['name']}：在 {coord['home'] or '（集成分支没有被检出）'}，分支 {coord['branch'] or '?'}；{state}")
+    lock = (report.store or {}).get("mergeLock")
+    if lock:
+        took = f"已跑 {lock['minutes']} 分钟" if lock["minutes"] is not None else "开始时间读不出"
+        print(f"  合并 C{lock['approval']}（{lock['unit']}）" + ("的锁已失效（进程不在了；下一个写命令会在集成 checkout 干净时清掉）"
+              if lock["stale"] else f"正在后台跑（{took}）：别的写命令会被挡住，等它结束"))
     unq = (report.store or {}).get("unqueued")
     if unq and unq["missingSeen"]:
         print("  集成分支：还没有记下认得的顶端（下次 merge run 或 module-crew unqueued 时记下）")

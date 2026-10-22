@@ -153,5 +153,24 @@ class GuardedCommandsTest(MergeCase):
                 self.assertNotEqual(self.run_cli(*args).returncode, 6)
 
 
+class StatusLockTest(MergeCase):
+    """Acceptance 4."""
+
+    def test_status_shows_lock(self):
+        db = store.open_store(self.repo)
+        info = {"approval": 9, "unit": "b", "pid": os.getpid(), "host": socket.gethostname(), "startedAt": store.now()}
+        (db.path / "merge.lock").write_text(json.dumps(info), encoding="utf-8")
+        self.assertIn("合并 C9（b）正在后台跑", self.run_cli("status").stdout)
+        lock = json.loads(self.run_cli("status", "--json").stdout)["store"]["mergeLock"]
+        self.assertEqual((lock["approval"], lock["unit"], lock["stale"]), (9, "b", False))
+        (db.path / "merge.lock").write_text(json.dumps({**info, "pid": dead_pid()}), encoding="utf-8")
+        self.assertIn("失效", self.run_cli("status").stdout)
+        self.assertIsNotNone(mergelock.read(db))              # status only reads
+
+    def test_status_without_lock(self):
+        doc = json.loads(self.run_cli("status", "--json").stdout)
+        self.assertIsNone(doc["store"]["mergeLock"])
+
+
 if __name__ == "__main__":
     unittest.main()
