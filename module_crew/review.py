@@ -378,7 +378,9 @@ def batch(project: str | os.PathLike) -> dict:
         items.append({"number": n, "ref": f"C{n}", "module": v["module"], "task": v.get("task"), "node": v["node"], "from": v["from"],
                       "files": v["files"], "points": _points(v["text"]), "reviews": list(v.get("reviews") or []),
                       "reviewState": state, "round": _rounds(db, v["module"], v["node"]), "ready": state in READY,
-                      "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state)})
+                      "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state),
+                      **({"display": present.final_tables(project, db, v)} if v["node"] == "final" and v.get("module")
+                         and not v.get("task") else {})})
     return {"items": items, "groups": groups, "dependencyIssues": issues, "conflicts": conflicts, "overlap": over}
 
 
@@ -637,11 +639,11 @@ def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict]
         last = (rec.get("reviews") or [{}])[-1]
         if last.get("text"):
             revs.append(_original_line(db, g["module"], f"C{i['number']}-review-{last['ref']}.txt", last["text"]))
-        evidence = _evidence(i["points"]) if i["node"] == "final" else []
-        if evidence:                                     # R17: evidence per acceptance criterion goes first
-            points[:0] = [_safe(line) for line in evidence] + [""]
         points.append(f"C{i['number']} {g['module']} 的 {NODE_NAME.get(i['node'], i['node'])}（审查：{_review_text(i)}）：")
-        points += [_safe(line) for line in i["points"].splitlines()]
+        points += [_safe(line) for line in i["points"].splitlines()]   # 做了什么, 验收结果 (crew-review-display)
+        if i.get("display"):                             # then 改了哪些文件 and Spec 中途改过吗, from git
+            from module_crew import present
+            points += [_safe(line) for line in present.table_lines(i["display"])]
         if i["round"]:
             points.append(f"经 {i['round']} 轮审查修改，上次须修改：")
             points += [_safe(line) for line in _last_changes(db, rec)]

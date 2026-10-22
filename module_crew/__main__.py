@@ -504,6 +504,9 @@ def _review(args) -> int:
                 print(f"C{i['number']} {i['module']} 的 {review.NODE_NAME.get(i['node'], i['node'])}（{i['from']}）："
                       + "、".join(f["path"] for f in i["files"]))
                 print("  要点：" + i["points"].replace("\n", "\n        "))
+                if i.get("display"):            # crew-review-display: the final-acceptance tables, from git
+                    from module_crew import present
+                    print("\n".join("  " + x for x in present.table_lines(i["display"])))
                 print("  审查：" + review._review_text(i))
                 if not i["ready"]:
                     print(f"  审查状态：{review.STATE_TEXT[i['reviewState']]}（不进提请批准，等它有结论）")

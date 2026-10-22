@@ -459,8 +459,10 @@ class FinalOptionsTest(MergeCase):
         self.assertEqual(review.add(db, text, "shop-b", 8001).code, 0)
         msg = protocol.parse(review.for_hub(self.repo)[0][2])
         lines = msg.fields["要点"].splitlines()
-        self.assertTrue(lines[0].startswith("验收标准与证据"), lines[:3])
-        self.assertEqual(lines[1:3], ["1：test_value 通过", "2：无"])
+        # crew-review-display: reviewKinds.final order — the module's items as written (with the evidence), then the tables
+        at = lines.index("验收标准与证据：")
+        self.assertEqual(lines[at + 1:at + 3], ["1：test_value 通过", "2：无"])
+        self.assertLess(at, lines.index("改了哪些文件："))
 
     def test_final_consequence_and_chinese_node(self):
         db = store.open_store(self.repo)
