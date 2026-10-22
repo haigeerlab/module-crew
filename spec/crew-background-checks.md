@@ -1,6 +1,6 @@
 # Spec: crew-background-checks
 
-<!-- spec-guard: review approved 82adf32e316a -->
+<!-- spec-guard: review approved 328ff9fafdbe -->
 
 > 能力图模块 `crew-background-checks`（第六版第 5 个，最后一个）。需求来源：`docs/requirements-record.md` 第 14 节第 10 条（长命令改后台运行、模块协调照常回话，用户 2026-10-22 确认）。
 > 依赖 `crew-merge`（合并队列）、`crew-onboarding`（模块协调的规矩）。标「新」的是写 Spec 时补的实现取舍，请重点审。
