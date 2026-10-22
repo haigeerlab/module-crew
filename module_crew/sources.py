@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from module_crew import protocol, store
 
 KINDS = ("hub", "lead")
-PROTOCOLS = ("2.2", "2.3", "2.4")       # session-protocol versions a decision inbox may speak (crew-hub-card-fields)
+PROTOCOLS = ("2.2", "2.3", "2.4", "2.5")   # session-protocol versions a decision inbox may speak (crew-hub-card-fields)
 OLDEST_HUB = "2.4"                      # 0.9.5: every inbox here speaks v2.3+; unset or 2.2 registrations count as 2.4
 NODES = ("spec", "plan", "interface", "final")       # review nodes a reviewer can be responsible for (crew-routing-fixes)
 ALL = "all"
@@ -155,7 +155,7 @@ def listing(db: store.Store) -> list[dict]:
 def hub_protocol(row: dict) -> str:
     """The contract version module-crew writes to a registered hub: as registered, unset or 2.2 counting as 2.4 (0.9.5)."""
     got = row.get("protocol")
-    return got if got in ("2.3", "2.4") else OLDEST_HUB
+    return got if got in ("2.3", "2.4", "2.5") else OLDEST_HUB
 
 
 def check(db: store.Store, name: str, item: int, relay_id: int, text: str | None, *, sender: str) -> SourceInfo:

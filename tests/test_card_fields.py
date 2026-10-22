@@ -65,7 +65,7 @@ class HubProtocolTest(RepoCase):
 
     def test_refusals(self):
         with self.assertRaises(sources.SourceRefused):
-            sources.add(self.db, "hub-a", "hub", "登记", protocol="2.5")
+            sources.add(self.db, "hub-a", "hub", "登记", protocol="2.6")   # v2.5 is known since crew-light-task
         with self.assertRaises(sources.SourceRefused) as ctx:
             sources.add(self.db, "hub-a", "hub", "登记", protocol="2.2")
         self.assertIn("按 2.4", str(ctx.exception))

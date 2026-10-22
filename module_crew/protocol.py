@@ -34,21 +34,23 @@ FIELDS = {
     "wait-user": ("来自", "项目", "要你决定", "要点", "产物", "交审原文", "审查原文", "待用户决定", "架构审查",
                   "选项与我的建议", "你该回", "是否完全停住", "适用会话", "各线范围",
                   "类型", "会话", "链接", "被拦的操作", "宿主原文", "点哪个按钮", "为什么批不了", "关联事项",
-                  "注意", "推荐理由", "批了会怎样", "模块"),
+                  "注意", "推荐理由", "批了会怎样", "模块", "任务"),
     "user-reply": ("事项", "转自", "用户原话", "选项原文", "适用于你的范围", "答复时间", "转交范围", "原事项全文"),
     "owner-handoff": ("事项", "来自", "用户原话", "答复时间", "转交范围"),
     "wait-session": ("在等谁", "等什么"),
     "resumed": (),
     "withdraw": ("事项", "原因"),
-    "review-conclusion": ("审查编号", "节点", "模块", "送审方", "结论", "来自", "要点", "须修改", "待用户决定"),
+    "review-conclusion": ("审查编号", "节点", "模块", "送审方", "结论", "来自", "要点", "任务", "须修改", "待用户决定"),
     "answer-notice": ("事项", "用户原话", "答复时间", "说明"),
-    "review-request": ("模块", "节点", "文件", "要点", "改动统计", "越界检查", "不同意"),
+    "review-request": ("模块", "节点", "文件", "要点", "任务", "改动统计", "越界检查", "不同意"),
     "shared-change-request": ("来自", "文件", "改什么", "为什么", "是否完全停住"),
-    "coordination-notice": ("类型", "原因", "依据", "轮次", "要你做什么"),
+    "coordination-notice": ("类型", "原因", "依据", "轮次", "要你做什么", "任务"),
     "hub-receipt": ("原消息", "事项", "状态", "取代", "写法提示"),
     "unknown": (),
 }
 TERMINAL = {"原事项全文"}  # takes every remaining line
+TASK_KINDS = ("wait-user", "review-request", "review-conclusion", "coordination-notice")   # v2.5 「任务」
+_TASK_RE = re.compile(r"^T[1-9]\d*$")
 
 _TAG_RE = re.compile(r"【([^】]*)】")
 _COLON = "[：:]"
@@ -601,6 +603,16 @@ def parse(text: str) -> Message:
         _require(fields, ("来自", "用户原话", "答复时间", "转交范围"), problems)
         extra = {"origin": {"originals": _originals(fields.get("事项")), "relayedFrom": None, "relayMessage": None}}
 
+    if kind in TASK_KINDS and "任务" in fields:     # v2.5: a light task's number, T<N>
+        task = fields["任务"].strip()
+        if _TASK_RE.match(task):
+            extra["task"] = task
+        else:
+            extra["task"] = None
+            problems.append("bad-task-ref")
+        module = (fields.get("模块") or "").strip()
+        if kind == "wait-user" and extra["task"] and module and module != "无":
+            problems.append("module-task-both")
     return Message(kind=kind, supported=kind not in UNSUPPORTED, problems=tuple(problems), hints=tuple(hints),
                    fields=fields, end=end, reply_to=reply_to, markers=tuple(markers), item=item, extra=extra)
 
@@ -734,8 +746,8 @@ def _go_to_session(fields: dict, problems: list[str], extra: dict) -> None:
     raw = fields.get("类型")
     kind = None
     extra["points"] = None
-    if fields.get("模块") is not None:     # v2.4: the capability-map module id, 「无」 for a line-wide item; not checked
-        extra["module"] = fields["模块"].strip()
+    # v2.4: the capability-map module id, 「无」 for a line-wide item; not checked. v2.5: null when absent.
+    extra["module"] = fields["模块"].strip() if fields.get("模块") is not None else None
     if raw is not None:
         found = WAIT_KINDS.get(raw.strip())
         if found:

@@ -1,0 +1,35 @@
+{
+  "parse": {
+    "type": "wait-session",
+    "valid": true,
+    "replyTo": 40,
+    "end": {
+      "present": true,
+      "items": [
+        31
+      ],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "在等谁": "API",
+      "等什么": "订单接口的 Mock 数据，\n  交付后我才能接着做支付页"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": []
+  }
+}
