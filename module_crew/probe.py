@@ -69,10 +69,24 @@ def find_plugin(name: str, project: str | os.PathLike) -> Plugin | str:
         return f"找不到 Claude 的插件安装记录：{path}"
     except (OSError, ValueError) as exc:
         return f"插件安装记录读不出：{path}（{exc}）"
-    entries = [{**e, "_market": key.split("@", 1)[1]}
-               for key, value in ((records.get("plugins") or {}) if isinstance(records, dict) else {}).items()
-               if key.split("@", 1)[0] == name and "@" in key
-               for e in (value or []) if isinstance(e, dict)]
+    # The host's install record is not a public interface (boundary review 5, 0.9.7): a shape module-crew does not
+    # know is reported as such, never as "not installed".
+    odd = lambda what: f"Claude 的插件安装记录格式和预期不同（宿主可能改了格式）：{path}，{what}"
+    if not isinstance(records, dict):
+        return odd("顶层不是对象")
+    plugins = records.get("plugins")
+    if not isinstance(plugins, dict):
+        return odd("没有 plugins 对象")
+    entries = []
+    for key, value in plugins.items():
+        if "@" not in key or key.split("@", 1)[0] != name:
+            continue
+        if not isinstance(value, list) or not all(isinstance(e, dict) for e in value):
+            return odd(f"{key} 的条目不是对象列表")
+        for e in value:
+            if not isinstance(e.get("installPath"), str) or not e["installPath"]:
+                return odd(f"{key} 的条目缺 installPath")
+            entries.append({**e, "_market": key.split("@", 1)[1]})
     if not entries:
         return f"本机没有安装 {name}"
     here = os.path.realpath(project)
@@ -82,7 +96,7 @@ def find_plugin(name: str, project: str | os.PathLike) -> Plugin | str:
     if chosen is None:
         return f"{name} 只装在别的项目里，这个仓库用不到"
     live = _directory_source(path.parent, chosen["_market"], name)
-    return live or Plugin(Path(chosen.get("installPath", "")), chosen.get("version"))
+    return live or Plugin(Path(chosen["installPath"]), chosen.get("version"))
 
 
 def read_interface(root: Path, major: int) -> dict | str:

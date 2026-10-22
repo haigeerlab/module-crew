@@ -346,7 +346,9 @@ def _set_role(roles: tuple[Path, dict] | str, key: str, checkout: Path, module: 
 
 
 def _first_step(module: str, cadence: str) -> str:
-    """R13: what the module does before its first approval, by the project's review cadence."""
+    """R13: what the module does before its first approval, by the project's review cadence.
+
+    The paths are spec-guard's layout convention (see review.REQUIRED_FILES; boundary review 7)."""
     if cadence == "combined":
         return (f"这一步只做：用 /spec 写 spec/{module}.md 与 tasks/{module}/plan.md、todo.md，写好后给模块协调发【交审】"
                 "（节点 Spec、Plan 各一条，或接口提案）。项目评审节奏：combined；遇到新决策、范围不清或高风险不可逆改动时仍先只交 Spec。")

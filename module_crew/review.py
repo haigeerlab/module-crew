@@ -40,6 +40,9 @@ def _check_files(worktree: Path, files: list[dict]) -> list[str]:
     return reasons
 
 
+# spec-guard's layout convention, not module-crew's (boundary review 7, 0.9.7): its interface.json names
+# spec/<id>.md and tasks/<id>/todo.md only in descriptions, with no field to read the paths from, so they are
+# written here. Re-check when spec-guard changes where a module's Spec, Plan or todo lives.
 REQUIRED_FILES = {"spec": ("spec/{m}.md",), "plan": ("tasks/{m}/plan.md", "tasks/{m}/todo.md")}
 
 

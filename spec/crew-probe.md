@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved 32c92549b4b3 -->
+<!-- spec-guard: review approved d7c755f3de55 -->
 
 # Spec: crew-probe
 
@@ -48,6 +48,7 @@
 4. **集成基线检查找的是「集成分支被哪个 checkout 检出」**（`git worktree list --porcelain`），在那个 checkout 里看 `git status --porcelain`；
    集成分支没被任何 checkout 检出时判 `blocker`。不 `fetch`、不比远端。
 5. **`status` 的退出码只由阻塞项决定**；状态库或 `/map` 读不出来时，对应部分写「读不出」和原因，其余照常输出。
+（0.9.7 追加，职责边界审查第 5 条）**安装记录的格式对不上时照实说**：`installed_plugins.json` 是 Claude 宿主的内部文件，不是公开接口。文件在、能读，但结构不是预期的样子（顶层不是对象、没有 `plugins` 对象、条目不是对象列表、条目缺 `installPath`）时，报「Claude 的插件安装记录格式和预期不同（宿主可能改了格式）：<路径>，<哪里不对>」，不再落到「本机没有安装 <名>」。`known_marketplaces.json` 读不出时照旧退回用安装记录里的路径（现状不变）。
 
 ## 接口约定
 
@@ -136,6 +137,7 @@ python3 -m unittest discover -s tests -v
 8. `status` 输出含体检表、会话与待办、模块进度（完成数／总数、进行中模块）与「第一版只支持 Claude 桌面版」；`--json` 可被 `json.loads`，`schemaVersion` 为 1；有 blocker 时退出码 3，否则 0。
 9. 运行前后项目目录与状态库目录的文件清单和修改时间完全相同。
 10. 本机真实环境冒烟：`status` 报 `spec-guard-planning` 为 blocker（spec-guard 0.67.0，interface 1.0），`agent-relay` 为 ok（0.6.1，interface 2.0）。
+（0.9.7）安装记录的顶层、`plugins`、条目、`installPath` 任一处结构不对时，体检报「格式和预期不同」并带路径与哪里不对；文件不存在、读不出、确实没装、只装在别的项目，提示照旧。
 
 ## 未决问题
 
@@ -146,3 +148,4 @@ python3 -m unittest discover -s tests -v
 
 README（crew-start 之后补）里写「先跑 `module-crew status`」以及每个 blocker 的处理办法；本模块输出的「怎么办」一栏就是这份内容的来源。
 - 2026-10-18：`status` 的模块进度改写成「spec-guard 当前／spec-guard 进行中」并注明 module-crew 开工的模块见「会话与待办」，避免把 spec-guard 的当前模块误读成已被 crew 开工。原因：第二轮试点小项（status 写「进行中：wordcount」而 wordcount 并未开工）；来源：用户 2026-10-18 定为 0.1.2 待办，随 0.2.0 做。
+- 2026-10-22：安装记录结构不对时报「格式和预期不同（宿主可能改了格式）」，不再误报「没有安装」；发 0.9.7。来源：本会话职责边界审查第 5 条，用户 2026-10-22 说「继续」后按已预告的第 4、5、7 条处理。

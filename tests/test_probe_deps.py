@@ -66,6 +66,22 @@ class RelayInterfaceTest(ProbeCase):
         self.assertIn("读不出", broken.reason)
         self.assertTrue(missing.fix and broken.fix)
 
+    def test_unexpected_record_shape_is_not_called_not_installed(self):
+        # 0.9.7 (boundary review 5): the host's install record is not a public interface; say so when it changes
+        shapes = {"顶层不是对象": [], "没有 plugins 对象": {"version": 2, "items": {}},
+                  "条目不是对象列表": {"plugins": {"spec-guard@m": "oops"}},
+                  "条目缺 installPath": {"plugins": {"spec-guard@m": [{"scope": "user"}]}}}
+        for what, doc in shapes.items():
+            with self.subTest(what):
+                self.plugins.records.write_text(json.dumps(doc))
+                got = probe.find_plugin("spec-guard", self.repo)
+                self.assertIsInstance(got, str)
+                self.assertIn("格式和预期不同（宿主可能改了格式）", got)
+                self.assertIn(str(self.plugins.records), got)
+                self.assertIn(what, got)
+        self.plugins.records.write_text(json.dumps({"plugins": {}}))
+        self.assertEqual(probe.find_plugin("spec-guard", self.repo), "本机没有安装 spec-guard")   # truly absent
+
     def test_env_var_is_set_in_tests(self):
         self.assertTrue(os.environ["MODULE_CREW_PLUGINS_FILE"].startswith(str(self.tmp)))
 
