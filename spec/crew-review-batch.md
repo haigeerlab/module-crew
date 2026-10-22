@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved c0b49d513068 -->
+<!-- spec-guard: review pending -->
 
 # Spec: crew-review-batch
 
@@ -50,6 +50,8 @@
 6. **批准事项单独一条**（`kind: "review-approval"`，已答，记原话、批准的交审编号、集成基线提交号）；开工通知的「依据」引用它的编号——满足契约「开工类【协调通知】必须写明所依据的批准事项编号」。
 - **提交信息与提交钩子**（2026-10-18 修订）：提交信息默认以 `chore(crew): ` 开头（符合 Conventional Commits，首行不超过 100 字符；0.9.4 起前缀是项目配置 `commitPrefix`，`start prepare --commit-prefix <值>` 设定，空字符串表示不加，没设过按默认），后面照旧写中文说明与编号；提交失败且仓库启用了提交钩子时，原因写「提交钩子拒绝：<钩子输出首行>」，不并入其他原因。（2026-10-18 修订）
 
+
+7. **交审里带着修订过的 Spec**（2026-10-22 新增，0.11.2）：Plan 交审的文件里列了 `spec/<模块>.md`，且它去掉评审标记行后与集成分支上已批准的不同时，`review add` 记 `specRevised`（路径与差异），输出提醒：提请批准时附上这段差异（`review show C<号> --spec-diff`），写明一次批准同时批准修订后的 Spec。`review approve` 对这种交审用 `--target both` 一次记下 Spec 与 Plan 的批准。另外，交审列出的 `spec/<模块>.md` 去掉标记行后与集成分支上的相同（只差标记）时，**不拷这个文件**，保留集成分支上已批准的那份，免得用模块分支里的旧标记盖掉。
 
 ## 接口约定
 
@@ -129,6 +131,9 @@ python3 -m unittest discover -s tests -v
 
 - 交审按模块分组（2026-10-18 修订）：c 先交 Spec、b 再交 Plan、c 再交 Plan、b 最后交 Spec 时，`review batch` 的条目按 Build order 与节点排成 b Spec、b Plan、c Spec、c Plan，`--json` 带 `groups`，文字输出每个模块一节（`## <模块>（职责）`）。
 
+11. Plan 交审带着修订过的 Spec：`review add` 输出要附 Spec 差异的提醒、交审事项记 `specRevised`；`review approve` 写的是 Spec 与 Plan 两份批准（`--target both`）、退出码 0、集成分支一次提交、集成 checkout 干净。
+12. Plan 交审列出的 Spec 与集成分支上已批准的只差标记行：`review approve` 不拷这个文件，集成分支上的 Spec 与标记不变，只写 Plan 的批准。
+
 
 ## 未决问题
 
@@ -150,3 +155,4 @@ README「一次完整流程」接着写：交审 → `review batch` → 用户�
 - 2026-10-18：`review approve` 的发送清单给出 `alsoAnswers`（合成答复里除 `replyTo` 外的原消息号），协调会话 skill 写明一并带上。原因：联合演练 T1 一条答复覆盖两条交审时命令没给出 alsoAnswers；来源：监测会话转报，用户 2026-10-18 批准修法（0.2.2）。
 - 2026-10-19：`review approve` 先核对本次交审的待决问题（D1…）都答到，没答全退出码 3、什么都不做；模块协调生成的问题按答案批准、退回或保持未答；`review add` 在登记审查者时输出送审发送项、认「不同意」与最终验收的「验收标准与证据」。原因：审查就近（R1、R2、R17）；来源：用户 2026-10-19 批准修订后的 crew-review-nearby Spec 与 Plan（决定 41、46、47、49；Task 7、9、11、13），随它的最终验收复审。
 - 2026-10-22：提交前缀从写死的 `chore(crew): ` 改为项目配置 `commitPrefix`（默认值不变、可设为空），只为 LIVE-SAAS 的 commitlint 写死的规矩不再强加给所有项目；行为对现有项目不变。来源：本会话职责边界审查第 1 条，用户 2026-10-22 选「默认仍是 chore(crew): ，可配置；各自追加到对应模块」。
+- 2026-10-22：新增关键决策 7 与验收 11、12：Plan 交审里带着修订过的 Spec 时，`review add` 记 `specRevised` 并提醒附差异，`review approve` 用 `--target both`；只差标记的 Spec 不拷、不覆盖集成分支上已批准的那份；发 0.11.2。原因：spec-guard 修复批次的 C165（与此前 C87）里，用户批准 Plan 时一并批准了修订后的 Spec，`review approve` 只写 Plan 标记被 spec-guard 拒绝（`spec-not-approved … revised`），协调手动补好的 Spec 又在重跑时被模块分支的旧标记覆盖（sg-coord 经用户同意直接报告）；来源：用户 2026-10-22 选 A 发热修 0.11.2，本修订待复审。
