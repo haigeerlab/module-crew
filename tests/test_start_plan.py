@@ -9,8 +9,8 @@ class PlanTest(StartCase):
     def test_proposes_up_to_free_slots_in_build_order(self):
         p = start.plan(self.repo)
         self.assertEqual(p.blockers, [])
-        self.assertEqual(p.slots, 3)
-        self.assertEqual([m["id"] for m in p.modules], ["b", "c", "d"])
+        self.assertEqual(p.slots, 2)                                    # crew-coordinator-switch: default 2
+        self.assertEqual([m["id"] for m in p.modules], ["b", "c"])
         self.assertEqual(p.modules[0]["responsibility"], "支付页")
 
     def test_active_dev_sessions_take_slots(self):
@@ -21,8 +21,8 @@ class PlanTest(StartCase):
             tx.put("session", "shop-y", {"role": "dev", "host": "claude-desktop", "status": "retired",
                                          "module": "y", "worktree": "/tmp/y"}, action="registered")
         p = start.plan(self.repo)
-        self.assertEqual(p.slots, 2)
-        self.assertEqual([m["id"] for m in p.modules], ["b", "c"])
+        self.assertEqual(p.slots, 1)
+        self.assertEqual([m["id"] for m in p.modules], ["b"])
 
     def test_configured_max(self):
         db, _ = store.init_store(self.repo)
@@ -48,11 +48,11 @@ class PlanCliTest(StartCase):
     def test_human_and_json(self):
         r = self.run_cli("start", "plan")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("空位：3", r.stdout)
+        self.assertIn("空位：2", r.stdout)
         self.assertIn("b（支付页）", r.stdout)
         import json
         doc = json.loads(self.run_cli("start", "plan", "--json").stdout)
-        self.assertEqual([m["id"] for m in doc["modules"]], ["b", "c", "d"])
+        self.assertEqual([m["id"] for m in doc["modules"]], ["b", "c"])
 
     def test_blocked_exit_3(self):
         (self.repo / "dirty.txt").write_text("x")
@@ -72,7 +72,7 @@ class PilotRound2Test(StartCase):
     def test_suspended_module_not_proposed(self):
         self.dev("b", suspended={"reason": "等设计稿", "at": "2026-10-18T00:00:00+08:00", "original": "挂起 b"})
         p = start.plan(self.repo)
-        self.assertEqual(p.slots, 3)
+        self.assertEqual(p.slots, 2)
         self.assertEqual([m["id"] for m in p.modules], ["c", "d"])      # problem H
 
     def test_merged_module_frees_its_slot(self):
@@ -80,7 +80,7 @@ class PilotRound2Test(StartCase):
         with db.transaction(actor="t") as tx:
             tx.put("item", "9", {"kind": "merge-approval", "module": "b", "state": "closed", "closedReason": "merged"},
                    action="merged")
-        self.assertEqual(start.plan(self.repo).slots, 3)                # problem O
+        self.assertEqual(start.plan(self.repo).slots, 2)                # problem O
 
     def test_reasons_when_nothing_startable(self):
         from helpers import START_MAP

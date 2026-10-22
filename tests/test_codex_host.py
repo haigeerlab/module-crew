@@ -61,7 +61,7 @@ class PrepareHostTest(StartCase):
         self.assertEqual(store.get(db, "session", "shop-b")["host"], "claude-desktop")
 
     def test_mixed_batch_and_bad_host(self):
-        self.assertEqual(start.prepare(self.repo, ["b"], "开 b", short="shop", host="codex").code, 0)
+        self.assertEqual(start.prepare(self.repo, ["b"], "开 b", short="shop", host="codex", max_modules=3).code, 0)
         self.assertEqual(start.prepare(self.repo, ["c"], "开 c").code, 0)
         db = store.open_store(self.repo)
         hosts = {k: v["host"] for k, v in store.records(db, "session").items() if v["role"] == "dev"}

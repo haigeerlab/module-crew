@@ -21,7 +21,7 @@ class PermCase(StartCase):
         (self.repo / ".gitignore").write_text(IGNORE, encoding="utf-8")
         git(self.repo, "add", ".gitignore")
         git(self.repo, "commit", "-q", "-m", "ignore local settings")
-        assert start.prepare(self.repo, ["b"], "开 b", short="shop").code == 0
+        assert start.prepare(self.repo, ["b"], "开 b", short="shop", max_modules=3).code == 0   # room for d
         assert start.prepare(self.repo, ["c"], "开 c", host="codex").code == 0
         self.db = store.open_store(self.repo)
         sessions = store.records(self.db, "session")
