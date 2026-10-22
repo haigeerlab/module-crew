@@ -1,4 +1,4 @@
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved dbcc26eb07fe -->
 
 # Spec: crew-command-entry
 
