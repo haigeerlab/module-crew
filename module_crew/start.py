@@ -246,9 +246,9 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             tx.put("config", "main", {**(tx.get("config", "main") or {}), "commitPrefix": commit_prefix}, action="set",
                    data={"commitPrefix": commit_prefix})
         if not any(v.get("role") == "coordinator" and v.get("status") == "active" for v in tx.records("session").values()):
-            from module_crew.hooks import own_session_id
+            from module_crew.hooks import identity, own_session_id
             sid = own_session_id()          # crew-routing-fixes: the coordinator running start binds itself
-            ident = {"hostSession": {"sessionId": sid, "boundAt": store.now()}} if sid else {}
+            ident = {"hostSession": identity(sid)} if sid else {}
             tx.put("session", coord, {"role": "coordinator", "host": "claude-desktop", "status": "active", **ident},
                    action="registered")
         approval = tx.allocate_number()

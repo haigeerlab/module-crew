@@ -325,6 +325,8 @@ def _validate_session(key: str, rec: dict, others: dict) -> None:
     if ident is not None and not (isinstance(ident, dict) and isinstance(ident.get("sessionId"), str)
                                   and ident["sessionId"].strip()):
         raise bad("hostSession 必须带非空的 sessionId")
+    if ident is not None and "desktopId" in ident and not (isinstance(ident["desktopId"], str) and ident["desktopId"].strip()):
+        raise bad("hostSession.desktopId 必须是非空字符串")
     if role == "dev":
         module, worktree = rec.get("module"), rec.get("worktree")
         if not isinstance(module, str) or not module:

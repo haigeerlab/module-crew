@@ -265,10 +265,10 @@ class ClearHandoverTest(ReviewCase):
 
     def test_window(self):
         import time
-        hooks.end_for_clear(self.db, "sid-old", str(self.repo))
-        self.assertIsNone(hooks.rebind_after_clear(self.db, "sid-late", str(self.repo), now=time.time() + 31))
+        hooks.end_session(self.db, "sid-old", str(self.repo), "clear")
+        self.assertIsNone(hooks.rebind(self.db, "sid-late", str(self.repo), "clear", now=time.time() + 31))
         self.assertEqual(self.bound("shop-coord"), "sid-old")
-        self.assertIsNone(hooks.rebind_after_clear(self.db, "sid-later", str(self.repo), now=time.time() + 301))
+        self.assertIsNone(hooks.rebind(self.db, "sid-later", str(self.repo), "clear", now=time.time() + 301))
         self.assertEqual(store.get(self.db, "handover", "shop-coord")["closedReason"], "expired")
 
     def test_hooks_json_has_session_end(self):
@@ -308,6 +308,84 @@ class StatusTest(ReviewCase):
         self.assertEqual(coordinator.down(self.repo, "关掉", session_id="sid-coord")[0], 0)
         self.assertIn("shop-coord：", self.run_cli("status").stdout)
         self.assertIn("已关闭", self.run_cli("status").stdout)
+
+
+class DesktopHandoverTest(ReviewCase):
+    """Acceptance 8 (2026-10-22 revision): the desktop app ends a cleared process with reason "other" and starts the
+    next one with source "startup" on the next message; CLAUDE_CODE_HOST_SESSION_ID (local_…) stays the same."""
+
+    DESKTOP = {"CLAUDE_CODE_ENTRYPOINT": "claude-desktop", "CLAUDE_CODE_HOST_SESSION_ID": "local_aaa"}
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        self.env(self.DESKTOP)
+        hooks.bind(self.db, "shop-coord", "sid-old", self.repo, original="你来做模块协调")
+
+    def env(self, values):
+        for k, v in values.items():
+            old = os.environ.get(k)
+            self.addCleanup(lambda k=k, old=old: os.environ.__setitem__(k, old) if old is not None else os.environ.pop(k, None))
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def bound(self):
+        return store.get(self.db, "session", "shop-coord")["hostSession"]
+
+    def test_bind_records_desktop_id(self):
+        self.assertEqual(self.bound()["desktopId"], "local_aaa")
+
+    def test_cli_bind_has_no_desktop_id(self):
+        self.env({"CLAUDE_CODE_ENTRYPOINT": "cli"})
+        self.assertNotIn("desktopId", hooks.identity("sid-x"))
+
+    def test_rebound_after_desktop_clear(self):
+        run("session-end", self.repo, "sid-old", reason="other")
+        text = run("session-start", self.repo, "sid-new", source="startup")
+        self.assertIn("本会话是模块协调", text)
+        self.assertIn("刚清空过", text)
+        self.assertEqual((self.bound()["sessionId"], self.bound()["desktopId"]), ("sid-new", "local_aaa"))
+        ev = store.events(self.db, key="shop-coord", kind="session")[-1]
+        self.assertEqual(ev["data"]["via"], "desktop")
+        self.assertIsNone(store.get(self.db, "sighting", "sid-new"))
+
+    def test_other_desktop_session_not_rebound(self):
+        run("session-end", self.repo, "sid-old", reason="other")
+        self.env({"CLAUDE_CODE_HOST_SESSION_ID": "local_bbb"})
+        self.assertIn("这个项目已有模块协调", run("session-start", self.repo, "sid-other"))
+        self.assertEqual(self.bound()["sessionId"], "sid-old")
+
+    def test_not_before_the_old_process_ends(self):
+        # a CLI child of the live session inherits local_aaa; with no SessionEnd there is no handover to take
+        self.assertNotIn("本会话是模块协调", run("session-start", self.repo, "sid-child"))
+        self.assertEqual(self.bound()["sessionId"], "sid-old")
+
+    def test_other_directory_not_rebound(self):
+        run("session-end", self.repo, "sid-old", reason="other")
+        run("session-start", self.wt["b"], "sid-new")
+        self.assertEqual(self.bound()["sessionId"], "sid-old")
+
+    def test_old_session_coming_back_closes_handover(self):
+        run("session-end", self.repo, "sid-old", reason="other")
+        self.assertIn("本会话是模块协调", run("session-start", self.repo, "sid-old", source="resume"))
+        self.assertEqual(store.get(self.db, "handover", "shop-coord")["closedReason"], "resumed")
+        self.assertEqual(self.bound()["sessionId"], "sid-old")
+
+    def test_expires_after_seven_days(self):
+        import time
+        hooks.end_session(self.db, "sid-old", str(self.repo), "other")
+        self.assertIsNone(hooks.rebind(self.db, "sid-new", str(self.repo), "startup", now=time.time() + 8 * 86400,
+                                       host_id="local_aaa"))
+        self.assertEqual(store.get(self.db, "handover", "shop-coord")["closedReason"], "expired")
+
+    def test_cli_binding_other_end_leaves_nothing(self):
+        self.env({"CLAUDE_CODE_ENTRYPOINT": "cli"})
+        hooks.takeover(self.db, "shop-coord", "换")
+        hooks.bind(self.db, "shop-coord", "sid-cli", self.repo, original="你来做")
+        run("session-end", self.repo, "sid-cli", reason="other")
+        self.assertEqual(store.records(self.db, "handover"), {})
 
 
 if __name__ == "__main__":

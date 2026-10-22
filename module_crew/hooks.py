@@ -84,7 +84,8 @@ def detect(cwd: str | os.PathLike) -> Role | None:
 CLEAR_NOTE = "刚清空过：先跑 `module-crew status`、读未完成的事项，以状态库为准，不按清空前的印象重做已经做过的事。"
 HOOK_WAIT = 2.0          # seconds a hook may wait for the store lock before staying silent
 CLEAR_WINDOW = 30        # SessionStart(clear) must follow SessionEnd(clear) within this many seconds
-HANDOVER_TTL = 300       # an unclaimed handover is void after this many seconds
+HANDOVER_TTL = 300       # an unclaimed CLI handover is void after this many seconds
+DESKTOP_TTL = 7 * 24 * 3600   # the desktop app restarts a cleared session only on its next message
 REMINDER = ("提醒：这个项目已有模块协调（{where}），派活、并行和合入一般由它统一安排。你在这里直接改也可以，"
             "只是这些改动不经它的合并队列，正在开发的模块要等它发现后才会收到同步通知。"
             "要交给模块协调的话，告诉我，我把要做的事整理成一段话，你贴给它就行。")
@@ -251,38 +252,60 @@ def tell_sightings(db: store.Store) -> str | None:
     return f"module-crew：有 {len(fresh)} 个没登记的会话在本项目活动：{seen}。请在回复里顺带告诉用户一次。"
 
 
-def end_for_clear(db: store.Store, session_id: str | None, cwd: str, now: str | None = None) -> bool:
-    """SessionEnd(reason=clear) of a bound session: leave a handover for the conversation that replaces it."""
+def end_session(db: store.Store, session_id: str | None, cwd: str, reason: str | None,
+                now: str | None = None) -> bool:
+    """SessionEnd of a bound session: leave a handover for the conversation that replaces it.
+
+    The CLI ends with reason "clear"; the desktop app ends a cleared process with "other" and starts the next one
+    only when a message arrives (measured 2026-10-22), so a desktop binding (desktopId) leaves one on any end."""
     name = _bound_sessions(db).get(session_id or "")
     if name is None:
         return False
+    desktop = ((store.get(db, "session", name) or {}).get("hostSession") or {}).get("desktopId")
+    if reason != "clear" and not desktop:
+        return False
     with db.transaction(actor="hook", wait=HOOK_WAIT) as tx:
         tx.put("handover", name, {"oldSessionId": session_id, "cwd": os.path.realpath(cwd), "at": now or store.now(),
-                                  "state": "open"}, action="opened")
+                                  "state": "open", "reason": reason, **({"desktopId": desktop} if desktop else {})},
+               action="opened")
     return True
 
 
-def rebind_after_clear(db: store.Store, session_id: str | None, cwd: str, now: float | None = None) -> str | None:
-    """SessionStart(source=clear): move the binding to the new session id when the pair matches; the name or None."""
+def rebind(db: store.Store, session_id: str | None, cwd: str, source: str, now: float | None = None,
+           host_id: str | None = None) -> str | None:
+    """SessionStart: move a binding to the new session id when it follows a handover; the name or None.
+
+    CLI: source "clear" within CLEAR_WINDOW of the clear. Desktop: the same desktop session id (CLAUDE_CODE_HOST_SESSION_ID)
+    within DESKTOP_TTL; a handover only exists once the old process ended, so a child process inheriting the id cannot
+    take the binding while the session is alive. The old id coming back closes the handover."""
     import time
     if not session_id:
         return None
     now = time.time() if now is None else now
+    host_id = desktop_id() if host_id is None else host_id
     here = os.path.realpath(cwd)
     with db.transaction(actor="hook", wait=HOOK_WAIT) as tx:
         for name, h in sorted(tx.records("handover").items()):
             if h.get("state") != "open":
                 continue
+            if h.get("oldSessionId") == session_id:
+                tx.put("handover", name, {**h, "state": "closed", "closedReason": "resumed"}, action="closed")
+                continue
             age = _age(h["at"], now)
-            if age > HANDOVER_TTL:
+            if age > (DESKTOP_TTL if h.get("desktopId") else HANDOVER_TTL):
                 tx.put("handover", name, {**h, "state": "closed", "closedReason": "expired"}, action="expired")
                 continue
             rec = tx.get("session", name) or {}
-            if (h.get("cwd") != here or age > CLEAR_WINDOW or rec.get("status") != "active"
+            if (h.get("cwd") != here or rec.get("status") != "active"
                     or (rec.get("hostSession") or {}).get("sessionId") != h.get("oldSessionId")):
                 continue
-            tx.put("session", name, {**rec, "hostSession": {"sessionId": session_id, "boundAt": store.now()}},
-                   action="rebound-after-clear", data={"oldSessionId": h.get("oldSessionId"), "sessionId": session_id})
+            by_clear = source == "clear" and age <= CLEAR_WINDOW
+            by_desktop = bool(h.get("desktopId")) and host_id == h.get("desktopId")
+            if not (by_clear or by_desktop):
+                continue
+            tx.put("session", name, {**rec, "hostSession": identity(session_id, host_id)},
+                   action="rebound-after-clear", data={"oldSessionId": h.get("oldSessionId"), "sessionId": session_id,
+                                                       "via": "desktop" if by_desktop else "clear"})
             tx.put("handover", name, {**h, "state": "closed", "closedReason": "rebound"}, action="closed")
             return name
     return None
@@ -307,12 +330,11 @@ def _text_for(event: str, payload: dict, cwd: str) -> str | None:
         return None
     sid = payload.get("session_id")
     if event == "session-end":
-        if payload.get("reason") == "clear":
-            end_for_clear(db, sid, cwd)
+        end_session(db, sid, cwd, payload.get("reason"))
         return None
     source = payload.get("source") or "startup"
-    if event == "session-start" and source == "clear":
-        rebind_after_clear(db, sid, cwd)
+    if event == "session-start" and rebind(db, sid, cwd, source):    # also closes a handover whose old id came back
+        source = "clear"                    # say 「刚清空过」 whichever path matched
     role = detect(cwd)
     if role is not None and matches(role, sid):
         if event == "session-start":
@@ -366,6 +388,21 @@ class BindRefused(Exception):
     """The identity cannot be recorded; nothing was written."""
 
 
+def desktop_id() -> str | None:
+    """The desktop app's own session id (local_…), stable across a clear; only when running under the desktop app.
+
+    A CLI process started from inside a session inherits it too, which is why it is only trusted after a SessionEnd."""
+    if (os.environ.get("CLAUDE_CODE_ENTRYPOINT") or "").strip() != "claude-desktop":
+        return None
+    return (os.environ.get("CLAUDE_CODE_HOST_SESSION_ID") or "").strip() or None
+
+
+def identity(session_id: str, host_id: str | None = None) -> dict:
+    """The hostSession record for a binding made now (crew-coordinator-switch: desktopId for the desktop clear path)."""
+    host_id = desktop_id() if host_id is None else host_id
+    return {"sessionId": session_id, "boundAt": store.now(), **({"desktopId": host_id} if host_id else {})}
+
+
 def own_session_id() -> str | None:
     """This process's host session id: Claude Code's CLAUDE_CODE_SESSION_ID (the hook payload's session_id) or Codex's thread."""
     for key in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
@@ -411,8 +448,7 @@ def bind(db: store.Store, name: str, session_id: str | None, cwd: str | os.PathL
         if bound:
             raise BindRefused(f"{name} 已登记为另一个会话：换会话要先请用户同意接管（模块协调运行 module-crew takeover {name}）")
         data = {"sessionId": session_id, **({"original": original} if coordinator else {})}
-        tx.put("session", name, {**rec, "hostSession": {"sessionId": session_id, "boundAt": store.now()}},
-               action="bound", data=data)
+        tx.put("session", name, {**rec, "hostSession": identity(session_id)}, action="bound", data=data)
     return f"已登记：本会话就是 {name}，module-crew 的钩子从现在起按这个会话注入角色"
 
 

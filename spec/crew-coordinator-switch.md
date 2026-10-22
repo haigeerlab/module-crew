@@ -80,6 +80,13 @@
    **30 秒内**到来时，把该登记的绑定改成新编号（事件 `rebound-after-clear`），并照常注入角色、加一句
    「刚清空过：先跑 module-crew status，以状态库为准」。不满足任一条件就不交接，交接记录 5 分钟后作废，
    那时会话就是陌生会话，按现有办法 `bind`（协调要原话）。协调会话的交接**不要原话**：清空是用户在那个窗口里亲手做的。
+   （2026-10-22 修订，实地验证后）**桌面版另走一条路**：桌面版清空时旧进程以 `reason: "other"` 结束，新进程等下一条消息才以
+   `source: "startup"` 启动，上面的配对认不出来。所以绑定时（`bind`、`coordinator up`、`start prepare`、交接后改绑）若
+   `CLAUDE_CODE_ENTRYPOINT` 是 `claude-desktop`，另记 `hostSession.desktopId` = `CLAUDE_CODE_HOST_SESSION_ID`（桌面版会话编号 `local_…`，清空后不变）。
+   带 `desktopId` 的已绑定会话以**任何原因**结束时都写交接记录（带 `desktopId`）；之后同一 `cwd` 的 `SessionStart`，若钩子环境里的
+   `CLAUDE_CODE_HOST_SESSION_ID` 等于记录里的 `desktopId`、登记仍绑着旧编号，就改绑到新编号（不设 30 秒窗口，记录 7 天后作废）。
+   旧编号又以同一编号启动（宿主把空闲会话停掉后再接上）时，交接记录关闭为「原会话回来了」。交接记录只在旧进程结束后才有，
+   所以从该会话里起的命令行子进程即使继承了同一个 `CLAUDE_CODE_HOST_SESSION_ID`，也拿不走登记。
 9. **默认上限改为 2**：只改 `DEFAULT_MAX`；`up` 与 `start prepare` 新写配置时用它；已存在的 `maxModules` 不动。
 10. **`start prepare` 衔接**：已有在用的协调登记时沿用它（现有逻辑已如此），不再另外登记；简称与已定的不同照旧拒绝。
     没 `up` 过直接 `start prepare` 仍然可用（它本来就要用户原话），等于同时升级。
@@ -165,6 +172,7 @@ PYTHONPATH=tests python3 -m unittest test_coordinator_switch
 6. 有协调会话时，陌生会话第一次 `SessionStart` 得到决策 6 的提醒（集成 checkout 里另带接管办法），状态库多一条 `sighting`；同一编号再启动、恢复、压缩都不再提醒；模块 worktree 里的陌生会话仍是原来的 bind 提示。
 7. 协调会话下一轮 `UserPromptSubmit` 的注入里列出未告知的 `sighting`，之后不再重复；`status` 列出它们。
 8. 已绑定会话 `SessionEnd reason=clear` 后 30 秒内同 `cwd` 的 `SessionStart source=clear`：绑定改为新编号、事件 `rebound-after-clear`、注入角色与「刚清空过」提示；任一条件不满足不交接。
+   （2026-10-22 修订）桌面版：绑定时记下 `desktopId`；带 `desktopId` 的已绑定会话以任何原因结束后，同 `cwd`、同 `CLAUDE_CODE_HOST_SESSION_ID` 的新会话启动时改绑；`desktopId` 不同、`cwd` 不同、旧进程没结束、超过 7 天各不改绑；旧编号回来时交接记录关闭。
 9. 钩子写入遇到锁超时或只读目录：不输出提醒、退出码 0、对话不受影响。
 10. 新项目默认上限 2；已有配置的上限不变。
 11. `status` 显示协调会话段（名字、目录、分支、绑定状态）与没登记的会话段；`--json` 同样有这两段。
@@ -184,3 +192,7 @@ PYTHONPATH=tests python3 -m unittest test_coordinator_switch
 ## 文档建议
 
 README「开始使用」一节改为先「升级协调会话」（`coordinator up`），再讲开模块；加一段「没升级的会话照常用，插件会提醒一次」。CHANGELOG 记第六版。
+
+## 变更记录
+
+- 2026-10-22：关键决策 8 与验收 8 加桌面版交接路径（绑定时记 `CLAUDE_CODE_HOST_SESSION_ID`，旧进程结束后同目录、同桌面版会话编号的新会话改绑）。原因：Checkpoint 2 实地验证发现桌面版清空的事件与命令行版不同（`SessionEnd reason:"other"`、新进程 `source:"startup"`），原方案不生效；桌面版会话进程的 `CLAUDE_CODE_HOST_SESSION_ID` 是 `local_` 编号、清空后不变。来源：用户 2026-10-22 选 A「修订 Spec 决策 8，加桌面版按 CLAUDE_CODE_HOST_SESSION_ID 的交接路径」。

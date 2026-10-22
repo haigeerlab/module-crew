@@ -44,7 +44,7 @@ def make_worktree(repo: Path, name: str) -> Path:
 class RepoCase(unittest.TestCase):
     """Each test gets a fresh repo under the system temp dir; nothing else is touched."""
 
-    SESSION_VARS = ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")
+    SESSION_VARS = ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_CODE_HOST_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT")
 
     def setUp(self) -> None:
         # 0.9.4: the conversation running the tests must not leak into them (start prepare binds the coordinator

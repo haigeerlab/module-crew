@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 from module_crew import probe, start, store
-from module_crew.hooks import active_coordinator, own_session_id, where
+from module_crew.hooks import active_coordinator, identity, own_session_id, where
 
 UP_CHECKS = ("git", "agent-relay", "spec-guard", "spec-guard-enabled", "baseline")
 
@@ -63,7 +63,7 @@ def up(project: str | os.PathLike, short: str | None, original: str,
             tx.put("config", "main", {**(tx.get("config", "main") or {}), **cfg, "pluginVersion": plugin_version(),
                                       "reviewCadence": start.review_cadence(project)}, action="set")
         tx.put("session", coord, {"role": "coordinator", "host": "claude-desktop", "status": "active",
-                                  "hostSession": {"sessionId": sid, "boundAt": store.now()}},
+                                  "hostSession": identity(sid)},
                action="coordinator-up", data={"original": original, "sessionId": sid})
     return 0, [f"已升级：本会话是本项目的模块协调 {coord}（{where(db, store.get(db, 'session', coord))}）",
                f"多模块并行上限 {(store.get(db, 'config', 'main') or {}).get('maxModules')}",
