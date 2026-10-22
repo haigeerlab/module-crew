@@ -1,4 +1,4 @@
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 936cbd33f1bb -->
 
 # Spec: crew-probe
 

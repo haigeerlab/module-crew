@@ -1,4 +1,5 @@
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 4e9d577eac7c -->
+
 # Spec: crew-recovery-hooks
 
 > 能力图模块 `crew-recovery-hooks`。需求来源：`docs/requirements-record.md` 第 7 节（恢复五原则；钩子在启动／恢复／压缩及每轮按角色注入；换会话需用户同意 `takeover` 邮箱名一次）、
