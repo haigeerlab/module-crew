@@ -218,6 +218,14 @@ def registration_of(db: store.Store, session_id: str | None) -> tuple[str, dict]
                  if s.get("status") == "active" and (s.get("hostSession") or {}).get("sessionId") == session_id), None)
 
 
+def superseded(db: store.Store, session_id: str | None) -> str | None:
+    """The registration this conversation used to be, before another conversation took it over (crew-session-handover)."""
+    if not session_id:
+        return None
+    return next((n for n, s in sorted(store.records(db, "session").items()) if s.get("status") == "active"
+                 and any(p.get("sessionId") == session_id for p in s.get("previousSessions") or [])), None)
+
+
 def role_of(db: store.Store, name: str, rec: dict) -> Role:
     kind = rec.get("role")
     return Role(kind, name, rec.get("module") if kind == "dev" else None, db, rec.get("task") if kind == "task" else None)
@@ -406,6 +414,10 @@ def _text_for(event: str, payload: dict, cwd: str) -> str | None:
             told = tell_sightings(db)
             line = "\n".join(x for x in (line, told) if x)
         return line
+    gone = superseded(db, sid)
+    if gone is not None:
+        return (f"module-crew：本会话已被接管：{gone} 现在登记在另一个会话上。不要再以 {gone} 的身份执行 module-crew 写命令"
+                "（会被拒），也不要再替它收发消息；有要交接的事告诉用户。")
     role = detect(cwd)
     if role is not None and matches(role, sid):
         if event == "session-start":

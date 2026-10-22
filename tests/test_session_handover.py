@@ -86,5 +86,19 @@ class TakeoverTest(HandoverCase):
         self.assertEqual(r.returncode, 3)
 
 
+class OldSessionTest(HandoverCase):
+    """Acceptance 3."""
+
+    def test_old_session_told_it_was_taken_over(self):
+        hooks.bind(self.db, "shop-coord", "sid-new", self.elsewhere, original="新会话接手", takeover=True)
+        for event in ("session-start", "prompt"):
+            with self.subTest(event=event):
+                text = run(event, self.repo, "sid-coord")
+                self.assertIn("本会话已被接管", text)
+                self.assertIn("不要再以 shop-coord 的身份执行 module-crew 写命令", text)
+                self.assertNotIn("本会话是模块协调", text)
+                self.assertNotIn("提醒：这个项目已有模块协调", text)
+
+
 if __name__ == "__main__":
     unittest.main()
