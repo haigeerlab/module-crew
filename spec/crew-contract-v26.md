@@ -72,7 +72,7 @@ tests/fixtures/session-protocol/v2.6/、tests/test_contract_v26.py
 
 ```bash
 python3 -m unittest discover -s tests
-PYTHONPATH=tests python3 -m unittest test_contract_v26 test_protocol_fixtures
+PYTHONPATH=tests python3 -m unittest test_contract_v26 test_protocol_conformance
 ```
 
 ## 代码风格
