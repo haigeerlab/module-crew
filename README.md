@@ -144,6 +144,7 @@ bin/module-crew status
 2. 提请批准的正文逐条用 bodyFile 原样发给决策收件箱；要用户决定的事只在那里问，会话里不放可以点的决定按钮。
 3. 决策收件箱转来【用户答复】后，批准命令带 `--source <决策收件箱> --source-item <H> --source-relay-id <消息号> --source-from <实际发件人> --original-file <那条消息>`，用户原话从消息里读出；实际发件人不是来源本身或是模块会话时拒收。
 4. `module-crew source map <H>` 查一个待决事项批准了哪些 C 编号。
+   待定问题（契约 v2.6）：决策收件箱登记为 2.6 及以上、或没有决策收件箱时，给用户看的待定问题编成 `C<交审号>-<序号>`（如 C15-1），登记低于 2.6 时照旧用 D；答复块一块只答一件事（如「C16 A；C16-1 B」）。登记 2.6：`source add <邮箱名> --kind hub --protocol 2.6 --original-file <原话>`。
 5. 外部插件读 `module-crew sessions --json`（`schemaVersion` 1：module、relayName、worktree、stage、stageText、suspended、lastActivity、review；0.4.0 起加停滞事实 startedAt、commits、asks、returns、waitUser，见 [spec/crew-stall-signals.md](spec/crew-stall-signals.md)，只给事实、不判断是否卡住），出口与契约版本登记在根目录 `interface.json`。
 
 **不配决策收件箱、不配审查者时**：一切照常在模块协调里由用户亲手批准；没有审查者就不送审、不返工，提请批准里写「未审查」；「待你决定」的问题由模块协调直接问用户。
@@ -170,7 +171,7 @@ module-crew merge approve|revoke|queue|run|cleanup|push-plan|push
 module-crew suspend|resume|sessions|resume-kit|serial
 module-crew takeover <邮箱名> --original(-file)  换会话接管
 module-crew bind <邮箱名> --takeover --original(-file)  新会话一步接手模块协调（同一仓库任一目录，旧会话失效）
-module-crew source add|remove|list|map           可信批准来源（决策收件箱、审查者）与对照；hub 可带 --protocol 2.3|2.4（不写按 2.4）
+module-crew source add|remove|list|map           可信批准来源（决策收件箱、审查者）与对照；hub 可带 --protocol 2.3|2.4|2.5|2.6（不写按 2.4）
 module-crew review note [--then-batch]|batch --for-hub   审查结论、返工、提请批准正文（一个模块一条）
 module-crew ticket close <编号> --reason …        模块协调关等待记录
 module-crew wait add --file --to --relay-id --about  记下模块协调自己发出的等待记录

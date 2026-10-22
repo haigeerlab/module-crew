@@ -18,7 +18,7 @@ class SkillsTest(unittest.TestCase):
     def test_coordinator_review_nearby(self):
         _, text = read("crew-coordinator")
         for words in ("## 审查就近", "**不问用户**", "返工满 3 次", "审查者无响应", "**不要按倾向替用户填**", "提请批准一个模块一条",
-                      "merge revoke", "合并前先复述", "去决策收件箱答 #N", "评审节奏", "批准 C32 C33",
+                      "merge revoke", "合并前先复述", "去决策收件箱答 #N", "评审节奏", "C32 A；C32-1 B", "一块只答一件事",
                       "merge renotice", "检查环境出了问题", "提交钩子：退出码 N"):
             self.assertIn(words, text)
 
