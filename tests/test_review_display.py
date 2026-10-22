@@ -5,7 +5,7 @@ import os
 import unittest
 from pathlib import Path
 
-from helpers import MergeCase, ReviewCase, git, review_text
+from helpers import MergeCase, ReviewCase, StartCase, git, review_text
 
 from module_crew import protocol, review, store
 
@@ -162,6 +162,83 @@ class PlanWithoutFilesTest(FinalTablesCase):
         self.assertTrue(all(r["beyondPlan"] is None for r in item["display"]["code"]))
         [(n, path, text)] = review.for_hub(self.repo)
         self.assertIn("无法判断（Plan 没写文件）", protocol.parse(text).fields["要点"])
+
+
+STUCK = """【等待用户】
+结束：无
+来自：shop-b
+项目：repo
+要你决定：完整检查第二次过不去，怎么办
+要点：出了什么事：依赖的接口超时，同一个检查第二次过不去
+模块：b
+类型：卡住选做法
+选项与我的建议：
+推荐 A：等上游修好
+  选了会怎样：挂起本模块，等上游
+B：换做法
+  选了会怎样：改 Plan 重交
+你该回：A
+是否完全停住：是
+"""
+
+CHANGE = "【公共变更请求】\n结束：无\n来自：b\n文件：\npackage.json\n改什么：加 left-pad\n为什么：要补零\n是否完全停住：否\n"
+
+
+def card(out: str) -> list[str]:
+    """The 「给用户看的正文」 block of a command's output."""
+    lines = out.split("给用户看的正文：", 1)[1].strip("\n").splitlines()
+    return [x[2:] for x in lines if x.startswith("  ")]
+
+
+def assert_skeleton(case, lines, head, items):
+    case.assertEqual(lines[0], head)
+    for name in items:
+        case.assertTrue(any(x.startswith(f"{name}：") for x in lines), (name, lines))
+    for name in ("注意", "推荐理由", "批了会怎样"):
+        case.assertEqual(sum(x.startswith(f"{name}：") for x in lines), 1, (name, lines))
+    block = lines[lines.index("复制块：") + 1:]
+    case.assertEqual(len(block), 1, lines)
+    case.assertNotIn("<", block[0])
+    return block[0]
+
+
+class StartCardTest(StartCase):
+    """Acceptance 3: 开工."""
+
+    def test_start_plan_card(self):
+        from module_crew import start
+        ids = "、".join(m["id"] for m in start.plan(self.repo).modules)      # as many as there are slots
+        out = self.run_cli("start", "plan").stdout
+        block = assert_skeleton(self, card(out), f"{ids} · 开工 · 批准后编号", ("开哪些模块", "各自的 worktree 与分支", "会话从哪个宿主开"))
+        self.assertEqual(block, f"开 {ids}")
+
+
+class ChangeCardTest(ReviewCase):
+    """Acceptance 3: 公共变更请求."""
+
+    def test_change_card(self):
+        f = self.tmp / "change.txt"
+        f.write_text(CHANGE, encoding="utf-8")
+        r = self.run_cli("change", "add", str(f), "--from", "shop-b", "--relay-id", "7")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        n = next(int(k) for k, v in store.records(store.open_store(self.repo), "request").items())
+        block = assert_skeleton(self, card(r.stdout), f"b · 公共变更请求 · C{n}", ("改哪些文件", "为什么要改", "谁在等"))
+        self.assertEqual(block, f"C{n} A")
+
+
+class StuckCardTest(ReviewCase):
+    """Acceptance 3: 卡住选做法."""
+
+    def test_stuck_card(self):
+        f = self.tmp / "stuck.txt"
+        f.write_text(STUCK, encoding="utf-8")
+        r = self.run_cli("inbox", "add", str(f), "--from", "shop-b", "--relay-id", "8")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        n = max(int(k) for k in store.records(store.open_store(self.repo), "item"))
+        lines = card(r.stdout)
+        block = assert_skeleton(self, lines, f"b · 卡住选做法 · C{n}", ("出了什么事",))
+        self.assertIn("A：等上游修好（选了会怎样：挂起本模块，等上游）", lines)
+        self.assertEqual(block, f"C{n} A")
 
 
 if __name__ == "__main__":

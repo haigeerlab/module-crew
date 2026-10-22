@@ -312,6 +312,11 @@ def _inbox_add(path: str, sender: str, relay_id: int) -> int:
         print("没对上：" + "、".join(f"#{n}" for n in out.unmatched))
     for line in out.tell_sender:
         print(f"转告发件人：{line}")
+    msg = protocol.parse(text)
+    doc = msg.contract()
+    if out.code == 0 and out.number is not None and doc.get("waitKind") == "stuck" and not doc.get("task"):
+        from module_crew import present                 # crew-review-display: the stuck card for the user
+        print(present.card_text(present.stuck_card(out.number, doc, msg.fields)))
     return out.code
 
 
@@ -354,6 +359,12 @@ def _start_plan(as_json: bool) -> int:
             print(f"⚠️ 冲突：{'、'.join(c.get('modules', []))} 在 {'、'.join(c.get('paths', []))}")
         if p.modules and not p.blockers:
             print(f"提议：开这 {len(p.modules)} 个吗？（问用户一次，答应后运行 start prepare）")
+            from module_crew import present
+            try:
+                db = store.open_store()
+            except store.StoreError:
+                db = None
+            print(present.card_text(present.start_card(Path("."), db, p.modules, p.conflicts)))
         elif not p.blockers:
             print("没有可开的模块：" if p.reasons else "没有可开的模块（能力图上的模块都已完成）")
             for r in p.reasons:
@@ -570,6 +581,9 @@ def _change(args) -> int:
         print(f"类型：{out.kind}")
         for line in out.lines:
             print(line)
+        if out.code == 0 and out.number is not None:        # crew-review-display: the card the user is asked with
+            from module_crew import present
+            print(present.card_text(present.change_card(db, out.number)))
         return out.code
     if args.action == "list":
         rows = changes.pending(db)

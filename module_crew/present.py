@@ -210,3 +210,55 @@ def table_lines(t: dict) -> list[str]:
     else:
         lines.append("Spec 中途改过吗：没有")
     return lines
+
+
+# ------------------------------------------------------------------ request cards (decision 3)
+
+def render_request(head: str, items: list[tuple[str, str]], note: str, why: str, effect: str, block: str,
+                   extra: list[str] = ()) -> list[str]:
+    """spec-guard's card skeleton: 「<模块> · <节点> · <编号>」, the fixed items, 注意／推荐理由／批了会怎样, one copy block."""
+    return ([head] + [f"{name}：{text}" for name, text in items] + list(extra)
+            + [f"注意：{note or '无'}", f"推荐理由：{why}", f"批了会怎样：{effect}", "复制块：", block])
+
+
+def card_text(lines: list[str]) -> str:
+    """How a command prints a card: the coordinator shows it in the reply, the copy block in a code block of its own."""
+    return "给用户看的正文：\n" + "\n".join(f"  {x}" for x in lines)
+
+
+def start_card(project: Path, db: store.Store | None, modules: list[dict], conflicts: list[dict]) -> list[str]:
+    cfg = (store.get(db, "config", "main") or {}) if db is not None else {}
+    top = Path(probe._git(project, "rev-parse", "--show-toplevel").stdout.strip() or project)
+    crew = Path(cfg.get("crewDir") or top.parent / f"{top.name}-crew")
+    ids = "、".join(m["id"] for m in modules)
+    where = "；".join(f"{m['id']}：{crew / m['id']}（分支 {m['id']}）" for m in modules)
+    note = "；".join(f"{'、'.join(c.get('modules', []))} 在 {'、'.join(c.get('paths', []))} 会撞" for c in conflicts)
+    return render_request(f"{ids} · 开工 · 批准后编号",
+                          [("开哪些模块", "；".join(f"{m['id']}（{m.get('responsibility', '')}）" for m in modules)),
+                           ("各自的 worktree 与分支", where), ("会话从哪个宿主开", "Claude 桌面版（要开 Codex 会话时说一声）")],
+                          note, "能力图上这几个模块依赖都已就绪、并行边界不冲突，有空位",
+                          "为每个模块建 worktree 与分支、登记会话、生成开工说明；不写代码、不合并", f"开 {ids}")
+
+
+def change_card(db: store.Store, number: int) -> list[str]:
+    rec = store.get(db, "request", str(number)) or {}
+    sender = rec.get("from", "")
+    module = (store.get(db, "session", sender) or {}).get("module") or sender
+    return render_request(f"{module} · 公共变更请求 · C{number}",
+                          [("改哪些文件", "、".join(rec.get("files") or [])), ("为什么要改", rec.get("why", "")),
+                           ("谁在等", f"{sender}" + ("（完全停住）" if rec.get("fullyStopped") else "（还能做别的）"))],
+                          "公共文件改了会影响所有模块，批准后由模块协调改并通知各模块同步",
+                          f"{module} 要改的是公共文件，按规矩不能自己改：{rec.get('what', '')}",
+                          "模块协调在集成分支改这些文件、单独提交，再通知各模块同步", f"C{number} A")
+
+
+def stuck_card(number: int, doc: dict, fields: dict) -> list[str]:
+    module = doc.get("module") or "?"
+    happened = next((p["text"] for p in doc.get("points") or [] if p["name"] == "出了什么事"), fields.get("要点", "").strip())
+    options = [f"{o['letter']}：{o['text']}" + (f"（选了会怎样：{o['consequence']}）" if o.get("consequence") else "")
+               for o in doc.get("options") or []]
+    rec = doc.get("recommended") or "A"
+    chosen = next((o for o in doc.get("options") or [] if o["letter"] == rec), {})
+    return render_request(f"{module} · 卡住选做法 · C{number}", [("出了什么事", happened)],
+                          "同一个目标第二次过不去，原因在模块以外", f"模块推荐 {rec}：{chosen.get('text', '')}",
+                          chosen.get("consequence") or "按你选的做法继续", f"C{number} {rec}", extra=options)
