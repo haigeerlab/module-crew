@@ -723,6 +723,41 @@ def _remind() -> None:
 _LOCKED = {("change", "land"), ("review", "approve"), ("merge", "tick"), ("merge", "cleanup"), ("coordinator", "down")}
 
 
+# crew-session-handover decision 3: commands any session may run (read-only, the module side, hooks); every other
+# command is the coordinator's and is refused (exit 7) when it comes from a conversation that is not the bound one.
+# (group, action); action None = the whole group.
+_ANY_SESSION = {("status", None), ("sessions", None), ("protocol", None), ("hook", None), ("bind", None), ("sync", None),
+                ("host-check", None), ("store", "check"), ("start", "plan"), ("review", "batch"), ("review", "show"),
+                ("change", "list"), ("merge", "queue"), ("merge", "push-plan"), ("source", "list"), ("source", "map"),
+                ("task", "list"), ("task", "show"), ("task", "next"), ("permissions", "plan"), ("coordinator", "up")}
+
+
+def _session_guard(args) -> int | None:
+    key = (args.group, getattr(args, "action", None))
+    if (args.group, None) in _ANY_SESSION or key in _ANY_SESSION:
+        return None
+    if args.group == "unqueued" and not getattr(args, "notify", False):
+        return None
+    if key == ("permissions", "verify") and not getattr(args, "record", None):
+        return None
+    caller = hooks.own_session_id()
+    if not caller:
+        return None                         # no session id: the user at a terminal
+    try:
+        coord = hooks.active_coordinator(store.open_store())
+    except store.StoreError:
+        return None
+    if coord is None:
+        return None
+    name, rec = coord
+    bound = (rec.get("hostSession") or {}).get("sessionId")
+    if not bound or bound == caller:
+        return None
+    print(f"❌ 本会话不是登记的模块协调 {name}（登记的是另一个会话）：没有执行，什么都没写。"
+          f"要由本会话接手，请用户同意后运行 module-crew bind {name} --takeover --original-file <原话文件>", file=sys.stderr)
+    return 7
+
+
 def _merge_lock_guard(args) -> int | None:
     key = (args.group, getattr(args, "action", None))
     if key not in _LOCKED and not (args.group == "unqueued" and getattr(args, "notify", False)):
@@ -975,6 +1010,9 @@ def _main(argv: list[str] | None = None) -> int:
     seg.add_argument("--original-file")
     _add_source_options(parser)
     args = parser.parse_args(argv)
+    blocked = _session_guard(args)
+    if blocked is not None:
+        return blocked
     blocked = _merge_lock_guard(args)
     if blocked is not None:
         return blocked

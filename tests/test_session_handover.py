@@ -100,5 +100,49 @@ class OldSessionTest(HandoverCase):
                 self.assertNotIn("提醒：这个项目已有模块协调", text)
 
 
+WRITES = [("merge", "run", "--check-command", "python3 -c pass"), ("merge", "approve", "1", "--original", "批"),
+          ("change", "land", "1", "--original", "落地"), ("review", "approve", "1", "--original", "批"),
+          ("review", "add", "msg.txt", "--from", "shop-b", "--relay-id", "9"), ("inbox", "add", "msg.txt", "--from", "shop-b", "--relay-id", "9"),
+          ("task", "dispatch", "1"), ("start", "prepare", "c", "--original", "开 c"), ("coordinator", "down", "--original", "关")]
+READS = [("status",), ("review", "batch"), ("task", "list"), ("sessions",), ("protocol", "check", "msg.txt"), ("unqueued",)]
+
+
+class GuardTest(HandoverCase):
+    """Acceptance 4."""
+
+    def setUp(self):
+        super().setUp()
+        (self.repo / "msg.txt").write_text("【等待用户】\n", encoding="utf-8")
+
+    def cli(self, args, sid):
+        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")}
+        if sid:
+            env["CLAUDE_CODE_SESSION_ID"] = sid
+        return self.run_cli(*args, env=env)
+
+    def test_other_session_refused_and_nothing_written(self):
+        for args in WRITES:
+            with self.subTest(args=args[:2]):
+                before = len(list(store.events(self.db)))
+                r = self.cli(args, "sid-other")
+                self.assertEqual(r.returncode, 7, (r.stdout, r.stderr))
+                self.assertIn("bind shop-coord --takeover", r.stderr)
+                self.assertEqual(len(list(store.events(self.db))), before)
+
+    def test_reads_and_module_side_pass(self):
+        for args in READS:
+            with self.subTest(args=args[:2]):
+                self.assertNotEqual(self.cli(args, "sid-other").returncode, 7)
+
+    def test_bound_session_and_terminal_pass(self):
+        for sid in ("sid-coord", None):
+            with self.subTest(sid=sid):
+                self.assertNotEqual(self.cli(("merge", "run", "--check-command", "python3 -c pass"), sid).returncode, 7)
+
+    def test_unbound_coordinator_not_guarded(self):
+        hooks.takeover(self.db, "shop-coord", "换个会话")       # clears hostSession: nothing to compare with
+        self.assertNotEqual(self.cli(("merge", "run", "--check-command", "python3 -c pass"), "sid-other").returncode, 7)
+
+
 if __name__ == "__main__":
     unittest.main()
