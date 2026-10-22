@@ -189,3 +189,97 @@ def next_ready(db: store.Store, project: str | os.PathLike) -> list[int]:
 
 STATE_NAMES = {"queued": "排队", "ready": "可开", "dispatched": "已派出", "working": "在做", "returned": "交回",
                "escalated": "升格待定", "merged": "已合入", "promoted": "已升格", "cancelled": "已取消"}
+
+
+@dataclass
+class Dispatched:
+    number: int
+    worktree: str
+    branch: str
+    relay: str
+    kickoff: int
+    kickoff_path: str
+    lines: list[str] = field(default_factory=list)
+
+
+def render_kickoff(n: int, t: dict, worktree: Path, branch: str, cfg: dict, relay: str, coord: str) -> str:
+    """The first message of a light task's session: the task card, its rules and the v2.5 message shapes."""
+    check = cfg.get("checkCommand") or "项目 Spec 的 Commands 一节里的完整检查命令"
+    caused = [f"由 {t['causedBy']} 带进来：修之前先看那次改动。"] if t.get("causedBy") else []
+    bug = (["这是 bug：先写一个能复现问题的测试，确认它失败，再修到它通过；交回的「要点」里写一行「复现测试：<测试名>」。"]
+           if t["type"] == "bug" else [])
+    return "\n".join([
+        f"你是 module-crew 的轻任务会话，负责轻任务 T{n}（{'bug' if t['type'] == 'bug' else '需求'}）：{t['title']}。",
+        "先加载 crew-dev skill，照它的「轻任务」一节做；规则不要抄进这个 worktree 的 CLAUDE.md。",
+        "",
+        "任务单：",
+        f"- 做什么：{t['what']}",
+        f"- 预计改的文件：{'、'.join(t['expectedFiles'])}",
+        f"- 做到什么程度算完：{t['done']}",
+        *caused,
+        "",
+        f"工作目录：{worktree}（分支 {branch}，从集成分支 {cfg['integrationBranch']} 切出）",
+        f"邮箱名：{relay}，用 agent-relay bridge_register 注册，wake: \"auto\"",
+        f"注册后先运行 module-crew bind {relay}：登记本会话的身份，module-crew 的钩子只认登记过的会话",
+        f"模块协调：{coord}（你只和它说话）",
+        "",
+        *bug,
+        f"做完、提交、跑完整检查（{check}）全部通过后才交回。交回发最终验收【交审】，样子是：",
+        "【交审】", "结束：无", "模块：无", "节点：最终验收", "文件：", "- <改动的文件> sha256:<前 16 位>",
+        "要点：", "- 做了什么", "- 实测：<命令>，<结果>", "- 没验证：<哪些>", f"任务：T{n}",
+        "改动统计：", "  <git diff --stat 的最后一行，相对集成分支>",
+        "越界检查：与任务单一致（预计 …）／多改了 <文件>，原因 …",
+        "",
+        "做到一半发现比任务单大、或要改别人正在改的文件：停下，代码留在本分支，发【等待用户】：",
+        "要你决定写「轻任务 T<号> 超出任务单，升格、缩小还是取消」，要点写「出了什么事：做了什么、还剩什么、为什么超出」，",
+        f"然后一行「任务：T{n}」、一行「类型：卡住选做法」，选项 A 升格为模块／B 缩小／C 取消，「是否完全停住：是」。",
+        "只多改了没人在碰的文件，不用停，交回时在「越界检查」里写一句。",
+        "",
+        "全局约束：不改公共文件（要改发【公共变更请求】）；被挡住发【等待其他会话】；发出前 module-crew protocol check。",
+    ]) + "\n"
+
+
+def dispatch(db: store.Store, project: str | os.PathLike, number: int) -> Dispatched:
+    """ready → dispatched: its own worktree and branch from the integration branch, a `task` registration, the kickoff."""
+    import subprocess
+    project = Path(project)
+    t = store.get(db, "task", str(number))
+    if t is None:
+        raise TaskRefused(f"{label(number)} 不是任务")
+    if t["state"] != "ready":
+        raise TaskRefused(f"{label(number)} 现在是「{STATE_NAMES[t['state']]}」，只有「可开」的任务能派出")
+    cfg = store.get(db, "config", "main") or {}
+    if not all(cfg.get(k) for k in ("crewDir", "integrationBranch", "projectShort")):
+        raise TaskRefused("运行配置还没定（先 module-crew coordinator up）")
+    coord = active_coordinator(db)
+    if coord is None:
+        raise TaskRefused("本项目没有在用的模块协调")
+    branch, relay = f"task/t{number}", f"{cfg['projectShort']}-t{number}"
+    worktree = Path(cfg["crewDir"]) / f"task-t{number}"
+    if worktree.exists():
+        raise TaskRefused(f"worktree 目录已存在：{worktree}")
+    added = subprocess.run(["git", "-C", str(project), "worktree", "add", "-q", "-b", branch, str(worktree),
+                            cfg["integrationBranch"]], capture_output=True, text=True, timeout=60)
+    if added.returncode != 0:
+        raise TaskRefused(f"建 worktree 失败：{added.stderr.strip()[:200]}")
+    text = render_kickoff(number, t, worktree, branch, cfg, relay, coord[0])
+    with db.transaction(actor=coord[0]) as tx:
+        tx.put("session", relay, {"role": "task", "host": "claude-desktop", "status": "active", "task": number,
+                                  "worktree": str(worktree)}, action="registered")
+        body = tx.allocate_number()
+        tx.write_body(body, text)
+    advance(db, number, "dispatched", assignee=relay, worktree=str(worktree), branch=branch)
+    result = Dispatched(number, str(worktree), branch, relay, body, str(db.path / "bodies" / f"{body}.txt"))
+    from module_crew import permissions
+    line = permissions.follow(project, relay)
+    if line:
+        result.lines.append(line)
+    return result
+
+
+def bound(db: store.Store, name: str) -> None:
+    """A task session bound its identity: the task is being worked on."""
+    rec = store.get(db, "session", name) or {}
+    t = store.get(db, "task", str(rec.get("task"))) if rec.get("role") == "task" else None
+    if t is not None and t.get("state") == "dispatched":
+        advance(db, rec["task"], "working")

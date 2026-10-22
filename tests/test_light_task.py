@@ -73,5 +73,59 @@ class TaskRoleTest(ReviewCase):
             hooks.bind(self.db, name, "sid-task", self.repo)
 
 
+class DispatchTest(ReviewCase):
+    """Acceptance 2, 3."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+
+    def test_dispatch_ready_task(self):
+        n = new_task(self.db, self.repo, kind="bug")
+        slots = start.plan(self.repo).slots
+        r = tasks.dispatch(self.db, self.repo, n)
+        wt = self.tmp / "repo-crew" / f"task-t{n}"
+        self.assertEqual((Path(r.worktree), r.branch, r.relay), (wt, f"task/t{n}", f"shop-t{n}"))
+        self.assertEqual(git(wt, "rev-parse", "--abbrev-ref", "HEAD").strip(), f"task/t{n}")
+        self.assertEqual(git(wt, "rev-parse", "HEAD"), git(self.repo, "rev-parse", "main"))
+        sess = store.get(self.db, "session", f"shop-t{n}")
+        self.assertEqual((sess["role"], sess["task"], sess["worktree"]), ("task", n, str(wt)))
+        t = store.get(self.db, "task", str(n))
+        self.assertEqual((t["state"], t["assignee"], t["branch"]), ("dispatched", f"shop-t{n}", f"task/t{n}"))
+        text = store.read_body(self.db, r.kickoff)
+        for words in (f"轻任务 T{n}", "补一段说明", "docs/t.md", "说明写好", f"module-crew bind shop-t{n}",
+                      "模块协调：shop-coord", "先写一个能复现问题的测试", "模块：无", f"任务：T{n}", "越界检查",
+                      "类型：卡住选做法", "不改公共文件"):
+            self.assertIn(words, text)
+        self.assertEqual(start.plan(self.repo).slots, slots)
+
+    def test_only_ready(self):
+        n = new_task(self.db, self.repo)
+        tasks.advance(self.db, n, "cancelled")
+        with self.assertRaises(tasks.TaskRefused):
+            tasks.dispatch(self.db, self.repo, n)
+        holder = new_task(self.db, self.repo, expect=("x/",))
+        queued = new_task(self.db, self.repo, expect=("x/a",))
+        self.assertEqual(store.get(self.db, "task", str(queued))["state"], "queued")
+        with self.assertRaises(tasks.TaskRefused):
+            tasks.dispatch(self.db, self.repo, queued)
+
+    def test_bind_makes_working(self):
+        n = new_task(self.db, self.repo)
+        r = tasks.dispatch(self.db, self.repo, n)
+        hooks.bind(self.db, r.relay, "sid-task", r.worktree)
+        self.assertEqual(store.get(self.db, "task", str(n))["state"], "working")
+        self.assertIn(f"你是轻任务 T{n} 的会话", run("session-start", r.worktree, "sid-task"))
+
+    def test_cli(self):
+        n = new_task(self.db, self.repo)
+        out = self.run_cli("task", "dispatch", f"T{n}", "--json")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        doc = json.loads(out.stdout)
+        self.assertEqual(doc["relay"], f"shop-t{n}")
+        self.assertTrue(Path(doc["kickoffPath"]).exists())
+
+
 if __name__ == "__main__":
     unittest.main()

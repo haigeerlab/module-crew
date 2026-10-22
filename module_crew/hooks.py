@@ -471,6 +471,9 @@ def bind(db: store.Store, name: str, session_id: str | None, cwd: str | os.PathL
             raise BindRefused(f"{name} 已登记为另一个会话：换会话要先请用户同意接管（模块协调运行 module-crew takeover {name}）")
         data = {"sessionId": session_id, **({"original": original} if coordinator else {})}
         tx.put("session", name, {**rec, "hostSession": identity(session_id)}, action="bound", data=data)
+    if rec.get("role") == "task":
+        from module_crew import tasks
+        tasks.bound(db, name)
     return f"已登记：本会话就是 {name}，module-crew 的钩子从现在起按这个会话注入角色"
 
 

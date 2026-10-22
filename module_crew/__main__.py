@@ -180,6 +180,20 @@ def _task(args) -> int:
             tasks.cancel(db, args.number, original)
             print(f"已取消 T{args.number}；已派出的话，告诉做事的会话停下")
             return 0
+        if args.action == "dispatch":
+            d = tasks.dispatch(db, ".", args.number)
+            if args.json:
+                print(json.dumps({"number": d.number, "worktree": d.worktree, "branch": d.branch, "relay": d.relay,
+                                  "kickoff": d.kickoff, "kickoffPath": d.kickoff_path, "lines": d.lines},
+                                 ensure_ascii=False, indent=2))
+                return 0
+            print(f"已派出 T{d.number}：worktree {d.worktree}（分支 {d.branch}），邮箱名 {d.relay}")
+            print(f"开工说明：{d.kickoff_path}")
+            print("下一步：用桌面版在这个 worktree 开新会话，第一条消息用开工说明全文；"
+                  "这一轮是被别的会话消息叫醒的就只能出卡片，等用户点开")
+            for line in d.lines:
+                print(line)
+            return 0
         if args.action == "next":
             promoted = tasks.next_ready(db, ".")
             if args.json:
@@ -810,13 +824,15 @@ def _main(argv: list[str] | None = None) -> int:
     tash = tas.add_parser("show")
     tash.add_argument("number", type=refs.parse)
     tas.add_parser("next", help="把排队里已不重叠的提为可开（bug 在前）")
+    tad = tas.add_parser("dispatch", help="派出可开的任务：建 worktree 与分支、登记轻任务会话、生成开工说明")
+    tad.add_argument("number", type=refs.parse)
     tac = tas.add_parser("cancel")
     tac.add_argument("number", type=refs.parse)
     for c in (taa, tac):
         g = c.add_mutually_exclusive_group(required=True)
         g.add_argument("--original")
         g.add_argument("--original-file")
-    for c in (taa, tal, tash, tas.choices["next"]):
+    for c in (taa, tal, tash, tas.choices["next"], tad):
         c.add_argument("--json", action="store_true")
     co = sub.add_parser("coordinator", help="把本会话升级为本项目的模块协调，或关闭它（都要用户原话）")
     cos = co.add_subparsers(dest="action", required=True)
