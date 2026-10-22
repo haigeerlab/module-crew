@@ -150,7 +150,9 @@ class BatchOutputTest(PilotCase):
         out = self.run_cli("review", "batch", cwd=self.repo)
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("依赖：全部就绪", out.stdout)
-        self.assertIn("并行边界重叠：无", out.stdout)
+        # crew-review-display: b's Spec is still under review and spec-guard here has no scopeOverlap — never 「无」
+        self.assertIn("未比对：b 的 Spec 还在交审中", out.stdout)
+        self.assertNotIn("并行边界重叠：无", out.stdout)
 
 
 if __name__ == "__main__":

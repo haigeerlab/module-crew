@@ -34,7 +34,8 @@ def overlap(project: Path, db: store.Store, open_items: list[tuple[int, dict]], 
         return {"state": "conflicts" if found else "none", "conflicts": found, "errors": [], "basis": "集成分支上的 Spec",
                 "reason": None}
     names = "、".join(dict.fromkeys(v["module"] for _, v in pending))
-    unchecked = lambda why: {"state": "unchecked", "conflicts": [], "errors": [], "basis": None,
+    known = [c for c in map_conflicts if batch_mods & set(c.get("modules", []))]   # from the branch's Specs: still true
+    unchecked = lambda why: {"state": "unchecked", "conflicts": known, "errors": [], "basis": None,
                              "reason": f"{names} 的 Spec 还在交审中，{why}"}
     found = probe.find_plugin("spec-guard", project)
     if isinstance(found, str):
