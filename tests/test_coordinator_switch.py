@@ -277,5 +277,38 @@ class ClearHandoverTest(ReviewCase):
         self.assertIn("hook session-end", doc["hooks"]["SessionEnd"][0]["hooks"][0]["command"])
 
 
+class StatusTest(ReviewCase):
+    """Acceptance 11."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+        self.elsewhere = make_worktree(self.repo, "side")
+        run("session-start", self.elsewhere, "sid-s1")
+
+    def test_text(self):
+        out = self.run_cli("status").stdout
+        self.assertIn(f"shop-coord：在 {self.repo}，分支 main；已绑定会话", out)
+        self.assertIn("没登记的会话：1 个", out)
+        self.assertIn(f"{self.elsewhere.resolve()}（分支 side）", out)
+        self.assertIn("还没告诉用户", out)
+
+    def test_json(self):
+        doc = json.loads(self.run_cli("status", "--json").stdout)
+        coord = doc["store"]["coordinator"]
+        self.assertEqual((coord["name"], coord["state"], coord["bound"], coord["branch"]), ("shop-coord", "active", True, "main"))
+        self.assertEqual(doc["store"]["sightings"]["count"], 1)
+
+    def test_retired(self):
+        devs = [n for n, s in store.records(self.db, "session").items() if s["role"] == "dev"]
+        with self.db.transaction(actor="t") as tx:
+            for n in devs:
+                tx.put("session", n, {**tx.get("session", n), "status": "retired"}, action="retired")
+        self.assertEqual(coordinator.down(self.repo, "关掉", session_id="sid-coord")[0], 0)
+        self.assertIn("shop-coord：", self.run_cli("status").stdout)
+        self.assertIn("已关闭", self.run_cli("status").stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

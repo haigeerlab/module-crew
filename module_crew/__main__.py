@@ -105,6 +105,18 @@ def _status(as_json: bool) -> int:
         for mod, r in review.progress(store.open_store()).items():
             print(f"  {mod} " + (f"返工中（审查第 {r['round']} 轮）" if r["state"] == "rework" else
                                  "审查中" + (f"（第 {r['round'] + 1} 轮）" if r["round"] else "")))
+    print("模块协调")
+    coord = (report.store or {}).get("coordinator")
+    if coord is None:
+        print("  没有（module-crew 对本项目的会话不注入任何规矩；要用就在想当模块协调的会话里 coordinator up）")
+    else:
+        state = ("已关闭" if coord["state"] != "active" else "已绑定会话" if coord["bound"]
+                 else "未绑定会话（该会话运行 module-crew bind）")
+        print(f"  {coord['name']}：在 {coord['home'] or '（集成分支没有被检出）'}，分支 {coord['branch'] or '?'}；{state}")
+    seen = (report.store or {}).get("sightings") or {"count": 0, "recent": []}
+    print(f"没登记的会话：{seen['count']} 个" + ("（最近 10 个）" if seen["count"] > len(seen["recent"]) else ""))
+    for r in seen["recent"]:
+        print(f"  {r['cwd']}（分支 {r['branch']}），首次 {r['firstSeen']}" + ("" if r["told"] else "，还没告诉用户"))
     m = probe.summarize_map(report.map)
     print("模块进度")
     if m is None:
