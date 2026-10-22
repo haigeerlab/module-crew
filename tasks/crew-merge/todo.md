@@ -44,3 +44,4 @@
   - 记录：179 个测试全绿（连跑 3 次）；8 个文件 +749/−9；用户 2026-10-18 验收通过
 - [x] 修订（2026-10-22 追加，职责边界审查第 3 条）：最终验收勾选与 `merge tick` 改为调 spec-guard 1.7 的 gateTick，低于 1.7 不勾并提示；版本 0.9.6——测试用照 interface 1.7 写的 gateTick 替身；改写 4 个按旧规则断言的用例，新增「最终验收后面还有普通任务」「spec-guard 低于 1.7」两个；全量 493 个：首轮旧称扫描抓到 skill 一处「负责人」，改后该组通过，其余首轮已过；未打标签、未升级本机
   - 补记（2026-10-22）：拿本机真 spec-guard 0.83.0 的 gate_tick.py 预览时发现输出格式和替身不同（勾上时最后一行才是 `ticked; N unchecked item(s) left`，早已勾过是 `<文件>: the final gate is already ticked; …`），原解析会把真实输出当成看不懂；已改为按整段输出判断，替身照真实格式重写；在 scratchpad 副本上用真 gateTick 预览、勾上、重复勾三步核对一致；全量 493 个测试通过
+  - 补记（2026-10-22）：spec-guard 0.83.1 改了 gateTick 预览输出（先打原行，再打「preview only, would become: …」），`--confirm` 输出不变；module-crew 只用 `--confirm`，代码不用改；测试替身照 0.83.1 真实输出重写（含 `--confirm` 时打勾后那一行），在 scratchpad 副本上用真 0.83.1 预览、勾上、重复勾核对一致；全量 493 个测试通过

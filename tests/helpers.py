@@ -124,7 +124,7 @@ for t in targets:
 
 FAKE_GATE_TICK = '''import argparse, re, sys
 from pathlib import Path
-# Stand-in for spec-guard interface 1.7 gateTick (output lines as hooks/gate_tick.py of 0.83.0 prints them):
+# Stand-in for spec-guard interface 1.7 gateTick (output lines as hooks/gate_tick.py of 0.83.1 prints them):
 # the final gate is the last item that names a checkpoint (最终验收 / Checkpoint / gate); it is ticked only when
 # it is the first unchecked item.
 p = argparse.ArgumentParser()
@@ -150,14 +150,18 @@ if final not in open_rows:
 if open_rows[0] != final:
     first = item.match(lines[open_rows[0]].rstrip("\\n")).group(3).strip()
     print("not-at-final-gate: the first unchecked item of %s is not its last gate: %s" % (rel, first)); sys.exit(2)
-print("%s line %d: %s" % (rel, final + 1, lines[final].strip()))
-if a.confirm:
-    end = lines[final][len(lines[final].rstrip("\\n")):]
-    lines[final] = item.sub(r"\\1[x]\\3", lines[final].rstrip("\\n")) + end
-    path.write_text("".join(lines), encoding="utf-8")
-if not a.confirm:
-    print("preview only: add --confirm to tick it (%d unchecked item(s) left after)" % (len(open_rows) - 1)); sys.exit(0)
-print("ticked; %d unchecked item(s) left" % (len(open_rows) - 1))
+end = lines[final][len(lines[final].rstrip("\\n")):]
+ticked = item.sub(r"\\1[x]\\3", lines[final].rstrip("\\n"))
+left = len(open_rows) - 1
+if not a.confirm:      # 0.83.1: the line as it is, then what it would become
+    print("%s line %d: %s" % (rel, final + 1, lines[final].strip()))
+    print("preview only, would become: %s; add --confirm to tick it (%d unchecked item(s) left after)"
+          % (ticked.strip(), left))
+    sys.exit(0)
+lines[final] = ticked + end
+path.write_text("".join(lines), encoding="utf-8")
+print("%s line %d: %s" % (rel, final + 1, ticked.strip()))
+print("ticked; %d unchecked item(s) left" % left)
 '''
 
 
