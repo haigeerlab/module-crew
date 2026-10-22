@@ -56,5 +56,35 @@ class IdentityBySessionTest(HandoverCase):
         self.assertEqual(run("prompt", self.elsewhere, "sid-other"), "")
 
 
+class TakeoverTest(HandoverCase):
+    """Acceptance 2."""
+
+    def test_takeover_from_another_directory(self):
+        out = hooks.bind(self.db, "shop-coord", "sid-new", self.elsewhere, original="新会话接手模块协调", takeover=True)
+        self.assertIn("已接管", out)
+        rec = store.get(self.db, "session", "shop-coord")
+        self.assertEqual(rec["hostSession"]["sessionId"], "sid-new")
+        self.assertEqual([p["sessionId"] for p in rec["previousSessions"]], ["sid-coord"])
+        ev = [e for e in store.events(self.db) if e["type"] == "session.taken-over"][-1]
+        self.assertEqual((ev["data"]["original"], ev["data"]["oldSessionId"], ev["data"]["newSessionId"]),
+                         ("新会话接手模块协调", "sid-coord", "sid-new"))
+        self.assertIn("本会话是模块协调（shop-coord）", run("session-start", self.elsewhere, "sid-new"))
+
+    def test_takeover_refusals(self):
+        before = list(store.events(self.db))
+        with self.assertRaises(hooks.BindRefused):
+            hooks.bind(self.db, "shop-coord", "sid-new", self.elsewhere, original="", takeover=True)
+        with self.assertRaises(hooks.BindRefused):
+            hooks.bind(self.db, "shop-b", "sid-new", self.elsewhere, original="接手 b", takeover=True)
+        self.assertEqual(list(store.events(self.db)), before)
+
+    def test_cli(self):
+        env = dict(os.environ, CLAUDE_CODE_SESSION_ID="sid-cli")
+        r = self.run_cli("bind", "shop-coord", "--takeover", "--original", "接手", cwd=self.elsewhere, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = self.run_cli("bind", "shop-b", "--takeover", "--original", "接手", cwd=self.elsewhere, env=env)
+        self.assertEqual(r.returncode, 3)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -492,15 +492,23 @@ def _home_of(db: store.Store, rec: dict) -> Path | None:
     return Path(os.path.realpath(checkout)) if checkout else None
 
 
-def bind(db: store.Store, name: str, session_id: str | None, cwd: str | os.PathLike, original: str | None = None) -> str:
+PREVIOUS_KEPT = 20      # previousSessions entries kept on a registration
+
+
+def bind(db: store.Store, name: str, session_id: str | None, cwd: str | os.PathLike, original: str | None = None,
+         takeover: bool = False) -> str:
     """Record that the conversation running this command is the registered session `name` (crew-routing-fixes).
 
-    0.9.3: only from the registration's own directory, and a coordinator outside `start` only with the user's words."""
+    0.9.3: only from the registration's own directory, and a coordinator outside `start` only with the user's words.
+    takeover (crew-session-handover): the coordinator moves to this conversation in one step, from any directory of
+    the repository, with the user's words; the old conversation is kept in previousSessions."""
     if not session_id or not session_id.strip():
         raise BindRefused("读不到本会话的会话 id（CLAUDE_CODE_SESSION_ID／CODEX_THREAD_ID）：只能在模块会话或模块协调自己的命令里运行")
     rec = store.get(db, "session", name)
     if rec is None or rec.get("status") != "active":
         raise BindRefused(f"{name} 不是状态库里在用的会话")
+    if takeover:
+        return _take_over(db, name, rec, session_id, original)
     home = _home_of(db, rec)
     if home is None or not _inside(os.path.realpath(cwd), str(home)):
         here = detect(cwd)
@@ -525,6 +533,25 @@ def bind(db: store.Store, name: str, session_id: str | None, cwd: str | os.PathL
         from module_crew import tasks
         tasks.bound(db, name)
     return f"已登记：本会话就是 {name}，module-crew 的钩子从现在起按这个会话注入角色"
+
+
+def _take_over(db: store.Store, name: str, rec: dict, session_id: str, original: str | None) -> str:
+    if rec.get("role") != "coordinator":
+        raise BindRefused(f"{name} 不是模块协调：bind --takeover 只用于模块协调；模块会话与轻任务会话在自己的 worktree 里用 takeover 与 bind")
+    if not (original and original.strip()):
+        raise BindRefused(f"接手模块协调 {name} 要用户原话：请用户在本会话同意后运行 module-crew bind {name} --takeover --original-file <原话文件>")
+    with db.transaction(actor=name) as tx:
+        rec = tx.get("session", name)
+        old = (rec.get("hostSession") or {}).get("sessionId")
+        if old == session_id:
+            return f"{name} 已是本会话，没有改动"
+        prev = list(rec.get("previousSessions") or [])
+        if old:
+            prev = (prev + [{"sessionId": old, "at": store.now()}])[-PREVIOUS_KEPT:]
+        tx.put("session", name, {**rec, "hostSession": identity(session_id), "previousSessions": prev}, action="taken-over",
+               data={"original": original, "at": store.now(), "oldSessionId": old, "newSessionId": session_id})
+    return (f"已接管：本会话就是模块协调 {name}" + (f"，原来的会话 {old} 从现在起不能再执行模块协调的写命令" if old else "")
+            + f"。请在本会话用同一个名字调用 agent-relay 的 bridge_register（name: \"{name}\"，按提示传接管参数），再跑 module-crew status。")
 
 
 def takeover(db: store.Store, name: str, original: str) -> str:

@@ -327,6 +327,11 @@ def _validate_session(key: str, rec: dict, others: dict) -> None:
         raise bad("hostSession 必须带非空的 sessionId")
     if ident is not None and "desktopId" in ident and not (isinstance(ident["desktopId"], str) and ident["desktopId"].strip()):
         raise bad("hostSession.desktopId 必须是非空字符串")
+    prev = rec.get("previousSessions")         # crew-session-handover: conversations this one took over from
+    if prev is not None and not (isinstance(prev, list) and all(
+            isinstance(x, dict) and isinstance(x.get("sessionId"), str) and x["sessionId"].strip()
+            and isinstance(x.get("at"), str) for x in prev)):
+        raise bad("previousSessions 必须是列表，每项带非空的 sessionId 与 at")
     if role == "dev":
         module, worktree = rec.get("module"), rec.get("worktree")
         if not isinstance(module, str) or not module:

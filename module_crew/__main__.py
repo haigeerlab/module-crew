@@ -934,6 +934,7 @@ def _main(argv: list[str] | None = None) -> int:
     bg = bd.add_mutually_exclusive_group()
     bg.add_argument("--original", help="用户原话（登记模块协调身份时必填）")
     bg.add_argument("--original-file")
+    bd.add_argument("--takeover", action="store_true", help="新会话接手模块协调（要用户原话；同一仓库任一目录）")
     tk = sub.add_parser("takeover", help="记录用户同意新会话接管邮箱名")
     tk.add_argument("name")
     tg = tk.add_mutually_exclusive_group(required=True)
@@ -1203,7 +1204,7 @@ def _run(args) -> int:
                 original = _original(args.original, args.original_file)
                 if original is None:
                     return 2
-            print(hooks.bind(store.open_store(), args.name, hooks.own_session_id(), os.getcwd(), original))
+            print(hooks.bind(store.open_store(), args.name, hooks.own_session_id(), os.getcwd(), original, takeover=args.takeover))
         except hooks.BindRefused as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
