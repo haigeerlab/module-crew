@@ -135,6 +135,80 @@ def _status(as_json: bool) -> int:
     return 3 if report.blocked else 0
 
 
+def _task_line(n: int, t: dict) -> str:
+    from module_crew import tasks
+    who = f"，派给 {t['assignee']}" if t.get("assignee") else ""
+    return f"T{n}（{'bug' if t['type'] == 'bug' else '需求'}）{t['title']}：{tasks.STATE_NAMES[t['state']]}{who}"
+
+
+def _task(args) -> int:
+    from module_crew import tasks
+    db = store.open_store()
+    if args.action == "add" or args.action == "cancel":
+        original = _original(args.original, args.original_file)
+        if original is None:
+            return 2
+    try:
+        if args.action == "add":
+            r = tasks.add(db, ".", args.type, args.title, args.what, args.expect.split(","), args.done, original,
+                          caused_by=args.caused_by)
+            if args.json:
+                print(json.dumps({"number": r.number, "state": r.state, "clashes": r.clashes, "notes": r.notes},
+                                 ensure_ascii=False, indent=2))
+                return 0
+            print(f"已记下任务 T{r.number}：{tasks.STATE_NAMES[r.state]}")
+            for c in r.clashes:
+                print(f"  重叠：{c}")
+            for note in r.notes:
+                print(f"  注意：{note}")
+            return 0
+        if args.action == "cancel":
+            tasks.cancel(db, args.number, original)
+            print(f"已取消 T{args.number}；已派出的话，告诉做事的会话停下")
+            return 0
+        if args.action == "next":
+            promoted = tasks.next_ready(db, ".")
+            if args.json:
+                print(json.dumps({"ready": promoted}, ensure_ascii=False))
+            else:
+                print("提为可开：" + ("、".join(f"T{n}" for n in promoted) or "无"))
+            return 0
+    except tasks.TaskRefused as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 3
+    records = {int(k): v for k, v in store.records(db, "task").items()}
+    if args.action == "show":
+        t = records.get(args.number)
+        if t is None:
+            print(f"❌ T{args.number} 不是任务", file=sys.stderr)
+            return 3
+        if args.json:
+            print(json.dumps({"number": args.number, **t}, ensure_ascii=False, indent=2))
+            return 0
+        print(_task_line(args.number, t))
+        print(f"  做什么：{t['what']}")
+        print(f"  预计文件：{'、'.join(t['expectedFiles'])}")
+        print(f"  完成标准：{t['done']}")
+        if t.get("causedBy"):
+            print(f"  由 {t['causedBy']} 带进来")
+        if t.get("worktree"):
+            print(f"  worktree：{t['worktree']}（分支 {t.get('branch')}）")
+        if t.get("state") == "queued":
+            clashes, _ = tasks.overlaps(db, ".", t["expectedFiles"], exclude=args.number)
+            for c in clashes:
+                print(f"  重叠：{c}")
+        return 0
+    rows = sorted((n, t) for n, t in records.items() if args.all or t["state"] not in tasks.FINAL)
+    if args.json:
+        print(json.dumps([{"number": n, **t} for n, t in rows], ensure_ascii=False, indent=2))
+        return 0
+    for n, t in rows:
+        print(_task_line(n, t))
+    if not rows:
+        print("没有任务" if args.all else "没有在做或排队的任务")
+    return 0
+
+
 def _read(path: str) -> str | None:
     try:
         with open(path, encoding="utf-8") as f:
@@ -708,6 +782,28 @@ def _main(argv: list[str] | None = None) -> int:
     tcg = tcc.add_mutually_exclusive_group(required=True)
     tcg.add_argument("--original")
     tcg.add_argument("--original-file")
+    ta = sub.add_parser("task", help="模块协调的轻任务记录（单个需求或 bug，T 编号）")
+    tas = ta.add_subparsers(dest="action", required=True)
+    taa = tas.add_parser("add", help="记下用户要做的一件事；预计文件和在做的活重叠就排队")
+    taa.add_argument("--type", required=True, choices=("feature", "bug"))
+    taa.add_argument("--title", required=True)
+    taa.add_argument("--what", required=True, help="做什么")
+    taa.add_argument("--expect", required=True, help="预计改哪些文件，逗号分隔；以 / 结尾表示整个目录")
+    taa.add_argument("--done", required=True, help="做到什么程度算完")
+    taa.add_argument("--caused-by", help="bug 由哪个任务带进来：T<号> 或 C<号>")
+    tal = tas.add_parser("list", help="在做与排队的任务；--all 含已完成")
+    tal.add_argument("--all", action="store_true")
+    tash = tas.add_parser("show")
+    tash.add_argument("number", type=refs.parse)
+    tas.add_parser("next", help="把排队里已不重叠的提为可开（bug 在前）")
+    tac = tas.add_parser("cancel")
+    tac.add_argument("number", type=refs.parse)
+    for c in (taa, tac):
+        g = c.add_mutually_exclusive_group(required=True)
+        g.add_argument("--original")
+        g.add_argument("--original-file")
+    for c in (taa, tal, tash, tas.choices["next"]):
+        c.add_argument("--json", action="store_true")
     co = sub.add_parser("coordinator", help="把本会话升级为本项目的模块协调，或关闭它（都要用户原话）")
     cos = co.add_subparsers(dest="action", required=True)
     cou = cos.add_parser("up", help="升级：一个仓库只一个模块协调；前提同开工体检，不要求能力图")
@@ -954,6 +1050,12 @@ def _run(args) -> int:
             return 2
         print(f"已关等待记录 {refs.wait(args.number)}（理由 {code}）")
         return 0
+    if args.group == "task":
+        try:
+            return _task(args)
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
     if args.group == "coordinator":
         original = _original(args.original, args.original_file)
         if original is None:

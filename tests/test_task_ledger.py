@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import unittest
 
 from helpers import ReviewCase, StartCase, git
 
-from module_crew import coordinator, refs, store, tasks
+from module_crew import coordinator, hooks, refs, store, tasks
 
 
 def add(db, project, expect=("src/a.py",), kind="feature", **kw):
@@ -177,6 +178,63 @@ class QueueTest(CoordCase):
     def test_unknown_number(self):
         with self.assertRaises(tasks.TaskRefused):
             tasks.advance(self.db, 999, "working")
+
+
+class CliTest(CoordCase):
+    """Acceptance 8 and the command line."""
+
+    def words(self, text="加个导出按钮"):
+        path = self.tmp / f"w{abs(hash(text))}.txt"
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def cli_add(self, *extra, expect="src/a.py", kind="feature"):
+        return self.run_cli("task", "add", "--type", kind, "--title", "导出", "--what", "加导出按钮", "--expect", expect,
+                            "--done", "能导出 CSV", "--original-file", self.words(), *extra)
+
+    def test_add_list_show_next_cancel(self):
+        out = self.cli_add()
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        n = store.records(self.db, "task")
+        first = int(next(iter(n)))
+        self.assertIn(f"已记下任务 T{first}", out.stdout)
+        self.assertIn("可开", out.stdout)
+        tasks.advance(self.db, first, "dispatched")
+        second = self.cli_add("--json", expect="src/a.py,src/b.py", kind="bug")
+        doc = json.loads(second.stdout)
+        self.assertEqual((doc["state"], doc["clashes"]), ("queued", [f"T{first}：src/a.py"]))
+        listed = self.run_cli("task", "list")
+        self.assertIn(f"T{first}", listed.stdout)
+        self.assertIn(f"T{doc['number']}", listed.stdout)
+        shown = self.run_cli("task", "show", f"T{doc['number']}")
+        self.assertIn("src/b.py", shown.stdout)
+        self.assertIn("排队", shown.stdout)
+        self.assertEqual(self.run_cli("task", "next").returncode, 0)
+        bad = self.run_cli("task", "show", "T999")
+        self.assertEqual(bad.returncode, 3)
+        cancel = self.run_cli("task", "cancel", f"T{doc['number']}", "--original-file", self.words("这个 bug 不修了"))
+        self.assertEqual(cancel.returncode, 0, cancel.stdout + cancel.stderr)
+        self.assertEqual(store.get(self.db, "task", str(doc["number"]))["state"], "cancelled")
+        self.assertNotIn(f"T{doc['number']}", self.run_cli("task", "list").stdout)
+        self.assertIn(f"T{doc['number']}", self.run_cli("task", "list", "--all").stdout)
+
+    def test_refusal_exit_3(self):
+        out = self.cli_add(expect="../x")
+        self.assertEqual(out.returncode, 3)
+        self.assertIn("相对路径", out.stderr)
+
+    def test_show_rejects_other_kinds(self):
+        with self.db.transaction(actor="t") as tx:
+            n = tx.allocate_number()
+            tx.put("item", str(n), {"state": "open"}, action="created")
+        self.assertEqual(self.run_cli("task", "show", f"C{n}").returncode, 3)
+
+    def test_takeover_keeps_tasks(self):
+        self.cli_add()
+        before = store.records(self.db, "task")
+        hooks.takeover(self.db, "shop-coord", "换个会话接管")
+        hooks.bind(self.db, "shop-coord", "sid-new", self.repo, original="你来做模块协调")
+        self.assertEqual(store.records(self.db, "task"), before)
 
 
 if __name__ == "__main__":
