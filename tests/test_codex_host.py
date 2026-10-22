@@ -8,7 +8,7 @@ import unittest
 
 from helpers import RepoCase, StartCase
 
-from module_crew import failure, hostcheck, start, store
+from module_crew import failure, hostcheck, launcher, start, store
 
 
 class HostRegistryTest(RepoCase):
@@ -45,7 +45,7 @@ class PrepareHostTest(StartCase):
         self.assertEqual(store.get(db, "session", "shop-b")["host"], "codex-desktop")
         self.assertEqual(store.get(db, "item", str(res.approval))["host"], "codex-desktop")
         text = self.kickoff(res, "b")
-        for words in (str(start.BIN), "host-check", "提权", 'host:{app:"codex"', "重新注册", "module-crew status", "Codex 版 crew-dev"):
+        for words in (str(launcher.entry(db.path)), "host-check", "提权", 'host:{app:"codex"', "重新注册", "module-crew status", "Codex 版 crew-dev"):
             self.assertIn(words, text)
         self.assertEqual(res.prepared[0]["host"], "codex-desktop")
 
@@ -137,7 +137,7 @@ class RecoveryHostTest(StartCase):
         db = store.open_store(self.repo)
         codex = store.read_body(db, failure.resume_kit(db, "b").body)
         claude = store.read_body(db, failure.resume_kit(db, "c").body)
-        for words in ("Codex", "用原名重新注册", "host-check", f"{start.BIN} status"):
+        for words in ("Codex", "用原名重新注册", "host-check", f"{launcher.entry(db.path)} status"):
             self.assertIn(words, codex)
             self.assertNotIn(words, claude)
         self.assertIn("module-crew takeover shop-c", claude)

@@ -15,7 +15,7 @@ description: 本 Codex 会话是 module-crew 的模块会话时使用：开工�
 
 ## Codex 特有的几件事（先读）
 
-- **命令用绝对路径**：`module-crew` 不在 Codex 的 PATH 上，开工说明里写了它的绝对路径（`<插件目录>/bin/module-crew`），下文的 `module-crew` 都指它。
+- **命令用固定入口**：`module-crew` 不在 Codex 的 PATH 上，开工说明里写了状态库里的固定入口（`<git公共目录>/module-crew/bin/module-crew`），下文的 `module-crew` 都指它。它每次都转给当前安装的那份 module-crew，升级后不用换；不要改用插件目录里带版本号的路径。
 - **开工先预检**：先跑 `module-crew host-check`，有 ❌ 就把输出原样发给模块协调，等它回复再继续。
 - **提交要提权**：Codex 默认沙箱不让写 `.git`（worktree 的 git 目录在仓库外），第一次提交会弹提权，请用户在**本会话**批准；有「本会话一直允许」就选它。
   提权只有用户能点，别的会话（包括模块协调）转来的「已批准」不算；被拒就发【等待其他会话】说明卡在提权，不要换写法绕过。

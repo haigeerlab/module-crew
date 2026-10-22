@@ -234,7 +234,7 @@ def resume_kit(db: store.Store, module: str) -> Kit:
     lines = [f"模块：{module}　邮箱名：{name}　worktree：{rec['worktree']}", "", context, "", RECOVERY_NOTE.format(name=name)]
     if rec.get("host") == "codex-desktop":
         from module_crew.start import codex_lines
-        lines += codex_lines(name)
+        lines += codex_lines(name, db.path)
     text = "\n".join(lines) + "\n"
     with db.transaction(actor="coordinator") as tx:
         n = tx.allocate_number()

@@ -324,7 +324,7 @@ class ProjectInstallTest(PermCase):
     @unittest.skipUnless(__import__("shutil").which("codex"), "本机没有 codex 命令")
     def test_codex_decisions(self):
         import subprocess, tempfile
-        rules = permissions.render_codex(permissions.codex_rules({}))
+        rules = permissions.render_codex(permissions.codex_rules({}, "/x/.git/module-crew/bin/module-crew"))
         with tempfile.NamedTemporaryFile("w", suffix=".rules", delete=False) as f:
             f.write(rules)
         def decide(cmd):

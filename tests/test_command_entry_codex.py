@@ -10,7 +10,7 @@ from pathlib import Path
 
 from helpers import PLUGIN_ROOT, FakePlugins, RepoCase, StartCase
 
-from module_crew import coordinator, launcher, probe, start, store
+from module_crew import coordinator, hooks, launcher, permissions, probe, start, store
 
 BIN = PLUGIN_ROOT / "bin" / "module-crew"
 
@@ -158,6 +158,34 @@ class InstallTest(StartCase):
         code, lines = coordinator.up(self.repo, None, "再升级", session_id="sid-1")
         self.assertEqual(code, 0, lines)
         self.assertIn(f"Codex 会话的固定入口：{self.target()}（没有变化）", lines)
+
+
+class CodexSideTest(StartCase):
+    """Acceptance 5: Codex kickoff, Codex rules and the Codex skill name the fixed entry; the Claude side is unchanged."""
+
+    def test_codex_side_uses_fixed_entry(self):
+        res = start.prepare(self.repo, ["b"], "开 b", short="shop", host="codex")
+        self.assertEqual(res.code, 0, res.lines)
+        db = store.open_store(self.repo)
+        fixed = str(launcher.entry(db.path))
+        kick = store.read_body(db, res.prepared[0]["kickoff"])
+        self.assertEqual(kick.count(fixed), 3, kick)
+        self.assertNotIn(str(PLUGIN_ROOT), kick)
+        rules = permissions.render_codex(permissions.codex_rules({}, launcher.entry(db.path)))
+        self.assertIn(fixed, rules)
+        self.assertNotIn(str(PLUGIN_ROOT), rules)
+        skill = (PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertNotIn("<插件目录>/bin/module-crew", skill)
+        self.assertIn("固定入口", skill)
+
+    def test_claude_side_unchanged(self):
+        res = start.prepare(self.repo, ["b"], "开 b", short="shop")
+        db = store.open_store(self.repo)
+        kick = store.read_body(db, res.prepared[0]["kickoff"])
+        self.assertIn(hooks.ENTRY_LINE, kick)
+        self.assertNotIn(str(launcher.entry(db.path)), kick)
+        allow = permissions.claude_entries({})["allow"]
+        self.assertIn(f"Bash({permissions.CREW_BIN} *)", allow)
 
 
 if __name__ == "__main__":

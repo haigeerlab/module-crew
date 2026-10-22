@@ -144,7 +144,9 @@ def _target(t: dict, cfg: dict, project: Path) -> dict:
         return {**out, "file": None, "ignored": False, "problem": f"checkout 不存在：{checkout}"}
     if t["host"] == "codex-desktop":
         rel = CODEX_FILE
-        out.update(rules=codex_rules(cfg), trust=codex_trust(checkout, project))
+        from module_crew import launcher
+        out.update(rules=codex_rules(cfg, launcher.entry(store.open_store(project).path)),
+                   trust=codex_trust(checkout, project))
         existing = checkout / rel
         if existing.exists() and not _codex_is_ours(existing):
             out["problem"] = f"{existing} 已存在且不是 module-crew 写的，不覆盖"
@@ -263,9 +265,11 @@ def _shadow_lines(t: dict) -> list[str]:
             for f in t.get("shadowed") or []]
 
 
-def codex_rules(cfg: dict) -> list[dict]:
-    """Codex prefix rules matching the Claude lists (key decision 3)."""
-    rules = [{"pattern": [CREW_BIN], "decision": "allow", "match": [f"{CREW_BIN} status"]}]
+def codex_rules(cfg: dict, entry: str | os.PathLike) -> list[dict]:
+    """Codex prefix rules matching the Claude lists (key decision 3); `entry` is the store's fixed launcher
+    (crew-command-entry), not this plugin copy's versioned bin."""
+    entry = str(entry)
+    rules = [{"pattern": [entry], "decision": "allow", "match": [f"{entry} status"]}]
     rules += [{"pattern": c.split(), "decision": "allow", "match": [c]} for c in ROUTINE + LOCKFILE_CODEX]
     if cfg.get("checkCommand"):
         tokens = shlex.split(cfg["checkCommand"])

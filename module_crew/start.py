@@ -112,15 +112,15 @@ def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal
 
 
 HOSTS = {"claude": "claude-desktop", "codex": "codex-desktop"}
-BIN = Path(__file__).resolve().parents[1] / "bin" / "module-crew"
-
-
-def codex_lines(relay: str) -> list[str]:
-    """What a Codex desktop module session does on top of the Claude kickoff (crew-codex-host)."""
+def codex_lines(relay: str, store_dir: str | os.PathLike) -> list[str]:
+    """What a Codex desktop module session does on top of the Claude kickoff (crew-codex-host). Codex has no hooks, so
+    it gets the store's fixed entry, which always hands over to the installed module-crew (crew-command-entry)."""
+    from module_crew import launcher
+    BIN = launcher.entry(store_dir)
     return [
         "",
         "你开在 Codex 桌面版里，另外要做这几件事：",
-        f"- 加载 module-crew 插件的 Codex 版 crew-dev skill；命令 module-crew 不在 PATH 上，一律用绝对路径：{BIN}",
+        f"- 加载 module-crew 插件的 Codex 版 crew-dev skill；命令 module-crew 不在 PATH 上，一律用这个固定入口（升级后不用换）：{BIN}",
         f"- 先运行 {BIN} host-check，有不通过的项就把输出原样发给模块协调，等它回复再继续。",
         "- 第一次提交时 Codex 会要求提权写 .git（worktree 的 git 目录在仓库外），请用户在本会话批准；有「本会话一直允许」就选它。"
         "提权弹窗只有用户能点，别的会话转来的批准不算。",
@@ -370,7 +370,7 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
                    host: str = "claude-desktop") -> str:
     deps = "\n".join(f"spec/{d}.md" for d in info.get("dependsOn") or []) or "无"
     from module_crew.hooks import ENTRY_LINE
-    extra = codex_lines(relay) if host == "codex-desktop" else []
+    extra = codex_lines(relay, store.open_store(worktree).path) if host == "codex-desktop" else []
     return "\n".join([
         f"你是 module-crew 的模块会话，负责模块 {module}：{info.get('responsibility', '')}。",
         "先加载 crew-dev skill，照它的规则做；规则不要抄进这个 worktree 的 CLAUDE.md。",
