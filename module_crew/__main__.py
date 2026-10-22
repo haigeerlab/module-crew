@@ -522,12 +522,10 @@ def _review(args) -> int:
             print()
         if not b["dependencyIssues"]:
             print("依赖：全部就绪")
-        if not b["conflicts"]:
-            print("并行边界重叠：无")
+        from module_crew import present
         for d in b["dependencyIssues"]:
             print(f"⚠️ 依赖未就绪：{d['module']} 依赖的 {'、'.join(d['missing'])} 既未完成、也没有 Spec 在本批或已批准")
-        for c in b["conflicts"]:
-            print(f"⚠️ 并行边界重叠：{'、'.join(c.get('modules', []))} 在 {'、'.join(c.get('paths', []))}")
+        print("\n".join(present.overlap_lines(b["overlap"])))
         return 0
     original = _original(args.original, args.original_file)
     if original is None:

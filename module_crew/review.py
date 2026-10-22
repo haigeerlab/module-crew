@@ -358,9 +358,9 @@ def batch(project: str | os.PathLike) -> dict:
                    and not ({"spec", "interface"} & approved.get(d, set()))]
         if missing:
             issues.append({"module": mod, "missing": missing})
-    batch_mods = {v["module"] for _, v in open_items if v.get("module")}
-    conflicts = [c for c in (report.map or {}).get("startable", {}).get("conflicts", [])
-                 if batch_mods & set(c.get("modules", []))]
+    from module_crew import present           # crew-review-display: compare the Specs under review, not only the branch's
+    over = present.overlap(project, db, open_items, (report.map or {}).get("startable", {}).get("conflicts", []))
+    conflicts = over["conflicts"]
     # Present module by module in Build order, and within a module Spec → interface → Plan (user request, 2026-10-18).
     order = [m for group in (report.map or {}).get("buildOrderGroups") or [] for m in group] or list(modules)
     rank = {m: i for i, m in enumerate(order)}
@@ -379,7 +379,7 @@ def batch(project: str | os.PathLike) -> dict:
                       "files": v["files"], "points": _points(v["text"]), "reviews": list(v.get("reviews") or []),
                       "reviewState": state, "round": _rounds(db, v["module"], v["node"]), "ready": state in READY,
                       "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state)})
-    return {"items": items, "groups": groups, "dependencyIssues": issues, "conflicts": conflicts}
+    return {"items": items, "groups": groups, "dependencyIssues": issues, "conflicts": conflicts, "overlap": over}
 
 
 READY = ("none", "timeout", "passed", "decide")   # states that may go to the user (key decision 3)
