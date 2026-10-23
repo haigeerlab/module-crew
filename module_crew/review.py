@@ -1161,7 +1161,7 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
         _closing_send(tx, db, result.sends, modules, [n for n, _ in picked])
         for m in modules:
             nodes_now = approved_before.get(m, set()) | {rec["node"] for _, rec in picked if rec["module"] == m}
-            if not {"spec", "plan"} <= nodes_now:
+            if not {MARK_TARGET[n] for n in nodes_now if n in MARK_TARGET} >= {"spec", "plan"}:   # interface counts as Spec
                 continue
             sender = next(rec["from"] for _, rec in picked if rec["module"] == m)
             text = protocol.render_coordination_notice(
