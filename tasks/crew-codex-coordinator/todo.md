@@ -14,5 +14,5 @@
 - [x] Task 8：Codex 版 crew-coordinator skill（Spec 验收 1）——由 Claude 版逐节改写（各节同名同序，另加「Codex 特有的几件事（先读）」），`test_skills` 断言共同关键句 27 条、Codex 特有 16 条、不含 Claude 专属做法；skill 先写、断言后补（文档类，没有先红）
 - [x] Task 9：`handover --to codex` 端到端（Spec 验收 2）——不打桩，用插件里真实的 Codex 版 skill：Claude 协调 `handover --to codex` → Codex 线程 `bind --takeover` → `status` 首行认出、`host-check` 按协调查 → 从 Codex 线程 `handover --to claude` → 新 Claude 会话接管，全部经命令行跑通（Task 8 之前这条会因缺 skill 退出码 3）；`--to claude` 与已有换宿主测试照常通过
 - [x] Task 10：README、plugin.json、Claude 版 skill、全量测试（Spec 验收 10、11）——README「换宿主」加「模块协调在 Codex 上」一小节、命令一览补 `merge run --detach`／`merge result` 与 `host-check`、「尚未验证」补 Codex 协调未实测；插件描述与 Claude 版「空档换宿主」不再写等待模块 B；同步集成分支 64ae2c6 后全量 783 个测试通过（3212666）
-- [ ] Checkpoint 3（gate）：最终验收
+- [x] Checkpoint 3（gate）：最终验收
 - [ ] 回告：ecosystem-lead（模块 B 就位、`--to codex` 已放开、实地结果），经 mc-coord 转
