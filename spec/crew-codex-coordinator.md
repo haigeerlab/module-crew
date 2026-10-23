@@ -1,6 +1,6 @@
 # Spec: crew-codex-coordinator
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 5ac3af7aa37e -->
 
 > 能力图模块 `crew-codex-coordinator`（第八版，接缝 S13 的模块 B）。需求来源：用户 2026-10-23 在 ecosystem-lead 会话同意开工模块 B，
 > 同日在 mc-coord 会话批准插入能力图并开工（批准事项 C30）。S13 修订版范围：一批收尾后的空档里，模块协调与模块会话整体在 Claude Code 与 Codex 之间来回切换。
