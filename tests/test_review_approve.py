@@ -1,6 +1,6 @@
 import unittest
 
-from helpers import ReviewCase, git
+from helpers import ReviewCase, git, review_text
 
 from module_crew import protocol, review, store
 
@@ -90,6 +90,19 @@ class ApproveTest(ReviewCase):
         self.assertEqual([x["kind"] for x in res.sends], ["user-reply"])
         p = self.add(self.plan_review("c"), "shop-c", 2)
         res = review.approve(self.repo, [p], "c 的 Plan 也批准")
+        self.assertEqual(sorted(x["kind"] for x in res.sends), ["coordination-notice", "user-reply"])
+
+    def test_notice_when_spec_came_as_interface_proposal(self):
+        # S14: a Spec submitted as an interface proposal counts as the Spec once its Plan is approved
+        text = review_text("c", "接口提案", [("spec/c.md", self.wt["c"] / "spec" / "c.md")]).replace(
+            "要点：\n", "要点：\n- 改了哪个接口：下单接口\n- 哪些模块要跟着改：b\n", 1)
+        s = self.add(text, "shop-c", 1)
+        res = review.approve(self.repo, [s], "c 的接口提案批准")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual([x["kind"] for x in res.sends], ["user-reply"])
+        p = self.add(self.plan_review("c"), "shop-c", 2)
+        res = review.approve(self.repo, [p], "c 的 Plan 也批准")
+        self.assertEqual(res.code, 0, res.lines)
         self.assertEqual(sorted(x["kind"] for x in res.sends), ["coordination-notice", "user-reply"])
 
     def assert_refused(self, numbers, words):
