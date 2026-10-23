@@ -12,4 +12,4 @@
 - [x] Task 7：收尾提示与 status 字段（Spec 验收 9）——测试先红后绿；status 另显示「换宿主交接中」，`--json` 加 `handoverPending`、`handoverLine`（cad3718）
 - [x] Task 8：README、skill、crew-codex-host 变更记录、全量测试（Spec 验收 10、11）——全量 739 个测试通过；本模块 Spec 在构建中补了变更记录（事件名、status 字段），随最终验收复审（ef68df9）
 - [x] Checkpoint 2（gate）：最终验收
-- [ ] 回告：ecosystem-lead（模块 A 就位、`--to codex` 等模块 B）
+- [x] 回告：ecosystem-lead（模块 A 就位、`--to codex` 等模块 B）——mc-coord 已发（agent-relay #10574），ecosystem-lead 在 #10584 确认核过 93bdf0b、f6db688、ac301a4
