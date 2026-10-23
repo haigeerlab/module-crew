@@ -1183,7 +1183,7 @@ def _run(args) -> int:
         from module_crew import hostcheck
         rep = hostcheck.run(".")
         if args.json:
-            print(json.dumps({"checks": rep.checks, "module": rep.module, "host": rep.host}, ensure_ascii=False, indent=2))
+            print(json.dumps({"checks": rep.checks, "module": rep.module, "host": rep.host, "role": rep.role}, ensure_ascii=False, indent=2))
         else:
             print("\n".join(hostcheck.render(rep)))
         return rep.code

@@ -6,7 +6,7 @@ import stat
 import subprocess
 import unittest
 
-from helpers import RepoCase, StartCase
+from helpers import RepoCase, StartCase, make_worktree
 
 from module_crew import failure, hostcheck, launcher, start, store
 
@@ -117,7 +117,11 @@ class HostCheckTest(StartCase):
         self.assertEqual(hostcheck.run(other).code, 2)
         plain = self.repo / "sub"
         plain.mkdir()
-        rep = hostcheck.run(plain)            # the integration checkout is the coordinator, not a module session
+        rep = hostcheck.run(plain)            # crew-codex-coordinator: the integration checkout is checked as the coordinator
+        self.assertEqual(rep.role, "coordinator")
+        self.assertTrue(next(c for c in rep.checks if c["id"] == "registered")["ok"])
+        stray = make_worktree(self.repo, "stray")   # neither a module session's worktree nor the integration checkout
+        rep = hostcheck.run(stray)
         self.assertEqual(rep.code, 3)
         self.assertFalse(next(c for c in rep.checks if c["id"] == "registered")["ok"])
 

@@ -70,6 +70,45 @@ class StatusCodexSelfTest(CodexCoordCase):
         self.assertTrue(out.startswith("体检\n"))
 
 
+class HostCheckCoordinatorTest(CodexCoordCase):
+    """Acceptance 6: `host-check` in the integration checkout checks what the coordinator needs."""
+
+    def check(self, *args):
+        return self.cli("host-check", *args)
+
+    def test_all_pass(self):
+        r = self.check("--json")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        doc = json.loads(r.stdout)
+        self.assertEqual(doc["role"], "coordinator")
+        self.assertEqual({c["id"] for c in doc["checks"]},
+                         {"store", "registered", "version", "git-writable", "spec-guard", "entry"})
+        self.assertTrue(all(c["ok"] for c in doc["checks"]), doc["checks"])
+
+    def test_git_common_dir_read_only(self):
+        gitdir = self.repo / ".git"
+        mode = gitdir.stat().st_mode
+        gitdir.chmod(0o555)
+        self.addCleanup(gitdir.chmod, mode)
+        r = self.check("--json")
+        self.assertEqual(r.returncode, 3)
+        bad = {c["id"]: c for c in json.loads(r.stdout)["checks"] if not c["ok"]}
+        self.assertEqual(set(bad), {"git-writable"})
+        self.assertIn("沙箱外运行", bad["git-writable"]["fix"])
+
+    def test_spec_guard_missing(self):
+        self.plugins.entries.pop("spec-guard@m")
+        self.plugins.write()
+        bad = {c["id"] for c in json.loads(self.check("--json").stdout)["checks"] if not c["ok"]}
+        self.assertEqual(bad, {"spec-guard"})
+
+    def test_module_worktree_unchanged(self):
+        """A module worktree keeps the module-session checks, now with role 'dev'."""
+        doc = json.loads(self.cli("host-check", "--json", cwd=self.wt["b"]).stdout)
+        self.assertEqual(doc["role"], "dev")
+        self.assertEqual([c["id"] for c in doc["checks"]], ["store", "registered", "version", "git-writable"])
+
+
 class StatusClaudeCoordinatorTest(MergeCase):
     """Acceptance 7, the other half: a Claude coordinator's status is unchanged."""
 
