@@ -8,7 +8,7 @@ from unittest import mock
 
 from helpers import RepoCase, ReviewCase, StartCase
 
-from module_crew import coordinator, handover, hooks, permissions, store
+from module_crew import coordinator, handover, hooks, permissions, start, store, tasks
 from test_permissions import PermCase
 
 
@@ -301,6 +301,66 @@ class TakeoverHostTest(GapCase):
             tx.put("session", "shop-coord", {**{k: v for k, v in rec.items() if k != "hostHandover"},
                                              "host": "claude-desktop"}, action="registered")
         self.assertIn("已接管", self.take({"CLAUDE_CODE_SESSION_ID": "sid-new"}))
+
+
+class FollowHostTest(GapCase):
+    """Acceptance 6, 7: after the handover, new module and task sessions start on the coordinator's host."""
+
+    def setUp(self):
+        super().setUp()
+        close_batch(self.db)
+        skill = self.tmp / "SKILL.md"
+        skill.write_text("x", encoding="utf-8")
+        with mock.patch.object(handover, "codex_coordinator_skill", return_value=skill):
+            assert handover.handover(self.repo, "codex", "换到 Codex")[0] == 0
+
+    def test_prepare_follows_codex(self):
+        res = start.prepare(self.repo, ["d"], "开 d")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(store.get(self.db, "session", "shop-d")["host"], "codex-desktop")
+        text = store.read_body(self.db, res.prepared[0]["kickoff"])
+        self.assertIn("host-check", text)
+        self.assertNotIn(hooks.ENTRY_LINE, text)
+
+    def test_prepare_claude_refused(self):
+        before = store.records(self.db, "session"), len(store.events(self.db))
+        res = start.prepare(self.repo, ["d"], "开 d", host="claude")
+        self.assertEqual(res.code, 2, res.lines)
+        self.assertTrue(any("Codex" in l for l in res.lines))
+        self.assertEqual((store.records(self.db, "session"), len(store.events(self.db))), before)
+        self.assertFalse((self.tmp / "repo-crew" / "d").exists())
+
+    def test_dispatch_follows_codex(self):
+        n = tasks.add(self.db, self.repo, "bug", "修", "修一下", ["docs/t.md"], "修好", "加任务").number
+        r = tasks.dispatch(self.db, self.repo, n)
+        self.assertEqual(store.get(self.db, "session", r.relay)["host"], "codex-desktop")
+        text = store.read_body(self.db, r.kickoff)
+        for words in ("host-check", "提权", 'host:{app:"codex"', "重新注册", "status", "轻任务"):
+            self.assertIn(words, text)
+        self.assertNotIn(hooks.ENTRY_LINE, text)
+
+    def test_dispatch_claude_refused(self):
+        n = tasks.add(self.db, self.repo, "bug", "修", "修一下", ["docs/t.md"], "修好", "加任务").number
+        out = self.run_cli("task", "dispatch", f"T{n}", "--host", "claude")
+        self.assertEqual(out.returncode, 2, out.stdout + out.stderr)
+        self.assertEqual(store.get(self.db, "task", str(n))["state"], "ready")
+
+    def test_dispatch_codex_from_claude_coordinator(self):
+        with self.db.transaction(actor="t") as tx:
+            rec = tx.get("session", "shop-coord")
+            tx.put("session", "shop-coord", {**{k: v for k, v in rec.items() if k != "hostHandover"},
+                                             "host": "claude-desktop"}, action="registered")
+        n = tasks.add(self.db, self.repo, "bug", "修", "修一下", ["docs/t.md"], "修好", "加任务").number
+        r = tasks.dispatch(self.db, self.repo, n, host="codex")
+        self.assertEqual(store.get(self.db, "session", r.relay)["host"], "codex-desktop")
+        n2 = tasks.add(self.db, self.repo, "bug", "修", "再修", ["docs/u.md"], "修好", "加任务").number
+        r2 = tasks.dispatch(self.db, self.repo, n2)
+        self.assertEqual(store.get(self.db, "session", r2.relay)["host"], "claude-desktop")
+        self.assertIn(hooks.ENTRY_LINE, store.read_body(self.db, r2.kickoff))
+
+    def test_codex_skill_has_light_task_section(self):
+        text = (handover.PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("## 轻任务", text)
 
 
 class HandoverPermissionsTest(PermCase):

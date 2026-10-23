@@ -92,6 +92,16 @@ def coordinator_host(db: store.Store) -> str | None:
     return None if rec is None else rec.get("host", "claude-desktop")
 
 
+def pick_host(db: store.Store | None, host: str | None) -> tuple[str | None, str | None]:
+    """Decision 5: `--host` defaults to the coordinator's host; a Codex coordinator takes no Claude sessions."""
+    coord = coordinator_host(db) if db is not None else None
+    if host is None:
+        return None, "codex" if coord == "codex-desktop" else "claude"
+    if host == "claude" and coord == "codex-desktop":
+        return "模块协调在 Codex：Codex 叫不醒停掉的 Claude 会话，只能开 Codex 会话（不写 --host，或换回 Claude 后再开）", None
+    return None, host
+
+
 def check(project: str | os.PathLike, to: str | None = None) -> tuple[int, dict, list[str]]:
     """`coordinator handover --check`: read only. 0 ready, 3 not ready."""
     db = store.open_store(Path(project))

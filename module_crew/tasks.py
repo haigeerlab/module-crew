@@ -202,7 +202,8 @@ class Dispatched:
     lines: list[str] = field(default_factory=list)
 
 
-def render_kickoff(n: int, t: dict, worktree: Path, branch: str, cfg: dict, relay: str, coord: str) -> str:
+def render_kickoff(n: int, t: dict, worktree: Path, branch: str, cfg: dict, relay: str, coord: str,
+                   codex: list[str] | None = None) -> str:
     """The first message of a light task's session: the task card, its rules and the v2.5 message shapes."""
     check = cfg.get("checkCommand") or "项目 Spec 的 Commands 一节里的完整检查命令"
     caused = [f"由 {t['causedBy']} 带进来：修之前先看那次改动。"] if t.get("causedBy") else []
@@ -222,7 +223,7 @@ def render_kickoff(n: int, t: dict, worktree: Path, branch: str, cfg: dict, rela
         f"邮箱名：{relay}，用 agent-relay bridge_register 注册，wake: \"auto\"",
         f"注册后先运行 module-crew bind {relay}：登记本会话的身份，module-crew 的钩子只认登记过的会话",
         f"模块协调：{coord}（你只和它说话）",
-        ENTRY_LINE,
+        *([] if codex else [ENTRY_LINE]),   # Codex has no hooks: the Codex lines give the fixed entry (crew-host-handover)
         "",
         *bug,
         f"做完、提交、跑完整检查（{check}）全部通过后才交回。交回发最终验收【交审】，样子是：",
@@ -237,10 +238,10 @@ def render_kickoff(n: int, t: dict, worktree: Path, branch: str, cfg: dict, rela
         "只多改了没人在碰的文件，不用停，交回时在「越界检查」里写一句。",
         "",
         "全局约束：不改公共文件（要改发【公共变更请求】）；被挡住发【等待其他会话】；发出前 module-crew protocol check。",
-    ]) + "\n"
+    ] + (codex or [])) + "\n"
 
 
-def dispatch(db: store.Store, project: str | os.PathLike, number: int) -> Dispatched:
+def dispatch(db: store.Store, project: str | os.PathLike, number: int, host: str | None = None) -> Dispatched:
     """ready → dispatched: its own worktree and branch from the integration branch, a `task` registration, the kickoff."""
     import subprocess
     project = Path(project)
@@ -255,6 +256,11 @@ def dispatch(db: store.Store, project: str | os.PathLike, number: int) -> Dispat
     coord = active_coordinator(db)
     if coord is None:
         raise TaskRefused("本项目没有在用的模块协调")
+    from module_crew import handover, start
+    refused, host = handover.pick_host(db, host)      # crew-host-handover: follow the coordinator's host
+    if refused:
+        raise TaskRefused(refused)
+    host_id = start.HOSTS[host]
     branch, relay = f"task/t{number}", f"{cfg['projectShort']}-t{number}"
     worktree = Path(cfg["crewDir"]) / f"task-t{number}"
     if worktree.exists():
@@ -263,10 +269,11 @@ def dispatch(db: store.Store, project: str | os.PathLike, number: int) -> Dispat
                             cfg["integrationBranch"]], capture_output=True, text=True, timeout=60)
     if added.returncode != 0:
         raise TaskRefused(f"建 worktree 失败：{added.stderr.strip()[:200]}")
-    text = render_kickoff(number, t, worktree, branch, cfg, relay, coord[0])
+    text = render_kickoff(number, t, worktree, branch, cfg, relay, coord[0],
+                          start.codex_lines(relay, db.path) if host_id == "codex-desktop" else None)
     try:
         with db.transaction(actor=coord[0]) as tx:
-            tx.put("session", relay, {"role": "task", "host": "claude-desktop", "status": "active", "task": number,
+            tx.put("session", relay, {"role": "task", "host": host_id, "status": "active", "task": number,
                                       "worktree": str(worktree)}, action="registered")
             body = tx.allocate_number()
             tx.write_body(body, text)

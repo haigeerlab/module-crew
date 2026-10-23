@@ -233,7 +233,12 @@ def _task(args) -> int:
             print(f"T{r.number} 的任务单已缩小，回到在做；把正文发给做事的会话：{r.path}")
             return 0
         if args.action == "dispatch":
-            d = tasks.dispatch(db, ".", args.number)
+            from module_crew import handover
+            refused, _ = handover.pick_host(db, args.host)
+            if refused:
+                print(f"❌ {refused}", file=sys.stderr)
+                return 2
+            d = tasks.dispatch(db, ".", args.number, args.host)
             if args.json:
                 print(json.dumps({"number": d.number, "worktree": d.worktree, "branch": d.branch, "relay": d.relay,
                                   "kickoff": d.kickoff, "kickoffPath": d.kickoff_path, "lines": d.lines},
@@ -373,7 +378,7 @@ def _start_plan(as_json: bool) -> int:
 
 
 def _start_prepare(modules: list[str], original: str | None, original_file: str | None, short: str | None,
-                   max_modules: int | None, as_json: bool, host: str = "claude", commit_prefix: str | None = None) -> int:
+                   max_modules: int | None, as_json: bool, host: str | None = None, commit_prefix: str | None = None) -> int:
     if original_file is not None:
         original = _read(original_file)
         if original is None:
@@ -867,7 +872,7 @@ def _main(argv: list[str] | None = None) -> int:
     orig.add_argument("--original-file")
     spr.add_argument("--project-short")
     spr.add_argument("--max", type=int)
-    spr.add_argument("--host", choices=("claude", "codex"), default="claude")
+    spr.add_argument("--host", choices=("claude", "codex"), help="默认跟随模块协调的宿主（crew-host-handover）")
     spr.add_argument("--commit-prefix", help="module-crew 提交信息的前缀（项目配置；不设按 chore(crew): ，空字符串表示不加）")
     spr.add_argument("--json", action="store_true")
     rv = sub.add_parser("review", help="交审与批量批准")
@@ -1000,6 +1005,7 @@ def _main(argv: list[str] | None = None) -> int:
     tsc.add_argument("--done", required=True)
     tad = tas.add_parser("dispatch", help="派出可开的任务：建 worktree 与分支、登记轻任务会话、生成开工说明")
     tad.add_argument("number", type=refs.parse)
+    tad.add_argument("--host", choices=("claude", "codex"), help="默认跟随模块协调的宿主（crew-host-handover）")
     tac = tas.add_parser("cancel")
     tac.add_argument("number", type=refs.parse)
     for c in (taa, tac, tsc):
