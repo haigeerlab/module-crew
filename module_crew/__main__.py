@@ -104,6 +104,12 @@ def _status(as_json: bool) -> int:
             print(f"  本会话不是登记的模块协调 {coord_row['name']}（它登记在另一个会话上）：模块协调的写命令在这里会被拒；"
                   f"要由本会话接手，请用户同意后运行 module-crew bind {coord_row['name']} --takeover --original-file <原话文件>")
         print("  未关：" + "、".join(f"{_KIND_NAME[k]} {n}" for k, n in report.store["open"].items()))
+        if report.store.get("handoverPending"):            # crew-host-handover
+            from module_crew import handover
+            print(f"  换宿主交接中：模块协调已登记到 {handover.HOST_NAMES.get(report.store.get('coordinatorHost'), '?')}，"
+                  "等新宿主的会话 bind --takeover（交接说明在状态库目录 handover-guide/ 下）")
+        if report.store.get("handoverLine"):
+            print("  " + report.store["handoverLine"])
         own = inbox.own_waits(store.open_store())
         if own:
             print("  模块协调自开的等待记录：" + "、".join(f"W{n}（等 {r['about']}）" for n, r in own))

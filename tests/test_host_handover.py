@@ -6,7 +6,7 @@ import re
 import unittest
 from unittest import mock
 
-from helpers import RepoCase, ReviewCase, StartCase
+from helpers import MergeCase, RepoCase, ReviewCase, StartCase
 
 from module_crew import coordinator, handover, hooks, permissions, start, store, tasks
 from test_permissions import PermCase
@@ -241,6 +241,7 @@ class HandoverTest(GapCase):
         for phrase in ("归档", "takeover:true", 'wake:{app:"codex", sessionId:<CODEX_THREAD_ID>}', "--takeover --original-file",
                        "提权", "信任", "每轮", "不带 takeover", "去哪个会话", "做什么", "做完的样子", "shop-coord"):
             self.assertIn(phrase, text)
+        self.assertIn("换宿主交接中", self.run_cli("status").stdout)
         original = re.search(r"--original-file ([^`\s]+)", text).group(1)
         self.assertEqual(open(original, encoding="utf-8").read(), "换到 Codex")
 
@@ -361,6 +362,48 @@ class FollowHostTest(GapCase):
     def test_codex_skill_has_light_task_section(self):
         text = (handover.PLUGIN_ROOT / "codex-skills" / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("## 轻任务", text)
+
+
+class BatchClosedHintTest(MergeCase):
+    """Acceptance 9: the hint appears when the last session in use is taken back, and in status."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        cfg = store.get(self.db, "config", "main")
+        with self.db.transaction(actor="t") as tx:
+            tx.put("config", "main", {**cfg, "checkCommand": self.check_script()}, action="set")
+
+    def merge_and_clean(self, m):
+        from module_crew import merge
+        self.approve_final(m, 900 + ord(m))
+        res = merge.run(self.repo)
+        self.assertEqual(res.code, 0, res.lines)
+        return merge.cleanup(self.repo, m, f"收回 {m}")
+
+    def status_json(self):
+        out = self.run_cli("status", "--json")
+        return json.loads(out.stdout)
+
+    def test_hint_after_last_cleanup_only(self):
+        first = self.merge_and_clean("b")
+        self.assertEqual(first.code, 0, first.lines)
+        self.assertFalse(any("具备换宿主的条件" in l for l in first.lines), first.lines)
+        self.assertFalse(self.status_json()["store"]["handoverReady"])
+        last = self.merge_and_clean("c")
+        self.assertEqual(last.code, 0, last.lines)
+        hint = [l for l in last.lines if "本批已收尾，具备换宿主的条件" in l]
+        self.assertEqual(len(hint), 1, last.lines)
+        self.assertIn("handover --to codex", hint[0])
+        doc = self.status_json()
+        self.assertTrue(doc["store"]["handoverReady"])
+        self.assertEqual(doc["store"]["coordinatorHost"], "claude-desktop")
+        self.assertIn("本批已收尾，具备换宿主的条件", self.run_cli("status").stdout)
+
+    def test_no_hint_before_any_merge(self):
+        close_batch(self.db)
+        self.assertFalse(self.status_json()["store"]["handoverReady"])
+        self.assertIsNone(handover.ready_line(self.db))
 
 
 class HandoverPermissionsTest(PermCase):

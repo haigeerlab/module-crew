@@ -92,6 +92,17 @@ def coordinator_host(db: store.Store) -> str | None:
     return None if rec is None else rec.get("host", "claude-desktop")
 
 
+def ready_line(db: store.Store) -> str | None:
+    """Decision 8: once a batch has merged and nothing is left in use, say the crew may switch hosts. Only a hint."""
+    merged = any(v.get("kind") == "merge-approval" and v.get("closedReason") == "merged"
+                 for v in store.records(db, "item").values())
+    if not merged or not ready(readiness(db)):
+        return None
+    other = "claude" if coordinator_host(db) == "codex-desktop" else "codex"
+    return (f"本批已收尾，具备换宿主的条件：要换到 {HOST_NAMES[HOST_IDS[other]]} 请用户明说，"
+            f"再运行 module-crew coordinator handover --to {other}（换不换由用户决定）")
+
+
 def pick_host(db: store.Store | None, host: str | None) -> tuple[str | None, str | None]:
     """Decision 5: `--host` defaults to the coordinator's host; a Codex coordinator takes no Claude sessions."""
     coord = coordinator_host(db) if db is not None else None
