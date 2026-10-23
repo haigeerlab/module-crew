@@ -499,7 +499,13 @@ class Report:
         return {"schemaVersion": 1, "blocked": self.blocked,
                 "checks": [{"id": c.id, "state": c.state, "reason": c.reason, "fix": c.fix} for c in self.checks.values()],
                 "store": self.store, "map": summarize_map(self.map), "startable": self.startable,
-                "host": "模块协调：Claude 桌面版；模块会话：Claude 或 Codex 桌面版"}
+                "host": self.host_line}
+
+    @property
+    def host_line(self) -> str:
+        """S20: follows the registered coordinator's host; a Codex coordinator only opens Codex sessions."""
+        return ("模块协调：Codex 桌面版；模块会话：Codex 桌面版" if (self.store or {}).get("coordinatorHost") == "codex-desktop"
+                else "模块协调：Claude 桌面版；模块会话：Claude 或 Codex 桌面版")
 
 
 def run(project: str | os.PathLike | None = None, timeout: float = MAP_TIMEOUT) -> Report:

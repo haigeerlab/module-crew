@@ -236,8 +236,10 @@ def shadowed(checkout: Path, allow: list[str], own_deny: list[str]) -> list[dict
 def plan(project: str | os.PathLike) -> dict:
     """Read-only preview: what each checkout would get, what blocks it, and whether the push guard can go in."""
     project = Path(project)
-    _, cfg, found = checkouts(project)
-    return {"targets": [_target(t, cfg, project) for t in found], "hook": hook_state(project)}
+    db, cfg, found = checkouts(project)
+    from module_crew import handover
+    return {"targets": [_target(t, cfg, project) for t in found], "hook": hook_state(project),
+            "coordinator": handover.coordinator_host(db) is not None}
 
 
 TRUST_TEXT = {"trusted": "项目已被 Codex 信任，规则会生效",
@@ -246,8 +248,12 @@ TRUST_TEXT = {"trusted": "项目已被 Codex 信任，规则会生效",
               "unknown": "读不出 Codex 的信任设置，不知道规则会不会生效"}
 
 
+NO_COORDINATOR = ("还没有模块协调登记：先在要当模块协调的会话里运行 module-crew coordinator up，"
+                  "再 permissions plan／apply（集成 checkout 与各模块都要等登记后才列得出来）")
+
+
 def render_plan(p: dict) -> list[str]:
-    lines = []
+    lines = [] if p.get("coordinator", True) else [f"⚠️ {NO_COORDINATOR}"]
     for t in p["targets"]:
         who = ("集成 checkout（模块协调）" if t["role"] == "integration" else f"轻任务 T{t['task']}（{t['name']}）"
                if t["role"] == "task" else f"模块 {t['module']}（{t['name']}）")

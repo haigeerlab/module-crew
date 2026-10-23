@@ -101,7 +101,7 @@ bin/module-crew status
 
 模块协调在 Claude 桌面版时，模块会话也可以开在 Codex 桌面版里；模块协调本身也可以在一批收尾后整体换到 Codex，见下一节「换宿主」。
 
-1. 在 Codex 里装同一版本的 module-crew（`.codex-plugin/plugin.json`，只提供 Codex 版 `crew-dev` skill）；Codex 插件更新后要完全退出 ChatGPT 应用再打开。
+1. 在 Codex 里装同一版本的 module-crew（`.codex-plugin/plugin.json`，提供 Codex 版 `crew-dev` 与 `crew-coordinator` 两个 skill）；Codex 插件更新后要完全退出 ChatGPT 应用再打开。
 2. 模块协调用 `module-crew start prepare <模块>… --host codex --original-file <原话文件>` 开工；要混用就按宿主分两次。
 3. 用户在 Codex 里新建任务，工作目录选那个模块的 worktree，第一条消息贴开工说明全文。
 4. Codex 会话先跑 `module-crew host-check`：检查登记、版本、能否写 git 目录、能否读状态库。开工说明给的命令是状态库里的固定入口 `<git公共目录>/module-crew/bin/module-crew`（`start prepare`、`coordinator up` 时写入），它每次转给当前安装的 module-crew，升级后不用换；0.12.0 之前开工的 Codex 会话记着的是带版本号的旧路径，升级后由模块协调转告一次新入口。
@@ -116,7 +116,8 @@ bin/module-crew status
    最后一个会话收回时 `merge cleanup` 会输出「本批已收尾，具备换宿主的条件」，`status` 也显示这一行。`module-crew coordinator handover --check [--to codex|claude]` 逐条列出哪项不满足；决策收件箱那边的待决请用 decision-inbox 的 waits 再看一眼。
 2. **换**：用户明说后，原宿主上的模块协调运行 `module-crew coordinator handover --to codex|claude --original-file <原话文件>`。它改模块协调登记的宿主、按新宿主给集成 checkout 追加权限规则（项目 apply 过才写，原有规则保留），并把逐步交接说明打印出来、存到状态库目录 `handover-guide/`。
 3. **照交接说明做**：每一步写明去哪个会话、做什么、做完的样子。要点：
-   - Claude → Codex：先归档 Claude 上原来的模块协调（会话）（agent-relay 不让接管还在运行的 Claude 会话）；在 Codex 新建任务、目录选集成 checkout、贴开场文字；它用 `takeover:true` 加 `wake:{app:"codex", sessionId:<CODEX_THREAD_ID>}` 接管邮箱名，再 `bind --takeover`（会弹提权）；在 Codex 里信任项目；之后每轮开头不带 takeover 重新注册。
+   - Claude → Codex：先归档 Claude 上原来的模块协调（会话）（agent-relay 不让接管还在运行的 Claude 会话）；在 Codex 里信任项目（贴开场文字之前）；在 Codex 新建任务、目录选集成 checkout、贴开场文字；它用 `takeover:true` 加 `wake:{app:"codex", sessionId:<CODEX_THREAD_ID>}` 接管邮箱名，再 `bind --takeover`（会弹提权）；之后每轮开头不带 takeover 重新注册。
+   - 新宿主的规则文件（如 `.codex/rules/module-crew.rules`）没被 git 忽略时，规则没写上，交接说明多一步：模块协调在 `.gitignore`（公共文件）加上这个文件并提交，再凭用户原话重跑 `permissions apply`。
    - Codex → Claude：先确认原 Codex 任务已停（agent-relay 判断不了，它被接走后也收不到通知）；在 Claude 桌面版新开会话、贴开场文字；它用 `takeover:true, wake:"auto"` 接管，再 `bind --takeover`。
    - `bind --takeover` 只认登记宿主上的会话：没先跑 handover 就在另一边接管会被拒。
 4. **之后**：`start prepare`、`task dispatch` 不写 `--host` 时用模块协调所在的宿主。模块协调在 Codex 时只开 Codex 会话（Codex 叫不醒停掉的 Claude 会话），`--host claude` 被拒。
@@ -231,6 +232,7 @@ python3 -m unittest discover -s tests -v
 
 不可逆操作不能只靠弹窗：宿主确认（ask 规则或默认确认）在代开会话里也会弹，但点一次「允许」就执行了，点的人未必清楚上下文。module-crew 把第 44 条范围内的常规操作（含装依赖与往项目里加新包：`npm ci`、`npm install <包名>`、`pnpm add`、`yarn add`、`uv add`、`.venv/bin/pip install` 等）写成宿主认的放行规则，把推送、删除、全局安装（`-g`／`--global` 在任意位置、`yarn global`、`uv --system`、`brew install`）、改全局配置写成禁止；裸 `pip install <包名>` 不写规则、交宿主默认确认（不在 venv 里会装进系统 Python）；Codex 侧加新包也不写规则，因为前缀规则挡不住 `npm install x -g`。不可逆操作写禁止、不写 ask：禁止规则直接拒绝，不依赖有人当场判断。（0.5.2 更正：早先说代开会话里 ask 确认不会出现，经 E3 会话记录核实不成立，两次 `git push` 都是弹了确认、被点了「允许一次」。）再用 git 的 pre-push 钩子守住推送：
 
+0. 先有模块协调登记：在要当模块协调的会话里运行 `module-crew coordinator up`（或已经用 `start prepare` 开过工），状态库里有了模块协调和集成分支，`plan`／`apply` 才列得出集成 checkout 与各模块；没登记时 `plan` 会直接提示先 `coordinator up`。
 1. `module-crew permissions plan`：只读预览每个 checkout（集成 checkout 与各模块 worktree）要追加什么、文件有没有被 git 忽略、钩子能不能装、Codex 项目是否受信任，以及别处（主 checkout 的设置、用户设置等）有没有 ask 或禁止规则会盖过要写的放行——宿主先看禁止、再看 ask、最后看放行，模块 worktree 的会话也读主 checkout 的本地设置。
 2. `module-crew permissions apply --original-file <用户原话>`：Claude 写 `.claude/settings.local.json`（只追加条目），Codex 模块写 `.codex/rules/module-crew.rules`；有一个文件不能写就全部不写。之后 `start prepare` 新开的模块自动跟随。module-crew 自己的命令放行的是状态库里的固定入口（0.12.1 起），升级插件后不用重跑。
 3. 开好会话后 `module-crew permissions verify`：四条应直接运行、一条应被拒的实测清单；结果用 `verify --record` 记下，`status` 显示每个会话最近一次实测，没测过写「权限未实测」。
