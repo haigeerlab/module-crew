@@ -1,6 +1,6 @@
 # Implementation Plan: crew-codex-coordinator
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-codex-coordinator.md`（用户 2026-10-23 批准，事项 C32，「C32 A；Q1 不放开；Q2 不加；并行边界补成独占／公共两行」）。任务清单：`tasks/crew-codex-coordinator/todo.md`。
 
