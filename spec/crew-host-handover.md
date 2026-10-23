@@ -1,5 +1,7 @@
 # Spec: crew-host-handover
 
+<!-- spec-guard: review approved 76d918e70127 -->
+
 > 能力图模块 `crew-host-handover`（第八版）。需求来源：插件生态接缝 S13 修订版，用户 2026-10-23 在 ecosystem-lead 会话确认
 > 「只在空档整体来回换宿主，不做模块中途换」，2026-10-23 在 mc-coord 会话批准插入能力图（批准事项 C13）。
 > 宿主事实取自 decision-inbox `docs/host-differences.md`（H1–H5、H7、H8、H10–H12、H23、H25）。
