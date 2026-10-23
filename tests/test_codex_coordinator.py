@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 from helpers import MergeCase, git, spec_guard_interface
+from test_light_task import new_task
 from test_session_handover import WRITES
 
 from module_crew import __main__ as cli
@@ -391,6 +392,56 @@ class MergeResultTest(DetachCase):
         self.assertEqual(self.result().returncode, 3)
         self.run_cli("merge", "run", "--check-command", "python3 -c pass")      # a foreground merge leaves no result
         self.assertEqual(self.result().returncode, 3)
+
+
+CODEX_OPEN = "请用户去 Codex 新建任务"
+
+
+class CodexOpenGuideTest(CodexCoordCase):
+    """Acceptance 9: with the coordinator on Codex, opening a module or a task says how to open it in Codex."""
+
+    def test_start_prepare(self):
+        r = self.cli("start", "prepare", "d", "--original", "开 d")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        tail = r.stdout[r.stdout.index(CODEX_OPEN):]
+        rec = store.get(self.db, "session", "shop-d")
+        self.assertIn("d：工作目录选", tail)
+        self.assertIn(os.path.realpath(self.tmp), os.path.realpath(tail.split("工作目录选 ")[1].split("，")[0]))
+        self.assertIn("第一条消息贴", tail)
+        self.assertIn(".txt", tail)
+        self.assertEqual(rec["host"], "codex-desktop")
+
+    def test_task_dispatch(self):
+        number = new_task(self.db, self.repo, kind="bug")
+        r = self.cli("task", "dispatch", str(number))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(CODEX_OPEN, r.stdout)
+        self.assertIn(f"T{number}：工作目录选", r.stdout)
+        self.assertNotIn("用桌面版在这个 worktree 开新会话", r.stdout)
+
+
+class ClaudeOpenUnchangedTest(MergeCase):
+    """Acceptance 9, the other half: a Claude coordinator's output does not get the Codex section."""
+
+    def test_start_prepare(self):
+        r = self.run_cli("start", "prepare", "d", "--original", "开 d")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn(CODEX_OPEN, r.stdout)
+
+
+class HandoverGuideCodexTest(unittest.TestCase):
+    """Acceptance 2, the guide: after taking over, run host-check; then the three steps every round."""
+
+    def test_codex_guide(self):
+        from module_crew import handover
+        text = handover.guide("codex", "shop-coord", "/x/module-crew", "/r", "/r/orig.txt")
+        self.assertIn("`/x/module-crew host-check`", text)
+        self.assertIn("每轮开头三步", text)
+        self.assertIn("重新 bridge_register（不带 takeover）→ 运行 status → 读收件箱", text)
+
+    def test_claude_guide_unchanged_by_this(self):
+        from module_crew import handover
+        self.assertNotIn("host-check", handover.guide("claude", "shop-coord", "/x/module-crew", "/r", "/r/orig.txt"))
 
 
 class StatusClaudeCoordinatorTest(MergeCase):

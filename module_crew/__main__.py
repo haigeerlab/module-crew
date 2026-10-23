@@ -260,10 +260,14 @@ def _task(args) -> int:
                 return 0
             print(f"已派出 T{d.number}：worktree {d.worktree}（分支 {d.branch}），邮箱名 {d.relay}")
             print(f"开工说明：{d.kickoff_path}")
-            print("下一步：用桌面版在这个 worktree 开新会话，第一条消息用开工说明全文；"
-                  "这一轮是被别的会话消息叫醒的就只能出卡片，等用户点开")
+            on_codex = handover.coordinator_host(db) == "codex-desktop"
+            if not on_codex:
+                print("下一步：用桌面版在这个 worktree 开新会话，第一条消息用开工说明全文；"
+                      "这一轮是被别的会话消息叫醒的就只能出卡片，等用户点开")
             for line in d.lines:
                 print(line)
+            if on_codex:
+                print("\n".join(start.codex_open_lines([(f"T{d.number}", d.worktree, d.kickoff_path)])))
             return 0
         if args.action == "next":
             promoted = tasks.next_ready(db, ".")
@@ -409,6 +413,9 @@ def _start_prepare(modules: list[str], original: str | None, original_file: str 
         print(f"{p['id']}：worktree {p['worktree']}（分支 {p['branch']}），邮箱名 {p['relayName']}，开工说明 {p['kickoffPath']}，{p.get('role', '角色标记未设')}")
         if p.get("host") == "codex-desktop":
             print(f"  宿主：Codex 桌面版（用户手动在 Codex 里开任务，工作目录选 {p['worktree']}，第一条消息用开工说明全文）")
+    from module_crew import handover
+    if res.prepared and handover.coordinator_host(store.open_store()) == "codex-desktop":
+        print("\n".join(start.codex_open_lines([(p["id"], str(p["worktree"]), str(p["kickoffPath"])) for p in res.prepared])))
     return res.code
 
 

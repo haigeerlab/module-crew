@@ -370,6 +370,15 @@ def _first_step(module: str, cadence: str) -> str:
             f"Spec 批准的【用户答复】到了再写 tasks/{module}/plan.md、todo.md 交审（节点 Plan）。项目评审节奏：separate。")
 
 
+def codex_open_lines(items: list[tuple[str, str, str]]) -> list[str]:
+    """crew-codex-coordinator decision 7: with the coordinator on Codex every session is opened by hand in Codex.
+
+    items: (label, worktree, kickoff file)."""
+    lines = ["请用户去 Codex 新建任务（模块协调在 Codex，模块会话与轻任务会话也都开在 Codex；Codex 叫不醒停掉的 Claude 会话）："]
+    lines += [f"  {label}：工作目录选 {worktree}，第一条消息贴 {kickoff} 全文" for label, worktree, kickoff in items]
+    return lines
+
+
 def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: str, coord: str, approval: int,
                    host: str = "claude-desktop") -> str:
     deps = "\n".join(f"spec/{d}.md" for d in info.get("dependsOn") or []) or "无"

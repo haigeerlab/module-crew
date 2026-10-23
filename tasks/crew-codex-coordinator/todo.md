@@ -9,7 +9,7 @@
 - [x] Checkpoint 1（report）：Codex 协调认得出自己、查得出障碍——test_codex_coordinator 与 session_handover、host_handover、codex_host、background_checks 共 97 个测试通过
 - [x] Task 5：拆 `merge.run`，加 `merge run --detach`（Spec 验收 4 启动、锁、被杀部分）——测试先红后绿；没有整段拆函数，改为 `_run` 在拿到锁后按 `detach` 交给子进程（`pass_fds` 交锁、新会话、输出进 `merge-output/C号.log`），子进程以 `--detached-child` 接管同一把锁再跑一遍，前台路径不变（合并相关已有测试全过）；结果在全部输出刷盘后才写回；交给后台记在批准事项上（事件 `item.merge-detached`，Spec 写的 `merge.detached` 不符合「种类.动作」，随最终验收报）
 - [x] Task 6：`merge result` 与 `status` 的结果提示（Spec 验收 4 结果部分、5）——测试先红后绿；成功、检查失败退回、冲突三种情况下后台结果的正文（换掉临时路径与提交号后）与退出码和前台 `merge run` 逐字一致；`--wait` 以分钟计、每 5 秒看一次、上限 8；读结果记在批准事项上（事件 `item.merge-result-read`）；给的 C 号不是最近一次后台合并时退出码 3 并给出日志路径（不从日志末行猜退出码，比 Plan 风险一节说的简单）
-- [ ] Task 7：开工输出的 Codex 指引与交接说明补句（Spec 验收 9、2 说明部分）
+- [x] Task 7：开工输出的 Codex 指引与交接说明补句（Spec 验收 9、2 说明部分）——测试先红后绿；模块协调在 Codex 时 `start prepare`、`task dispatch` 末尾加「请用户去 Codex 新建任务」段（逐模块／T 号一行），`task dispatch` 同时不再打印「用桌面版开新会话」那句；交接说明 Codex 方向开场文字加 `host-check` 一步与「每轮开头三步」；协调在 Claude 时输出不变（开工、轻任务、换宿主已有测试通过）
 - [ ] Checkpoint 2（report）：命令层做完，全量测试通过
 - [ ] Task 8：Codex 版 crew-coordinator skill（Spec 验收 1）
 - [ ] Task 9：`handover --to codex` 端到端（Spec 验收 2）
