@@ -237,7 +237,7 @@ module-crew ticket close <编号> --reason user --original-file <用户原话文
 - **换之前核对**：`module-crew coordinator handover --check --to <宿主>`；有 ❌ 的项先处理，决策收件箱那边用 decision-inbox 的 waits 再看一眼。不做模块做到一半换宿主。
 - **换**：用户明说后，在本会话运行 `module-crew coordinator handover --to codex|claude --original-file <原话文件>`。把输出的交接说明**全文**写进正文给用户（存档在状态库目录 `handover-guide/`），逐步带用户做；之后你停手，不再运行 module-crew 写命令。
 - **两个方向的关键**：换到 Codex 时先让用户归档本会话，再去 Codex 开任务接管（agent-relay 不让接管还在运行的 Claude 会话）；从 Codex 换回时先请用户确认原 Codex 任务已停，再在新 Claude 会话接管。接管就是用户同意的接管，原话即 handover 的原话。
-- **之后**：`start prepare`、`task dispatch` 默认用新宿主；模块协调在 Codex 时只开 Codex 会话。`handover --to codex` 在 Codex 版模块协调规矩（待定模块 B）发版前会被拒，照实告诉用户。
+- **之后**：`start prepare`、`task dispatch` 默认用新宿主；模块协调在 Codex 时只开 Codex 会话。换到 Codex 后新线程按 Codex 版 crew-coordinator 做事（插件里没有这份 skill 时 `handover --to codex` 会被拒，照实告诉用户）。
 
 ## 接入决策收件箱
 

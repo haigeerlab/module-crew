@@ -478,6 +478,30 @@ class RoundTripTest(GapCase):
                          ("claude-desktop", "sid-new", False))
 
 
+class DocsTest(unittest.TestCase):
+    """Acceptance 10."""
+
+    ROOT = handover.PLUGIN_ROOT
+
+    def test_readme(self):
+        text = (self.ROOT / "README.md").read_text(encoding="utf-8")
+        for words in ("### 模块协调在 Codex 上", "每轮开头三步", "申请在沙箱外运行", "merge run --detach", "merge result",
+                      "请用户去 Codex 新建任务", "逐个点开", "module-crew merge run --detach / merge result"):
+            with self.subTest(words=words):
+                self.assertIn(words, text)
+        self.assertNotIn("待定模块 B", text)
+
+    def test_codex_plugin_description(self):
+        doc = json.loads((self.ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        self.assertNotIn("协调会话在 Claude 桌面版", doc["description"])
+        self.assertIn("模块协调", doc["description"])
+
+    def test_claude_skill_no_longer_says_refused_until_b(self):
+        text = (self.ROOT / "skills" / "crew-coordinator" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertNotIn("待定模块 B", text)
+        self.assertIn("Codex 版 crew-coordinator", text)
+
+
 class StatusClaudeCoordinatorTest(MergeCase):
     """Acceptance 7, the other half: a Claude coordinator's status is unchanged."""
 

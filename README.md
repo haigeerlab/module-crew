@@ -73,7 +73,7 @@ bin/module-crew status
    - `module-crew merge run`（第一次带 `--check-command "<完整检查命令>"`）：按 Build order 一次只合一个，`--no-ff` 合入本地集成分支后跑完整检查；
      不过就把集成分支重置回合并前（模块分支原样保留）并退回该模块，冲突就中止并退回。
    - 合并成功：该模块收到收尾通知，其他在用模块收到同步基线通知。
-   - 完整检查可能很慢：模块协调把 `merge run` 放后台跑，照常回话；跑的时候别的写集成 checkout 的命令会被合并锁挡住（退出码 6），`status` 显示正在跑的合并。
+   - 完整检查可能很慢：模块协调把 `merge run` 放后台跑，照常回话（Codex 上的模块协调用 `merge run --detach` 再 `merge result` 取结果，见「换宿主」）；跑的时候别的写集成 checkout 的命令会被合并锁挡住（退出码 6），`status` 显示正在跑的合并。
 6. **收尾与推送**
    - 用户同意后 `module-crew merge cleanup <模块> --original-file <原话文件>` 收回 worktree（分支保留）。
    - `module-crew merge push-plan` 预告；用户明确授权后 `module-crew merge push --original-file <原话文件>`，推到远端新分支 `crew/batch-<号>` 并开一个 PR。
@@ -119,7 +119,20 @@ bin/module-crew status
    - `bind --takeover` 只认登记宿主上的会话：没先跑 handover 就在另一边接管会被拒。
 4. **之后**：`start prepare`、`task dispatch` 不写 `--host` 时用模块协调所在的宿主。模块协调在 Codex 时只开 Codex 会话（Codex 叫不醒停掉的 Claude 会话），`--host claude` 被拒。
 5. **代价**：Codex 上写状态库、提交、合并都在 `.git` 里，要用户点提权；Codex 模块会话要用户手动开；ChatGPT 应用重启后要逐个点开。批准照旧由用户在该端模块协调那里亲口给。
-6. **前提**：换到 Codex 要等 Codex 版模块协调规矩发版（待定模块 B）；在那之前 `handover --to codex` 拒绝执行，换回 Claude 不受影响。
+6. **前提**：插件里要有 Codex 版模块协调规矩（`codex-skills/crew-coordinator/SKILL.md`，第八版起随插件发）；没有时 `handover --to codex` 拒绝执行，换回 Claude 不受影响。
+
+### 模块协调在 Codex 上（第八版）
+
+Codex 版 `crew-coordinator` skill 管下面这些与 Claude 不同的地方，交接说明的开场文字会让新线程加载它：
+
+- **每轮开头三步**：Codex 每轮重启 MCP、会丢联调身份，也没有钩子注入角色。每一轮先用原名 `bridge_register`（`wake:{app:"codex", sessionId:<CODEX_THREAD_ID>}`，不带 takeover）→ 运行 `module-crew status`（首行写明本线程是不是登记的模块协调）→ 读收件箱。
+- **提权**：几乎所有模块协调的写命令都写状态库或 `.git`，Codex 默认沙箱不让写。skill 列出要「申请在沙箱外运行」的命令，用户在模块协调那个线程里点批准；被沙箱拒绝时报错会带「申请在沙箱外运行」，不换写法绕过。
+- **预检**：接手后在集成 checkout 跑 `module-crew host-check`，按模块协调查：登记、版本、能否写 git 公共目录、能否读状态库、找得到 spec-guard、固定入口在不在。
+- **合并长检查**：Codex 没有「后台跑、跑完叫醒」。`module-crew merge run --detach` 拿到合并锁后把合并交给后台进程、立即返回，输出写到状态库目录 `merge-output/C<号>.log`；
+  `module-crew merge result [C<号>] [--wait <分钟>]`（只读，单次最多等 8 分钟）分段取结果，跑完时打印与前台 `merge run` 相同的内容、以同样的退出码结束，还在跑时退出码 6。`status` 会提示「已结束，运行 merge result 取通知」。
+- **开会话**：模块会话、轻任务会话都开在 Codex，由用户手动开；`start prepare`、`task dispatch` 输出末尾有「请用户去 Codex 新建任务」一段，逐个写出工作目录与开工说明文件。
+- **找插件**：module-crew、spec-guard、agent-relay 都按 Claude 的插件安装记录找（Codex 沙箱里读得到）；Codex 侧自己的插件安装 module-crew 不读，所以本机要在 Claude Code 里装着这些插件。
+- **代价**：提权次数多；ChatGPT 应用重启后要逐个点开模块协调和模块会话；决策收件箱在 Claude，它被桌面版停掉时 Codex 叫不醒，要用户点开。
 
 ## 出状况时怎么办
 
@@ -187,6 +200,8 @@ module-crew start plan|prepare                   开工
 module-crew review add|batch|approve|answer      交审与批量批准
 module-crew change add|list|land|answer          公共变更请求
 module-crew merge approve|revoke|queue|run|cleanup|push-plan|push
+module-crew merge run --detach / merge result [C<号>] [--wait <分钟>]   后台合并（Codex 上的模块协调用）／取它的结果（只读）
+module-crew host-check [--json]                  宿主预检：模块 worktree 里按模块会话查，集成 checkout 里按模块协调查
 module-crew suspend|resume|sessions|resume-kit|serial
 module-crew takeover <邮箱名> --original(-file)  换会话接管
 module-crew bind <邮箱名> --takeover --original(-file)  新会话一步接手模块协调（同一仓库任一目录，旧会话失效）
@@ -232,3 +247,4 @@ spec-guard 的命令入口路径带版本号，暂不放进放行清单。细节
 - 0.9.0 起的钩子按会话认身份：只用钩子事件数据做过测试，没在真实桌面会话里看过注入出来的文字。
 - 桌面版整个退出重开后会话 id 是否不变：压缩、`claude --resume` 接上都实测不变，退出整个桌面版这一种没测。
 - 0.12.0 的 Codex 固定入口：只在本机 Claude 环境与测试里验证过，还没在真实 Codex 会话的沙箱里跑过（读安装记录、执行 `.git` 下的脚本）。
+- 第八版的模块协调在 Codex 上：只用测试验证过。`merge run --detach` 的后台进程能否活过 Codex 的一轮、提权是否随之继承，单次工具调用最长能等多久，一次提权批准能覆盖多少条命令，都还没在真实 Codex 线程里试过。
