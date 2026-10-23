@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 from module_crew import probe, store
@@ -48,26 +49,27 @@ def overlap(project: Path, db: store.Store, open_items: list[tuple[int, dict]], 
         return unchecked(f"装的 spec-guard 接口 {doc.get('interface')} 低于 1.10（没有 scopeOverlap），比不了")
     branch = (store.get(db, "config", "main") or {}).get("integrationBranch") or ""
     checkout = probe._checkout_of(project, branch) or project
-    tmp = db.path / "tmp"
-    tmp.mkdir(exist_ok=True)
-    pairs = []
-    for n, v in pending:
-        text = _spec_text(db, v)
-        if text is None:
-            return unchecked(f"C{n} 的 Spec 从交审提交里取不出")
-        path = tmp / f"C{n}-spec.md"
-        store._atomic_write_bytes(path, text)        # overwritten next time, never deleted (decision 5)
-        pairs.append(f"{v['module']}={path}")
-    cmd = probe.safe_command(found.root, doc, "scopeOverlap", {"<project-root>": str(checkout), "<module-id>=<spec-file>": pairs[0]})
-    if isinstance(cmd, str):
-        return unchecked(cmd)
-    for pair in pairs[1:]:
-        cmd += ["--spec", pair]
-    try:
-        ran = subprocess.run(cmd, cwd=found.root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
-        result = json.loads(ran.stdout) if ran.returncode == 0 else None
-    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
-        return unchecked(f"scopeOverlap 没跑成（{exc}）")
+    # S19: the Specs go to the system temp dir, not the state dir under .git, so review batch stays read-only
+    # (Codex's default sandbox refuses writes to .git); the files live only while scopeOverlap runs.
+    with tempfile.TemporaryDirectory(prefix="crew-overlap-") as tmp:
+        pairs = []
+        for n, v in pending:
+            text = _spec_text(db, v)
+            if text is None:
+                return unchecked(f"C{n} 的 Spec 从交审提交里取不出")
+            path = Path(tmp) / f"C{n}-spec.md"
+            path.write_bytes(text)
+            pairs.append(f"{v['module']}={path}")
+        cmd = probe.safe_command(found.root, doc, "scopeOverlap", {"<project-root>": str(checkout), "<module-id>=<spec-file>": pairs[0]})
+        if isinstance(cmd, str):
+            return unchecked(cmd)
+        for pair in pairs[1:]:
+            cmd += ["--spec", pair]
+        try:
+            ran = subprocess.run(cmd, cwd=found.root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
+            result = json.loads(ran.stdout) if ran.returncode == 0 else None
+        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+            return unchecked(f"scopeOverlap 没跑成（{exc}）")
     if not isinstance(result, dict):
         return unchecked(f"scopeOverlap 退出码 {ran.returncode}：{(ran.stderr or ran.stdout).strip()[:200]}")
     conflicts = [c for c in result.get("conflicts") or [] if batch_mods & set(c.get("modules", []))]

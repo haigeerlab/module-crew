@@ -141,7 +141,9 @@ def _restore(checkout: Path) -> list[str]:
     new = [line[3:] for line in _git(checkout, "status", "--porcelain", "--untracked-files=all").stdout.splitlines()
            if line.startswith("?? ")]
     return (["状态库与集成分支都没有变化；集成 checkout 里原有的文件已还原成集成分支上的内容"]
-            + (["这次新建、没有删除的文件（未暂存，交用户决定）：" + "、".join(new)] if new else []))
+            + (["这次新建、没有删除的文件（未暂存，交用户决定）：" + "、".join(new),
+                "  它们让集成 checkout 不干净，会挡住下一次 review approve：用户看过后不要就删掉、要留就移出 checkout，"
+                "再重新 review approve（module-crew 不删文件）"] if new else []))
 
 
 def _unmarked(text: str) -> list[str]:
@@ -1134,7 +1136,8 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
     hub = f"（待决事项 #{src['item']}）" if src.get("kind") == "hub" else ""
     commit_run = _git(checkout, "commit", "-q", "-m", commits.message(f"用户批准事项 C{approval_no}{hub}：批准 {nodes}", commits.prefix_of(db)))
     if commit_run.returncode != 0:
-        return ApproveResult(4, [commits.failure(checkout, commit_run, "集成分支提交失败")] + _restore(checkout))
+        return ApproveResult(4, [commits.failure(checkout, commit_run, "集成分支提交失败")]
+                             + commits.hook_lines(checkout, commit_run) + _restore(checkout))
     commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
     from module_crew import unqueued
     unqueued.mark(db, checkout, "review-approve")    # crew-unqueued-commits: module-crew's own commit
