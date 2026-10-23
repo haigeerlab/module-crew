@@ -1,6 +1,6 @@
 # module-crew
 
-让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
+让多个 Claude 或 Codex 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
 > 版本 0.13.0。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
@@ -19,7 +19,7 @@
 
 | 依赖 | 要求 |
 |---|---|
-| 宿主 | 模块协调：Claude 桌面版（Code 标签）；模块会话：Claude 桌面版或 Codex 桌面版。都在同一台 Mac 上 |
+| 宿主 | 模块协调：平时在 Claude 桌面版（Code 标签），一批收尾后可用 `coordinator handover` 整体换到 Codex 桌面版（见「换宿主」）；模块会话：Claude 桌面版或 Codex 桌面版。都在同一台 Mac 上 |
 | agent-relay | **必需**，接口主版本 2。会话之间用它收发消息（`bridge_send` 的 `bodyFile`、`replyTo`、`expectsReply`） |
 | spec-guard | 项目已启用本地多 Spec 约定（`spec/CAPABILITY-MAP.md`）。开工、批量批准、合并依赖 spec-guard 0.68.0（`interface.json` 1.1、`/map --json` 的 `moduleConcurrency`、`startable`） |
 | 项目 | git 仓库，能建 worktree；有一条能在本地跑完的完整检查命令，合并后用它判断集成是否通过 |
@@ -99,7 +99,7 @@ bin/module-crew status
 
 ## Codex 模块会话
 
-模块会话可以开在 Codex 桌面版里，模块协调仍在 Claude 桌面版（要整批换到 Codex 见下一节「换宿主」）。
+模块协调在 Claude 桌面版时，模块会话也可以开在 Codex 桌面版里；模块协调本身也可以在一批收尾后整体换到 Codex，见下一节「换宿主」。
 
 1. 在 Codex 里装同一版本的 module-crew（`.codex-plugin/plugin.json`，只提供 Codex 版 `crew-dev` skill）；Codex 插件更新后要完全退出 ChatGPT 应用再打开。
 2. 模块协调用 `module-crew start prepare <模块>… --host codex --original-file <原话文件>` 开工；要混用就按宿主分两次。
