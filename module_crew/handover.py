@@ -130,8 +130,17 @@ def _step(n: int, where: str, what: str, done: str) -> list[str]:
     return [f"### 第 {n} 步", f"- 去哪个会话：{where}", f"- 做什么：{what}", f"- 做完的样子：{done}", ""]
 
 
-def guide(to: str, name: str, entry: str, integration: str, original_file: str) -> str:
-    """Decision 3: the step-by-step handover, every step says where to go, what to do and what done looks like."""
+def _ignore_step(n: int, where: str, rel: str, entry: str) -> list[str]:
+    """S20: the new host's rules file is not git-ignored, so `follow_integration` wrote nothing."""
+    return _step(n, where, f"在集成分支的 .gitignore 加一行 `{rel}` 并提交（.gitignore 是公共文件，由模块协调改），"
+                           f"再凭用户原话重跑 `{entry} permissions apply --original-file <原话文件>`",
+                 f"`{entry} permissions plan` 里集成 checkout 不再报「没有被 git 忽略」，规则文件已写上")
+
+
+def guide(to: str, name: str, entry: str, integration: str, original_file: str, unignored: str | None = None) -> str:
+    """Decision 3: the step-by-step handover, every step says where to go, what to do and what done looks like.
+
+    `unignored`: the new host's rules file when it is not git-ignored (S20), which adds a .gitignore step."""
     bind = f"`{entry} bind {name} --takeover --original-file {original_file}`"
     lines = [f"# 换宿主交接说明：模块协调 {name} 换到 {HOST_NAMES[HOST_IDS[to]]}", "",
              f"集成 checkout：`{integration}`。邮箱名不变，仍是 {name}。",
@@ -146,13 +155,17 @@ def guide(to: str, name: str, entry: str, integration: str, original_file: str) 
                    f'注册写法 {{agent:"{name}", wake:{{app:"codex", sessionId:<CODEX_THREAD_ID>}}}}：Codex 每轮重启 MCP。')
         lines += _step(1, f"Claude 上原来的模块协调 {name}（那个会话）", "让它停手，不再运行 module-crew 命令；然后在 Claude 桌面版侧栏归档这个会话",
                        "侧栏里这个会话已归档（agent-relay 才允许新线程接管邮箱名）")
-        lines += _step(2, "Codex（ChatGPT 应用）", f"新建任务，工作目录选集成 checkout `{integration}`，把下面「开场文字」整段贴进去发出",
-                       "新任务开始按开场文字做事")
-        lines += _step(3, "刚开的 Codex 任务", "它运行 bind 时会弹提权：点「批准（Approve）」；能选本会话一直允许就选",
-                       f"它报「已接管：本会话就是模块协调 {name}」，status 显示模块协调在 Codex")
-        lines += _step(4, "Codex（ChatGPT 应用）", "在 Codex 里信任这个项目（项目的 .codex/rules 规则只在受信任时生效；module-crew 不替你改全局配置）",
+        lines += _step(2, "Codex（ChatGPT 应用）", "在 Codex 里信任这个项目（项目的 .codex/rules 规则只在受信任时生效；module-crew 不替你改全局配置）",
                        "项目显示为受信任")
-        lines += _step(5, "这个 Codex 协调任务", "以后每轮开头它先用自己的线程 id 重新 bridge_register（不带 takeover）；应用重启后要你点开它",
+        lines += _step(3, "Codex（ChatGPT 应用）", f"新建任务，工作目录选集成 checkout `{integration}`，把下面「开场文字」整段贴进去发出",
+                       "新任务开始按开场文字做事")
+        lines += _step(4, "刚开的 Codex 任务", "它运行 bind 时会弹提权：点「批准（Approve）」；能选本会话一直允许就选",
+                       f"它报「已接管：本会话就是模块协调 {name}」，status 显示模块协调在 Codex")
+        n = 5
+        if unignored:
+            lines += _ignore_step(n, f"这个 Codex 协调任务（{name}）", unignored, entry)
+            n += 1
+        lines += _step(n, "这个 Codex 协调任务", "以后每轮开头它先用自己的线程 id 重新 bridge_register（不带 takeover）；应用重启后要你点开它",
                        "别的会话发来的消息它能收到")
     else:
         opening = (f"你是 module-crew 的模块协调 {name}，从 Codex 接手。依次：① 调 agent-relay 的 bridge_register："
@@ -164,6 +177,8 @@ def guide(to: str, name: str, entry: str, integration: str, original_file: str) 
                        "新会话开始按开场文字做事")
         lines += _step(3, "刚开的 Claude 会话", "等它跑完接管与 bind；弹权限确认就点「允许（Yes）」，不要选本会话都允许",
                        f"它报「已接管：本会话就是模块协调 {name}」，status 显示模块协调在 Claude Code")
+        if unignored:
+            lines += _ignore_step(4, f"这个 Claude 协调会话（{name}）", unignored, entry)
     lines += ["## 开场文字（整段贴进新会话）", "", opening, "",
               "## 下一批怎么开", "",
               f"start prepare 与 task dispatch 默认用新宿主（{HOST_NAMES[HOST_IDS[to]]}）。"
@@ -209,7 +224,9 @@ def handover(project: str | os.PathLike, to: str, original: str, session_id: str
     rules = permissions.follow_integration(project)
     if rules and rules.startswith("⚠️"):
         rules = "⚠️ 权限规则没写上：" + rules.split("：", 1)[1].split("（不影响开工")[0] + "（登记已改；处理后重跑 permissions apply）"
-    text = guide(to, name, str(launcher.entry(db.path)), str(integration), str(original_file))
+    rel = permissions.CODEX_FILE if to == "codex" else permissions.CLAUDE_FILE
+    unignored = rel.as_posix() if rules and "没有被 git 忽略" in rules else None
+    text = guide(to, name, str(launcher.entry(db.path)), str(integration), str(original_file), unignored)
     if rules:
         text += f"\n## 权限规则\n\n{rules}\n"
     path = folder / f"{stamp}.md"

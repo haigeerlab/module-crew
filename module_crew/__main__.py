@@ -171,8 +171,7 @@ def _status(as_json: bool) -> int:
     else:
         print(f"  模块 {m['done']}/{m['total']} 完成；spec-guard 当前：{m['activeModule'] or '无'}；spec-guard 进行中：{'、'.join(m['inProgress']) or '无'}")
         print("  （这是 spec-guard 按能力图算出的进度；由 module-crew 开工的模块见上面的「会话与待办」）")
-    print("模块协调：Codex 桌面版；模块会话：Codex 桌面版" if (report.store or {}).get("coordinatorHost") == "codex-desktop"
-          else "模块协调：Claude 桌面版；模块会话：Claude 或 Codex 桌面版")
+    print(report.host_line)
     cadence, source, via_map = start.cadence_info(".", report.map)
     if via_map:
         print(f"评审节奏：{cadence}（来源：{source}，读自 spec-guard /map）")
@@ -1189,7 +1188,11 @@ def _permissions(args) -> int:
     from module_crew import permissions
     try:
         if args.action == "plan":
-            p = permissions.plan(".")
+            try:
+                p = permissions.plan(".")
+            except store.StoreNotFound:
+                print(f"❌ {permissions.NO_COORDINATOR}", file=sys.stderr)
+                return 2
             print(json.dumps(p, ensure_ascii=False, indent=2) if args.json else "\n".join(permissions.render_plan(p)))
             return 0
         if args.action == "verify":
