@@ -551,7 +551,7 @@ def _mark_spec(project: Path, checkout: Path, module: str, approval: int, merge_
     if done.returncode != 0:
         _git(checkout, "reset", "-q", "--", rel)
         _git(checkout, "checkout", "--", rel)
-        return f"{missed}：" + commits.failure(checkout, done, "提交失败") + later
+        return "\n".join([f"{missed}：" + commits.failure(checkout, done, "提交失败") + later] + commits.hook_lines(checkout, done))
     return f"已在集成分支记下 {module} 修订后 Spec 的批准 {_git(checkout, 'rev-parse', '--short=7', 'HEAD').stdout.strip()}"
 
 
