@@ -1,12 +1,18 @@
 """crew-codex-coordinator: the module coordinator running in Codex desktop (see the Spec)."""
 
+import io
 import json
 import os
+import subprocess
 import unittest
+from contextlib import redirect_stderr
+from pathlib import Path
+from unittest import mock
 
-from helpers import MergeCase
+from helpers import MergeCase, spec_guard_interface
 
-from module_crew import hooks, store
+from module_crew import __main__ as cli
+from module_crew import hooks, probe, store
 
 SESSION_VARS = ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")
 
@@ -107,6 +113,82 @@ class HostCheckCoordinatorTest(CodexCoordCase):
         doc = json.loads(self.cli("host-check", "--json", cwd=self.wt["b"]).stdout)
         self.assertEqual(doc["role"], "dev")
         self.assertEqual([c["id"] for c in doc["checks"]], ["store", "registered", "version", "git-writable"])
+
+
+SANDBOX = "Codex 沙箱不让写 git 目录：请申请在沙箱外运行这条命令"
+CODEX_PLUGIN = "Codex 侧的插件安装 module-crew 不读"
+
+
+class SandboxHintTest(unittest.TestCase):
+    """Acceptance 8: a write the Codex sandbox refused says to ask for running outside the sandbox."""
+
+    def setUp(self):
+        for key in SESSION_VARS:
+            if key in os.environ:
+                self.addCleanup(os.environ.__setitem__, key, os.environ.pop(key))
+
+    def codex(self):
+        return mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "thread-coord"})
+
+    def test_recognised_texts(self):
+        with self.codex():
+            for text in ("fatal: Unable to create '/r/.git/index.lock': Operation not permitted",
+                         "error: could not lock config file .git/config: Operation not permitted",
+                         "fatal: Unable to create '/r/.git/index.lock': Permission denied"):
+                with self.subTest(text=text):
+                    self.assertEqual(probe.sandbox_hint(text), SANDBOX)
+            for text in ("fatal: Unable to create '/r/.git/index.lock': File exists.", "fatal: not a git repository", ""):
+                with self.subTest(text=text):
+                    self.assertIsNone(probe.sandbox_hint(text))
+
+    def test_only_in_codex(self):
+        self.assertIsNone(probe.sandbox_hint("Operation not permitted"))
+
+    def test_git_stderr_carries_hint(self):
+        failed = subprocess.CompletedProcess(["git"], 128, "", "fatal: Unable to create 'x/index.lock': Operation not permitted\n")
+        with self.codex(), mock.patch("subprocess.run", return_value=failed):
+            out = probe._git(Path("."), "commit", "-m", "x")
+        self.assertIn("Operation not permitted", out.stderr)
+        self.assertIn(SANDBOX, out.stderr)
+
+    def test_store_write_refused(self):
+        refused = PermissionError(1, "Operation not permitted", "/r/.git/module-crew/events.jsonl")
+        err = io.StringIO()
+        with self.codex(), mock.patch.object(cli, "_main", side_effect=refused), redirect_stderr(err):
+            self.assertEqual(cli.main(["task", "list"]), 1)
+        self.assertIn("Operation not permitted", err.getvalue())
+        self.assertIn(SANDBOX, err.getvalue())
+
+    def test_store_write_refused_outside_codex_unchanged(self):
+        refused = PermissionError(1, "Operation not permitted")
+        with mock.patch.object(cli, "_main", side_effect=refused), self.assertRaises(PermissionError):
+            cli.main(["task", "list"])
+
+
+class CodexPluginHintTest(CodexCoordCase):
+    """Acceptance 8: in Codex, a plugin missing from Claude's records says module-crew does not read Codex installs."""
+
+    def drop(self, name):
+        self.plugins.entries.pop(f"{name}@m")
+        self.plugins.write()
+
+    def reasons(self, *args, **kw):
+        doc = json.loads(self.cli("status", "--json", *args, **kw).stdout)
+        return {c["id"]: c["reason"] for c in doc["checks"]}
+
+    def test_status(self):
+        for name in ("spec-guard", "agent-relay"):
+            with self.subTest(name=name):
+                self.drop(name)
+                self.assertIn(CODEX_PLUGIN, self.reasons()[name])
+                self.assertNotIn(CODEX_PLUGIN, self.reasons(codex=None)[name])
+                self.plugins.install(name, {"interface": "2.0"} if name == "agent-relay" else spec_guard_interface("1.7"),
+                                     map_script=name == "spec-guard")
+
+    def test_host_check(self):
+        self.drop("spec-guard")
+        bad = {c["id"]: c for c in json.loads(self.cli("host-check", "--json").stdout)["checks"] if not c["ok"]}
+        self.assertIn(CODEX_PLUGIN, bad["spec-guard"]["reason"])
 
 
 class StatusClaudeCoordinatorTest(MergeCase):

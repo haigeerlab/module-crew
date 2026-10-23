@@ -152,7 +152,7 @@ def _version_tuple(doc: dict) -> tuple[int, int]:
 def check_relay(project: str | os.PathLike) -> Check:
     found = find_plugin("agent-relay", project)
     if isinstance(found, str):
-        return Check("agent-relay", "blocker", found, "安装 agent-relay（接口 2.x），在本项目或用户级启用")
+        return Check("agent-relay", "blocker", plugin_missing(found), "安装 agent-relay（接口 2.x），在本项目或用户级启用")
     doc = read_interface(found.root, RELAY_MAJOR)
     if isinstance(doc, str):
         return Check("agent-relay", "blocker", doc, "升级 agent-relay 到接口 2.x 的版本")
@@ -210,7 +210,7 @@ def check_spec_guard(project: str | os.PathLike, timeout: float = MAP_TIMEOUT) -
     fix_install = "安装并启用 spec-guard，在本仓库运行 /spec-guard:setup-convention"
     found = find_plugin("spec-guard", project)
     if isinstance(found, str):
-        return (Check("spec-guard", "blocker", found, fix_install),
+        return (Check("spec-guard", "blocker", plugin_missing(found), fix_install),
                 Check("spec-guard-planning", "blocker", "spec-guard 不可用", fix_install), None)
     doc = read_interface(found.root, SPEC_GUARD_MAJOR)
     if isinstance(doc, str):
@@ -251,8 +251,37 @@ def _planning(doc: dict, result: dict) -> Check:
 
 # ---------------------------------------------------------------- repository
 
+SANDBOX_HINT = "Codex 沙箱不让写 git 目录：请申请在沙箱外运行这条命令"
+CODEX_PLUGIN_HINT = "Codex 侧的插件安装 module-crew 不读：请在 Claude Code 里装同一插件"
+
+
+def _in_codex() -> bool:
+    from module_crew import hooks
+    return hooks.own_host() == "codex-desktop"
+
+
+def sandbox_hint(text: str) -> str | None:
+    """crew-codex-coordinator decision 2: the two ways Codex's sandbox refuses a write under .git (H11).
+
+    Only in Codex; an index.lock that merely exists is another git process, not the sandbox."""
+    if not text or not _in_codex():
+        return None
+    if "Operation not permitted" in text or ("index.lock" in text and "Permission denied" in text):
+        return SANDBOX_HINT
+    return None
+
+
+def plugin_missing(reason: str) -> str:
+    """crew-codex-coordinator decision 5: plugins are found through Claude's records only, also in Codex."""
+    return f"{reason}；{CODEX_PLUGIN_HINT}" if _in_codex() else reason
+
+
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, timeout=30)
+    out = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, timeout=30)
+    hint = sandbox_hint(out.stderr) if out.returncode != 0 else None
+    if hint:
+        out.stderr = f"{out.stderr.rstrip()}\n{hint}\n"
+    return out
 
 
 def check_git(project: str | os.PathLike) -> Check:

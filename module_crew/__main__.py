@@ -845,7 +845,14 @@ def _merge_lock_guard(args) -> int | None:
 
 def main(argv: list[str] | None = None) -> int:
     _SENT.clear()
-    code = _main(argv)
+    try:
+        code = _main(argv)
+    except PermissionError as exc:          # crew-codex-coordinator decision 2: Codex's sandbox refused a store write
+        hint = probe.sandbox_hint(str(exc))
+        if hint is None:
+            raise
+        print(f"❌ 写不了：{exc}\n   {hint}", file=sys.stderr)
+        return 1
     if _SENT and "--json" not in (argv if argv is not None else sys.argv[1:]):
         _remind()
     return code

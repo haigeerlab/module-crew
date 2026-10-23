@@ -98,7 +98,7 @@ def _coordinator(rep: Report, db: store.Store, cwd: Path, role) -> Report:
                         "（用户在本线程批准，能选本会话一直允许就选）")
     found = probe.find_plugin("spec-guard", cwd)
     if isinstance(found, str):
-        _check(rep, "spec-guard", False, f"找不到 spec-guard：{found}", "交审、批准标记与勾选要用它：请用户装好 spec-guard 后再试")
+        _check(rep, "spec-guard", False, f"找不到 spec-guard：{probe.plugin_missing(found)}", "交审、批准标记与勾选要用它：请用户装好 spec-guard 后再试")
     else:
         _check(rep, "spec-guard", True, f"spec-guard：{found.root}")
     entry = launcher.entry(db.path)

@@ -4,7 +4,7 @@
 
 - [x] Task 1：`status` 在 Codex 里认出／否认模块协调与 `codexSelf`（Spec 验收 7）——测试先红后绿；模块协调在 Codex 时末尾的宿主行改为「模块协调：Codex 桌面版；模块会话：Codex 桌面版」，Claude 时逐字不变
 - [x] Task 2：`host-check` 按模块协调查与 `role`（Spec 验收 6）——测试先红后绿；集成 checkout 里改按模块协调查（检查项 store、registered、version、git-writable、spec-guard、entry），`test_codex_host` 里「集成 checkout 不通过」那条按新行为改为用未登记的 worktree 断言
-- [ ] Task 3：沙箱拒绝与找不到插件的补句（Spec 验收 8）
+- [x] Task 3：沙箱拒绝与找不到插件的补句（Spec 验收 8）——测试先红后绿；只在 Codex 里加补句（Claude 上原样报错）；`index.lock` 只认 Permission denied，File exists 是另一个 git 进程、不是沙箱，不加提示
 - [ ] Task 4：模块协调在 Codex 时各协调命令照常可用（Spec 验收 3）
 - [ ] Checkpoint 1（report）：Codex 协调认得出自己、查得出障碍
 - [ ] Task 5：拆 `merge.run`，加 `merge run --detach`（Spec 验收 4 启动、锁、被杀部分）
