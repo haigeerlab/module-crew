@@ -143,7 +143,7 @@ def guide(to: str, name: str, entry: str, integration: str, original_file: str) 
                    f"② 运行 {bind}（写 .git 会弹提权，请用户在本线程批准）；③ 加载 Codex 版 crew-coordinator skill；"
                    f"④ 运行 `{entry} status`。之后每轮开头先 bridge_register "
                    f'{{agent:"{name}", wake:{{app:"codex", sessionId:<CODEX_THREAD_ID>}}}}（不带 takeover）：Codex 每轮重启 MCP。')
-        lines += _step(1, f"原 Claude 模块协调会话（{name}）", "让它停手，不再运行 module-crew 命令；然后在 Claude 桌面版侧栏归档这个会话",
+        lines += _step(1, f"Claude 上原来的模块协调 {name}（那个会话）", "让它停手，不再运行 module-crew 命令；然后在 Claude 桌面版侧栏归档这个会话",
                        "侧栏里这个会话已归档（agent-relay 才允许新线程接管邮箱名）")
         lines += _step(2, "Codex（ChatGPT 应用）", f"新建任务，工作目录选集成 checkout `{integration}`，把下面「开场文字」整段贴进去发出",
                        "新任务开始按开场文字做事")

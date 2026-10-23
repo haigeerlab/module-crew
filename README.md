@@ -97,7 +97,7 @@ bin/module-crew status
 
 ## Codex 模块会话
 
-模块会话可以开在 Codex 桌面版里，模块协调仍在 Claude 桌面版。
+模块会话可以开在 Codex 桌面版里，模块协调仍在 Claude 桌面版（要整批换到 Codex 见下一节「换宿主」）。
 
 1. 在 Codex 里装同一版本的 module-crew（`.codex-plugin/plugin.json`，只提供 Codex 版 `crew-dev` skill）；Codex 插件更新后要完全退出 ChatGPT 应用再打开。
 2. 模块协调用 `module-crew start prepare <模块>… --host codex --original-file <原话文件>` 开工；要混用就按宿主分两次。
@@ -105,6 +105,21 @@ bin/module-crew status
 4. Codex 会话先跑 `module-crew host-check`：检查登记、版本、能否写 git 目录、能否读状态库。开工说明给的命令是状态库里的固定入口 `<git公共目录>/module-crew/bin/module-crew`（`start prepare`、`coordinator up` 时写入），它每次转给当前安装的 module-crew，升级后不用换；0.12.0 之前开工的 Codex 会话记着的是带版本号的旧路径，升级后由模块协调转告一次新入口。
 5. Codex 默认沙箱不让写 `.git`：第一次提交会弹提权，用户在那个 Codex 会话里批准（有「本会话一直允许」就选）。
 6. ChatGPT 应用重启后 Codex 会话不会自动加载，要用户逐个点开；Codex 会话掉了联调身份时用原名重新注册即可。
+
+## 换宿主（空档，第八版）
+
+一批模块收尾后的空档里，模块协调连同下一批模块会话可以整体在 Claude Code 与 Codex 之间来回换。换不换、换到哪边由用户决定；module-crew 不看额度、不自动换，也不做模块做到一半换宿主。
+
+1. **什么时候能换**：没有在用的模块会话与轻任务会话、没有排队或进行中的合并、module-crew 侧没有未结的事项、公共变更请求和等待记录。
+   最后一个会话收回时 `merge cleanup` 会输出「本批已收尾，具备换宿主的条件」，`status` 也显示这一行。`module-crew coordinator handover --check [--to codex|claude]` 逐条列出哪项不满足；决策收件箱那边的待决请用 decision-inbox 的 waits 再看一眼。
+2. **换**：用户明说后，原宿主上的模块协调运行 `module-crew coordinator handover --to codex|claude --original-file <原话文件>`。它改模块协调登记的宿主、按新宿主给集成 checkout 追加权限规则（项目 apply 过才写，原有规则保留），并把逐步交接说明打印出来、存到状态库目录 `handover-guide/`。
+3. **照交接说明做**：每一步写明去哪个会话、做什么、做完的样子。要点：
+   - Claude → Codex：先归档 Claude 上原来的模块协调（会话）（agent-relay 不让接管还在运行的 Claude 会话）；在 Codex 新建任务、目录选集成 checkout、贴开场文字；它用 `takeover:true` 加 `wake:{app:"codex", sessionId:<CODEX_THREAD_ID>}` 接管邮箱名，再 `bind --takeover`（会弹提权）；在 Codex 里信任项目；之后每轮开头不带 takeover 重新注册。
+   - Codex → Claude：先确认原 Codex 任务已停（agent-relay 判断不了，它被接走后也收不到通知）；在 Claude 桌面版新开会话、贴开场文字；它用 `takeover:true, wake:"auto"` 接管，再 `bind --takeover`。
+   - `bind --takeover` 只认登记宿主上的会话：没先跑 handover 就在另一边接管会被拒。
+4. **之后**：`start prepare`、`task dispatch` 不写 `--host` 时用模块协调所在的宿主。模块协调在 Codex 时只开 Codex 会话（Codex 叫不醒停掉的 Claude 会话），`--host claude` 被拒。
+5. **代价**：Codex 上写状态库、提交、合并都在 `.git` 里，要用户点提权；Codex 模块会话要用户手动开；ChatGPT 应用重启后要逐个点开。批准照旧由用户在该端模块协调那里亲口给。
+6. **前提**：换到 Codex 要等 Codex 版模块协调规矩发版（待定模块 B）；在那之前 `handover --to codex` 拒绝执行，换回 Claude 不受影响。
 
 ## 出状况时怎么办
 
@@ -160,6 +175,7 @@ module-crew 自己的编号对外一律写 C 前缀（如 C15），`#数字` 只
 ```text
 module-crew status [--json]                      体检与全貌（只读）
 module-crew coordinator up|down --original(-file)  把本会话升级为模块协调／关闭（一个仓库一个）
+module-crew coordinator handover --check|--to     空档换宿主：核对收尾条件（只读）／换到 codex 或 claude 并生成交接说明
 module-crew task add|list|show|next|cancel       轻任务记录（单个需求或 bug，T 编号）：预计文件和在做的活重叠就排队，bug 在前
 module-crew unqueued [--notify] [--json]         集成分支上不经合并队列的提交：列出／通知各模块同步
 module-crew task dispatch|scope                  派出可开的轻任务（worktree、登记、开工说明）／升格请求选缩小后改任务单
