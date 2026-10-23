@@ -236,6 +236,27 @@ class WorktreeEditTest(PermCase):
         self.assertIn(deny, self.settings(d)["permissions"]["deny"])
 
 
+class LightTaskRulesTest(PermCase):
+    """S15: an in-use light task session is a checkout too, so dispatch writes its worktree's rules."""
+
+    def test_dispatched_task_worktree_gets_rules(self):
+        from module_crew import hooks, tasks
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+        n = tasks.add(self.db, self.repo, "bug", "修", "修一处", ["docs/t.md"], "修好", "修好").number
+        permissions.apply(self.repo, "预配")
+        r = tasks.dispatch(self.db, self.repo, n)
+        wt = Path(r.worktree)
+        self.assertTrue(any("已写权限规则" in l for l in r.lines), r.lines)
+        doc = self.settings(wt)["permissions"]
+        root = "//" + str(wt).lstrip("/")
+        self.assertIn("Bash(git push *)", doc["deny"])
+        self.assertIn(f"Edit({root}/**)", doc["allow"])
+        self.assertIn(f"Edit({root}/.claude/**)", doc["deny"])
+        target = next(t for t in permissions.plan(self.repo)["targets"] if t["checkout"] == str(wt))
+        self.assertEqual((target["role"], target["task"]), ("task", n))
+        self.assertIn(f"轻任务 T{n}", "\n".join(permissions.render_plan(permissions.plan(self.repo))))
+
+
 class FollowAndVerifyTest(PermCase):
     def test_prepare_follows_after_apply(self):
         permissions.apply(self.repo, "预配")

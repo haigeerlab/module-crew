@@ -67,7 +67,8 @@ def claude_entries(cfg: dict, entry: str | os.PathLike, worktree: Path | None = 
 
 
 def checkouts(project: Path) -> tuple[store.Store, dict, list[dict]]:
-    """The integration checkout (on the coordinator's host, crew-host-handover) and every active module worktree with its host."""
+    """The integration checkout (on the coordinator's host, crew-host-handover) and every active module or light task
+    worktree with its host."""
     db = store.open_store(project)
     cfg = store.get(db, "config", "main") or {}
     found = []
@@ -79,6 +80,9 @@ def checkouts(project: Path) -> tuple[store.Store, dict, list[dict]]:
     for name, rec in sorted(store.records(db, "session").items()):
         if rec.get("role") == "dev" and rec.get("status") == "active":
             found.append({"role": "dev", "module": rec.get("module"), "name": name,
+                          "host": rec.get("host", "claude-desktop"), "checkout": Path(rec["worktree"])})
+        elif rec.get("role") == "task" and rec.get("status") == "active" and rec.get("worktree"):
+            found.append({"role": "task", "module": None, "task": rec.get("task"), "name": name,
                           "host": rec.get("host", "claude-desktop"), "checkout": Path(rec["worktree"])})
     return db, cfg, found
 
@@ -157,7 +161,7 @@ def _target(t: dict, cfg: dict, project: Path) -> dict:
         rel = CLAUDE_FILE
         from module_crew import launcher
         want = claude_entries(cfg, launcher.entry(store.open_store(project).path),
-                              checkout if t["role"] == "dev" else None)
+                              checkout if t["role"] in ("dev", "task") else None)
         have, problem = _read_settings(checkout / rel)
         out["problem"] = problem
         perms = (have or {}).get("permissions") or {}
@@ -245,7 +249,8 @@ TRUST_TEXT = {"trusted": "项目已被 Codex 信任，规则会生效",
 def render_plan(p: dict) -> list[str]:
     lines = []
     for t in p["targets"]:
-        who = "集成 checkout（模块协调）" if t["role"] == "integration" else f"模块 {t['module']}（{t['name']}）"
+        who = ("集成 checkout（模块协调）" if t["role"] == "integration" else f"轻任务 T{t['task']}（{t['name']}）"
+               if t["role"] == "task" else f"模块 {t['module']}（{t['name']}）")
         lines.append(f"{who}：{t['file'] or t['checkout']}")
         if t.get("problem"):
             lines.append(f"  ❌ 不能写：{t['problem']}")
