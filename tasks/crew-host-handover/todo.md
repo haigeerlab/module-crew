@@ -8,8 +8,8 @@
 - [x] Task 4：集成 checkout 权限跟随模块协调宿主（Spec 验收 2、3 权限部分）——测试先红后绿；权限相关已有测试全过（d12be1e）
 - [x] Task 5：`bind --takeover` 宿主核对（Spec 验收 5）——测试先红后绿；crew-session-handover 测试照常通过（0ed23a7）
 - [x] Checkpoint 1（report）：交接链路就位——test_host_handover 28 个测试与相关已有测试通过
-- [ ] Task 6：开工与派任务的宿主跟随模块协调（Spec 验收 6、7）
-- [ ] Task 7：收尾提示与 status 字段（Spec 验收 9）
-- [ ] Task 8：README、skill、crew-codex-host 变更记录、全量测试（Spec 验收 10、11）
+- [x] Task 6：开工与派任务的宿主跟随模块协调（Spec 验收 6、7）——测试先红后绿；Codex 版 crew-dev 补「轻任务」一节；开工、轻任务、Codex 相关已有测试照常通过（d48b23f）
+- [x] Task 7：收尾提示与 status 字段（Spec 验收 9）——测试先红后绿；status 另显示「换宿主交接中」，`--json` 加 `handoverPending`、`handoverLine`（cad3718）
+- [x] Task 8：README、skill、crew-codex-host 变更记录、全量测试（Spec 验收 10、11）——全量 739 个测试通过；本模块 Spec 在构建中补了变更记录（事件名、status 字段），随最终验收复审（ef68df9）
 - [ ] Checkpoint 2（gate）：最终验收
 - [ ] 回告：ecosystem-lead（模块 A 就位、`--to codex` 等模块 B）
