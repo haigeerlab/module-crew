@@ -262,6 +262,47 @@ class HandoverTest(GapCase):
         self.assertEqual(out.returncode, 7, out.stderr)
 
 
+class TakeoverHostTest(GapCase):
+    """Acceptance 5: only a conversation on the registered host can take the coordinator over."""
+
+    def setUp(self):
+        super().setUp()
+        close_batch(self.db)
+        hooks.bind(self.db, "shop-coord", "sid-claude", self.repo, original="你来做模块协调")
+        skill = self.tmp / "SKILL.md"
+        skill.write_text("x", encoding="utf-8")
+        with mock.patch.object(handover, "codex_coordinator_skill", return_value=skill):
+            assert handover.handover(self.repo, "codex", "换到 Codex")[0] == 0
+
+    def take(self, env):
+        clean = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")}
+        with mock.patch.dict(os.environ, {**clean, **env}, clear=True):
+            sid = hooks.own_session_id()
+            return hooks.bind(self.db, "shop-coord", sid, self.repo, original="换到 Codex", takeover=True)
+
+    def test_codex_thread_takes_over(self):
+        out = self.take({"CODEX_THREAD_ID": "thread-1"})
+        self.assertIn("已接管", out)
+        rec = store.get(self.db, "session", "shop-coord")
+        self.assertEqual(rec["hostSession"]["sessionId"], "thread-1")
+        self.assertFalse(rec["hostHandover"]["pending"])
+        self.assertEqual(rec["previousSessions"][-1]["sessionId"], "sid-claude")
+
+    def test_claude_session_refused(self):
+        before = store.get(self.db, "session", "shop-coord")
+        with self.assertRaises(hooks.BindRefused) as cm:
+            self.take({"CLAUDE_CODE_SESSION_ID": "sid-new"})
+        self.assertIn("coordinator handover --to claude", str(cm.exception))
+        self.assertEqual(store.get(self.db, "session", "shop-coord"), before)
+
+    def test_claude_takeover_unchanged_without_handover(self):
+        with self.db.transaction(actor="t") as tx:
+            rec = tx.get("session", "shop-coord")
+            tx.put("session", "shop-coord", {**{k: v for k, v in rec.items() if k != "hostHandover"},
+                                             "host": "claude-desktop"}, action="registered")
+        self.assertIn("已接管", self.take({"CLAUDE_CODE_SESSION_ID": "sid-new"}))
+
+
 class HandoverPermissionsTest(PermCase):
     """Acceptance 2, 3 (rules): the integration checkout's rules follow the coordinator's host, appended only."""
 

@@ -569,11 +569,23 @@ def bind(db: store.Store, name: str, session_id: str | None, cwd: str | os.PathL
     return f"已登记：本会话就是 {name}，module-crew 的钩子从现在起按这个会话注入角色"
 
 
+def own_host() -> str:
+    """The host of the conversation running this: Codex when only CODEX_THREAD_ID is set (crew-host-handover)."""
+    if (os.environ.get("CLAUDE_CODE_SESSION_ID") or "").strip():
+        return "claude-desktop"
+    return "codex-desktop" if (os.environ.get("CODEX_THREAD_ID") or "").strip() else "claude-desktop"
+
+
 def _take_over(db: store.Store, name: str, rec: dict, session_id: str, original: str | None) -> str:
     if rec.get("role") != "coordinator":
         raise BindRefused(f"{name} 不是模块协调：bind --takeover 只用于模块协调；模块会话与轻任务会话在自己的 worktree 里用 takeover 与 bind")
     if not (original and original.strip()):
         raise BindRefused(f"接手模块协调 {name} 要用户原话：请用户在本会话同意后运行 module-crew bind {name} --takeover --original-file <原话文件>")
+    registered, mine = rec.get("host", "claude-desktop"), own_host()
+    if registered != mine:
+        to = "codex" if mine == "codex-desktop" else "claude"
+        raise BindRefused(f"{name} 登记在 {registered}，本会话在 {mine}：换宿主要先在原会话运行 "
+                          f"module-crew coordinator handover --to {to}（空档时才可以），再在本会话 bind --takeover")
     with db.transaction(actor=name) as tx:
         rec = tx.get("session", name)
         old = (rec.get("hostSession") or {}).get("sessionId")
@@ -582,7 +594,10 @@ def _take_over(db: store.Store, name: str, rec: dict, session_id: str, original:
         prev = list(rec.get("previousSessions") or [])
         if old:
             prev = (prev + [{"sessionId": old, "at": store.now()}])[-PREVIOUS_KEPT:]
-        tx.put("session", name, {**rec, "hostSession": identity(session_id), "previousSessions": prev}, action="taken-over",
+        moved = {**rec, "hostSession": identity(session_id), "previousSessions": prev}
+        if (rec.get("hostHandover") or {}).get("pending"):      # crew-host-handover: the new host has arrived
+            moved["hostHandover"] = {**rec["hostHandover"], "pending": False}
+        tx.put("session", name, moved, action="taken-over",
                data={"original": original, "at": store.now(), "oldSessionId": old, "newSessionId": session_id})
         _clear_sighting(tx, session_id, name)
     return (f"已接管：本会话就是模块协调 {name}" + (f"，原来的会话 {old} 从现在起不能再执行模块协调的写命令" if old else "")
