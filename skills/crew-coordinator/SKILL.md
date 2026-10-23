@@ -125,6 +125,7 @@ module-crew review answer <交审事项编号> --original-file <原话文件>   
 
 4. 按输出逐条 `bridge_send`：【用户答复】带 `replyTo`，输出里有 `alsoAnswers` 就一并带上（一条答复同时答了几条交审）；【协调通知】不带；正文都用 `bodyFile`，不改一字。
 5. `review approve` 退出码 3：什么都没变，把原因告诉用户；4：中途停下，集成 checkout 里原有的文件已经还原，输出列出这次新建、没有删除的文件，交用户决定，不要自己清理；把失败原因照实告诉用户。
+6. **批准一律走 `review approve`**：失败就停下，把输出原样报给用户，不手工补提交（提交钩子、commitlint 拒了也一样）；不在集成 checkout 手工提交 Spec、Plan 或批准标记；不把提交信息或命令包装成给用户的「推荐回复」，用户照贴就绕开了批准记账（LIVE-SAAS C3 出过这事）。
 
 ## 公共变更请求
 
