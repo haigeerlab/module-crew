@@ -353,7 +353,18 @@ def summarize_store(project: Path) -> tuple[Check, dict | None]:
     return Check("store", "ok", str(db.path)), {"sessions": active, "open": open_counts,
                                                 "coordinator": coord, "sightings": seen, "tasks": task_rows,
                                                 "unqueued": unq, "mergeLock": _merge_lock(db),
-                                                "permissionsStale": _stale_permissions(db), "selfIsCoordinator": self_coord}
+                                                "permissionsStale": _stale_permissions(db), "selfIsCoordinator": self_coord,
+                                                **_handover_state(db)}
+
+
+def _handover_state(db: store.Store) -> dict:
+    """crew-host-handover: where the coordinator is, and whether the batch is closed for a host switch."""
+    from module_crew import handover
+    line = handover.ready_line(db)
+    coord = next((r for r in store.records(db, "session").values()
+                  if r.get("role") == "coordinator" and r.get("status") == "active"), None) or {}
+    return {"coordinatorHost": handover.coordinator_host(db), "handoverReady": line is not None, "handoverLine": line,
+            "handoverPending": bool((coord.get("hostHandover") or {}).get("pending"))}
 
 
 def _stale_permissions(db: store.Store) -> list[str]:

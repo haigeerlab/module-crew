@@ -231,8 +231,12 @@ def launcher_line(db: store.Store) -> str:
 
 
 def prepare(project: str | os.PathLike, modules: list[str], original: str, short: str | None = None,
-            max_modules: int | None = None, host: str = "claude", commit_prefix: str | None = None) -> PrepareResult:
+            max_modules: int | None = None, host: str | None = None, commit_prefix: str | None = None) -> PrepareResult:
     project = Path(project)
+    from module_crew import handover
+    refused, host = handover.pick_host(_open_store(project), host)   # crew-host-handover: follow the coordinator
+    if refused:
+        return PrepareResult(2, ["没有执行，原因：", refused])
     if host not in HOSTS:
         return PrepareResult(3, ["没有执行，原因：", f"宿主只能是 {'／'.join(HOSTS)}，不是 {host!r}"])
     host_id = HOSTS[host]

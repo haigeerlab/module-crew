@@ -129,3 +129,7 @@ python3 -m unittest discover -s tests -v
 ## 文档建议
 
 README「前提」表把宿主改为「协调会话 Claude 桌面版；模块会话 Claude 或 Codex 桌面版」，并加「Codex 模块会话」一节（安装 Codex 插件、开任务、提权）。
+
+## 变更记录
+
+- 2026-10-23：验收 4「协调会话登记 `host: codex-desktop` 时 store 校验拒绝」改为：只有带 `hostHandover`（经 `coordinator handover` 换过去）的模块协调可以是 `codex-desktop`，`coordinator up` 仍只登记 Claude。原因：crew-host-handover 空档整体换宿主；来源：用户 2026-10-23 批准 crew-host-handover 的接口提案（事项 C15）。

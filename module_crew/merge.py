@@ -544,7 +544,18 @@ class Simple:
 
 
 def cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
-    """With the user's words: remove a merged module's worktree (no --force) and retire its session."""
+    """With the user's words: remove a merged module's worktree (no --force) and retire its session; then say whether
+    the batch is closed and the crew may switch hosts (crew-host-handover)."""
+    res = _cleanup(project, module, original)
+    if res.code == 0:
+        from module_crew import handover
+        line = handover.ready_line(store.open_store(Path(project)))
+        if line:
+            res.lines.append(line)
+    return res
+
+
+def _cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
     project = Path(project)
     db = store.open_store(project)
     if not original or not original.strip():

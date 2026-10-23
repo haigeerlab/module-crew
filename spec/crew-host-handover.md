@@ -169,3 +169,7 @@ PYTHONPATH=tests python3 -m unittest test_host_handover
 
 README 加「换宿主（空档）」一节：什么时候能换、`handover --check`／`--to`、交接说明怎么用、代价（提权、手动开会话、重启后逐个点开）；命令一览补 `coordinator handover`。
 CHANGELOG 随发版写。回告：发版后告诉 ecosystem-lead S13 的模块 A 已就位、`--to codex` 等模块 B；随最终验收列出。
+
+## 变更记录
+
+- 2026-10-23：事件名由 `coordinator.handover` 改为 `session.coordinator-handover`（状态库事件一律是「记录种类.动作」）；`status --json` 的 `store` 另加 `handoverPending`（交接中）与 `handoverLine`（提示原文），只增不改。原因：构建 Task 3、Task 7 时按现有格式实现；来源：模块会话，随最终验收交用户复审。

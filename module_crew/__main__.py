@@ -104,6 +104,12 @@ def _status(as_json: bool) -> int:
             print(f"  本会话不是登记的模块协调 {coord_row['name']}（它登记在另一个会话上）：模块协调的写命令在这里会被拒；"
                   f"要由本会话接手，请用户同意后运行 module-crew bind {coord_row['name']} --takeover --original-file <原话文件>")
         print("  未关：" + "、".join(f"{_KIND_NAME[k]} {n}" for k, n in report.store["open"].items()))
+        if report.store.get("handoverPending"):            # crew-host-handover
+            from module_crew import handover
+            print(f"  换宿主交接中：模块协调已登记到 {handover.HOST_NAMES.get(report.store.get('coordinatorHost'), '?')}，"
+                  "等新宿主的会话 bind --takeover（交接说明在状态库目录 handover-guide/ 下）")
+        if report.store.get("handoverLine"):
+            print("  " + report.store["handoverLine"])
         own = inbox.own_waits(store.open_store())
         if own:
             print("  模块协调自开的等待记录：" + "、".join(f"W{n}（等 {r['about']}）" for n, r in own))
@@ -233,7 +239,12 @@ def _task(args) -> int:
             print(f"T{r.number} 的任务单已缩小，回到在做；把正文发给做事的会话：{r.path}")
             return 0
         if args.action == "dispatch":
-            d = tasks.dispatch(db, ".", args.number)
+            from module_crew import handover
+            refused, _ = handover.pick_host(db, args.host)
+            if refused:
+                print(f"❌ {refused}", file=sys.stderr)
+                return 2
+            d = tasks.dispatch(db, ".", args.number, args.host)
             if args.json:
                 print(json.dumps({"number": d.number, "worktree": d.worktree, "branch": d.branch, "relay": d.relay,
                                   "kickoff": d.kickoff, "kickoffPath": d.kickoff_path, "lines": d.lines},
@@ -373,7 +384,7 @@ def _start_plan(as_json: bool) -> int:
 
 
 def _start_prepare(modules: list[str], original: str | None, original_file: str | None, short: str | None,
-                   max_modules: int | None, as_json: bool, host: str = "claude", commit_prefix: str | None = None) -> int:
+                   max_modules: int | None, as_json: bool, host: str | None = None, commit_prefix: str | None = None) -> int:
     if original_file is not None:
         original = _read(original_file)
         if original is None:
@@ -767,6 +778,8 @@ def _session_guard(args) -> int | None:
         return None
     if key == ("permissions", "verify") and not getattr(args, "record", None):
         return None
+    if key == ("coordinator", "handover") and getattr(args, "check", False):
+        return None                         # crew-host-handover: the check is read only
     caller = hooks.own_session_id()
     if not caller:
         return None                         # no session id: the user at a terminal
@@ -783,6 +796,28 @@ def _session_guard(args) -> int | None:
     print(f"❌ 本会话不是登记的模块协调 {name}（登记的是另一个会话）：没有执行，什么都没写。"
           f"要由本会话接手，请用户同意后运行 module-crew bind {name} --takeover --original-file <原话文件>", file=sys.stderr)
     return 7
+
+
+def _handover(args) -> int:
+    """crew-host-handover: `coordinator handover --check | --to codex|claude`."""
+    from module_crew import handover
+    if not args.check and not args.to:
+        print("❌ 要么 --check（只读核对），要么 --to codex|claude 加 --original／--original-file", file=sys.stderr)
+        return 2
+    try:
+        if args.check:
+            code, doc, lines = handover.check(".", args.to)
+            print(json.dumps(doc, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+            return code
+        original = _original(args.original, args.original_file)
+        if original is None:
+            return 2
+        code, lines = handover.handover(".", args.to, original, hooks.own_session_id())
+    except store.StoreError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({"code": code, "lines": lines}, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+    return code
 
 
 def _merge_lock_guard(args) -> int | None:
@@ -843,7 +878,7 @@ def _main(argv: list[str] | None = None) -> int:
     orig.add_argument("--original-file")
     spr.add_argument("--project-short")
     spr.add_argument("--max", type=int)
-    spr.add_argument("--host", choices=("claude", "codex"), default="claude")
+    spr.add_argument("--host", choices=("claude", "codex"), help="默认跟随模块协调的宿主（crew-host-handover）")
     spr.add_argument("--commit-prefix", help="module-crew 提交信息的前缀（项目配置；不设按 chore(crew): ，空字符串表示不加）")
     spr.add_argument("--json", action="store_true")
     rv = sub.add_parser("review", help="交审与批量批准")
@@ -976,6 +1011,7 @@ def _main(argv: list[str] | None = None) -> int:
     tsc.add_argument("--done", required=True)
     tad = tas.add_parser("dispatch", help="派出可开的任务：建 worktree 与分支、登记轻任务会话、生成开工说明")
     tad.add_argument("number", type=refs.parse)
+    tad.add_argument("--host", choices=("claude", "codex"), help="默认跟随模块协调的宿主（crew-host-handover）")
     tac = tas.add_parser("cancel")
     tac.add_argument("number", type=refs.parse)
     for c in (taa, tac, tsc):
@@ -994,6 +1030,13 @@ def _main(argv: list[str] | None = None) -> int:
         g.add_argument("--original")
         g.add_argument("--original-file")
         c.add_argument("--json", action="store_true")
+    coh = cos.add_parser("handover", help="空档换宿主：--check 只读核对收尾条件；--to 换到 Codex 或 Claude（要用户原话）")
+    coh.add_argument("--check", action="store_true", help="只读：逐条报收尾条件")
+    coh.add_argument("--to", choices=("codex", "claude"))
+    hg = coh.add_mutually_exclusive_group()
+    hg.add_argument("--original")
+    hg.add_argument("--original-file")
+    coh.add_argument("--json", action="store_true")
     bd = sub.add_parser("bind", help="登记本会话就是状态库里的某个会话（钩子只给登记过的会话注入角色）")
     bd.add_argument("name", help="开工说明或恢复说明里写的邮箱名")
     bg = bd.add_mutually_exclusive_group()
@@ -1249,6 +1292,8 @@ def _run(args) -> int:
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 2
+    if args.group == "coordinator" and args.action == "handover":
+        return _handover(args)
     if args.group == "coordinator":
         original = _original(args.original, args.original_file)
         if original is None:

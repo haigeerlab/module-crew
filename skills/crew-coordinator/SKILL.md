@@ -222,7 +222,7 @@ module-crew ticket close <编号> --reason user --original-file <用户原话文
 
 ## Codex 模块会话
 
-模块会话也可以开在 Codex 桌面版里；**模块协调只能在 Claude 桌面版**。
+模块会话也可以开在 Codex 桌面版里；模块协调平时在 Claude 桌面版，只在空档整体换宿主（见下一节）。
 - **开工**：用户同意哪几个模块放 Codex 后，`module-crew start prepare <模块>… --host codex --original-file <原话文件>`；要混用就按宿主分两次 prepare。
   Codex 会话由**用户手动**开：在 Codex 里新建任务、工作目录选那个 worktree、第一条消息贴开工说明全文。你在正文里把 worktree 路径与开工说明文件路径列给用户。
 - **预检**：Codex 会话会先跑 `host-check`；它发来不通过的项时，按「怎么办」处理，要用户做的事（多半是批准提权）交给用户。
@@ -230,6 +230,14 @@ module-crew ticket close <编号> --reason user --original-file <用户原话文
 - **叫醒**：Codex 空闲会话交给 agent-relay 叫醒（`bridge_send` 照常 wake），不用桌面版的跨会话消息。`bridge_agents` 显示它 `not-loaded` 时，是 ChatGPT 应用重启后没点开，请用户去点开那个会话。
 - **身份**：Codex 会话读不到自己的消息时会用原名重新注册（正常恢复，不用 `takeover`）；换成新会话接替崩溃的会话才走 `resume-kit` 与 `takeover`。
 - **权限核对**：Codex 按沙箱档位比宽窄（read-only < workspace-write < 完全放开），你看不到档位，醒来核对时请用户确认 Codex 会话的档位不比本会话宽。
+
+## 空档换宿主（第八版起）
+
+- **告诉用户能换**：`merge cleanup` 或 `status` 输出「本批已收尾，具备换宿主的条件」时，在正文里告诉用户一次；换不换、换到哪边由用户决定，你不建议、不看额度。
+- **换之前核对**：`module-crew coordinator handover --check --to <宿主>`；有 ❌ 的项先处理，决策收件箱那边用 decision-inbox 的 waits 再看一眼。不做模块做到一半换宿主。
+- **换**：用户明说后，在本会话运行 `module-crew coordinator handover --to codex|claude --original-file <原话文件>`。把输出的交接说明**全文**写进正文给用户（存档在状态库目录 `handover-guide/`），逐步带用户做；之后你停手，不再运行 module-crew 写命令。
+- **两个方向的关键**：换到 Codex 时先让用户归档本会话，再去 Codex 开任务接管（agent-relay 不让接管还在运行的 Claude 会话）；从 Codex 换回时先请用户确认原 Codex 任务已停，再在新 Claude 会话接管。接管就是用户同意的接管，原话即 handover 的原话。
+- **之后**：`start prepare`、`task dispatch` 默认用新宿主；模块协调在 Codex 时只开 Codex 会话。`handover --to codex` 在 Codex 版模块协调规矩（待定模块 B）发版前会被拒，照实告诉用户。
 
 ## 接入决策收件箱
 
