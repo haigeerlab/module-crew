@@ -39,8 +39,9 @@ def run(cwd: str | Path) -> SyncResult:
     except store.StoreError as exc:
         return SyncResult(3, [f"不在 module-crew 管理的仓库里：{exc}"])
     role = hooks.detect(cwd)
-    if role is None or role.kind != "dev":
-        return SyncResult(3, ["这里不是登记过的在用模块会话的 worktree：sync 只在模块 worktree 里跑，集成 checkout 的合并走 merge run"])
+    if role is None or role.kind not in ("dev", "task"):
+        return SyncResult(3, ["这里不是登记过的在用模块会话或轻任务会话的 worktree：sync 只在模块或轻任务 worktree 里跑，"
+                              "集成 checkout 的合并走 merge run"])
     branch = (store.get(db, "config", "main") or {}).get("integrationBranch")
     if not branch:
         return SyncResult(3, ["运行配置里没有集成分支（integrationBranch）"])
@@ -62,7 +63,7 @@ def run(cwd: str | Path) -> SyncResult:
         return SyncResult(3, [f"合并失败，已中止：{(merged.stderr or merged.stdout).strip()[:300]}"])
     others, taken = [], []
     for path in conflicts:
-        if _own(role.module, path) and _git(top, "checkout", "--theirs", "--", path).returncode == 0 \
+        if role.module and _own(role.module, path) and _git(top, "checkout", "--theirs", "--", path).returncode == 0 \
                 and _git(top, "add", "--", path).returncode == 0:
             taken.append(path)
         else:

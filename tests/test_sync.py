@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 from helpers import ReviewCase, git
 
@@ -89,6 +90,19 @@ class SyncTest(ReviewCase):
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
         self.assertIn("合入 1 个提交", out.stdout)
 
+
+    def test_light_task_worktree_syncs(self):
+        """S16: an in-use light task worktree may sync too."""
+        from module_crew import hooks, tasks
+        db = store.open_store(self.repo)
+        hooks.bind(db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+        n = tasks.add(db, self.repo, "bug", "修", "修一处", ["docs/t.md"], "修好", "修好").number
+        wt = Path(tasks.dispatch(db, self.repo, n).worktree)
+        self.commit_on_main("shared/a.txt", "a\n")
+        res = sync.run(wt)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertIn("合入 1 个提交", "\n".join(res.lines))
+        self.assertIn(git(self.repo, "rev-parse", "main").strip(), git(wt, "rev-list", "HEAD"))
 
 if __name__ == "__main__":
     unittest.main()
