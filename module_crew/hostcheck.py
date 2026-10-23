@@ -62,7 +62,44 @@ def run(cwd: str | Path) -> Report:
     _check_version(rep, db)
     _check_git_writable(rep, cwd, ("--absolute-git-dir",),
                         "提交会失败：Codex 默认沙箱不让写 .git，请用户在本会话批准提权（能选本会话一直允许就选）后再试")
+    _check_commit_hooks(rep, cwd)
     return _done(rep)
+
+
+HOOK_RUN_GIT = (2, 36)      # `git hook run`
+HOOK_TIMEOUT = 300
+
+
+def git_version() -> tuple[int, ...]:
+    words = subprocess.run(["git", "--version"], capture_output=True, text=True).stdout.split()
+    return tuple(int(x) for x in (words[2].split(".")[:2] if len(words) > 2 else []) if x.isdigit())
+
+
+def _check_commit_hooks(rep: Report, cwd: Path) -> None:
+    """S22 (LIVE-SAAS): a worktree without its dependencies cannot run the project's commit hooks (lefthook, husky),
+    and the format problems only surfaced when review approve committed to the integration branch."""
+    from module_crew import commits, start
+    if not commits.hooks_active(cwd):
+        _check(rep, "commit-hooks", True, "项目没设提交钩子，不用试跑")
+        return
+    have = git_version()
+    if have < HOOK_RUN_GIT:
+        _check(rep, "commit-hooks", True, f"提交钩子未检查：git {'.'.join(map(str, have)) or '版本不明'} 没有 git hook run，"
+               "要 2.36 以上")
+        return
+    try:
+        ran = subprocess.run(["git", "hook", "run", "--ignore-missing", "pre-commit"], cwd=cwd, capture_output=True,
+                             text=True, timeout=HOOK_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        ok, tail = False, [f"{HOOK_TIMEOUT} 秒没跑完"]
+    else:
+        ok = ran.returncode == 0
+        tail = [line for line in (ran.stdout + ran.stderr).splitlines() if line.strip()][-commits.HOOK_TAIL:]
+        tail = tail or [f"退出码 {ran.returncode}，没有输出"]
+    cmds = start.install_commands(cwd)
+    fix = "先在本 worktree 装依赖" + (f"（{'；'.join(cmds)}）" if cmds else "") + "，再跑一次 module-crew host-check"
+    _check(rep, "commit-hooks", ok, "提交钩子能跑：pre-commit 试跑通过" if ok
+           else "提交钩子跑不通：pre-commit 试跑失败，最后几行：\n" + "\n".join(f"   {line}" for line in tail), fix)
 
 
 def _check_version(rep: Report, db: store.Store) -> None:

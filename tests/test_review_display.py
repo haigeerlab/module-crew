@@ -11,6 +11,8 @@ from module_crew import protocol, review, store
 
 FAKE_OVERLAP = '''import json, os, sys
 open(os.environ["FAKE_OVERLAP_ARGS"], "w").write(json.dumps(sys.argv[1:]))
+specs = [a.split("=", 1)[1] for i, a in enumerate(sys.argv) if sys.argv[i - 1] == "--spec"]
+open(os.environ["FAKE_OVERLAP_ARGS"] + ".specs", "w").write(json.dumps([open(f).read() for f in specs]))
 print(open(os.environ["FAKE_OVERLAP_OUT"]).read())
 '''
 
@@ -64,10 +66,12 @@ class OverlapTest(OverlapCase):
         args = json.loads(self.args.read_text())
         specs = [args[i + 1] for i, a in enumerate(args) if a == "--spec"]
         self.assertEqual(sorted(s.split("=", 1)[0] for s in specs), ["b", "c"])
-        for s in specs:                                    # the submitted Spec, saved under the store's tmp/
+        for s in specs:            # S19: the submitted Spec, in the system temp dir only while scopeOverlap runs
             path = Path(s.split("=", 1)[1])
-            self.assertEqual(path.parent, self.db.path / "tmp")
-            self.assertIn("# Spec:", path.read_text(encoding="utf-8"))
+            self.assertFalse(path.resolve().is_relative_to(self.repo / ".git"), path)
+            self.assertFalse(path.exists())
+        for text in json.loads(Path(str(self.args) + ".specs").read_text()):
+            self.assertIn("# Spec:", text)
         self.assertIn("--project", args)
         self.assertTrue(any("⚠️ 并行边界重叠：b、c 在 src/shared.py" in x for x in self.overlap_line()))
 

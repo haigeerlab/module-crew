@@ -205,6 +205,7 @@ class Dispatched:
 def render_kickoff(n: int, t: dict, worktree: Path, branch: str, cfg: dict, relay: str, coord: str,
                    codex: list[str] | None = None) -> str:
     """The first message of a light task's session: the task card, its rules and the v2.5 message shapes."""
+    from module_crew import start
     check = cfg.get("checkCommand") or "项目 Spec 的 Commands 一节里的完整检查命令"
     caused = [f"由 {t['causedBy']} 带进来：修之前先看那次改动。"] if t.get("causedBy") else []
     bug = (["这是 bug：先写一个能复现问题的测试，确认它失败，再修到它通过；交回的「要点」里写一行「复现测试：<测试名>」。"]
@@ -225,6 +226,7 @@ def render_kickoff(n: int, t: dict, worktree: Path, branch: str, cfg: dict, rela
         f"模块协调：{coord}（你只和它说话）",
         *([] if codex else [ENTRY_LINE]),   # Codex has no hooks: the Codex lines give the fixed entry (crew-host-handover)
         "",
+        *start.install_line(worktree),   # S22: the commit hooks need the dependencies
         *bug,
         f"做完、提交、跑完整检查（{check}）全部通过后才交回。交回发最终验收【交审】，样子是：",
         "【交审】", "结束：无", "模块：无", "节点：最终验收", "文件：", "- <改动的文件> sha256:<前 16 位>",
