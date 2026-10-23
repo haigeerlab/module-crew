@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved dbcc26eb07fe -->
+<!-- spec-guard: review approved b035f6eb5a04 -->
 
 # Spec: crew-command-entry
 
@@ -22,7 +22,7 @@ Codex 会话没有钩子，开工说明里写死的 `<插件目录>/bin/module-c
 
 **范围外**
 
-- Claude 会话：照旧用钩子注入的命令入口（crew-recovery-hooks 决策 7），开工说明与 Claude 权限规则不改。
+- ~~Claude 会话：照旧用钩子注入的命令入口（crew-recovery-hooks 决策 7），开工说明与 Claude 权限规则不改。~~（2026-10-23 起改入范围，见关键决策 6）
 - 这一版之前已经开工的 Codex 会话：它们记着的旧路径不会自己换，由模块协调转告一次（README 写明）；这一版不做自动通知。
 - Codex 自己安装 module-crew（现在 Codex 会话用的是 Claude 装的那份，不变）。
 
@@ -40,9 +40,17 @@ Codex 会话没有钩子，开工说明里写死的 `<插件目录>/bin/module-c
    找到了就 `exec` 那份 `bin/module-crew`，参数原样传，退出码原样返回。环境变量 `MODULE_CREW_PLUGINS_FILE` 照旧可以指定安装记录（测试用）。
 3. **什么时候写**：`start prepare` 与 `coordinator up` 每次运行时比对，内容不同（第一次、或新版本改了模板）才原子替换写入，相同就不动。状态库「不删除」的约束照旧：只写不删。
 4. **Codex 那边全部改指它**：Codex 开工说明里的命令路径、`host-check`、`status` 三处，Codex 权限规则的放行前缀，Codex 版 crew-dev skill 的说明，都改为这个固定路径。
-   Claude 会话不改。`permissions apply` 重写 Codex 规则文件时自然换成新路径。
+   ~~Claude 会话不改。~~（2026-10-23 起 Claude 会话也改，见决策 6）`permissions apply` 重写 Codex 规则文件时自然换成新路径。
 5. **（新）`bin/module-crew` 的修法**：改为 `python3 -c` 一段很短的引导：把插件目录插到 `sys.path` 最前面、把 `sys.argv[0]` 设为 `module-crew`，再用 `runpy` 以 `__main__` 运行 `module_crew` 包。
    当前目录仍在搜索路径里（排在插件目录之后），其他行为不变。不改成直接运行 `module_crew/__main__.py`：那样包目录会排在最前，包里的文件名可能盖过标准库。
+6. **Claude 会话也改用固定入口**（2026-10-23 新增，0.12.1）：
+   - Claude 权限规则的放行条目由 `Bash(<插件目录>/bin/module-crew *)` 改为 `Bash(<固定入口> *)`；`permissions apply` 写规则前先写（或更新）固定入口，输出多一行同决策 3 的「固定入口：<路径>（已写入／没有变化）」。
+     `permissions verify` 实测清单里的 `module-crew status` 也写固定入口。已写进规则文件的旧条目不动（`remove` 照旧按记录撤）。
+   - SessionStart 注入的命令入口（crew-recovery-hooks 决策 7）改为固定入口：状态库里已有固定入口时写「module-crew 命令入口：`<固定入口>`（固定入口，转到本机当前安装的 module-crew；本次钩子来自版本 <版本>）」；
+     还没有时（这一版之前开工、之后没跑过 `start prepare`／`coordinator up`／`permissions apply`）照旧写本次运行的插件目录下的 `bin/module-crew`，并提示跑一次 `permissions apply` 或 `coordinator up` 写出固定入口。钩子只读不写，也不 import `launcher`（钩子不 import `subprocess` 的约束不变），路径按决策 1 的位置自己拼。
+   - 自检（crew-probe 决策 6）判断 Claude 规则是否过期，改为看有没有放行固定入口。
+   - 这样以后升级插件不用再跑 `permissions apply`；改成这一版后，已写过规则的 checkout 要凭用户原话再跑最后一次。
+   - 取舍：固定入口按安装记录转发，Claude 会话跑的是「装着的那份」而不是「宿主加载钩子的那份」；升级后没重开的会话会直接跑到新版，这和 Codex 会话一样，也正是重开会话想要的结果。
 
 ## 接口约定
 
@@ -95,9 +103,11 @@ PYTHONPATH=tests python3 -m unittest test_command_entry_codex
 2. 启动脚本按安装记录转给当前装的 module-crew：参数与退出码原样；项目级优先于用户级；目录型市场取登记的源目录；切换安装记录指向另一个版本后，同一个启动脚本跑的就是那个版本。
 3. 安装记录缺失、读不出、没装 module-crew、装的目录里没有 `bin/module-crew`：退出码 2，标准错误输出中文原因。
 4. 同样的安装记录，启动脚本与 `probe.find_plugin` 选出同一个目录。
-5. Codex 开工说明的三处命令、Codex 权限规则的放行前缀、Codex 版 crew-dev skill 都写固定入口，不含插件目录的路径；Claude 开工说明与 Claude 权限规则不变。
+5. Codex 开工说明的三处命令、Codex 权限规则的放行前缀、Codex 版 crew-dev skill 都写固定入口，不含插件目录的路径；Claude 开工说明~~与 Claude 权限规则~~不变（Claude 权限规则见验收 8）。
 6. 在放了假 `module_crew` 包的目录里运行 `bin/module-crew`，跑的是插件自己的代码；`--help` 等输出里的程序名是 `module-crew`。
 7. 全量测试通过；本机实测：在一个开过工的临时仓库里运行启动脚本 `status`，报的版本等于本机安装的版本。
+8. （2026-10-23）`permissions apply` 写出固定入口，Claude 规则的放行条目是 `Bash(<固定入口> *)`，不含插件目录路径；`permissions verify` 清单里的 `module-crew status` 是固定入口；`status` 对放行了固定入口的规则不报过期，只放行旧插件路径的照旧报。
+9. （2026-10-23）SessionStart 注入：状态库有固定入口时命令入口是它、附本次钩子的版本；没有时是本次插件目录下的 `bin/module-crew` 并提示怎样写出固定入口；`hooks.py` 仍不 import `subprocess`。
 
 ## 未决问题
 
@@ -106,3 +116,7 @@ PYTHONPATH=tests python3 -m unittest test_command_entry_codex
 ## 文档建议
 
 README「Codex 模块会话」一节改写命令入口：开工说明给的是状态库里的固定入口，升级后不用换；这一版之前开工的 Codex 会话要由模块协调转告一次新入口。CHANGELOG 随发版写。
+
+## 变更记录
+
+- 2026-10-23：新增关键决策 6 与验收 8、9，改范围外第一条、决策 4 与验收 5：Claude 权限规则放行与钩子注入的命令入口都改用状态库里的固定入口；发热修 0.12.1。原因：放行条目带插件版本号，0.11.1 起每次升级都要凭用户原话重跑 `permissions apply`，否则每条命令弹权限框（第 4 次，spec-guard 负责人在 sg-coord 实测 0.12.0 报告）；来源：用户 2026-10-23 在本会话批准发 0.12.1，本修订待复审。

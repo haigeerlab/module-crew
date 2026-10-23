@@ -56,7 +56,7 @@ class PlanTest(PermCase):
         self.assertTrue(claude["ignored"])
         self.assertIn("Bash(git push *)", claude["deny"])
         self.assertIn("Bash(git commit *)", claude["allow"])
-        self.assertIn(f"Bash({permissions.CREW_BIN} *)", claude["allow"])
+        self.assertIn(f"Bash({self.db.path / 'bin' / 'module-crew'} *)", claude["allow"])   # fixed entry (0.12.1)
         self.assertNotIn("ask", claude)
         codex = by["dev:c"]
         self.assertEqual(codex["file"], str(self.wt["c"] / ".codex" / "rules" / "module-crew.rules"))
@@ -305,7 +305,7 @@ class ProjectInstallTest(PermCase):
         return None
 
     def test_claude_lists(self):
-        entries = permissions.claude_entries({})
+        entries = permissions.claude_entries({}, "/x/.git/module-crew/bin/module-crew")
         for cmd in self.ALLOWED:
             self.assertEqual(self.decide(entries, cmd), "allow", cmd)
         for cmd in self.NO_RULE:                             # the host's own confirmation decides

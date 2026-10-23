@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved 936cbd33f1bb -->
+<!-- spec-guard: review approved d9241ef7b4a2 -->
 
 # Spec: crew-probe
 
@@ -49,7 +49,7 @@
    集成分支没被任何 checkout 检出时判 `blocker`。不 `fetch`、不比远端。
 5. **`status` 的退出码只由阻塞项决定**；状态库或 `/map` 读不出来时，对应部分写「读不出」和原因，其余照常输出。
 （0.9.7 追加，职责边界审查第 5 条）**安装记录的格式对不上时照实说**：`installed_plugins.json` 是 Claude 宿主的内部文件，不是公开接口。文件在、能读，但结构不是预期的样子（顶层不是对象、没有 `plugins` 对象、条目不是对象列表、条目缺 `installPath`）时，报「Claude 的插件安装记录格式和预期不同（宿主可能改了格式）：<路径>，<哪里不对>」，不再落到「本机没有安装 <名>」。`known_marketplaces.json` 读不出时照旧退回用安装记录里的路径（现状不变）。
-6. **报出「跑的不是装着的那份」**（2026-10-22 新增，0.11.1）：`status` 加检查项 `module-crew`：正在运行的 module-crew 版本（它旁边的 `plugin.json`）与安装记录里 module-crew 的版本（与其他依赖同样的定位规则）不同时为 blocker，原因写两边的版本与路径，处理写「改用 `<安装的插件目录>/bin/module-crew`，已开的会话重开或按钩子注入的命令入口换」。版本相同、只是路径不同（例如从源码仓库运行）为 ok；安装记录里找不到 module-crew 为 warning。另外，模块协调写过权限规则（`permissions apply`）而某个 checkout 的规则只放行别的 module-crew 路径时，`status` 多一行 warning，提示经用户原话再跑 `permissions apply` 补放行当前入口。只读文件，不运行外部命令。旧版本自己不会报：这一项防的是今后的升级，眼下的旧路径靠钩子注入的命令入口（crew-recovery-hooks 决策 7）纠正。
+6. **报出「跑的不是装着的那份」**（2026-10-22 新增，0.11.1）：`status` 加检查项 `module-crew`：正在运行的 module-crew 版本（它旁边的 `plugin.json`）与安装记录里 module-crew 的版本（与其他依赖同样的定位规则）不同时为 blocker，原因写两边的版本与路径，处理写「改用 `<安装的插件目录>/bin/module-crew`，已开的会话重开或按钩子注入的命令入口换」。版本相同、只是路径不同（例如从源码仓库运行）为 ok；安装记录里找不到 module-crew 为 warning。另外，模块协调写过权限规则（`permissions apply`）而某个 checkout 的规则只放行别的 module-crew 路径（2026-10-23 起：没有放行状态库里的固定入口）时，`status` 多一行 warning，提示经用户原话再跑 `permissions apply` 补放行当前入口。只读文件，不运行外部命令。旧版本自己不会报：这一项防的是今后的升级，眼下的旧路径靠钩子注入的命令入口（crew-recovery-hooks 决策 7）纠正。
 
 
 ## 接口约定
@@ -155,3 +155,4 @@ README（crew-start 之后补）里写「先跑 `module-crew status`」以及每
 - 2026-10-18：`status` 的模块进度改写成「spec-guard 当前／spec-guard 进行中」并注明 module-crew 开工的模块见「会话与待办」，避免把 spec-guard 的当前模块误读成已被 crew 开工。原因：第二轮试点小项（status 写「进行中：wordcount」而 wordcount 并未开工）；来源：用户 2026-10-18 定为 0.1.2 待办，随 0.2.0 做。
 - 2026-10-22：安装记录结构不对时报「格式和预期不同（宿主可能改了格式）」，不再误报「没有安装」；发 0.9.7。来源：本会话职责边界审查第 5 条，用户 2026-10-22 说「继续」后按已预告的第 4、5、7 条处理。
 - 2026-10-22：新增关键决策 6、检查项 `module-crew` 与验收 11：运行版本与安装版本不同报 blocker，权限规则只放行旧路径时提示补放行；发 0.11.1。原因：模块协调一直跑 v0.10.0 的命令，升级后没人发现（spec-guard 负责人报告 O8）；来源：用户 2026-10-22 批准并进 0.11.1（「2 并进」），本修订待复审。
+- 2026-10-23：关键决策 6 的权限规则过期判断改为看是否放行固定入口；发 0.12.1。原因：Claude 规则改放行固定入口（crew-command-entry 决策 6）；来源：用户 2026-10-23 在本会话批准发 0.12.1，本修订待复审。

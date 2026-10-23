@@ -47,12 +47,13 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
 
 
-def claude_entries(cfg: dict, worktree: Path | None = None) -> dict[str, list[str]]:
+def claude_entries(cfg: dict, entry: str | os.PathLike, worktree: Path | None = None) -> dict[str, list[str]]:
     """The fixed allow/deny lists (key decision 1); the check command is allowed as written, nothing wider.
+    `entry` is the store's fixed launcher (crew-command-entry decision 6), so an upgrade does not stale the rule.
 
     A module worktree also gets its own files to edit (crew-stage-c-fixes MC-13), except its `.claude/`, so the
     session cannot rewrite its permissions. `//` makes the path absolute in Claude Code's gitignore-style rules."""
-    allow = ([f"Bash({CREW_BIN} *)"] + [f"Bash({c} *)" for c in ROUTINE] + ["mcp__agent-relay"]
+    allow = ([f"Bash({entry} *)"] + [f"Bash({c} *)" for c in ROUTINE] + ["mcp__agent-relay"]
              + [f"Bash({c})" for c in LOCKFILE_CLAUDE])
     if cfg.get("checkCommand"):
         allow += [f"Bash({cfg['checkCommand']})", f"Bash({cfg['checkCommand']} *)"]
@@ -152,7 +153,9 @@ def _target(t: dict, cfg: dict, project: Path) -> dict:
             out["problem"] = f"{existing} 已存在且不是 module-crew 写的，不覆盖"
     else:
         rel = CLAUDE_FILE
-        want = claude_entries(cfg, checkout if t["role"] == "dev" else None)
+        from module_crew import launcher
+        want = claude_entries(cfg, launcher.entry(store.open_store(project).path),
+                              checkout if t["role"] == "dev" else None)
         have, problem = _read_settings(checkout / rel)
         out["problem"] = problem
         perms = (have or {}).get("permissions") or {}
@@ -337,7 +340,8 @@ def apply(project: str | os.PathLike, original: str | None) -> list[str]:
     record = cfg.get("permissions") or {}
     files = dict(record.get("files") or {})
     codex_files = set(record.get("codexFiles") or [])
-    lines = []
+    from module_crew import start
+    lines = [start.launcher_line(db)]             # the rules below allow this entry, so it must exist first
     for t in p["targets"]:
         path = Path(t["file"])
         if "rules" in t:
@@ -492,15 +496,17 @@ def follow(project: str | os.PathLike, name: str) -> str | None:
     return line
 
 
-ALLOWED_PROBES = [("module-crew status", f"{CREW_BIN} status"), ("git status", "git status"),
-                  ("git add --dry-run .", "git add --dry-run ."), ("bridge_agents", "mcp__agent-relay__bridge_agents（工具调用）")]
+ALLOWED_PROBES = [("git status", "git status"), ("git add --dry-run .", "git add --dry-run ."),
+                  ("bridge_agents", "mcp__agent-relay__bridge_agents（工具调用）")]
 DENIED_PROBE = "git push --dry-run module-crew-probe HEAD"
 
 
 def verify_list(project: str | os.PathLike, host: str = "claude") -> list[str]:
     """What the coordinator asks a new module session to run, and what to watch for (key decision 6)."""
+    from module_crew import launcher
+    probes = [("module-crew status", f"{launcher.entry(store.open_store(project).path)} status"), *ALLOWED_PROBES]
     lines = ["请模块会话在自己的 worktree 里依次运行下面五条，模块协调同时看它的在线状态有没有出现「等待审批」：",
-             *[f"  {i}. {cmd}　——应直接运行、不弹确认" for i, (_, cmd) in enumerate(ALLOWED_PROBES, 1)],
+             *[f"  {i}. {cmd}　——应直接运行、不弹确认" for i, (_, cmd) in enumerate(probes, 1)],
              f"  5. {DENIED_PROBE}　——应被宿主拒绝；就算宿主没拦，这个远端名也不存在，推不出去",
              "看完记下：module-crew permissions verify --record <会话名> --allowed ok|prompted --denied ok|ran"]
     if host == "codex":

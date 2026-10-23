@@ -154,14 +154,21 @@ ENTRY_LINE = "命令入口：以本会话 module-crew 钩子注入的「module-c
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]     # the plugin copy the host ran this hook from
 
 
-def command_entry() -> str:
-    """crew-recovery-hooks decision 7: the command this session should use, from the plugin that ran the hook."""
+def command_entry(db: store.Store) -> str:
+    """crew-recovery-hooks decision 7: the command this session should use. The store's fixed launcher when it is
+    there (crew-command-entry decision 6; same place as launcher.entry, which this module must not import), else the
+    plugin that ran the hook. Reads only."""
     try:
         version = json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
     except (OSError, ValueError, KeyError, TypeError):
         version = None
+    fixed = Path(db.path) / "bin" / "module-crew"
+    if os.access(fixed, os.X_OK):
+        return (f"module-crew 命令入口：`{fixed}`（固定入口，转到本机当前安装的 module-crew；"
+                f"本次钩子来自{f'版本 {version}' if version else '未知版本'}）；用这一行，不用记忆、开工背景或别的会话给的路径")
     return (f"module-crew 命令入口：`{PLUGIN_ROOT / 'bin' / 'module-crew'}`（{f'版本 {version}' if version else '版本未知'}）；"
-            "用这一行，不用记忆、开工背景或别的会话给的路径")
+            "用这一行，不用记忆、开工背景或别的会话给的路径；还没有固定入口，"
+            "跑一次 `module-crew permissions apply` 或 `module-crew coordinator up` 写出后，升级就不用换路径")
 
 
 def session_start(cwd: str | os.PathLike, source: str = "startup", role: Role | None = None) -> str | None:
@@ -185,7 +192,7 @@ def session_start(cwd: str | os.PathLike, source: str = "startup", role: Role | 
         lines = [f"module-crew：本会话是模块协调（{role.name}）。{_count_text(_counts(role.db))}。",
                  "先跑 `module-crew status` 再动手；看 agent-relay 在线状态里谁处于「等待审批」，提醒用户去那个会话点权限弹窗。",
                  "按 crew-coordinator skill 的规则做：只统筹不开发，只转达用户在本会话亲手输入的话。"]
-    lines.append(command_entry())
+    lines.append(command_entry(role.db))
     if source == "compact":
         lines.append(COMPACT_NOTE)
     elif source == "clear":

@@ -224,10 +224,10 @@ def validate(project: Path, modules: list[str], original: str, short: str | None
 
 
 def launcher_line(db: store.Store) -> str:
-    """crew-command-entry decision 3: (re)write the fixed entry Codex sessions use, and say so."""
+    """crew-command-entry decisions 3 and 6: (re)write the fixed entry Claude and Codex sessions use, and say so."""
     from module_crew import launcher
     path, changed = launcher.install(db.path)
-    return f"Codex 会话的固定入口：{path}（{'已写入' if changed else '没有变化'}）"
+    return f"module-crew 固定入口：{path}（{'已写入' if changed else '没有变化'}）"
 
 
 def prepare(project: str | os.PathLike, modules: list[str], original: str, short: str | None = None,
