@@ -163,7 +163,7 @@ def guide(to: str, name: str, entry: str, integration: str, original_file: str, 
                        f"它报「已接管：本会话就是模块协调 {name}」，status 显示模块协调在 Codex")
         n = 5
         if unignored:
-            lines += _ignore_step(n, f"这个 Codex 协调任务（{name}）", unignored, entry)
+            lines += _ignore_step(n, f"Codex 上新的模块协调任务（{name}）", unignored, entry)
             n += 1
         lines += _step(n, "这个 Codex 协调任务", "以后每轮开头它先用自己的线程 id 重新 bridge_register（不带 takeover）；应用重启后要你点开它",
                        "别的会话发来的消息它能收到")
@@ -178,7 +178,7 @@ def guide(to: str, name: str, entry: str, integration: str, original_file: str, 
         lines += _step(3, "刚开的 Claude 会话", "等它跑完接管与 bind；弹权限确认就点「允许（Yes）」，不要选本会话都允许",
                        f"它报「已接管：本会话就是模块协调 {name}」，status 显示模块协调在 Claude Code")
         if unignored:
-            lines += _ignore_step(4, f"这个 Claude 协调会话（{name}）", unignored, entry)
+            lines += _ignore_step(4, f"Claude 上新的模块协调（{name}）", unignored, entry)
     lines += ["## 开场文字（整段贴进新会话）", "", opening, "",
               "## 下一批怎么开", "",
               f"start prepare 与 task dispatch 默认用新宿主（{HOST_NAMES[HOST_IDS[to]]}）。"
