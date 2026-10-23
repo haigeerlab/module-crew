@@ -11,5 +11,5 @@
 - [x] Task 6：开工与派任务的宿主跟随模块协调（Spec 验收 6、7）——测试先红后绿；Codex 版 crew-dev 补「轻任务」一节；开工、轻任务、Codex 相关已有测试照常通过（d48b23f）
 - [x] Task 7：收尾提示与 status 字段（Spec 验收 9）——测试先红后绿；status 另显示「换宿主交接中」，`--json` 加 `handoverPending`、`handoverLine`（cad3718）
 - [x] Task 8：README、skill、crew-codex-host 变更记录、全量测试（Spec 验收 10、11）——全量 739 个测试通过；本模块 Spec 在构建中补了变更记录（事件名、status 字段），随最终验收复审（ef68df9）
-- [ ] Checkpoint 2（gate）：最终验收
+- [x] Checkpoint 2（gate）：最终验收
 - [ ] 回告：ecosystem-lead（模块 A 就位、`--to codex` 等模块 B）
