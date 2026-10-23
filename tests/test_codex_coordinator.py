@@ -13,11 +13,12 @@ from pathlib import Path
 from unittest import mock
 
 from helpers import MergeCase, git, spec_guard_interface
+from test_host_handover import GapCase, close_batch
 from test_light_task import new_task
 from test_session_handover import WRITES
 
 from module_crew import __main__ as cli
-from module_crew import hooks, merge, mergelock, probe, store
+from module_crew import handover, hooks, merge, mergelock, probe, store
 
 SESSION_VARS = ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")
 
@@ -442,6 +443,39 @@ class HandoverGuideCodexTest(unittest.TestCase):
     def test_claude_guide_unchanged_by_this(self):
         from module_crew import handover
         self.assertNotIn("host-check", handover.guide("claude", "shop-coord", "/x/module-crew", "/r", "/r/orig.txt"))
+
+
+class RoundTripTest(GapCase):
+    """Acceptance 2: with the real Codex coordinator skill in the plugin, the gap handover goes to Codex and back."""
+
+    def env(self, codex=None, claude=None):
+        env = {k: v for k, v in os.environ.items() if k not in SESSION_VARS}
+        env.update({k: v for k, v in (("CODEX_THREAD_ID", codex), ("CLAUDE_CODE_SESSION_ID", claude)) if v})
+        return env
+
+    def test_to_codex_and_back(self):
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+        close_batch(self.db)
+        self.assertTrue(handover.codex_coordinator_skill().is_file())
+        r = self.run_cli("coordinator", "handover", "--to", "codex", "--original", "换到 Codex", env=self.env(claude="sid-coord"))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("host-check", r.stdout)
+        self.assertIn("每轮开头三步", r.stdout)
+        original = re.search(r"--original-file ([^`\s]+)", r.stdout).group(1)
+        r = self.run_cli("bind", "shop-coord", "--takeover", "--original-file", original, env=self.env(codex="thread-1"))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = self.run_cli("status", env=self.env(codex="thread-1"))
+        self.assertEqual(r.stdout.splitlines()[0], "本会话是模块协调 shop-coord（Codex）：没有钩子，以下按状态库为准")
+        r = self.run_cli("host-check", "--json", env=self.env(codex="thread-1"))
+        self.assertEqual(json.loads(r.stdout)["role"], "coordinator")
+        r = self.run_cli("coordinator", "handover", "--to", "claude", "--original", "换回 Claude", env=self.env(codex="thread-1"))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        original = re.search(r"--original-file ([^`\s]+)", r.stdout).group(1)
+        r = self.run_cli("bind", "shop-coord", "--takeover", "--original-file", original, env=self.env(claude="sid-new"))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rec = store.get(self.db, "session", "shop-coord")
+        self.assertEqual((rec["host"], rec["hostSession"]["sessionId"], rec["hostHandover"]["pending"]),
+                         ("claude-desktop", "sid-new", False))
 
 
 class StatusClaudeCoordinatorTest(MergeCase):

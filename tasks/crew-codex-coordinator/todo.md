@@ -12,7 +12,7 @@
 - [x] Task 7：开工输出的 Codex 指引与交接说明补句（Spec 验收 9、2 说明部分）——测试先红后绿；模块协调在 Codex 时 `start prepare`、`task dispatch` 末尾加「请用户去 Codex 新建任务」段（逐模块／T 号一行），`task dispatch` 同时不再打印「用桌面版开新会话」那句；交接说明 Codex 方向开场文字加 `host-check` 一步与「每轮开头三步」；协调在 Claude 时输出不变（开工、轻任务、换宿主已有测试通过）
 - [ ] Checkpoint 2（report）：命令层做完，全量测试通过
 - [x] Task 8：Codex 版 crew-coordinator skill（Spec 验收 1）——由 Claude 版逐节改写（各节同名同序，另加「Codex 特有的几件事（先读）」），`test_skills` 断言共同关键句 27 条、Codex 特有 16 条、不含 Claude 专属做法；skill 先写、断言后补（文档类，没有先红）
-- [ ] Task 9：`handover --to codex` 端到端（Spec 验收 2）
+- [x] Task 9：`handover --to codex` 端到端（Spec 验收 2）——不打桩，用插件里真实的 Codex 版 skill：Claude 协调 `handover --to codex` → Codex 线程 `bind --takeover` → `status` 首行认出、`host-check` 按协调查 → 从 Codex 线程 `handover --to claude` → 新 Claude 会话接管，全部经命令行跑通（Task 8 之前这条会因缺 skill 退出码 3）；`--to claude` 与已有换宿主测试照常通过
 - [ ] Task 10：README、plugin.json、Claude 版 skill、全量测试（Spec 验收 10、11）
 - [ ] Checkpoint 3（gate）：最终验收
 - [ ] 回告：ecosystem-lead（模块 B 就位、`--to codex` 已放开、实地结果），经 mc-coord 转
