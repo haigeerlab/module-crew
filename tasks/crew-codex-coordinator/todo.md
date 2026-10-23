@@ -15,4 +15,4 @@
 - [x] Task 9：`handover --to codex` 端到端（Spec 验收 2）——不打桩，用插件里真实的 Codex 版 skill：Claude 协调 `handover --to codex` → Codex 线程 `bind --takeover` → `status` 首行认出、`host-check` 按协调查 → 从 Codex 线程 `handover --to claude` → 新 Claude 会话接管，全部经命令行跑通（Task 8 之前这条会因缺 skill 退出码 3）；`--to claude` 与已有换宿主测试照常通过
 - [x] Task 10：README、plugin.json、Claude 版 skill、全量测试（Spec 验收 10、11）——README「换宿主」加「模块协调在 Codex 上」一小节、命令一览补 `merge run --detach`／`merge result` 与 `host-check`、「尚未验证」补 Codex 协调未实测；插件描述与 Claude 版「空档换宿主」不再写等待模块 B；同步集成分支 64ae2c6 后全量 783 个测试通过（3212666）
 - [x] Checkpoint 3（gate）：最终验收
-- [ ] 回告：ecosystem-lead（模块 B 就位、`--to codex` 已放开、实地结果），经 mc-coord 转
+- [x] 回告：ecosystem-lead（模块 B 就位、`--to codex` 已放开、实地结果），经 mc-coord 转——已发（agent-relay #10668）：合并 89411e5，实地未验证、放进演练
