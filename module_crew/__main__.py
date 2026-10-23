@@ -80,6 +80,10 @@ def _status(as_json: bool) -> int:
     if as_json:
         print(json.dumps(report.to_json(), ensure_ascii=False, indent=2))
         return 3 if report.blocked else 0
+    me = (report.store or {}).get("codexSelf")          # crew-codex-coordinator: Codex has no hook to say who this is
+    if me:
+        print(f"本会话是模块协调 {me['name']}（Codex）：没有钩子，以下按状态库为准" if me["registered"]
+              else "本线程不是登记的模块协调，不要按模块协调行事")
     print("体检")
     for c in report.checks.values():
         line = f"  {_STATE_ICON[c.state]} {c.id}：{c.reason}"
@@ -164,7 +168,8 @@ def _status(as_json: bool) -> int:
     else:
         print(f"  模块 {m['done']}/{m['total']} 完成；spec-guard 当前：{m['activeModule'] or '无'}；spec-guard 进行中：{'、'.join(m['inProgress']) or '无'}")
         print("  （这是 spec-guard 按能力图算出的进度；由 module-crew 开工的模块见上面的「会话与待办」）")
-    print("模块协调：Claude 桌面版；模块会话：Claude 或 Codex 桌面版")
+    print("模块协调：Codex 桌面版；模块会话：Codex 桌面版" if (report.store or {}).get("coordinatorHost") == "codex-desktop"
+          else "模块协调：Claude 桌面版；模块会话：Claude 或 Codex 桌面版")
     cadence, source, via_map = start.cadence_info(".", report.map)
     if via_map:
         print(f"评审节奏：{cadence}（来源：{source}，读自 spec-guard /map）")

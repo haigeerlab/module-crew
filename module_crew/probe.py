@@ -354,7 +354,20 @@ def summarize_store(project: Path) -> tuple[Check, dict | None]:
                                                 "coordinator": coord, "sightings": seen, "tasks": task_rows,
                                                 "unqueued": unq, "mergeLock": _merge_lock(db),
                                                 "permissionsStale": _stale_permissions(db), "selfIsCoordinator": self_coord,
-                                                **_handover_state(db)}
+                                                "codexSelf": codex_self(sessions), **_handover_state(db)}
+
+
+def codex_self(sessions: dict) -> dict | None:
+    """crew-codex-coordinator decision 4: a Codex thread has no hook to tell it its role, so `status` does.
+
+    None outside Codex (no CODEX_THREAD_ID, or a Claude conversation that inherited it)."""
+    from module_crew import hooks
+    if hooks.own_host() != "codex-desktop":
+        return None
+    me = (os.environ.get("CODEX_THREAD_ID") or "").strip()
+    name, rec = next(((n, r) for n, r in sorted(sessions.items())
+                      if r.get("role") == "coordinator" and r.get("status") == "active"), (None, None))
+    return {"name": name, "registered": bool(rec) and (rec.get("hostSession") or {}).get("sessionId") == me}
 
 
 def _handover_state(db: store.Store) -> dict:
