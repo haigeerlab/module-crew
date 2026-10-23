@@ -362,15 +362,16 @@ def _stale_permissions(db: store.Store) -> list[str]:
     record = (store.get(db, "config", "main") or {}).get("permissions") or {}
     if not record.get("applied"):
         return []
+    from module_crew import launcher
+    entry = str(launcher.entry(db.path))         # crew-command-entry decision 6: Claude rules allow the fixed entry
     stale = []
     for name in sorted(record.get("files") or {}):
         try:
             allow = (json.loads(Path(name).read_text(encoding="utf-8")).get("permissions") or {}).get("allow") or []
         except (OSError, ValueError, AttributeError):
             continue
-        if not any(isinstance(e, str) and e.startswith("Bash(") and permissions.CREW_BIN in e for e in allow):
+        if not any(isinstance(e, str) and e.startswith("Bash(") and entry in e for e in allow):
             stale.append(name)
-    from module_crew import launcher
     for name in record.get("codexFiles") or []:
         try:
             if str(launcher.entry(db.path)) not in Path(name).read_text(encoding="utf-8"):

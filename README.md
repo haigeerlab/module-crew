@@ -3,15 +3,13 @@
 让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.12.0。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.12.1。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
-## 0.12.0 的变化（第七版：换手与呈现）
+## 0.12.1 的变化（热修）
 
-- 命令入口：Codex 会话改用状态库里不带版本号的固定入口 `<git公共目录>/module-crew/bin/module-crew`，每次转给当前安装的那份，升级后不用换；`bin/module-crew` 不再让当前目录里的代码盖过插件自己的代码。
-- 会话换手：钩子按会话编号认身份，模块协调在别的目录也收到角色提示与命令入口；`bind <邮箱名> --takeover` 一步接手模块协调（要用户原话），旧会话随即失效；模块协调的写命令只认登记的会话，别的会话退出码 7；`status` 标出「← 本会话」。重开请在原会话里 `/clear` 或退出应用再打开，不要新开会话。
-- 契约钉到 session-protocol v2.6：待定问题按登记的决策收件箱版本编 `C<交审号>-<序号>` 或 D，两种答法都认；答复块一块只答一件事；最终验收的「验收结果」改名（旧名照收）；可登记 `--protocol 2.6`。
-- 提请批准的呈现：并行边界重叠用交审中的 Spec 经 spec-guard `scopeOverlap`（接口 1.10）比对，比不了写「未比对」，只有比对过才写「无」；最终验收按 spec-guard 的小项列出文档、代码（超出 Plan 的标出）、提交、新增依赖四张表，Spec 中途改过附差异；开工、公共变更请求、卡住选做法三种请示用同一个骨架。
-- 升级后：在用的会话在原会话里 `/clear` 一次；模块协调的写命令若被拒（退出码 7），经用户同意在当前会话 `bind <邮箱名> --takeover`；已开工的 Codex 会话由模块协调转告一次新入口。
+- Claude 会话也改用状态库里的固定入口 `<git公共目录>/module-crew/bin/module-crew`：`permissions apply` 先写出它，Claude 规则放行它而不再放行带版本号的插件路径；钩子注入的「module-crew 命令入口」也是它（状态库还没有固定入口时照旧给插件路径，并提示跑一次 `permissions apply` 或 `coordinator up`）。以后升级插件不用再重跑 `permissions apply`。
+- 升级后：已写过权限规则的项目，凭用户原话再跑最后一次 `module-crew permissions apply`；在用的会话在原会话里 `/clear` 一次，拿到新的命令入口。
+- README 的契约版本更正为 v2.6。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -25,7 +23,7 @@
 | 项目 | git 仓库，能建 worktree；有一条能在本地跑完的完整检查命令，合并后用它判断集成是否通过 |
 | 运行环境 | Python 3（只用标准库） |
 
-消息格式以 [session-protocol](../session-protocol) 契约为准（现钉住 v2.5）。
+消息格式以 [session-protocol](../session-protocol) 契约为准（现钉住 v2.6）。
 
 ## 安装
 
@@ -201,7 +199,7 @@ python3 -m unittest discover -s tests -v
 不可逆操作不能只靠弹窗：宿主确认（ask 规则或默认确认）在代开会话里也会弹，但点一次「允许」就执行了，点的人未必清楚上下文。module-crew 把第 44 条范围内的常规操作（含装依赖与往项目里加新包：`npm ci`、`npm install <包名>`、`pnpm add`、`yarn add`、`uv add`、`.venv/bin/pip install` 等）写成宿主认的放行规则，把推送、删除、全局安装（`-g`／`--global` 在任意位置、`yarn global`、`uv --system`、`brew install`）、改全局配置写成禁止；裸 `pip install <包名>` 不写规则、交宿主默认确认（不在 venv 里会装进系统 Python）；Codex 侧加新包也不写规则，因为前缀规则挡不住 `npm install x -g`。不可逆操作写禁止、不写 ask：禁止规则直接拒绝，不依赖有人当场判断。（0.5.2 更正：早先说代开会话里 ask 确认不会出现，经 E3 会话记录核实不成立，两次 `git push` 都是弹了确认、被点了「允许一次」。）再用 git 的 pre-push 钩子守住推送：
 
 1. `module-crew permissions plan`：只读预览每个 checkout（集成 checkout 与各模块 worktree）要追加什么、文件有没有被 git 忽略、钩子能不能装、Codex 项目是否受信任，以及别处（主 checkout 的设置、用户设置等）有没有 ask 或禁止规则会盖过要写的放行——宿主先看禁止、再看 ask、最后看放行，模块 worktree 的会话也读主 checkout 的本地设置。
-2. `module-crew permissions apply --original-file <用户原话>`：Claude 写 `.claude/settings.local.json`（只追加条目），Codex 模块写 `.codex/rules/module-crew.rules`；有一个文件不能写就全部不写。之后 `start prepare` 新开的模块自动跟随。
+2. `module-crew permissions apply --original-file <用户原话>`：Claude 写 `.claude/settings.local.json`（只追加条目），Codex 模块写 `.codex/rules/module-crew.rules`；有一个文件不能写就全部不写。之后 `start prepare` 新开的模块自动跟随。module-crew 自己的命令放行的是状态库里的固定入口（0.12.1 起），升级插件后不用重跑。
 3. 开好会话后 `module-crew permissions verify`：四条应直接运行、一条应被拒的实测清单；结果用 `verify --record` 记下，`status` 显示每个会话最近一次实测，没测过写「权限未实测」。
 4. 推送只经 `module-crew merge push`：钩子拒绝模块 worktree 的推送，以及集成 checkout 上没有一次性放行凭证的推送。你自己在终端推送可以加 `--no-verify`。仓库设了 `core.hooksPath`（如 husky）或已有 pre-push 钩子时不装，`plan` 会写明。这时推送只靠宿主的禁止规则：2026-10-19 在 crew-rehearsal（husky 仓库）实测，由别的会话代开的 default 权限模式会话里 `git push` 被禁止规则拦下、不弹窗；没有 git 钩子这一层兜底，用 husky 的项目（如 LIVE-SAAS）都是这种情况。
 5. Codex 的项目级规则只在项目被 Codex 信任后生效；module-crew 不改你的全局配置，只提示。

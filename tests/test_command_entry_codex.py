@@ -143,7 +143,7 @@ class InstallTest(StartCase):
         path = self.target()
         self.assertEqual(path.read_bytes(), Path(launcher.__file__).read_bytes())
         self.assertTrue(os.access(path, os.X_OK))
-        self.assertIn(f"Codex 会话的固定入口：{path}（已写入）", res.lines)
+        self.assertIn(f"module-crew 固定入口：{path}（已写入）", res.lines)
         before = path.stat().st_mtime_ns
         self.assertEqual(launcher.install(path.parent.parent), (path, False))
         self.assertEqual(path.stat().st_mtime_ns, before)
@@ -154,10 +154,10 @@ class InstallTest(StartCase):
     def test_coordinator_up_writes(self):
         code, lines = coordinator.up(self.repo, "shop", "升级为模块协调", session_id="sid-1")
         self.assertEqual(code, 0, lines)
-        self.assertIn(f"Codex 会话的固定入口：{self.target()}（已写入）", lines)
+        self.assertIn(f"module-crew 固定入口：{self.target()}（已写入）", lines)
         code, lines = coordinator.up(self.repo, None, "再升级", session_id="sid-1")
         self.assertEqual(code, 0, lines)
-        self.assertIn(f"Codex 会话的固定入口：{self.target()}（没有变化）", lines)
+        self.assertIn(f"module-crew 固定入口：{self.target()}（没有变化）", lines)
 
 
 class CodexSideTest(StartCase):
@@ -184,8 +184,8 @@ class CodexSideTest(StartCase):
         kick = store.read_body(db, res.prepared[0]["kickoff"])
         self.assertIn(hooks.ENTRY_LINE, kick)
         self.assertNotIn(str(launcher.entry(db.path)), kick)
-        allow = permissions.claude_entries({})["allow"]
-        self.assertIn(f"Bash({permissions.CREW_BIN} *)", allow)
+        allow = permissions.claude_entries({}, launcher.entry(db.path))["allow"]      # decision 6 (0.12.1): fixed entry
+        self.assertIn(f"Bash({launcher.entry(db.path)} *)", allow)
 
 
 if __name__ == "__main__":

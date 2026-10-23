@@ -7,7 +7,7 @@ from unittest import mock
 
 from helpers import MergeCase, make_worktree
 
-from module_crew import hooks, permissions, probe, start, store, tasks
+from module_crew import hooks, launcher, permissions, probe, start, store, tasks
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,7 +24,9 @@ class HookEntryTest(MergeCase):
         super().setUp()
         self.db = store.open_store(self.repo)
         self.version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
-        self.line = f"module-crew 命令入口：`{ROOT / 'bin' / 'module-crew'}`（版本 {self.version}）"
+        # crew-command-entry decision 6 (0.12.1): the store has a fixed launcher, so the hook names it
+        self.line = (f"module-crew 命令入口：`{launcher.entry(self.db.path)}`（固定入口，转到本机当前安装的 module-crew；"
+                     f"本次钩子来自版本 {self.version}）")
 
     def test_every_role_every_source(self):
         n = tasks.add(self.db, self.repo, "feature", "改文档", "补一段说明", ["docs/t.md"], "说明写好", "加一段说明").number
@@ -42,7 +44,8 @@ class HookEntryTest(MergeCase):
         fake = plugin_dir(self.tmp / "plugin", None)
         with mock.patch.object(hooks, "PLUGIN_ROOT", fake):
             text = hooks.session_start(self.wt["b"], "startup")
-        self.assertIn(f"module-crew 命令入口：`{fake / 'bin' / 'module-crew'}`（版本未知）", text)
+        self.assertIn(f"module-crew 命令入口：`{launcher.entry(self.db.path)}`（固定入口，转到本机当前安装的 module-crew；"
+                      "本次钩子来自未知版本）", text)
         self.assertIn("模块 b", text)
 
     def test_skills_and_kickoffs_name_no_path(self):
@@ -102,7 +105,7 @@ class StatusVersionTest(MergeCase):
         before = sorted((p, p.stat().st_mtime_ns) for p in db.path.rglob("*") if p.is_file())
         self.assertEqual(probe.run(self.repo).store["permissionsStale"], [str(settings)])
         self.assertEqual(sorted((p, p.stat().st_mtime_ns) for p in db.path.rglob("*") if p.is_file()), before)
-        settings.write_text(json.dumps({"permissions": {"allow": [f"Bash({permissions.CREW_BIN} *)"]}}))
+        settings.write_text(json.dumps({"permissions": {"allow": [f"Bash({launcher.entry(db.path)} *)"]}}))   # 0.12.1
         self.assertEqual(probe.run(self.repo).store["permissionsStale"], [])
 
 
