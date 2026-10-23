@@ -118,7 +118,8 @@ class HostCheckCoordinatorTest(CodexCoordCase):
         """A module worktree keeps the module-session checks, now with role 'dev'."""
         doc = json.loads(self.cli("host-check", "--json", cwd=self.wt["b"]).stdout)
         self.assertEqual(doc["role"], "dev")
-        self.assertEqual([c["id"] for c in doc["checks"]], ["store", "registered", "version", "git-writable"])
+        self.assertEqual([c["id"] for c in doc["checks"]], ["store", "registered", "version", "git-writable",
+                                                          "commit-hooks"])   # S22
 
 
 SANDBOX = "Codex 沙箱不让写 git 目录：请申请在沙箱外运行这条命令"
