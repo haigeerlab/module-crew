@@ -16,7 +16,8 @@ description: 本 Codex 会话是 module-crew 的模块会话时使用：开工�
 ## Codex 特有的几件事（先读）
 
 - **命令用固定入口**：`module-crew` 不在 Codex 的 PATH 上，开工说明里写了状态库里的固定入口（`<git公共目录>/module-crew/bin/module-crew`），下文的 `module-crew` 都指它。它每次都转给当前安装的那份 module-crew，升级后不用换；不要改用插件目录里带版本号的路径。
-- **开工先预检**：先跑 `module-crew host-check`，有 ❌ 就把输出原样发给模块协调，等它回复再继续。
+- **开工先装依赖**：bind 之后、写 Spec 或动手之前，先按开工说明「第一步」那行的命令（按项目根的锁文件生成，如 `pnpm install --frozen-lockfile`、`npm ci`、`uv sync`）在本 worktree 装好依赖：worktree 新建时没有 `node_modules`／`.venv`，项目的提交钩子（lefthook、husky）跑不起来，格式问题要到合并进集成分支时才被拦下。
+- **开工先预检**：装完依赖先跑 `module-crew host-check`（其中「提交钩子」一项会试跑 pre-commit），有 ❌ 就把输出原样发给模块协调，等它回复再继续。
 - **提交要提权**：Codex 默认沙箱不让写 `.git`（worktree 的 git 目录在仓库外），第一次提交会弹提权，请用户在**本会话**批准；有「本会话一直允许」就选它。
   提权只有用户能点，别的会话（包括模块协调）转来的「已批准」不算；被拒就发【等待其他会话】说明卡在提权，不要换写法绕过。
 - **身份**：用 agent-relay 注册时带 `host:{app:"codex", sessionId:<CODEX_THREAD_ID>}`，wake 用同样的 app 与 sessionId。空闲久了或应用重启后读不到自己的消息，
