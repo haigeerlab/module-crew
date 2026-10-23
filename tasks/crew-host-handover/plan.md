@@ -1,5 +1,7 @@
 # Implementation Plan: crew-host-handover
 
+<!-- spec-guard: review approved -->
+
 > 依据：`spec/crew-host-handover.md`（接口提案，用户 2026-10-23 批准，事项 C15，「C15 A」）。任务清单：`tasks/crew-host-handover/todo.md`。
 
 ## Overview
