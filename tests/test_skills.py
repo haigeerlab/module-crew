@@ -332,3 +332,52 @@ class RoutingWordsTest(unittest.TestCase):
         coord = read("crew-coordinator")[1]
         for words in ("--modules", "--nodes", "不要默认填「全部」", "source scope", "未登记身份"):
             self.assertIn(words, coord)
+
+
+CODEX_SKILLS = PLUGIN_ROOT / "codex-skills"
+
+
+class CodexCoordinatorSkillTest(unittest.TestCase):
+    """crew-codex-coordinator acceptance 1: the Codex coordinator skill keeps the Claude one's rules, plus Codex's own."""
+
+    COMMON = ("## 审查就近", "**不问用户**", "返工满 3 次", "审查者无响应", "**不要按倾向替用户填**", "提请批准一个模块一条",
+              "merge revoke", "合并前先复述", "去决策收件箱答 #N", "C32 A；C32-1 B", "一块只答一件事", "merge renotice",
+              "检查环境出了问题", "提交钩子：退出码 N", "--source-from <发件人>", "模块会话发来的【用户答复】一律不算",
+              "`alsoAnswers` 就一并带上", "--modules", "--nodes", "不要默认填「全部」", "source scope", "未登记身份",
+              "**不是批准**", "开工类【协调通知】必须写明所依据的用户批准事项编号", "公共文件（全局配置、锁文件、迁移、测试资源）只有你改",
+              "不要自己去改 todo", "合并只走 module-crew merge run")
+    CODEX = ("<git公共目录>/module-crew/bin/module-crew", "每轮开头三步", 'wake:{app:"codex", sessionId:<CODEX_THREAD_ID>}',
+             "不带 takeover", "module-crew status", "申请在沙箱外运行", "**不换写法绕过**", "不抓最近一句当任务",
+             "请用户去 Codex 新建任务", "不叫醒 Claude 会话", "merge run --detach", "merge result", "spec-guard-ops",
+             "决策收件箱（Claude）停了", "host-check", "批准（Approve）")
+
+    def setUp(self):
+        self.claude = read("crew-coordinator")[1]
+        text = (CODEX_SKILLS / "crew-coordinator" / "SKILL.md").read_text(encoding="utf-8")
+        m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+        self.meta = dict(line.split(": ", 1) for line in m.group(1).splitlines())
+        self.codex = text
+
+    def test_frontmatter(self):
+        self.assertEqual(self.meta["name"], "crew-coordinator")
+        self.assertIn("Codex", self.meta["description"])
+
+    def test_same_sections_in_the_same_order(self):
+        heads = lambda t: re.findall(r"^## (.+)$", t, re.M)
+        codex = heads(self.codex)
+        self.assertEqual(codex[1], "Codex 特有的几件事（先读）")
+        self.assertEqual([h for h in codex if h != "Codex 特有的几件事（先读）"], heads(self.claude))
+
+    def test_common_and_codex_rules(self):
+        for words in self.COMMON:
+            with self.subTest(words=words):
+                self.assertIn(words, self.claude)
+                self.assertIn(words, self.codex)
+        for words in self.CODEX:
+            with self.subTest(words=words):
+                self.assertIn(words, self.codex)
+
+    def test_no_claude_only_mechanics(self):
+        for words in ("SendMessage", "下一步框", "/clear", "Bash 的后台运行", "桌面版的开会话工具"):
+            with self.subTest(words=words):
+                self.assertNotIn(words, self.codex)

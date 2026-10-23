@@ -80,6 +80,10 @@ def _status(as_json: bool) -> int:
     if as_json:
         print(json.dumps(report.to_json(), ensure_ascii=False, indent=2))
         return 3 if report.blocked else 0
+    me = (report.store or {}).get("codexSelf")          # crew-codex-coordinator: Codex has no hook to say who this is
+    if me:
+        print(f"本会话是模块协调 {me['name']}（Codex）：没有钩子，以下按状态库为准" if me["registered"]
+              else "本线程不是登记的模块协调，不要按模块协调行事")
     print("体检")
     for c in report.checks.values():
         line = f"  {_STATE_ICON[c.state]} {c.id}：{c.reason}"
@@ -128,6 +132,9 @@ def _status(as_json: bool) -> int:
     if stale:
         print(f"  ⚠️ 权限规则只放行别的 module-crew 路径，当前入口会弹权限框：{'、'.join(stale)}；"
               "经用户原话再跑 module-crew permissions apply 补放行当前入口")
+    done = (report.store or {}).get("mergeResult")
+    if done and not done["read"]:          # crew-codex-coordinator: a detached merge ended, nobody read it yet
+        print(f"  合并 C{done['approval']} 已结束，运行 merge result 取通知")
     lock = (report.store or {}).get("mergeLock")
     if lock:
         took = f"已跑 {lock['minutes']} 分钟" if lock["minutes"] is not None else "开始时间读不出"
@@ -164,7 +171,8 @@ def _status(as_json: bool) -> int:
     else:
         print(f"  模块 {m['done']}/{m['total']} 完成；spec-guard 当前：{m['activeModule'] or '无'}；spec-guard 进行中：{'、'.join(m['inProgress']) or '无'}")
         print("  （这是 spec-guard 按能力图算出的进度；由 module-crew 开工的模块见上面的「会话与待办」）")
-    print("模块协调：Claude 桌面版；模块会话：Claude 或 Codex 桌面版")
+    print("模块协调：Codex 桌面版；模块会话：Codex 桌面版" if (report.store or {}).get("coordinatorHost") == "codex-desktop"
+          else "模块协调：Claude 桌面版；模块会话：Claude 或 Codex 桌面版")
     cadence, source, via_map = start.cadence_info(".", report.map)
     if via_map:
         print(f"评审节奏：{cadence}（来源：{source}，读自 spec-guard /map）")
@@ -252,10 +260,14 @@ def _task(args) -> int:
                 return 0
             print(f"已派出 T{d.number}：worktree {d.worktree}（分支 {d.branch}），邮箱名 {d.relay}")
             print(f"开工说明：{d.kickoff_path}")
-            print("下一步：用桌面版在这个 worktree 开新会话，第一条消息用开工说明全文；"
-                  "这一轮是被别的会话消息叫醒的就只能出卡片，等用户点开")
+            on_codex = handover.coordinator_host(db) == "codex-desktop"
+            if not on_codex:
+                print("下一步：用桌面版在这个 worktree 开新会话，第一条消息用开工说明全文；"
+                      "这一轮是被别的会话消息叫醒的就只能出卡片，等用户点开")
             for line in d.lines:
                 print(line)
+            if on_codex:
+                print("\n".join(start.codex_open_lines([(f"T{d.number}", d.worktree, d.kickoff_path)])))
             return 0
         if args.action == "next":
             promoted = tasks.next_ready(db, ".")
@@ -401,6 +413,9 @@ def _start_prepare(modules: list[str], original: str | None, original_file: str 
         print(f"{p['id']}：worktree {p['worktree']}（分支 {p['branch']}），邮箱名 {p['relayName']}，开工说明 {p['kickoffPath']}，{p.get('role', '角色标记未设')}")
         if p.get("host") == "codex-desktop":
             print(f"  宿主：Codex 桌面版（用户手动在 Codex 里开任务，工作目录选 {p['worktree']}，第一条消息用开工说明全文）")
+    from module_crew import handover
+    if res.prepared and handover.coordinator_host(store.open_store()) == "codex-desktop":
+        print("\n".join(start.codex_open_lines([(p["id"], str(p["worktree"]), str(p["kickoffPath"])) for p in res.prepared])))
     return res.code
 
 
@@ -658,13 +673,35 @@ def _merge(args) -> int:
                 print(plan.body)
         return plan.code
     if args.action == "run":
-        res = merge.run(".", args.check_command, args.replace_check)
+        adopted = None
+        if args.detached_child:           # crew-codex-coordinator: the child `merge run --detach` started
+            fd = os.environ.get(merge.LOCK_FD_ENV, "")
+            if not fd.isdigit():
+                print("❌ --detached-child 只给 merge run --detach 起的后台进程用", file=sys.stderr)
+                return 2
+            from module_crew import mergelock
+            adopted = mergelock.adopt(store.open_store(), int(fd))
+        res = merge.run(".", args.check_command, args.replace_check, detach=args.detach, adopted=adopted)
         for line in res.lines:
             print(line)
         for x in res.sends:
             print(f"发送 【协调通知】（{x['kind']}）→ {x['to']}，正文文件：{x['path']}")
             _sent(x['to'])
+        if adopted is not None:
+            _DETACHED.update(approval=adopted.approval, code=res.code)
         return res.code
+    if args.action == "result":            # crew-codex-coordinator decision 6
+        got = merge.result(store.open_store(), args.number, args.wait)
+        info = got.info or {}
+        if args.json:
+            print(json.dumps({"approval": info.get("approval"), "unit": info.get("unit"), "running": got.code == 6,
+                              "exitCode": info.get("exitCode"), "finishedAt": info.get("finishedAt"),
+                              "log": info.get("log"), "output": got.output}, ensure_ascii=False, indent=2))
+        elif got.output is not None:
+            sys.stdout.write(got.output)
+        else:
+            print("\n".join(got.lines), file=sys.stderr if got.code == 3 else sys.stdout)
+        return got.code
     if args.action == "renotice":
         try:
             note = merge.renotice(store.open_store(), args.number, args.kind)
@@ -838,11 +875,27 @@ def _merge_lock_guard(args) -> int | None:
     return None
 
 
+_DETACHED: dict = {}     # the outcome of a detached `merge run` child, recorded once its output is all printed
+
+
 def main(argv: list[str] | None = None) -> int:
     _SENT.clear()
-    code = _main(argv)
+    _DETACHED.clear()
+    try:
+        code = _main(argv)
+    except PermissionError as exc:          # crew-codex-coordinator decision 2: Codex's sandbox refused a store write
+        hint = probe.sandbox_hint(str(exc))
+        if hint is None:
+            raise
+        print(f"❌ 写不了：{exc}\n   {hint}", file=sys.stderr)
+        return 1
     if _SENT and "--json" not in (argv if argv is not None else sys.argv[1:]):
         _remind()
+    if _DETACHED:                         # crew-codex-coordinator: the log is complete before the result says it is
+        from module_crew import mergelock
+        sys.stdout.flush()
+        mergelock.record_result(store.open_store(), _DETACHED["approval"], _DETACHED["code"],
+                                os.environ.get(merge.LOG_ENV, ""))
     return code
 
 
@@ -934,6 +987,12 @@ def _main(argv: list[str] | None = None) -> int:
     mr = mgs.add_parser("run")
     mr.add_argument("--check-command")
     mr.add_argument("--replace-check", action="store_true")
+    mr.add_argument("--detach", action="store_true", help="交给后台运行、立即返回（Codex 用；跑完用 merge result 取结果）")
+    mr.add_argument("--detached-child", action="store_true", help=argparse.SUPPRESS)
+    mres = mgs.add_parser("result", help="取 merge run --detach 后台合并的结果与通知（只读）")
+    mres.add_argument("number", nargs="?", type=refs.parse)
+    mres.add_argument("--wait", type=float, default=0, help="最多等这么多分钟（上限 8）")
+    mres.add_argument("--json", action="store_true")
     rn2 = mgs.add_parser("renotice", help="按另一种原因重发退回通知（模块协调判断，不需要用户原话）")
     rn2.add_argument("number", type=refs.parse)
     kg = rn2.add_mutually_exclusive_group(required=True)
@@ -1178,7 +1237,7 @@ def _run(args) -> int:
         from module_crew import hostcheck
         rep = hostcheck.run(".")
         if args.json:
-            print(json.dumps({"checks": rep.checks, "module": rep.module, "host": rep.host}, ensure_ascii=False, indent=2))
+            print(json.dumps({"checks": rep.checks, "module": rep.module, "host": rep.host, "role": rep.role}, ensure_ascii=False, indent=2))
         else:
             print("\n".join(hostcheck.render(rep)))
         return rep.code
