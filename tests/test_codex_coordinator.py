@@ -4,7 +4,9 @@ import io
 import json
 import os
 import re
+import signal
 import subprocess
+import time
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
@@ -14,7 +16,7 @@ from helpers import MergeCase, spec_guard_interface
 from test_session_handover import WRITES
 
 from module_crew import __main__ as cli
-from module_crew import hooks, probe, store
+from module_crew import hooks, merge, mergelock, probe, store
 
 SESSION_VARS = ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")
 
@@ -226,6 +228,76 @@ class CodexCoordinatorCommandsTest(CodexCoordCase):
         self.assertEqual(store.get(self.db, "session", "shop-d")["host"], "codex-desktop")
         r = self.cli("coordinator", "down", "--original", "关")
         self.assertNotEqual(r.returncode, 7, r.stdout + r.stderr)
+
+
+def wait_until(cond, timeout=60.0):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if cond():
+            return True
+        time.sleep(0.2)
+    return False
+
+
+class DetachCase(MergeCase):
+    """A final acceptance for b approved and queued; the full check sleeps so the merge outlives the parent."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        self.number = self.approve_final("b", 31)
+
+    def detach(self, sleep=3.0, fail_if=None):
+        return self.run_cli("merge", "run", "--check-command", self.check_script(fail_if=fail_if, sleep=sleep), "--detach")
+
+    def info(self):
+        return json.loads((self.db.path / mergelock.INFO).read_text(encoding="utf-8"))
+
+
+class DetachTest(DetachCase):
+    """Acceptance 4: start, lock and a killed child."""
+
+    def test_parent_returns_at_once_child_holds_the_lock(self):
+        began = time.monotonic()
+        r = self.detach(sleep=4)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertLess(time.monotonic() - began, 4)
+        log = self.db.path / "merge-output" / f"C{self.number}.log"
+        self.assertIn(f"C{self.number}", r.stdout)
+        self.assertIn(str(log), r.stdout)
+        self.assertTrue(mergelock.locked(self.db))
+        self.assertNotEqual(self.info()["pid"], os.getpid())
+        self.assertEqual(self.run_cli("merge", "run", "--check-command", "python3 -c pass").returncode, 6)
+        self.assertEqual(self.run_cli("coordinator", "down", "--original", "关").returncode, 6)
+        self.assertTrue(wait_until(lambda: "exitCode" in self.info()))      # written just after the lock goes
+        self.assertFalse(mergelock.locked(self.db))
+        info = self.info()
+        self.assertEqual((info["running"], info["approval"], info["exitCode"], info["resultRead"]),
+                         (False, self.number, 0, False))
+        self.assertEqual(info["log"], str(log))
+        self.assertTrue(log.read_text(encoding="utf-8"), (info, sorted(p.name for p in log.parent.iterdir())))
+        self.assertEqual(merge.queue(self.repo), [])
+
+    def test_refusals_start_nothing(self):
+        r = self.run_cli("merge", "run", "--check-command", "python3 -c pass")      # empties the queue
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = self.detach()
+        self.assertEqual(r.returncode, 3)
+        self.assertFalse((self.db.path / "merge-output").exists())
+
+    def test_killed_child_leaves_a_stale_lock(self):
+        self.assertEqual(self.detach(sleep=30).returncode, 0)
+        self.assertTrue(wait_until(lambda: self.info().get("detached")))      # the child has taken the lock over
+        pid = self.info()["pid"]
+        os.kill(pid, signal.SIGKILL)
+        self.assertTrue(wait_until(lambda: not mergelock.locked(self.db)))
+        self.assertTrue(self.info()["running"])
+        self.assertIn("失效", self.run_cli("status").stdout)
+
+    def test_child_entry_needs_the_lock(self):
+        r = self.run_cli("merge", "run", "--check-command", "python3 -c pass", "--detached-child")
+        self.assertEqual(r.returncode, 2)
+        self.assertEqual(len(merge.queue(self.repo)), 1)
 
 
 class StatusClaudeCoordinatorTest(MergeCase):

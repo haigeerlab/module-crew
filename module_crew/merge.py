@@ -252,23 +252,27 @@ def _notice(tx, db: store.Store, result: RunResult, to: str, kind: str, basis: s
     result.sends.append({"to": to, "kind": kind, "body": body, "path": db.path / meta["path"]})
 
 
-def run(project: str | os.PathLike, check_command: str | None = None, replace: bool = False) -> RunResult:
+def run(project: str | os.PathLike, check_command: str | None = None, replace: bool = False,
+        detach: bool = False, adopted=None) -> RunResult:
     """Merge the head of the queue, run the full check, and reset or abort on failure.
 
-    crew-background-checks: one merge at a time — the merge lock is taken before anything is touched and always let go."""
+    crew-background-checks: one merge at a time — the merge lock is taken before anything is touched and always let go.
+    crew-codex-coordinator: `detach` hands the merge, lock and all, to a child process once the lock is taken and
+    returns at once; that child runs this again with the lock it was given (`adopted`)."""
     from module_crew import mergelock
     project = Path(project)
     db = store.open_store(project)
     rows = queue(project)
+    note = None
     if not rows:
+        if adopted is not None:
+            mergelock.release(db, adopted)
         return RunResult(3, ["合并队列是空的"])
-    if mergelock.read(db) is not None or mergelock.locked(db):
+    if adopted is None and (mergelock.read(db) is not None or mergelock.locked(db)):
         reason, note = mergelock.guard(db, project)
         if reason:
             return RunResult(6, [reason])
-    else:
-        note = None
-    holder: dict = {}
+    holder: dict = {"lock": adopted, "detach": detach, "args": (check_command, replace)}
     try:
         result = _run(project, check_command, replace, holder)
     finally:
@@ -277,6 +281,39 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
     if note:
         result.lines.insert(0, note)
     return result
+
+
+LOCK_FD_ENV = "MODULE_CREW_MERGE_LOCK_FD"
+LOG_ENV = "MODULE_CREW_MERGE_LOG"
+
+
+def log_path(db: store.Store, approval: int) -> Path:
+    return db.path / "merge-output" / f"C{approval}.log"
+
+
+def _hand_off(project: Path, db: store.Store, n: int, unit: str, lock, check_command: str | None,
+              replace: bool) -> RunResult:
+    """crew-codex-coordinator decision 6: Codex cannot wake the coordinator when a background command ends, so the
+    merge goes on in a child of its own session (the lock passes with it) and its output lands in the store."""
+    from module_crew import mergelock
+    log = log_path(db, n)
+    log.parent.mkdir(exist_ok=True)
+    argv = [str(probe.RUNNING_ROOT / "bin" / "module-crew"), "merge", "run", "--detached-child"]
+    if check_command:
+        argv += ["--check-command", check_command]
+    if replace:
+        argv.append("--replace-check")
+    env = {**os.environ, LOCK_FD_ENV: str(lock.fd), LOG_ENV: str(log)}
+    with open(log, "wb") as out:
+        subprocess.Popen(argv, cwd=project, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                         pass_fds=(lock.fd,), start_new_session=True)
+    mergelock.hand_off(lock)
+    with db.transaction(actor="merge") as tx:
+        rec = tx.get("item", str(n)) or {}
+        tx.put("item", str(n), {**rec, "detached": {"log": str(log), "at": store.now()}}, action="merge-detached")
+    return RunResult(0, [f"合并 C{n}（{unit}）已交给后台运行，输出写在 {log}",
+                         f"跑完后运行 module-crew merge result C{n} 取结果与通知（还在跑时退出码 6，可加 --wait <分钟> 分段等）"],
+                     approval=n)
 
 
 def _run(project: Path, check_command: str | None, replace: bool, holder: dict) -> RunResult:
@@ -305,10 +342,12 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
     if problems:
         return RunResult(3, [f"C{n}（{unit}）没有合并："] + problems, approval=n)
     from module_crew import mergelock      # taken only once the checklist passed: a refusal writes nothing
-    lock = mergelock.acquire(db, n, unit)
+    lock = holder.get("lock") or mergelock.acquire(db, n, unit)
     if isinstance(lock, mergelock.Held):
         return RunResult(6, [mergelock.describe(lock.info) + "，等它结束再做"], approval=n)
     holder["lock"] = lock
+    if holder.get("detach"):
+        return _hand_off(project, db, n, unit, lock, *holder["args"])
     if pending_write:
         _write_config(db, cfg)
 

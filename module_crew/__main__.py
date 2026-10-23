@@ -663,12 +663,22 @@ def _merge(args) -> int:
                 print(plan.body)
         return plan.code
     if args.action == "run":
-        res = merge.run(".", args.check_command, args.replace_check)
+        adopted = None
+        if args.detached_child:           # crew-codex-coordinator: the child `merge run --detach` started
+            fd = os.environ.get(merge.LOCK_FD_ENV, "")
+            if not fd.isdigit():
+                print("❌ --detached-child 只给 merge run --detach 起的后台进程用", file=sys.stderr)
+                return 2
+            from module_crew import mergelock
+            adopted = mergelock.adopt(store.open_store(), int(fd))
+        res = merge.run(".", args.check_command, args.replace_check, detach=args.detach, adopted=adopted)
         for line in res.lines:
             print(line)
         for x in res.sends:
             print(f"发送 【协调通知】（{x['kind']}）→ {x['to']}，正文文件：{x['path']}")
             _sent(x['to'])
+        if adopted is not None:
+            _DETACHED.update(approval=adopted.approval, code=res.code)
         return res.code
     if args.action == "renotice":
         try:
@@ -843,8 +853,12 @@ def _merge_lock_guard(args) -> int | None:
     return None
 
 
+_DETACHED: dict = {}     # the outcome of a detached `merge run` child, recorded once its output is all printed
+
+
 def main(argv: list[str] | None = None) -> int:
     _SENT.clear()
+    _DETACHED.clear()
     try:
         code = _main(argv)
     except PermissionError as exc:          # crew-codex-coordinator decision 2: Codex's sandbox refused a store write
@@ -855,6 +869,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if _SENT and "--json" not in (argv if argv is not None else sys.argv[1:]):
         _remind()
+    if _DETACHED:                         # crew-codex-coordinator: the log is complete before the result says it is
+        from module_crew import mergelock
+        sys.stdout.flush()
+        mergelock.record_result(store.open_store(), _DETACHED["approval"], _DETACHED["code"],
+                                os.environ.get(merge.LOG_ENV, ""))
     return code
 
 
@@ -946,6 +965,8 @@ def _main(argv: list[str] | None = None) -> int:
     mr = mgs.add_parser("run")
     mr.add_argument("--check-command")
     mr.add_argument("--replace-check", action="store_true")
+    mr.add_argument("--detach", action="store_true", help="交给后台运行、立即返回（Codex 用；跑完用 merge result 取结果）")
+    mr.add_argument("--detached-child", action="store_true", help=argparse.SUPPRESS)
     rn2 = mgs.add_parser("renotice", help="按另一种原因重发退回通知（模块协调判断，不需要用户原话）")
     rn2.add_argument("number", type=refs.parse)
     kg = rn2.add_mutually_exclusive_group(required=True)

@@ -78,6 +78,35 @@ def acquire(db: store.Store, approval: int, unit: str) -> Lock | Held:
     return Lock(approval, unit, fd)
 
 
+def adopt(db: store.Store, fd: int) -> Lock:
+    """crew-codex-coordinator: the detached child takes over the lock its parent took (the same open file, inherited)."""
+    info = read(db) or {}
+    _write(db, {**info, "pid": os.getpid(), "detached": True})
+    return Lock(info.get("approval"), info.get("unit"), fd)
+
+
+def hand_off(lock: Lock) -> None:
+    """The parent's copy of a lock it handed to a detached child: closed without letting the lock go."""
+    os.close(lock.fd)
+    lock.fd = -1
+
+
+def record_result(db: store.Store, approval: int, code: int, log: str) -> None:
+    """A detached merge's outcome, kept for `merge result`; only on its own, finished record (never deleted)."""
+    info = last(db)
+    if info is None or info.get("running") or info.get("approval") != approval:
+        return
+    _write(db, {**info, "exitCode": code, "finishedAt": store.now(), "log": log, "resultRead": False})
+
+
+def last(db: store.Store) -> dict | None:
+    """The record as written, running or not."""
+    try:
+        return json.loads((db.path / INFO).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
 def release(db: store.Store, lock: Lock) -> None:
     if lock.fd < 0:
         return

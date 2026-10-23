@@ -7,7 +7,7 @@
 - [x] Task 3：沙箱拒绝与找不到插件的补句（Spec 验收 8）——测试先红后绿；只在 Codex 里加补句（Claude 上原样报错）；`index.lock` 只认 Permission denied，File exists 是另一个 git 进程、不是沙箱，不加提示
 - [x] Task 4：模块协调在 Codex 时各协调命令照常可用（Spec 验收 3）——写命令守门认 Codex 线程（登记的放行、别的线程退出码 7 且不写），review add → merge approve → merge run → merge cleanup、start prepare、coordinator down 从 Codex 线程跑通；现有代码已支持，未改代码，测试作为回归保留
 - [x] Checkpoint 1（report）：Codex 协调认得出自己、查得出障碍——test_codex_coordinator 与 session_handover、host_handover、codex_host、background_checks 共 97 个测试通过
-- [ ] Task 5：拆 `merge.run`，加 `merge run --detach`（Spec 验收 4 启动、锁、被杀部分）
+- [x] Task 5：拆 `merge.run`，加 `merge run --detach`（Spec 验收 4 启动、锁、被杀部分）——测试先红后绿；没有整段拆函数，改为 `_run` 在拿到锁后按 `detach` 交给子进程（`pass_fds` 交锁、新会话、输出进 `merge-output/C号.log`），子进程以 `--detached-child` 接管同一把锁再跑一遍，前台路径不变（合并相关已有测试全过）；结果在全部输出刷盘后才写回；交给后台记在批准事项上（事件 `item.merge-detached`，Spec 写的 `merge.detached` 不符合「种类.动作」，随最终验收报）
 - [ ] Task 6：`merge result` 与 `status` 的结果提示（Spec 验收 4 结果部分、5）
 - [ ] Task 7：开工输出的 Codex 指引与交接说明补句（Spec 验收 9、2 说明部分）
 - [ ] Checkpoint 2（report）：命令层做完，全量测试通过
