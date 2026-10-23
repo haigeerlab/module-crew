@@ -234,6 +234,31 @@ class SightingTest(ReviewCase):
         self.assertIsNone(store.get(self.db, "sighting", "sid-busy"))
 
 
+class SightingThenBindTest(ReviewCase):
+    """T1 (S7): a conversation sighted before it was bound is no longer counted as unregistered."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+
+    def test_bind_clears_own_sighting(self):
+        self.assertTrue(hooks.sight(self.db, "sid-b", str(self.wt["b"])))
+        hooks.bind(self.db, "shop-b", "sid-b", self.wt["b"])
+        self.assertEqual(store.get(self.db, "sighting", "sid-b")["boundAs"], "shop-b")
+        self.assertEqual(json.loads(self.run_cli("status", "--json").stdout)["store"]["sightings"]["count"], 0)
+        self.assertIsNone(hooks.tell_sightings(self.db))
+
+    def test_stale_sighting_of_bound_session_ignored(self):
+        # a sighting left from before the fix: the session is bound but its record is still there
+        hooks.bind(self.db, "shop-b", "sid-b", self.wt["b"])
+        hooks.sight(self.db, "sid-b", str(self.wt["b"]))
+        self.assertEqual(json.loads(self.run_cli("status", "--json").stdout)["store"]["sightings"]["count"], 0)
+        self.assertIn("没登记的会话：0 个", self.run_cli("status").stdout)
+        self.assertIsNone(hooks.tell_sightings(self.db))
+        self.assertNotIn("没登记的会话", run("prompt", self.repo, "sid-coord"))
+
+
 class ClearHandoverTest(ReviewCase):
     """Acceptance 8, in the order measured on 2026-10-22: SessionEnd(old, clear) then SessionStart(new, clear)."""
 

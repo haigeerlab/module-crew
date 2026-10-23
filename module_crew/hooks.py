@@ -308,18 +308,32 @@ def _age(at: str, now: float) -> float:
 def sight(db: store.Store, session_id: str, cwd: str, now: str | None = None) -> bool:
     """Record a conversation that is not a registered session; True only the first time (so it is reminded once)."""
     with db.transaction(actor="hook", wait=HOOK_WAIT) as tx:
-        if tx.get("sighting", session_id) is not None:
+        old = tx.get("sighting", session_id)
+        if old is not None and not old.get("boundAs"):
             return False
         tx.put("sighting", session_id, {"cwd": os.path.realpath(cwd), "branch": _branch_here(cwd),
                                         "firstSeen": now or store.now(), "told": False}, action="sighted")
     return True
 
 
+def unregistered(sightings: dict, sessions: dict) -> dict:
+    """Sightings of conversations still not registered: not cleared by bind, not the host session of an active one (T1)."""
+    bound = {(s.get("hostSession") or {}).get("sessionId") for s in sessions.values() if s.get("status") == "active"}
+    return {k: v for k, v in sightings.items() if not v.get("boundAs") and k not in bound}
+
+
+def _clear_sighting(tx, session_id: str, name: str) -> None:
+    """bind: the conversation is registered now; mark its sighting cleared (the store keeps no deletes)."""
+    seen = tx.get("sighting", session_id)
+    if seen is not None and not seen.get("boundAs"):
+        tx.put("sighting", session_id, {**seen, "boundAs": name}, action="cleared")
+
+
 def tell_sightings(db: store.Store) -> str | None:
     """For the coordinator: conversations seen but not yet told about, then mark them told."""
     with db.transaction(actor="hook", wait=HOOK_WAIT) as tx:
-        fresh = sorted(((k, v) for k, v in tx.records("sighting").items() if not v.get("told")),
-                       key=lambda kv: kv[1].get("firstSeen") or "")
+        fresh = sorted(((k, v) for k, v in unregistered(tx.records("sighting"), tx.records("session")).items()
+                        if not v.get("told")), key=lambda kv: kv[1].get("firstSeen") or "")
         for k, v in fresh:
             tx.put("sighting", k, {**v, "told": True}, action="told")
     if not fresh:
@@ -548,6 +562,7 @@ def bind(db: store.Store, name: str, session_id: str | None, cwd: str | os.PathL
             raise BindRefused(f"{name} 已登记为另一个会话：换会话要先请用户同意接管（模块协调运行 module-crew takeover {name}）")
         data = {"sessionId": session_id, **({"original": original} if coordinator else {})}
         tx.put("session", name, {**rec, "hostSession": identity(session_id)}, action="bound", data=data)
+        _clear_sighting(tx, session_id, name)
     if rec.get("role") == "task":
         from module_crew import tasks
         tasks.bound(db, name)
@@ -569,6 +584,7 @@ def _take_over(db: store.Store, name: str, rec: dict, session_id: str, original:
             prev = (prev + [{"sessionId": old, "at": store.now()}])[-PREVIOUS_KEPT:]
         tx.put("session", name, {**rec, "hostSession": identity(session_id), "previousSessions": prev}, action="taken-over",
                data={"original": original, "at": store.now(), "oldSessionId": old, "newSessionId": session_id})
+        _clear_sighting(tx, session_id, name)
     return (f"已接管：本会话就是模块协调 {name}" + (f"，原来的会话 {old} 从现在起不能再执行模块协调的写命令" if old else "")
             + f"。请在本会话用同一个名字调用 agent-relay 的 bridge_register（name: \"{name}\"，按提示传接管参数），再跑 module-crew status。")
 
