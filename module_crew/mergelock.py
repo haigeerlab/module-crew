@@ -81,8 +81,13 @@ def acquire(db: store.Store, approval: int, unit: str) -> Lock | Held:
 def adopt(db: store.Store, fd: int) -> Lock:
     """crew-codex-coordinator: the detached child takes over the lock its parent took (the same open file, inherited)."""
     info = read(db) or {}
-    _write(db, {**info, "pid": os.getpid(), "detached": True})
+    _write(db, {**info, "pid": os.getpid(), "detached": True, "adopted": True})
     return Lock(info.get("approval"), info.get("unit"), fd)
+
+
+def mark_detached(db: store.Store) -> None:
+    """Written by the parent before the child starts, so `merge result` never mistakes it for a foreground merge."""
+    _write(db, {**(read(db) or {}), "detached": True})
 
 
 def hand_off(lock: Lock) -> None:
@@ -99,6 +104,16 @@ def record_result(db: store.Store, approval: int, code: int, log: str) -> None:
     _write(db, {**info, "exitCode": code, "finishedAt": store.now(), "log": log, "resultRead": False})
 
 
+def mark_read(db: store.Store, info: dict) -> None:
+    _write(db, {**info, "resultRead": True})
+
+
+def finished_unread(db: store.Store) -> dict | None:
+    """A detached merge that ended and whose result nobody read yet."""
+    info = last(db)
+    return info if info and info.get("detached") and "exitCode" in info and not info.get("resultRead") else None
+
+
 def last(db: store.Store) -> dict | None:
     """The record as written, running or not."""
     try:
@@ -110,7 +125,8 @@ def last(db: store.Store) -> dict | None:
 def release(db: store.Store, lock: Lock) -> None:
     if lock.fd < 0:
         return
-    _write(db, {"running": False, "approval": lock.approval, "unit": lock.unit, "endedAt": store.now()})
+    detached = {"detached": True} if (read(db) or {}).get("detached") else {}
+    _write(db, {"running": False, "approval": lock.approval, "unit": lock.unit, "endedAt": store.now(), **detached})
     fcntl.flock(lock.fd, fcntl.LOCK_UN)
     os.close(lock.fd)
     lock.fd = -1

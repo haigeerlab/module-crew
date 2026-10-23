@@ -132,6 +132,9 @@ def _status(as_json: bool) -> int:
     if stale:
         print(f"  ⚠️ 权限规则只放行别的 module-crew 路径，当前入口会弹权限框：{'、'.join(stale)}；"
               "经用户原话再跑 module-crew permissions apply 补放行当前入口")
+    done = (report.store or {}).get("mergeResult")
+    if done and not done["read"]:          # crew-codex-coordinator: a detached merge ended, nobody read it yet
+        print(f"  合并 C{done['approval']} 已结束，运行 merge result 取通知")
     lock = (report.store or {}).get("mergeLock")
     if lock:
         took = f"已跑 {lock['minutes']} 分钟" if lock["minutes"] is not None else "开始时间读不出"
@@ -680,6 +683,18 @@ def _merge(args) -> int:
         if adopted is not None:
             _DETACHED.update(approval=adopted.approval, code=res.code)
         return res.code
+    if args.action == "result":            # crew-codex-coordinator decision 6
+        got = merge.result(store.open_store(), args.number, args.wait)
+        info = got.info or {}
+        if args.json:
+            print(json.dumps({"approval": info.get("approval"), "unit": info.get("unit"), "running": got.code == 6,
+                              "exitCode": info.get("exitCode"), "finishedAt": info.get("finishedAt"),
+                              "log": info.get("log"), "output": got.output}, ensure_ascii=False, indent=2))
+        elif got.output is not None:
+            sys.stdout.write(got.output)
+        else:
+            print("\n".join(got.lines), file=sys.stderr if got.code == 3 else sys.stdout)
+        return got.code
     if args.action == "renotice":
         try:
             note = merge.renotice(store.open_store(), args.number, args.kind)
@@ -967,6 +982,10 @@ def _main(argv: list[str] | None = None) -> int:
     mr.add_argument("--replace-check", action="store_true")
     mr.add_argument("--detach", action="store_true", help="交给后台运行、立即返回（Codex 用；跑完用 merge result 取结果）")
     mr.add_argument("--detached-child", action="store_true", help=argparse.SUPPRESS)
+    mres = mgs.add_parser("result", help="取 merge run --detach 后台合并的结果与通知（只读）")
+    mres.add_argument("number", nargs="?", type=refs.parse)
+    mres.add_argument("--wait", type=float, default=0, help="最多等这么多分钟（上限 8）")
+    mres.add_argument("--json", action="store_true")
     rn2 = mgs.add_parser("renotice", help="按另一种原因重发退回通知（模块协调判断，不需要用户原话）")
     rn2.add_argument("number", type=refs.parse)
     kg = rn2.add_mutually_exclusive_group(required=True)

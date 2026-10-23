@@ -381,7 +381,7 @@ def summarize_store(project: Path) -> tuple[Check, dict | None]:
         return Check("store", "warning", f"状态库读不出：{exc}", "运行 module-crew store check 排查"), None
     return Check("store", "ok", str(db.path)), {"sessions": active, "open": open_counts,
                                                 "coordinator": coord, "sightings": seen, "tasks": task_rows,
-                                                "unqueued": unq, "mergeLock": _merge_lock(db),
+                                                "unqueued": unq, "mergeLock": _merge_lock(db), "mergeResult": _merge_result(db),
                                                 "permissionsStale": _stale_permissions(db), "selfIsCoordinator": self_coord,
                                                 "codexSelf": codex_self(sessions), **_handover_state(db)}
 
@@ -442,6 +442,16 @@ def _merge_lock(db: store.Store) -> dict | None:
         return None
     return {"approval": info.get("approval"), "unit": info.get("unit"), "startedAt": info.get("startedAt"),
             "minutes": mergelock.minutes(info), "stale": mergelock.stale(db, info), "host": info.get("host")}
+
+
+def _merge_result(db: store.Store) -> dict | None:
+    """crew-codex-coordinator: the last detached merge's outcome, read only."""
+    from module_crew import mergelock
+    info = mergelock.last(db)
+    if not info or not info.get("detached") or "exitCode" not in info:
+        return None
+    return {"approval": info.get("approval"), "exitCode": info.get("exitCode"), "finishedAt": info.get("finishedAt"),
+            "log": info.get("log"), "read": bool(info.get("resultRead"))}
 
 
 SIGHTINGS_SHOWN = 10

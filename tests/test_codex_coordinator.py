@@ -12,7 +12,7 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
-from helpers import MergeCase, spec_guard_interface
+from helpers import MergeCase, git, spec_guard_interface
 from test_session_handover import WRITES
 
 from module_crew import __main__ as cli
@@ -254,6 +254,17 @@ class DetachCase(MergeCase):
         return json.loads((self.db.path / mergelock.INFO).read_text(encoding="utf-8"))
 
 
+class ConflictCase(DetachCase):
+    """b's final acceptance edits README.md, which the integration branch changed meanwhile: the merge conflicts."""
+
+    def setUp(self):
+        MergeCase.setUp(self)
+        self.db = store.open_store(self.repo)
+        (self.repo / "README.md").write_text("main changed\n")
+        git(self.repo, "commit", "-q", "-am", "main edit")
+        self.number = self.approve_final("b", 31, path="README.md", content="b changed\n")
+
+
 class DetachTest(DetachCase):
     """Acceptance 4: start, lock and a killed child."""
 
@@ -287,7 +298,7 @@ class DetachTest(DetachCase):
 
     def test_killed_child_leaves_a_stale_lock(self):
         self.assertEqual(self.detach(sleep=30).returncode, 0)
-        self.assertTrue(wait_until(lambda: self.info().get("detached")))      # the child has taken the lock over
+        self.assertTrue(wait_until(lambda: self.info().get("adopted")))      # the child has taken the lock over
         pid = self.info()["pid"]
         os.kill(pid, signal.SIGKILL)
         self.assertTrue(wait_until(lambda: not mergelock.locked(self.db)))
@@ -298,6 +309,88 @@ class DetachTest(DetachCase):
         r = self.run_cli("merge", "run", "--check-command", "python3 -c pass", "--detached-child")
         self.assertEqual(r.returncode, 2)
         self.assertEqual(len(merge.queue(self.repo)), 1)
+
+
+def normalized(text: str, case) -> str:
+    """Output of one fixture made comparable with another: temp paths and commit ids differ between them."""
+    text = text.replace(str(case.tmp), "<tmp>")
+    return re.sub(r"\b[0-9a-f]{7,40}\b", "<sha>", text)
+
+
+class MergeResultTest(DetachCase):
+    """Acceptance 4 (results) and 5."""
+
+    def fresh(self):
+        other = DetachCase("info")
+        other.setUp()
+        self.addCleanup(other.doCleanups)
+        return other
+
+    def result(self, *args, case=None):
+        return (case or self).run_cli("merge", "result", *args)
+
+    def finished(self, case=None):
+        case = case or self
+        return wait_until(lambda: "exitCode" in case.info())
+
+    def test_running_then_ready(self):
+        self.assertEqual(self.detach(sleep=6).returncode, 0)
+        r = self.result()
+        self.assertEqual(r.returncode, 6, r.stdout + r.stderr)
+        self.assertIn("已跑", r.stdout)
+        self.assertEqual(self.result(f"C{self.number}", "--wait", "0.02").returncode, 6)     # minutes
+        r = self.result("--wait", "2")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(f"C{self.number}", r.stdout)
+
+    def test_same_output_and_code_as_foreground(self):
+        for name, fail, code in (("merged", False, 0), ("check failed", True, 5)):
+            with self.subTest(name):
+                fg, bg = self.fresh(), self.fresh()
+                flags = {}
+                for c in (fg, bg):
+                    flags[c] = str(c.tmp / "fail.flag") if fail else None
+                    if fail:
+                        (c.tmp / "fail.flag").touch()
+                fore = fg.run_cli("merge", "run", "--check-command", fg.check_script(fail_if=flags[fg]))
+                self.assertEqual(bg.detach(sleep=0, fail_if=flags[bg]).returncode, 0)
+                self.assertTrue(self.finished(bg))
+                back = self.result(case=bg)
+                self.assertEqual((fore.returncode, back.returncode), (code, code), back.stdout)
+                self.assertEqual(normalized(back.stdout, bg), normalized(fore.stdout + fore.stderr, fg))
+
+    def test_conflict_same_as_foreground(self):
+        fg, bg = ConflictCase("info"), ConflictCase("info")
+        for c in (fg, bg):
+            c.setUp()
+            self.addCleanup(c.doCleanups)
+        fore = fg.run_cli("merge", "run", "--check-command", "python3 -c pass")
+        self.assertEqual(bg.run_cli("merge", "run", "--check-command", "python3 -c pass", "--detach").returncode, 0)
+        self.assertTrue(self.finished(bg))
+        back = self.result(case=bg)
+        self.assertEqual((fore.returncode, back.returncode), (5, 5), back.stdout)
+        self.assertEqual(normalized(back.stdout, bg), normalized(fore.stdout + fore.stderr, fg))
+
+    def test_read_once_status_line(self):
+        self.assertEqual(self.detach(sleep=0).returncode, 0)
+        self.assertTrue(self.finished())
+        line = f"合并 C{self.number} 已结束，运行 merge result 取通知"
+        self.assertIn(line, self.run_cli("status").stdout)
+        doc = json.loads(self.run_cli("status", "--json").stdout)["store"]["mergeResult"]
+        self.assertEqual((doc["approval"], doc["exitCode"], doc["read"]), (self.number, 0, False))
+        r = self.result("--json")
+        self.assertEqual(r.returncode, 0)
+        got = json.loads(r.stdout)
+        self.assertEqual((got["approval"], got["running"], got["exitCode"]), (self.number, False, 0))
+        self.assertTrue(got["output"])
+        self.assertNotIn(line, self.run_cli("status").stdout)
+        self.assertTrue(json.loads(self.run_cli("status", "--json").stdout)["store"]["mergeResult"]["read"])
+        self.assertEqual(self.result().returncode, 0)          # read again: still there, never deleted
+
+    def test_nothing_to_read(self):
+        self.assertEqual(self.result().returncode, 3)
+        self.run_cli("merge", "run", "--check-command", "python3 -c pass")      # a foreground merge leaves no result
+        self.assertEqual(self.result().returncode, 3)
 
 
 class StatusClaudeCoordinatorTest(MergeCase):
