@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved 4e9d577eac7c -->
+<!-- spec-guard: review pending -->
 
 # Spec: crew-recovery-hooks
 
@@ -54,7 +54,7 @@
    - `coordinator` 且状态库有在用协调会话 → 协调会话；
    - 有标记但状态库对不上（模块已退役、没有协调会话）→ 静默，不退回按路径判断；
    - 没有标记、标记不合法（多行、超长、链接、不认识的内容）→ 按原来的路径规则判断（兼容 spec-guard 0.67 与未开 `moduleConcurrency` 的项目）。
-7. **钩子给出本会话该用的命令入口**（2026-10-22 新增，0.11.1）：SessionStart（启动、恢复、压缩、清空）的完整提示，对模块协调、模块会话、轻任务会话都多一行「module-crew 命令入口：`<本次运行的插件目录>/bin/module-crew`（版本 <插件版本>）；用这一行，不用记忆、开工背景或别的会话给的路径」。插件目录取钩子自己运行的那份 module-crew（宿主按当前加载的插件调起钩子），版本取它旁边 `.claude-plugin/plugin.json` 的 `version`，读不出写「版本未知」。每次重开、压缩、清空都会重新给，插件升级后会话自然换到新路径。crew-coordinator、crew-dev 两份 skill 与模块会话、轻任务会话的开工说明同步改为「命令入口以钩子注入的那一行为准，不要把带版本号的绝对路径记进记忆、开工背景或转给别的会话」。每轮一行（UserPromptSubmit）不加这一行。
+7. **钩子给出本会话该用的命令入口**（2026-10-22 新增，0.11.1）：SessionStart（启动、恢复、压缩、清空）的完整提示，对模块协调、模块会话、轻任务会话都多一行「module-crew 命令入口：`<本次运行的插件目录>/bin/module-crew`（版本 <插件版本>）；用这一行，不用记忆、开工背景或别的会话给的路径」。插件目录取钩子自己运行的那份 module-crew（宿主按当前加载的插件调起钩子），版本取它旁边 `.claude-plugin/plugin.json` 的 `version`，读不出写「版本未知」。每次重开、压缩、清空都会重新给，插件升级后会话自然换到新路径。**（2026-10-23 修订，0.12.1）** 状态库里已有固定入口（crew-command-entry 决策 1）时，这一行改写固定入口：「module-crew 命令入口：`<固定入口>`（固定入口，转到本机当前安装的 module-crew；本次钩子来自版本 <插件版本>）」；没有时照旧写本次运行的插件目录，并提示跑一次 `permissions apply` 或 `coordinator up` 写出固定入口。钩子只读、不 import `launcher`。crew-coordinator、crew-dev 两份 skill 与模块会话、轻任务会话的开工说明同步改为「命令入口以钩子注入的那一行为准，不要把带版本号的绝对路径记进记忆、开工背景或转给别的会话」。每轮一行（UserPromptSubmit）不加这一行。
 
 
 ## 接口约定
@@ -146,3 +146,4 @@ README 的安装说明写「首次使用需在 Claude Code 里信任 module-crew
 - 2026-10-18：角色判断改为以 spec-guard 角色标记为准（关键决策 6、验收 9），没有标记时保留原路径规则；删去对应未决问题。原因：interface 1.1 定稿 `checkoutRole`（标记位置 `git rev-parse --git-path spec-guard/role`、取值 `module <id>`／`coordinator`）；来源：spec-guard 负责人通知 interface.json 1.1 定稿（spec-guard 分支 `claude/module-concurrency` 提交 6231abc，0.68.0 未发版），用户 2026-10-18 复审批准。
 - 2026-10-18：新增「最终验收已交审、等批准」档位（只读出口 stage 枚举不变，仍报 build），增加验收 10。原因：试点问题 J（恢复说明在已交最终验收时仍写「可以构建」）；来源：第二轮试点（`docs/pilot-report.md` 第二轮一节），用户 2026-10-18 批准修法。
 - 2026-10-22：新增关键决策 7 与验收 11：SessionStart 的完整提示注入本次运行的插件目录下的命令入口与版本，skill 与开工说明改为以它为准、不记带版本号的路径；发 0.11.1。原因：模块协调第一次把「插件目录下的 bin/module-crew」解析成 `module-crew-release/v0.10.0/…` 记进记忆并抄进开工背景，之后升级、清空都没换，0.10.1～0.11.0 的修复没生效（spec-guard 负责人报告 O8）；来源：用户 2026-10-22 批准并进 0.11.1（「2 并进」），本修订待复审。
+- 2026-10-23：关键决策 7 改为状态库有固定入口时注入固定入口，没有时照旧并提示写出；发 0.12.1。原因：钩子注入的路径带版本号，Claude 权限规则跟着它带版本号，每次升级都要重跑 `permissions apply`（spec-guard 负责人实测 0.12.0 报告）；来源：用户 2026-10-23 在本会话批准发 0.12.1，本修订待复审。

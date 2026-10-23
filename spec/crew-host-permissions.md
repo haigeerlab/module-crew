@@ -45,7 +45,7 @@
 ## 关键决策与取舍（请重点审）
 
 1. **放行与禁止清单是固定的，不读项目猜**：
-   - Claude allow：`Bash(<module-crew 绝对路径> *)`（apply 时取正在运行的 `bin/module-crew` 绝对路径）、`Bash(git add *)`、`Bash(git commit *)`、`Bash(git status *)`、`Bash(git diff *)`、`Bash(git log *)`、`Bash(git show *)`、
+   - Claude allow：`Bash(<module-crew 绝对路径> *)`（~~apply 时取正在运行的 `bin/module-crew` 绝对路径~~；2026-10-23 起取状态库里的固定入口 `<git公共目录>/module-crew/bin/module-crew`，apply 先写出它，见 crew-command-entry 决策 6）、`Bash(git add *)`、`Bash(git commit *)`、`Bash(git status *)`、`Bash(git diff *)`、`Bash(git log *)`、`Bash(git show *)`、
      `mcp__agent-relay`（整个服务器）、运行配置里的检查命令 `checkCommand`（有才加，按「首个词 *」写，如 `Bash(pnpm test *)`）。
    - Claude deny：`Bash(git push *)`、`Bash(git push)`、`Bash(rm -rf *)`、`Bash(git reset --hard *)`、`Bash(git branch -D *)`、`Bash(git worktree remove *)`、`Bash(git config --global *)`、
      `Bash(npm install -g *)`、`Bash(pnpm add -g *)`、`Bash(brew install *)`、`Bash(curl * | sh)`、`Bash(curl * | bash)`，以及 0.5.1 补全的全局安装写法（见下）。
@@ -168,3 +168,4 @@ README 新增「权限预配」一节：`permissions plan → apply → 开会�
 - 2026-10-19：MC-1 改为加新包放行（Claude），裸 `pip install <包名>` 仍不写规则，全局安装禁止补全（`-g`／`--global` 在任意位置、`yarn global`、`uv --system`），Codex 加新包仍不写规则；验收 13 随之改，取代上一条的「加新包不写规则」。原因：用户决定 62（装包放宽、与上游 agent-skills 对齐；事先列不全、逐项管制造打扰），新增依赖改由 spec-guard SG-5 在最终验收列出；Codex 前缀规则挡不住后置 `-g`、裸 pip 等于全局安装，所以这两处没放；`pip install -r *` 的口子不修。来源：监测会话转达决定 62，用户 2026-10-19 在本会话确认 8 条假设。
 - 2026-10-19：更正「代开会话里 ask 规则不弹、写了等于放行」的说法（需求来源第 6 行加更正、关键决策 1「不写 ask」改理由、第 21 行、成功标准 14、验收 10）；规则行为不变（不可逆操作仍写 deny、推送仍走 deny 加 pre-push 与 merge push）。原因：用户决定 67——decision-inbox 核对 E3 代开会话记录，两次 `git push` 为 `user_temporary`（弹了、被点允许），与本模块 0.5.0 补测一致；来源：监测会话转达决定 67，用户 2026-10-19 在本会话决定现在就改、版本 0.5.2。之前各条变更记录里的旧说法保留原样作为历史。
 - 2026-10-19：加关键决策 8 与验收 14（0.5.3）：`plan`／`apply` 只读检查别处（checkout 自己的 settings.json、主 checkout 的本地与项目设置、用户设置、托管设置）的 ask／禁止规则，提示会盖过 module-crew 放行的条目。原因：定位实测发现 decision-inbox 写进集成 checkout 的 ask `Bash(npm install *)` 盖过了 worktree 里的放行，`plan` 没有提示；来源：用户 2026-10-19 在本会话确认 7 条假设。
+- 2026-10-23：关键决策 1 的 module-crew 放行条目改为固定入口，`apply` 先写出固定入口，`verify` 清单同步；发 0.12.1。原因：带版本号的插件路径每次升级失效，要凭用户原话重跑 `apply`（第 4 次）；来源：用户 2026-10-23 在本会话批准发 0.12.1，本修订待复审。
