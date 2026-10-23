@@ -3,13 +3,15 @@
 让多个 Claude 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.12.1。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.13.0。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
-## 0.12.1 的变化（热修）
+## 0.13.0 的变化（第八版：空档换宿主）
 
-- Claude 会话也改用状态库里的固定入口 `<git公共目录>/module-crew/bin/module-crew`：`permissions apply` 先写出它，Claude 规则放行它而不再放行带版本号的插件路径；钩子注入的「module-crew 命令入口」也是它（状态库还没有固定入口时照旧给插件路径，并提示跑一次 `permissions apply` 或 `coordinator up`）。以后升级插件不用再重跑 `permissions apply`。
-- 升级后：已写过权限规则的项目，凭用户原话再跑最后一次 `module-crew permissions apply`；在用的会话在原会话里 `/clear` 一次，拿到新的命令入口。
-- README 的契约版本更正为 v2.6。
+- 空档整体换宿主：一批模块和轻任务都收尾、没有未结事项时，`merge cleanup` 与 `status` 提示「本批已收尾，具备换宿主的条件」；用户说换后 `coordinator handover --check` 逐条核对条件，`coordinator handover --to codex|claude --original-file <原话文件>` 改模块协调登记的宿主、给集成 checkout 追加新宿主的权限规则、生成逐步交接说明（每步写去哪个会话、做什么、做完的样子）。`bind --takeover` 核对调用者宿主与登记一致；模块协调在 Codex 时开工与派任务默认 Codex、拒绝 `--host claude`。
+- 模块协调能在 Codex 桌面版上运行：新增 Codex 版 crew-coordinator skill（每轮开头重新注册→`status`→读收件箱、写命令申请沙箱外运行、请用户手动开任务）；`status` 在 Codex 里首行认出本线程是不是模块协调；`host-check` 在集成 checkout 按模块协调查；沙箱拒绝写 `.git`、找不到插件时报错带补句；`merge run --detach` 把合并连同锁交给后台子进程，`merge result [--wait]` 取结果（与前台逐字一致）。
+- 修复：已登记的会话不再算进「没登记的会话」（S7）；Spec 以接口提案交审时批完 Plan 照常发开工通知（S14）；轻任务会话派出时也写上权限规则、`module-crew sync` 能在轻任务 worktree 里跑（S15、S16）；crew-coordinator skill 写明合并只走 `merge run`（S1）。
+- 状态库只增字段（`hostHandover`、合并记录的 `detached`／`adopted` 等），不用迁移；接口与契约不变（`interface.json` 1.0、session-protocol v2.6）。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；想用 Codex 做模块协调或模块会话的，在 Codex 里装上本插件并完全退出 ChatGPT 再打开。在 Codex 上实际跑一批、来回换一次宿主还没实测（见「尚未验证」）。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -246,5 +248,5 @@ spec-guard 的命令入口路径带版本号，暂不放进放行清单。细节
 - 权限预配的放行规则：在本机宿主上和不写规则时看不出差别（0.8.0 对照实测），是否真的减少弹窗还没证实。
 - 0.9.0 起的钩子按会话认身份：只用钩子事件数据做过测试，没在真实桌面会话里看过注入出来的文字。
 - 桌面版整个退出重开后会话 id 是否不变：压缩、`claude --resume` 接上都实测不变，退出整个桌面版这一种没测。
-- 0.12.0 的 Codex 固定入口：只在本机 Claude 环境与测试里验证过，还没在真实 Codex 会话的沙箱里跑过（读安装记录、执行 `.git` 下的脚本）。
+- 0.12.0 的 Codex 固定入口：2026-10-23 在真实 Codex 沙箱里跑过 `status`（读得到 Claude 的安装记录）与 `host-check`（写 `.git` 要提权，提权后能提交）；登记过的 Codex 模块会话完整走一遍 bind、交审还没测。
 - 第八版的模块协调在 Codex 上：只用测试验证过。`merge run --detach` 的后台进程能否活过 Codex 的一轮、提权是否随之继承，单次工具调用最长能等多久，一次提权批准能覆盖多少条命令，都还没在真实 Codex 线程里试过。

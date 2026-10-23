@@ -2,6 +2,12 @@
 
 各版本的变化，最新的在前。README 只写最新一版。
 
+## 0.12.1 的变化（热修）
+
+- Claude 会话也改用状态库里的固定入口 `<git公共目录>/module-crew/bin/module-crew`：`permissions apply` 先写出它，Claude 规则放行它而不再放行带版本号的插件路径；钩子注入的「module-crew 命令入口」也是它（状态库还没有固定入口时照旧给插件路径，并提示跑一次 `permissions apply` 或 `coordinator up`）。以后升级插件不用再重跑 `permissions apply`。
+- 升级后：已写过权限规则的项目，凭用户原话再跑最后一次 `module-crew permissions apply`；在用的会话在原会话里 `/clear` 一次，拿到新的命令入口。
+- README 的契约版本更正为 v2.6。
+
 ## 0.12.0 的变化（第七版：换手与呈现）
 
 - 命令入口：Codex 会话改用状态库里不带版本号的固定入口 `<git公共目录>/module-crew/bin/module-crew`，每次转给当前安装的那份，升级后不用换；`bin/module-crew` 不再让当前目录里的代码盖过插件自己的代码。
