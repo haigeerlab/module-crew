@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import re
 import subprocess
 import unittest
 from contextlib import redirect_stderr
@@ -10,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from helpers import MergeCase, spec_guard_interface
+from test_session_handover import WRITES
 
 from module_crew import __main__ as cli
 from module_crew import hooks, probe, store
@@ -189,6 +191,41 @@ class CodexPluginHintTest(CodexCoordCase):
         self.drop("spec-guard")
         bad = {c["id"]: c for c in json.loads(self.cli("host-check", "--json").stdout)["checks"] if not c["ok"]}
         self.assertIn(CODEX_PLUGIN, bad["spec-guard"]["reason"])
+
+
+class CodexCoordinatorCommandsTest(CodexCoordCase):
+    """Acceptance 3: a coordinator registered on Codex (through a handover) runs the coordinator commands."""
+
+    def test_write_guard_knows_codex_threads(self):
+        (self.repo / "msg.txt").write_text("【等待用户】\n", encoding="utf-8")
+        for args in WRITES:
+            with self.subTest(args=args[:2]):
+                self.assertNotEqual(self.cli(*args).returncode, 7)
+                before = len(list(store.events(self.db)))
+                r = self.cli(*args, codex="thread-other")
+                self.assertEqual(r.returncode, 7, (r.stdout, r.stderr))
+                self.assertEqual(len(list(store.events(self.db))), before)
+
+    def test_review_merge_cleanup_from_codex(self):
+        final = self.tmp / "final.txt"
+        final.write_text(self.finish("b"), encoding="utf-8")
+        r = self.cli("review", "add", str(final), "--from", "shop-b", "--relay-id", "31")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        number = int(re.search(r"C(\d+)", r.stdout).group(1))
+        r = self.cli("merge", "approve", str(number), "--original", "b 验收通过")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = self.cli("merge", "run", "--check-command", "python3 -c pass")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = self.cli("merge", "cleanup", "b", "--original", "收回 b")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotEqual(self.cli("merge", "push-plan").returncode, 7)
+
+    def test_open_more_from_codex(self):
+        r = self.cli("start", "prepare", "d", "--original", "开 d")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(store.get(self.db, "session", "shop-d")["host"], "codex-desktop")
+        r = self.cli("coordinator", "down", "--original", "关")
+        self.assertNotEqual(r.returncode, 7, r.stdout + r.stderr)
 
 
 class StatusClaudeCoordinatorTest(MergeCase):
