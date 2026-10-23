@@ -109,3 +109,7 @@ PYTHONPATH=tests python3 -m unittest test_review_display
 ## 文档建议
 
 README「一次完整流程」的最终验收一步写明提请批准里会列哪几张表；「审查就近与决策收件箱」写明并行边界重叠的三种结论。CHANGELOG 随发版写。
+
+## 变更记录
+
+- 2026-10-24：决定 5 的临时 Spec 改放系统临时目录、比完即删，好让 review batch 不写 .git（S19，T60，合入 8102600）。来源：ecosystem-lead 转来的演练缺陷；用户批准 C80 时要求补这一行。
