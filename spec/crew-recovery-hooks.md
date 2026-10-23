@@ -1,4 +1,4 @@
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 9061f3684379 -->
 
 # Spec: crew-recovery-hooks
 
