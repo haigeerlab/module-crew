@@ -174,6 +174,12 @@ PYTHONPATH=tests python3 -m unittest test_codex_coordinator
 
 ## 并行边界
 
+- 独占：`codex-skills/crew-coordinator/`、`module_crew/merge.py`、`module_crew/mergelock.py`、`module_crew/hostcheck.py`、`module_crew/probe.py`、`module_crew/start.py`、`module_crew/tasks.py`、`module_crew/handover.py`、`module_crew/__main__.py`、`skills/crew-coordinator/SKILL.md`、`.codex-plugin/plugin.json`、`README.md`、`tests/test_codex_coordinator.py`
+- 公共：测试资源
+
+## 并行说明
+
+- 「公共：测试资源」只是预告：夹具若要在 `tests/helpers.py` 里加一个 Codex 协调登记的辅助函数，构建时先发【公共变更请求】，不直接改。
 - 轻任务 T26 正在改 `module_crew/review.py`（S14）。本模块写 Spec、Plan 期间不改代码；构建等 T26 合入、模块协调发开工通知后再开始，开工先 `module-crew sync`。
 - 本模块**不改** `module_crew/review.py`：`review` 的写子命令在 Codex 上能否用只取决于提权（决策 2），不需要改代码；若构建中发现非改不可，停下发【等待其他会话】。
 - 预计改动的文件见「项目结构」；与其他在做的模块无重叠（目前只有 T26 在做）。`README.md`、`skills/crew-coordinator/SKILL.md` 是多个模块都改过的文件，按惯例由本模块直接改、合并时冲突由 `merge run` 退回。
@@ -189,3 +195,7 @@ PYTHONPATH=tests python3 -m unittest test_codex_coordinator
 
 README「换宿主」一节补「模块协调在 Codex 上」：每轮开头三步、提权清单、`merge run --detach`／`merge result`、手动开任务、收件枢纽停了要点开；命令一览补 `merge result`。CHANGELOG 随发版写。
 回告：发版后告诉 ecosystem-lead S13 的模块 B 已就位、`handover --to codex` 已放开、实地验证结果；随最终验收列出。
+
+## 变更记录
+
+- 2026-10-23：「并行边界」一节补成 spec-guard 格式的「- 独占：…」「- 公共：…」两行（原有三条说明移到其后新增的「并行说明」一节，spec-guard 的格式检查不认边界一节里的其他行），并加一条公共测试资源的说明；未决问题 1、2 已由用户定为「Q1 不放开」「Q2 不加」，与 Spec 里的推荐一致，正文不变。原因：Spec 批准时用户要求补并行边界的格式；来源：用户在 C32 的答复（「C32 A；Q1 不放开；Q2 不加；并行边界补成独占／公共两行」），随最终验收一并复审。
