@@ -396,7 +396,7 @@ SIGHTINGS_SHOWN = 10
 
 def _coordinator_summary(db: store.Store, sessions: dict) -> tuple[dict | None, dict]:
     """crew-coordinator-switch: who the coordinator is, where, bound or not; and conversations seen but not registered."""
-    from module_crew.hooks import _home_of
+    from module_crew.hooks import _home_of, unregistered
     coords = sorted(((n, s) for n, s in sessions.items() if s.get("role") == "coordinator"),
                     key=lambda kv: kv[1].get("status") != "active")
     coord = None
@@ -406,7 +406,8 @@ def _coordinator_summary(db: store.Store, sessions: dict) -> tuple[dict | None, 
         coord = {"name": name, "state": rec.get("status"), "home": str(home) if home else None,
                  "branch": (store.get(db, "config", "main") or {}).get("integrationBranch"),
                  "bound": bool((rec.get("hostSession") or {}).get("sessionId"))}
-    rows = sorted(store.records(db, "sighting").values(), key=lambda r: r.get("firstSeen") or "", reverse=True)
+    rows = sorted(unregistered(store.records(db, "sighting"), sessions).values(),
+                  key=lambda r: r.get("firstSeen") or "", reverse=True)
     recent = [{k: r.get(k) for k in ("cwd", "branch", "firstSeen", "told")} for r in rows[:SIGHTINGS_SHOWN]]
     return coord, {"count": len(rows), "recent": recent}
 

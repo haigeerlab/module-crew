@@ -196,3 +196,4 @@ README「开始使用」一节改为先「升级协调会话」（`coordinator u
 ## 变更记录
 
 - 2026-10-22：关键决策 8 与验收 8 加桌面版交接路径（绑定时记 `CLAUDE_CODE_HOST_SESSION_ID`，旧进程结束后同目录、同桌面版会话编号的新会话改绑）。原因：Checkpoint 2 实地验证发现桌面版清空的事件与命令行版不同（`SessionEnd reason:"other"`、新进程 `source:"startup"`），原方案不生效；桌面版会话进程的 `CLAUDE_CODE_HOST_SESSION_ID` 是 `local_` 编号、清空后不变。来源：用户 2026-10-22 选 A「修订 Spec 决策 8，加桌面版按 CLAUDE_CODE_HOST_SESSION_ID 的交接路径」。
+- 2026-10-23：「没登记的会话」只算现在仍未登记的会话：`module-crew status` 的统计与模块协调的提醒（`tell_sightings`）排除已绑定会话的编号；`bind`（含 `--takeover`）时给本会话的 sighting 记上 `boundAs`（状态库只追加事件、不删记录，按已清除处理）。原因：会话先以陌生会话启动被记 sighting、再 bind 后仍被列为没登记。来源：轻任务 T1（ecosystem-lead 接缝清单 S7），用户在 mc-coord 批准任务单。
