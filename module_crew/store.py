@@ -23,7 +23,7 @@ VERSION = 1
 KINDS = ("config", "session", "item", "request", "ticket", "body", "sighting", "handover", "task")
 NUMBERED = ("item", "request", "ticket", "body", "task")
 ROLES = ("coordinator", "dev", "task")   # task: a light task's session (crew-light-task)
-HOSTS = ("claude-desktop", "codex-desktop")   # coordinators are Claude desktop only (crew-codex-host)
+HOSTS = ("claude-desktop", "codex-desktop")   # a Codex coordinator only through a handover (crew-host-handover)
 SESSION_STATUSES = ("active", "retired")
 _ACTION_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _NUMBER_RE = re.compile(r"^[1-9][0-9]*$")
@@ -317,8 +317,18 @@ def _validate_session(key: str, rec: dict, others: dict) -> None:
         raise bad(f"role 只能是 {'／'.join(ROLES)}")
     if host not in HOSTS:
         raise bad(f"host 只能是 {'／'.join(HOSTS)}")
-    if role == "coordinator" and host != "claude-desktop":
-        raise bad("模块协调只能是 claude-desktop")
+    handover = rec.get("hostHandover")              # crew-host-handover: the coordinator moved hosts in a gap
+    if handover is not None:
+        if role != "coordinator":
+            raise bad("hostHandover 只用于模块协调")
+        if not (isinstance(handover, dict) and handover.get("from") in HOSTS and handover.get("to") in HOSTS
+                and isinstance(handover.get("at"), str) and isinstance(handover.get("original"), str)
+                and handover["original"].strip() and isinstance(handover.get("pending"), bool)):
+            raise bad("hostHandover 必须带 from、to（宿主取值）、at、非空的 original 与布尔的 pending")
+        if handover["to"] != host:
+            raise bad("hostHandover.to 必须与 host 一致")
+    if role == "coordinator" and host != "claude-desktop" and handover is None:
+        raise bad("模块协调只能经 coordinator handover 换到 codex-desktop")
     if status not in SESSION_STATUSES:
         raise bad(f"status 只能是 {'／'.join(SESSION_STATUSES)}")
     ident = rec.get("hostSession")
