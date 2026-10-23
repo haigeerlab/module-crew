@@ -67,13 +67,15 @@ def claude_entries(cfg: dict, entry: str | os.PathLike, worktree: Path | None = 
 
 
 def checkouts(project: Path) -> tuple[store.Store, dict, list[dict]]:
-    """The integration checkout (always Claude) and every active module worktree with its host."""
+    """The integration checkout (on the coordinator's host, crew-host-handover) and every active module worktree with its host."""
     db = store.open_store(project)
     cfg = store.get(db, "config", "main") or {}
     found = []
     integration = probe._checkout_of(project, cfg.get("integrationBranch", ""))
     if integration is not None:
-        found.append({"role": "integration", "module": None, "name": None, "host": "claude-desktop", "checkout": integration})
+        from module_crew import handover
+        found.append({"role": "integration", "module": None, "name": None,
+                      "host": handover.coordinator_host(db) or "claude-desktop", "checkout": integration})
     for name, rec in sorted(store.records(db, "session").items()):
         if rec.get("role") == "dev" and rec.get("status") == "active":
             found.append({"role": "dev", "module": rec.get("module"), "name": name,
@@ -458,16 +460,24 @@ def uninstall_hook(project: Path) -> str:
 
 def follow(project: str | os.PathLike, name: str) -> str | None:
     """After `start prepare`: when rules were applied, write them for this new worktree too; a failure never blocks."""
-    project = Path(project)
+    return _follow(Path(project), name, lambda x: x["name"] == name, f"没有在用的会话 {name}")
+
+
+def follow_integration(project: str | os.PathLike) -> str | None:
+    """After `coordinator handover` (crew-host-handover): the integration checkout gets the new host's rules too."""
+    return _follow(Path(project), "integration", lambda x: x["role"] == "integration", "找不到集成 checkout")
+
+
+def _follow(project: Path, name: str, pick, missing: str) -> str | None:
     db, cfg, found = checkouts(project)
     record = cfg.get("permissions") or {}
     if not record.get("applied"):
         return None
-    t = next((x for x in found if x["name"] == name), None)
+    t = next((x for x in found if pick(x)), None)
     target = _target(t, cfg, project) if t else None
     problem = (target or {}).get("problem") or (None if target and target["ignored"] else "文件没有被 git 忽略")
     if target is None:
-        problem = f"没有在用的会话 {name}"
+        problem = missing
     files = dict(record.get("files") or {})
     codex_files = set(record.get("codexFiles") or [])
     failed = dict(record.get("followFailed") or {})
@@ -481,6 +491,7 @@ def follow(project: str | os.PathLike, name: str) -> str | None:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(render_codex(target["rules"]), encoding="utf-8")
             codex_files.add(str(path))
+            line = f"已写权限规则：{path}（{TRUST_TEXT[target['trust']]}）"
         else:
             doc, _ = _read_settings(path)
             before = path.read_text(encoding="utf-8") if path.exists() else None
@@ -490,7 +501,7 @@ def follow(project: str | os.PathLike, name: str) -> str | None:
                 perms.setdefault(key, []).extend(target[key])
                 added[key] += [e for e in target[key] if e not in added[key]]
             _write_json(path, doc)
-        line = f"已写权限规则：{path}"
+            line = f"已写权限规则：{path}"
     with db.transaction(actor="coordinator") as tx:
         _put(tx, {**record, "files": files, "codexFiles": sorted(codex_files), "followFailed": failed})
     return line

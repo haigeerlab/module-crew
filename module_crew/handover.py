@@ -184,7 +184,9 @@ def handover(project: str | os.PathLike, to: str, original: str, session_id: str
     cfg = store.get(db, "config", "main") or {}
     integration = probe._checkout_of(project, cfg.get("integrationBranch", "")) or project
     from module_crew import permissions
-    rules = permissions.follow_integration(project) if hasattr(permissions, "follow_integration") else None
+    rules = permissions.follow_integration(project)
+    if rules and rules.startswith("⚠️"):
+        rules = "⚠️ 权限规则没写上：" + rules.split("：", 1)[1].split("（不影响开工")[0] + "（登记已改；处理后重跑 permissions apply）"
     text = guide(to, name, str(launcher.entry(db.path)), str(integration), str(original_file))
     if rules:
         text += f"\n## 权限规则\n\n{rules}\n"

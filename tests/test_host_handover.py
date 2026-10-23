@@ -8,7 +8,8 @@ from unittest import mock
 
 from helpers import RepoCase, ReviewCase, StartCase
 
-from module_crew import coordinator, handover, hooks, store
+from module_crew import coordinator, handover, hooks, permissions, store
+from test_permissions import PermCase
 
 
 def coord(**extra):
@@ -259,6 +260,56 @@ class HandoverTest(GapCase):
         out = self.run_cli("coordinator", "handover", "--to", "claude", "--original", "换",
                            env={**os.environ, "CLAUDE_CODE_SESSION_ID": "sid-other"})
         self.assertEqual(out.returncode, 7, out.stderr)
+
+
+class HandoverPermissionsTest(PermCase):
+    """Acceptance 2, 3 (rules): the integration checkout's rules follow the coordinator's host, appended only."""
+
+    def to(self, host, original="换"):
+        skill = self.tmp / "SKILL.md"
+        skill.write_text("x", encoding="utf-8")
+        with mock.patch.object(handover, "codex_coordinator_skill", return_value=skill):
+            return handover.handover(self.repo, host, original)
+
+    def test_to_codex_writes_codex_rules_and_keeps_claude(self):
+        permissions.apply(self.repo, "按清单预配权限")
+        claude_file = self.repo / ".claude" / "settings.local.json"
+        before = claude_file.read_text(encoding="utf-8")
+        close_batch(self.db)
+        code, lines = self.to("codex")
+        self.assertEqual(code, 0, lines)
+        rules = self.repo / ".codex" / "rules" / "module-crew.rules"
+        self.assertTrue(rules.is_file())
+        self.assertIn('decision = "forbidden"', rules.read_text(encoding="utf-8"))
+        self.assertEqual(claude_file.read_text(encoding="utf-8"), before)
+        record = store.get(self.db, "config", "main")["permissions"]
+        self.assertIn(str(rules), record["codexFiles"])
+        self.assertTrue(any("信任" in l for l in lines), lines)
+        plan = permissions.plan(self.repo)
+        self.assertTrue(any("codex" in str(t.get("host")) and t.get("role") == "integration" for t in plan["targets"]))
+
+    def test_back_to_claude_rules_already_there(self):
+        permissions.apply(self.repo, "按清单预配权限")
+        close_batch(self.db)
+        self.assertEqual(self.to("codex")[0], 0)
+        code, lines = self.to("claude")
+        self.assertEqual(code, 0, lines)
+        self.assertTrue(any("已写权限规则" in l or "权限规则已齐" in l for l in lines), lines)
+
+    def test_not_applied_writes_no_rules(self):
+        close_batch(self.db)
+        code, lines = self.to("codex")
+        self.assertEqual(code, 0, lines)
+        self.assertFalse((self.repo / ".codex").exists())
+
+    def test_rule_failure_is_reported_not_rolled_back(self):
+        permissions.apply(self.repo, "按清单预配权限")
+        close_batch(self.db)
+        (self.repo / ".gitignore").write_text(".claude/settings.local.json\n", encoding="utf-8")   # .codex no longer ignored
+        code, lines = self.to("codex")
+        self.assertEqual(code, 0, lines)
+        self.assertEqual(store.get(self.db, "session", "shop-coord")["host"], "codex-desktop")
+        self.assertTrue(any("权限规则没写上" in l for l in lines), lines)
 
 
 if __name__ == "__main__":
