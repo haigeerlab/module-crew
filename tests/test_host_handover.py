@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import unittest
 from unittest import mock
 
@@ -180,6 +181,84 @@ class CheckCliTest(GapCase):
         hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
         out = self.run_cli("coordinator", "handover", "--check", env={**os.environ, "CLAUDE_CODE_SESSION_ID": "sid-other"})
         self.assertEqual(out.returncode, 0, out.stderr)
+
+
+class HandoverTest(GapCase):
+    """Acceptance 1–4: the handover itself."""
+
+    def setUp(self):
+        super().setUp()
+        close_batch(self.db)
+        self.skill = self.tmp / "SKILL.md"
+        self.skill.write_text("Codex coordinator", encoding="utf-8")
+
+    def to(self, host, original="换到另一边", sid=None, skill=True):
+        path = self.skill if skill else self.tmp / "missing.md"
+        with mock.patch.object(handover, "codex_coordinator_skill", return_value=path):
+            return handover.handover(self.repo, host, original, sid)
+
+    def snapshot(self):
+        return store.records(self.db, "session"), len(store.events(self.db))
+
+    def coord(self):
+        return store.get(self.db, "session", "shop-coord")
+
+    def test_refusals_write_nothing(self):
+        cases = {"same host": ("claude", "换"), "empty original": ("codex", " "), "no module B": ("codex", "换")}
+        for name, (host, original) in cases.items():
+            with self.subTest(name):
+                before = self.snapshot()
+                code, lines = self.to(host, original, skill=name != "no module B")
+                self.assertEqual(code, 3, lines)
+                self.assertEqual(self.snapshot(), before)
+        _, lines = self.to("codex", skill=False)
+        self.assertTrue(any("模块 B" in l for l in lines), lines)
+
+    def test_not_ready_writes_nothing(self):
+        with self.db.transaction(actor="t") as tx:
+            rec = tx.get("session", "shop-b")
+            tx.put("session", "shop-b", {**rec, "status": "active"}, action="registered")
+        before = self.snapshot()
+        code, lines = self.to("codex")
+        self.assertEqual(code, 3, lines)
+        self.assertEqual(self.snapshot(), before)
+        self.assertTrue(any("shop-b" in l for l in lines))
+
+    def test_to_codex(self):
+        code, lines = self.to("codex", "换到 Codex")
+        self.assertEqual(code, 0, lines)
+        rec = self.coord()
+        self.assertEqual(rec["host"], "codex-desktop")
+        self.assertEqual({k: rec["hostHandover"][k] for k in ("from", "to", "original", "pending")},
+                         {"from": "claude-desktop", "to": "codex-desktop", "original": "换到 Codex", "pending": True})
+        ev = [e for e in store.events(self.db) if e["type"] == "session.coordinator-handover"]
+        self.assertEqual(ev[-1]["data"]["original"], "换到 Codex")
+        guides = sorted((self.db.path / "handover-guide").glob("*.md"))
+        self.assertEqual(len(guides), 1)
+        text = guides[0].read_text(encoding="utf-8")
+        self.assertIn(str(guides[0]), "\n".join(lines))
+        for phrase in ("归档", "takeover:true", 'wake:{app:"codex", sessionId:<CODEX_THREAD_ID>}', "--takeover --original-file",
+                       "提权", "信任", "每轮", "不带 takeover", "去哪个会话", "做什么", "做完的样子", "shop-coord"):
+            self.assertIn(phrase, text)
+        original = re.search(r"--original-file ([^`\s]+)", text).group(1)
+        self.assertEqual(open(original, encoding="utf-8").read(), "换到 Codex")
+
+    def test_back_to_claude(self):
+        self.assertEqual(self.to("codex")[0], 0)
+        code, lines = self.to("claude", "换回 Claude")
+        self.assertEqual(code, 0, lines)
+        rec = self.coord()
+        self.assertEqual((rec["host"], rec["hostHandover"]["from"], rec["hostHandover"]["pending"]),
+                         ("claude-desktop", "codex-desktop", True))
+        text = "\n".join(lines)
+        for phrase in ("确认", "已停", 'wake:"auto"', "takeover:true", "--takeover --original-file", "crew-coordinator"):
+            self.assertIn(phrase, text)
+
+    def test_other_session_refused_by_guard(self):
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+        out = self.run_cli("coordinator", "handover", "--to", "claude", "--original", "换",
+                           env={**os.environ, "CLAUDE_CODE_SESSION_ID": "sid-other"})
+        self.assertEqual(out.returncode, 7, out.stderr)
 
 
 if __name__ == "__main__":

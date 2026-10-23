@@ -100,3 +100,96 @@ def check(project: str | os.PathLike, to: str | None = None) -> tuple[int, dict,
     doc = {"ready": ready(checks), "from": frm, "to": HOST_IDS.get(to) if to else None,
            "checks": [{"id": c.id, "ok": c.ok, "reason": c.reason} for c in checks]}
     return (0 if doc["ready"] else 3), doc, check_lines(checks, frm, to)
+
+
+GUIDE_DIR = "handover-guide"
+
+
+def _step(n: int, where: str, what: str, done: str) -> list[str]:
+    return [f"### 第 {n} 步", f"- 去哪个会话：{where}", f"- 做什么：{what}", f"- 做完的样子：{done}", ""]
+
+
+def guide(to: str, name: str, entry: str, integration: str, original_file: str) -> str:
+    """Decision 3: the step-by-step handover, every step says where to go, what to do and what done looks like."""
+    bind = f"`{entry} bind {name} --takeover --original-file {original_file}`"
+    lines = [f"# 换宿主交接说明：模块协调 {name} 换到 {HOST_NAMES[HOST_IDS[to]]}", "",
+             f"集成 checkout：`{integration}`。邮箱名不变，仍是 {name}。",
+             f"下面的接管（takeover）就是用户同意的接管，原话即本次 handover 的原话，已存成文件 `{original_file}`。", ""]
+    if to == "codex":
+        opening = (f"你是 module-crew 的模块协调 {name}，从 Claude Code 接手。依次：① 调 agent-relay 的 bridge_register："
+                   f'{{agent:"{name}", takeover:true, wake:{{app:"codex", sessionId:<CODEX_THREAD_ID>}}}}'
+                   "（takeover 与 wake 都要带：只带 host 时唤醒仍绑在旧的 Claude 会话上；被拒 holder-still-running 就请用户先归档原 Claude 会话）；"
+                   f"② 运行 {bind}（写 .git 会弹提权，请用户在本线程批准）；③ 加载 Codex 版 crew-coordinator skill；"
+                   f"④ 运行 `{entry} status`。之后每轮开头先 bridge_register "
+                   f'{{agent:"{name}", wake:{{app:"codex", sessionId:<CODEX_THREAD_ID>}}}}（不带 takeover）：Codex 每轮重启 MCP。')
+        lines += _step(1, f"原 Claude 模块协调会话（{name}）", "让它停手，不再运行 module-crew 命令；然后在 Claude 桌面版侧栏归档这个会话",
+                       "侧栏里这个会话已归档（agent-relay 才允许新线程接管邮箱名）")
+        lines += _step(2, "Codex（ChatGPT 应用）", f"新建任务，工作目录选集成 checkout `{integration}`，把下面「开场文字」整段贴进去发出",
+                       "新任务开始按开场文字做事")
+        lines += _step(3, "刚开的 Codex 任务", "它运行 bind 时会弹提权：点「批准（Approve）」；能选本会话一直允许就选",
+                       f"它报「已接管：本会话就是模块协调 {name}」，status 显示模块协调在 Codex")
+        lines += _step(4, "Codex（ChatGPT 应用）", "在 Codex 里信任这个项目（项目的 .codex/rules 规则只在受信任时生效；module-crew 不替你改全局配置）",
+                       "项目显示为受信任")
+        lines += _step(5, "这个 Codex 协调任务", "以后每轮开头它先用自己的线程 id 重新 bridge_register（不带 takeover）；应用重启后要你点开它",
+                       "别的会话发来的消息它能收到")
+    else:
+        opening = (f"你是 module-crew 的模块协调 {name}，从 Codex 接手。依次：① 调 agent-relay 的 bridge_register："
+                   f'{{agent:"{name}", takeover:true, wake:"auto"}}（返回里会提示「无法确认之前的 Codex 会话是否已停」，用户已确认停了就继续）；'
+                   f"② 运行 {bind}；③ 加载 crew-coordinator skill；④ 运行 `{entry} status`。")
+        lines += _step(1, f"原 Codex 模块协调任务（{name}）", "让它停手，不再运行 module-crew 命令；之后不要再在那个任务里发话，确认它已停",
+                       "你确认那个 Codex 任务已停（agent-relay 判断不了，它被接走后也收不到通知）")
+        lines += _step(2, "Claude 桌面版", f"新开会话，目录选集成 checkout `{integration}`，把下面「开场文字」整段贴进去发出",
+                       "新会话开始按开场文字做事")
+        lines += _step(3, "刚开的 Claude 会话", "等它跑完接管与 bind；弹权限确认就点「允许（Yes）」，不要选本会话都允许",
+                       f"它报「已接管：本会话就是模块协调 {name}」，status 显示模块协调在 Claude Code")
+    lines += ["## 开场文字（整段贴进新会话）", "", opening, "",
+              "## 下一批怎么开", "",
+              f"start prepare 与 task dispatch 默认用新宿主（{HOST_NAMES[HOST_IDS[to]]}）。"
+              + ("Codex 模块会话要你手动在 Codex 里开任务、工作目录选模块 worktree、贴开工说明；第一次提交会弹提权。" if to == "codex"
+                 else "模块会话由模块协调照常开。"), ""]
+    return "\n".join(lines)
+
+
+def handover(project: str | os.PathLike, to: str, original: str, session_id: str | None = None) -> tuple[int, list[str]]:
+    """Decision 2: check, move the registration, write the integration rules, write the guide. Nothing on refusal."""
+    project = Path(project)
+    if to not in HOST_IDS:
+        return 2, ["没有执行，原因：", f"--to 只能是 {'／'.join(HOST_IDS)}"]
+    if not original or not original.strip():
+        return 3, ["没有执行，原因：", "用户原话不能为空：换宿主要用户在本会话明说"]
+    db = store.open_store(project)
+    from module_crew.hooks import active_coordinator
+    coord = active_coordinator(db)
+    if coord is None:
+        return 3, ["没有执行，原因：", "本项目没有在用的模块协调"]
+    name, rec = coord
+    frm, target = rec.get("host", "claude-desktop"), HOST_IDS[to]
+    if frm == target:
+        return 3, ["没有执行，原因：", f"模块协调已经在 {HOST_NAMES[target]}"]
+    checks = readiness(db, to)
+    if not ready(checks):
+        return 3, ["没有执行，原因：还不具备换宿主的条件"] + check_lines(checks, frm, to)[1:-1]
+    from datetime import datetime
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    folder = db.path / GUIDE_DIR
+    folder.mkdir(exist_ok=True)
+    original_file = folder / f"{stamp}-original.txt"
+    original_file.write_text(original, encoding="utf-8")
+    with db.transaction(actor=name) as tx:
+        cur = tx.get("session", name)
+        tx.put("session", name, {**cur, "host": target,
+                                 "hostHandover": {"from": frm, "to": target, "at": store.now(), "original": original, "pending": True}},
+               action="coordinator-handover", data={"original": original, "from": frm, "to": target, "sessionId": session_id})
+    from module_crew import launcher, probe
+    cfg = store.get(db, "config", "main") or {}
+    integration = probe._checkout_of(project, cfg.get("integrationBranch", "")) or project
+    from module_crew import permissions
+    rules = permissions.follow_integration(project) if hasattr(permissions, "follow_integration") else None
+    text = guide(to, name, str(launcher.entry(db.path)), str(integration), str(original_file))
+    if rules:
+        text += f"\n## 权限规则\n\n{rules}\n"
+    path = folder / f"{stamp}.md"
+    path.write_text(text, encoding="utf-8")
+    return 0, [f"已换宿主：模块协调 {name} 登记为 {HOST_NAMES[target]}（{HOST_NAMES[frm]} 的会话在新宿主接管前仍登记着，请它停手）",
+               *([rules] if rules else []),
+               f"交接说明已存到 {path}，全文如下；请把它给用户，照着一步步做：", "", text]
