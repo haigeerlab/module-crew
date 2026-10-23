@@ -767,6 +767,8 @@ def _session_guard(args) -> int | None:
         return None
     if key == ("permissions", "verify") and not getattr(args, "record", None):
         return None
+    if key == ("coordinator", "handover") and getattr(args, "check", False):
+        return None                         # crew-host-handover: the check is read only
     caller = hooks.own_session_id()
     if not caller:
         return None                         # no session id: the user at a terminal
@@ -783,6 +785,28 @@ def _session_guard(args) -> int | None:
     print(f"❌ 本会话不是登记的模块协调 {name}（登记的是另一个会话）：没有执行，什么都没写。"
           f"要由本会话接手，请用户同意后运行 module-crew bind {name} --takeover --original-file <原话文件>", file=sys.stderr)
     return 7
+
+
+def _handover(args) -> int:
+    """crew-host-handover: `coordinator handover --check | --to codex|claude`."""
+    from module_crew import handover
+    if not args.check and not args.to:
+        print("❌ 要么 --check（只读核对），要么 --to codex|claude 加 --original／--original-file", file=sys.stderr)
+        return 2
+    try:
+        if args.check:
+            code, doc, lines = handover.check(".", args.to)
+            print(json.dumps(doc, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+            return code
+        original = _original(args.original, args.original_file)
+        if original is None:
+            return 2
+        code, lines = handover.handover(".", args.to, original, hooks.own_session_id())
+    except store.StoreError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({"code": code, "lines": lines}, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+    return code
 
 
 def _merge_lock_guard(args) -> int | None:
@@ -994,6 +1018,13 @@ def _main(argv: list[str] | None = None) -> int:
         g.add_argument("--original")
         g.add_argument("--original-file")
         c.add_argument("--json", action="store_true")
+    coh = cos.add_parser("handover", help="空档换宿主：--check 只读核对收尾条件；--to 换到 Codex 或 Claude（要用户原话）")
+    coh.add_argument("--check", action="store_true", help="只读：逐条报收尾条件")
+    coh.add_argument("--to", choices=("codex", "claude"))
+    hg = coh.add_mutually_exclusive_group()
+    hg.add_argument("--original")
+    hg.add_argument("--original-file")
+    coh.add_argument("--json", action="store_true")
     bd = sub.add_parser("bind", help="登记本会话就是状态库里的某个会话（钩子只给登记过的会话注入角色）")
     bd.add_argument("name", help="开工说明或恢复说明里写的邮箱名")
     bg = bd.add_mutually_exclusive_group()
@@ -1249,6 +1280,8 @@ def _run(args) -> int:
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 2
+    if args.group == "coordinator" and args.action == "handover":
+        return _handover(args)
     if args.group == "coordinator":
         original = _original(args.original, args.original_file)
         if original is None:
