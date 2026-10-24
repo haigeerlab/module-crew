@@ -132,7 +132,7 @@ Codex 版 `crew-coordinator` skill 管下面这些与 Claude 不同的地方，�
 - **提权**：几乎所有模块协调的写命令都写状态库或 `.git`，Codex 默认沙箱不让写。skill 列出要「申请在沙箱外运行」的命令，用户在模块协调那个线程里点批准；被沙箱拒绝时报错会带「申请在沙箱外运行」，不换写法绕过。
 - **预检**：接手后在集成 checkout 跑 `module-crew host-check`，按模块协调查：登记、版本、能否写 git 公共目录、能否读状态库、找得到 spec-guard、固定入口在不在。
 - **合并长检查**：Codex 没有「后台跑、跑完叫醒」。`module-crew merge run --detach` 拿到合并锁后把合并交给后台进程、立即返回，输出写到状态库目录 `merge-output/C<号>.log`；
-  `module-crew merge result [C<号>] [--wait <分钟>]`（只读，单次最多等 8 分钟）分段取结果，跑完时打印与前台 `merge run` 相同的内容、以同样的退出码结束，还在跑时退出码 6。`status` 会提示「已结束，运行 merge result 取通知」。
+  `module-crew merge result [C<号>] [--wait <分钟>]`（单次最多等 8 分钟；第一次取到结果时记进状态库）分段取结果，跑完时打印与前台 `merge run` 相同的内容、以同样的退出码结束，还在跑时退出码 6。`status` 会提示「已结束，运行 merge result 取通知」。
 - **开会话**：模块会话、轻任务会话都开在 Codex，由用户手动开；`start prepare`、`task dispatch` 输出末尾有「请用户去 Codex 新建任务」一段，逐个写出工作目录与开工说明文件。
 - **找插件**：module-crew、spec-guard、agent-relay 都按 Claude 的插件安装记录找（Codex 沙箱里读得到）；Codex 侧自己的插件安装 module-crew 不读，所以本机要在 Claude Code 里装着这些插件。
 - **代价**：提权次数多；ChatGPT 应用重启后要逐个点开模块协调和模块会话；决策收件箱在 Claude，它被桌面版停掉时 Codex 叫不醒，要用户点开。
@@ -200,10 +200,11 @@ module-crew protocol check <文件>                消息自检
 module-crew inbox add <文件> --from --relay-id   收件记账
 module-crew answer <编号> --original(-file)      转达「你的答复」
 module-crew start plan|prepare                   开工
+module-crew config set --commit-prefix <值> --original(-file)  已开工项目改 module-crew 提交信息的前缀（空字符串表示不加）
 module-crew review add|batch|approve|answer      交审与批量批准
 module-crew change add|list|land|answer          公共变更请求
 module-crew merge approve|revoke|queue|run|cleanup|push-plan|push
-module-crew merge run --detach / merge result [C<号>] [--wait <分钟>]   后台合并（Codex 上的模块协调用）／取它的结果（只读）
+module-crew merge run --detach / merge result [C<号>] [--wait <分钟>]   后台合并（Codex 上的模块协调用）／取它的结果（第一次取到时记进状态库）
 module-crew host-check [--json]                  宿主预检：模块 worktree 里按模块会话查，集成 checkout 里按模块协调查
 module-crew suspend|resume|sessions|resume-kit|serial
 module-crew takeover <邮箱名> --original(-file)  换会话接管
