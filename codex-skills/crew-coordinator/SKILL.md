@@ -5,7 +5,7 @@ description: 本线程是 Codex 桌面版里的 module-crew 模块协调时使�
 
 # module-crew 模块协调（Codex 版）
 
-规则来自 module-crew 插件，**不要抄进集成 checkout 或 worktree 的 AGENTS.md／CLAUDE.md**。命令入口：状态库里的固定入口 `<git公共目录>/module-crew/bin/module-crew`（交接说明里写了绝对路径），下文的 `module-crew` 都指它；不要改用插件目录里带版本号的路径。
+规则来自 module-crew 插件，**不要抄进集成 checkout 或 worktree 的 AGENTS.md／CLAUDE.md**。命令入口：状态库里的固定入口 `<git公共目录>/module-crew/bin/module-crew`（交接说明里写了绝对路径），下文的 `module-crew` 都指它；不要改用插件目录里带版本号的路径。调用 module-crew 一律用固定入口的绝对路径（`<项目>/.git/module-crew/bin/module-crew`）：相对路径命中不了前缀放行规则，会被沙箱拒（T134 核查结论）。
 
 ## 名称
 
@@ -186,6 +186,9 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 1. 模块发来最终验收【交审】：照常 `review add`，把交付、实际验证结果、没验证的范围写在正文里交用户审。
    输出说「spec/<模块>.md 在构建中改过」时，用 `review show <交审编号> --spec-diff` 取出 Spec 的改动差异，附在提请批准的正文里，写明「这次批准同时批准修订后的 Spec」；合入后 `merge run` 会替用户在集成分支记下它的批准（单独一个提交），输出说没记上时照实告诉用户。
    Plan 交审带着修订过的 Spec 时（`review add` 同样提醒），也照这样附差异、写明一并批准；`review approve` 会一次记下 Spec 与 Plan 两份批准。只差批准标记的 Spec 不会被拷进集成分支，已批准的那份保持原样。
+   **最终验收被退回后重新交审**：提请批准之前，先把新交审提交与原批准提交按产品文件比对。产品文件口径：两个提交之间有变化的文件，去掉内容已与集成分支完全相同的（同步带进来的不算）；取法是 `git diff --name-only <原提交> <新提交>` 列出变化的文件，再逐个用 `git diff --quiet <集成分支> <新提交> -- <文件>` 去掉已与集成分支相同的。
+   - 产品文件逐个无差异（去掉之后一个不剩）时，可沿用原批准原话登记：把原批准的原话文件交给命令，交审要点写「沿用原批准 C<号>，依据：产品文件无差异」，并列出比对结果（比了哪些文件、各自一致：每个变化的文件写明它与集成分支一致）。
+   - 有任何差异就要用户给新原话，照常提请批准；不要拿原批准顶替。
 2. 用户批准（批准即授权合入本地集成分支）：`module-crew merge approve <交审编号>… --original-file <原话文件>`（可一次给多个编号），逐条发出输出的【用户答复】。
    合入并通过检查后，`merge run` 请 spec-guard（接口 1.7 的 gateTick）在集成分支勾上这个模块的最终验收那一格，再单独提交；模块会话不再自己勾。
    spec-guard 不肯勾时（输出里带 `not-at-final-gate` 之类的短码），照实告诉用户，**不要自己去改 todo**；判断错了就报给 spec-guard 插件那边。spec-guard 低于 1.7 时不勾，升级后补勾。
