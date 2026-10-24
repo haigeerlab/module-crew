@@ -44,7 +44,8 @@ class InstallCommandsTest(unittest.TestCase):
     def test_requirements_files_and_none(self):
         self.assertEqual(start.install_commands(self.root), [])
         self.assertEqual(self.cmds("requirements.txt", "requirements-dev.txt"),
-                         [".venv/bin/pip install -r requirements-dev.txt", ".venv/bin/pip install -r requirements.txt"])
+                         ["python3 -m venv .venv", ".venv/bin/pip install -r requirements-dev.txt",
+                          ".venv/bin/pip install -r requirements.txt"])
 
     def test_js_and_python_together(self):
         self.assertEqual(self.cmds("pnpm-lock.yaml", "uv.lock", "requirements.txt"),
