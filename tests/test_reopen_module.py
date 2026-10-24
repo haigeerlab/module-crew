@@ -327,6 +327,32 @@ class EndToEndTest(MergeCase):
         self.assertIn("待退役的邮箱名：shop-b-r2", " ".join(done.lines))
 
 
+class DocsTest(unittest.TestCase):
+    """Acceptance 9: the coordinator skills (Claude and Codex), crew-dev and README describe the reopen."""
+
+    def read(self, rel):
+        from helpers import PLUGIN_ROOT
+        return (PLUGIN_ROOT / rel).read_text(encoding="utf-8")
+
+    def test_coordinator_skills(self):
+        for rel in ("skills/crew-coordinator/SKILL.md", "codex-skills/crew-coordinator/SKILL.md"):
+            with self.subTest(rel):
+                text = self.read(rel)
+                for words in ("重开已完成的模块", "返工与小模块", "merge cleanup <id>", "start prepare <id>",
+                              "<简称>-<id>-r<轮次>", "不要 `reactivate`", "合进集成分支、换名保留、确认丢弃",
+                              "点名重开就是开工批准"):
+                    self.assertIn(words, text)
+
+    def test_crew_dev(self):
+        text = self.read("skills/crew-dev/SKILL.md")
+        self.assertIn("只做 `tasks/<模块>/todo.md` 里新加的未勾项", text)
+
+    def test_readme(self):
+        text = self.read("README.md")
+        self.assertIn("## 修订已完成的模块（第九版）", text)
+        self.assertIn("start prepare <模块 id>", text)
+
+
 class FreshStoreRoundTest(StartCase):
     def test_round_two_without_records(self):
         self.set_map(reopened_map())
