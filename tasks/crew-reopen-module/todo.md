@@ -13,5 +13,5 @@
 - [x] Checkpoint 2（report）：命令层做完，全量测试通过——2dc2e8a 上全量 851 个测试通过
 - [x] Task 8：skill 两份「开工」、crew-dev、README（Spec 验收 9）——断言先红后绿（写在 test_reopen_module 的 `DocsTest`）；两份协调 skill「开工」加第 6 步、crew-dev「交审节奏」加「重开修订」一条、README 加「修订已完成的模块（第九版）」一节；test_skills 照常通过。Codex 版 `codex-skills/crew-dev` 不在并行边界里，没改（重开的做法已写在开工说明里），作为后续建议报
 - [x] Task 9：`module-crew sync` 后全量测试（Spec 验收 10）——同步 main 2a86001（HEAD 1823bbd）后全量 860 个测试通过
-- [ ] Checkpoint 3（gate）：最终验收
+- [x] Checkpoint 3（gate）：最终验收
 - [ ] 回告：ecosystem-lead（S18 的 module-crew 一侧已就位），经 mc-coord 转
