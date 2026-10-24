@@ -6,8 +6,8 @@
 - [x] Task 2：`prepare` 校验——可重开判据、旧会话未收回、旧分支非祖先或已检出时退出码 3 且什么都不写（Spec 验收 2 拒绝部分、3）——与 Task 3 一起实现后补测试，换回改前 `start.py` 确认新测试全红（12 失败 1 错误）再还原；重开计划挂在 `Proposal.reopen` 上，`validate` 仍返回三元组（`test_failure` 照用）
 - [x] Task 3：`prepare` 落地——快进或新切、worktree、`-r<轮次>` 登记、开工批准事项 `reopened`、输出与 `--json`（Spec 验收 1、2、4、8）——`--json` 原样带出 prepared 的键，未改 `__main__.py`；test_start_prepare、test_start_plan、test_failure 照常通过
 - [x] Task 4：开工说明「重开修订」一段与三种 `review` 写法（Spec 验收 5）——测试先红后绿；没有旧分支时写「旧的模块分支不在了，已从集成分支新切」；不重开时开工说明逐字不变（test_start_prepare 通过）
-- [ ] Task 5：`start plan` 不提议、原因写「已重开…要用户点名」（Spec 验收 7）
-- [ ] Checkpoint 1（report）：重开能开出来，开工说明与 plan 输出对，相关测试通过
+- [x] Task 5：`start plan` 不提议、原因写「已重开…要用户点名」（Spec 验收 7）——测试先红后绿；`_why_not` 多一个可选参数 `db` 用来算轮次
+- [x] Checkpoint 1（report）：重开能开出来，开工说明与 plan 输出对——test_reopen_module 与 start_plan、start_prepare、failure、light_task、store_session 共 91 个测试通过
 - [ ] Task 6：只看本轮——start、hooks、merge、review、stall 按模块查的地方只算本轮（Spec 验收 6 单元部分）
 - [ ] Task 7：端到端——重开 → bind → 交审 → 批准 → merge run → merge cleanup（Spec 验收 6）
 - [ ] Checkpoint 2（report）：命令层做完，全量测试通过

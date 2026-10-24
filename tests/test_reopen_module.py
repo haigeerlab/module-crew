@@ -202,6 +202,20 @@ class KickoffReopenTest(ReopenCase):
         self.assertIn("plan.md 里新补的一节说明这次为什么返工。旧的模块分支不在了，已从集成分支 main 新切，旧一轮的邮箱名已退役，不要用。", lines)
 
 
+class PlanReopenTest(ReopenCase):
+    def test_not_proposed_reason_names_it(self):
+        doc = reopened_map()
+        doc["startable"] = {"modules": [], "conflicts": []}
+        self.set_map(doc)
+        p = start.plan(self.repo)
+        self.assertEqual(p.modules, [])
+        self.assertIn({"module": "a", "reason": "已重开（第 2 轮待开），要用户点名：start prepare a"}, p.reasons)
+
+    def test_not_proposed_while_others_are(self):
+        p = start.plan(self.repo)
+        self.assertNotIn("a", [m["id"] for m in p.modules])
+
+
 class FreshStoreRoundTest(StartCase):
     def test_round_two_without_records(self):
         self.set_map(reopened_map())

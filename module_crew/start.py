@@ -58,7 +58,8 @@ def _counted_devs(db: store.Store | None) -> dict[str, dict]:
     return {k: v for k, v in _active_devs(db).items() if not v.get("suspended") and v.get("module") not in merged}
 
 
-def _why_not(m: dict, sessions: dict[str, dict], merged: set[str], done: set[str], slots: int) -> str | None:
+def _why_not(m: dict, sessions: dict[str, dict], merged: set[str], done: set[str], slots: int,
+             db: store.Store | None = None) -> str | None:
     """Why a capability-map module cannot be started now, or None when it is done."""
     mid = m.get("id")
     if m.get("status") == "done":
@@ -71,6 +72,8 @@ def _why_not(m: dict, sessions: dict[str, dict], merged: set[str], done: set[str
             return f"挂起中（{own['suspended'].get('reason')}）"
         return "已有模块会话"
     status = m.get("status")
+    if status == "in_progress" and _reopenable(m) is None:   # crew-reopen-module decision 6
+        return f"已重开（第 {_reopen_round(db, mid)} 轮待开），要用户点名：start prepare {mid}"
     if status == "in_progress":
         return f"spec-guard 的当前模块（{m.get('step') or '进行中'}），不在可开工列表"
     if status == "suspended":
@@ -106,7 +109,7 @@ def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal
     if not picked:
         merged, done = _merged_modules(db), {k for k, m in modules.items() if m.get("status") == "done"}
         for mid, m in modules.items():
-            why = _why_not(m, sessions, merged, done, slots)
+            why = _why_not(m, sessions, merged, done, slots, db)
             if why:
                 reasons.append({"module": mid, "reason": why})
     return Proposal(slots, picked, list((report.startable or {}).get("conflicts", [])), reasons=reasons, cadence=cadence)
