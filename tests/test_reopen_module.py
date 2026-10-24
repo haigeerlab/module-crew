@@ -165,6 +165,43 @@ class PrepareReopenTest(ReopenCase):
         self.assertEqual(doc["prepared"][0]["reopen"], {"round": 2, "branch": "fast-forward"})
 
 
+class KickoffReopenTest(ReopenCase):
+    def kickoff(self, review):
+        self.set_map(reopened_map(review=review))
+        res = start.prepare(self.repo, ["a"], "重开 a", short="shop")
+        self.assertEqual(res.code, 0, res.lines)
+        return store.read_body(self.db, res.prepared[0]["kickoff"]).splitlines()
+
+    def test_both_approved(self):
+        lines = self.kickoff(("approved", "approved"))
+        self.assertIn("这是重开修订（第 2 轮）：模块 a 已经做完过，spec-guard 已把它原地重开。只做 tasks/a/todo.md 里新加的未勾项，"
+                      "已勾的不要重做；", lines)
+        self.assertIn("plan.md 里新补的一节说明这次为什么返工。旧的模块分支已快进到集成分支 main，旧一轮的邮箱名已退役，不要用。", lines)
+        self.assertIn("Spec 与 Plan 仍是批准状态（范围内返工）。先 module-crew sync，再从 tasks/a/todo.md 第一个未勾项开始构建，"
+                      "不用等开工通知；做完发最终验收【交审】。", lines)
+        self.assertNotIn("收到开工类【协调通知】之前不要开始构建。", lines)
+        self.assertIn("邮箱名：shop-a-r2，用 agent-relay bridge_register 注册，wake: \"auto\"", lines)
+        self.assertLess(lines.index(next(l for l in lines if l.startswith("这是重开修订"))),
+                        lines.index(next(l for l in lines if l.startswith("Spec 与 Plan 仍是批准状态"))))
+
+    def test_plan_pending(self):
+        lines = self.kickoff(("approved", "pending"))
+        self.assertIn("这一步只做：把 tasks/a/plan.md、todo.md 发【交审】（节点 Plan）；Plan 批准后收到开工类【协调通知】再构建。", lines)
+        self.assertIn("收到开工类【协调通知】之前不要开始构建。", lines)
+        self.assertTrue(any(l.startswith("这是重开修订") for l in lines))
+
+    def test_spec_revised(self):
+        lines = self.kickoff(("revised", "pending"))
+        self.assertIn(start._first_step("a", "separate"), lines)
+        self.assertIn("收到开工类【协调通知】之前不要开始构建。", lines)
+        self.assertTrue(any(l.startswith("这是重开修订") for l in lines))
+
+    def test_created_branch_wording(self):
+        git(self.repo, "branch", "-D", "a")
+        lines = self.kickoff(("approved", "approved"))
+        self.assertIn("plan.md 里新补的一节说明这次为什么返工。旧的模块分支不在了，已从集成分支 main 新切，旧一轮的邮箱名已退役，不要用。", lines)
+
+
 class FreshStoreRoundTest(StartCase):
     def test_round_two_without_records(self):
         self.set_map(reopened_map())

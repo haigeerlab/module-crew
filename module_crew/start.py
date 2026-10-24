@@ -464,6 +464,24 @@ def _first_step(module: str, cadence: str) -> str:
             f"Spec 批准的【用户答复】到了再写 tasks/{module}/plan.md、todo.md 交审（节点 Plan）。项目评审节奏：separate。")
 
 
+def _reopen_lines(module: str, reopen: dict, integration: str, cadence: str) -> list[str]:
+    """crew-reopen-module decision 5: the revision paragraph and the first step, chosen by the review state at reopen."""
+    branch = (f"旧的模块分支已快进到集成分支 {integration}" if reopen["branch"] == "fast-forward"
+              else f"旧的模块分支不在了，已从集成分支 {integration} 新切")
+    lines = [f"这是重开修订（第 {reopen['round']} 轮）：模块 {module} 已经做完过，spec-guard 已把它原地重开。"
+             f"只做 tasks/{module}/todo.md 里新加的未勾项，已勾的不要重做；",
+             f"plan.md 里新补的一节说明这次为什么返工。{branch}，旧一轮的邮箱名已退役，不要用。"]
+    spec, plan = reopen["review"]["spec"], reopen["review"]["plan"]
+    if spec == "approved" and plan == "approved":   # in-scope rework: naming the module to reopen is the go-ahead (Q2)
+        return lines + [f"Spec 与 Plan 仍是批准状态（范围内返工）。先 module-crew sync，再从 tasks/{module}/todo.md 第一个未勾项开始构建，"
+                        "不用等开工通知；做完发最终验收【交审】。"]
+    if spec == "approved":
+        lines.append(f"这一步只做：把 tasks/{module}/plan.md、todo.md 发【交审】（节点 Plan）；Plan 批准后收到开工类【协调通知】再构建。")
+    else:
+        lines.append(_first_step(module, cadence))
+    return lines + ["收到开工类【协调通知】之前不要开始构建。"]
+
+
 def codex_open_lines(items: list[tuple[str, str, str]]) -> list[str]:
     """crew-codex-coordinator decision 7: with the coordinator on Codex every session is opened by hand in Codex.
 
@@ -490,8 +508,8 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
         f"开会话依据：用户批准事项 C{approval}",
         "",
         *install_line(worktree),
-        _first_step(module, cfg.get("reviewCadence", "separate")),
-        "收到开工类【协调通知】之前不要开始构建。",
+        *(_reopen_lines(module, reopen, cfg["integrationBranch"], cfg.get("reviewCadence", "separate")) if reopen else
+          [_first_step(module, cfg.get("reviewCadence", "separate")), "收到开工类【协调通知】之前不要开始构建。"]),
         "",
         f"接口：\n{deps}",
         "全局约束：不改公共文件（要改发【公共变更请求】）；被挡住发【等待其他会话】；发出前 module-crew protocol check。",
