@@ -424,7 +424,17 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
         result.sends += unqueued.notify(db, project)
     elif found.missing_seen:
         unqueued.mark_integration(db, project, "merge-run")
-    merged = _git(checkout, "merge", "--no-ff", "--no-edit", "-m", commits.message(f"合并批准事项 C{n}：合入 {unit}", commits.prefix_of(db)), m)
+    try:
+        merged = probe._git(checkout, "merge", "--no-ff", "--no-edit", "-m",
+                            commits.message(f"合并批准事项 C{n}：合入 {unit}", commits.prefix_of(db)), m,
+                            timeout=commit_timeout(cfg))
+    except subprocess.TimeoutExpired as exc:
+        # killed in pre-merge-commit, git has staged the merge but written no MERGE_HEAD yet: --abort has nothing to
+        # abort, so reset --merge drops the staged result (the checkout was clean before, see the checklist above)
+        if _git(checkout, "merge", "--abort").returncode != 0:
+            _git(checkout, "reset", "-q", "--merge")
+        return RunResult(4, [probe.timed_out(f"C{n}（{m}）的合并提交", exc),
+                             "已中止合并，集成分支未变；合并批准仍开着，交用户决定"], approval=n)
     reset_to = None
     if merged.returncode != 0:
         conflicted = _git(checkout, "diff", "--name-only", "--diff-filter=U").stdout.split()
@@ -454,9 +464,16 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
                                      "集成 checkout 状态未知，交用户决定"], approval=n, merge_commit=result.merge_commit)
 
     # decision 10: record the revised Spec's approval before the tick; a light task has no Spec and no todo
-    mark_line = _mark_spec(project, checkout, m, n, result.merge_commit, commits.prefix_of(db)) \
-        if not reason and not task and rec.get("specRevisionApproved") else None
-    tick_line, tick_hooks = (None, []) if reason or task else _tick(project, checkout, m, n, commits.prefix_of(db))[2:]
+    try:
+        mark_line = _mark_spec(project, checkout, m, n, result.merge_commit, commits.prefix_of(db), commit_timeout(cfg)) \
+            if not reason and not task and rec.get("specRevisionApproved") else None
+        tick_line, tick_hooks = (None, []) if reason or task else \
+            _tick(project, checkout, m, n, commits.prefix_of(db), commit_timeout(cfg))[2:]
+    except subprocess.TimeoutExpired as exc:
+        # S28: the merge stands and the check passed, but nothing is recorded yet; a rerun would merge nothing new
+        return RunResult(4, [probe.timed_out("合并收尾的提交", exc),
+                             f"合并提交 {result.merge_commit[:7]} 已在集成分支、检查已通过、状态库未记合并，"
+                             "不要重跑 merge run，交模块协调"], approval=n, merge_commit=result.merge_commit)
     with db.transaction(actor="coordinator") as tx:
         current = tx.get("item", str(n))
         if reason:
@@ -519,7 +536,7 @@ def renotice(db: store.Store, approval: int, kind: str) -> Reply:
 
 
 def _mark_spec(project: Path, checkout: Path, module: str, approval: int, merge_commit: str,
-               prefix: str = commits.PREFIX) -> str | None:
+               prefix: str = commits.PREFIX, timeout: float = DEFAULT_CHECK_TIMEOUT) -> str | None:
     """crew-merge decision 10: have spec-guard mark the merged, revised Spec approved, in a commit of its own.
     Failure is only reported: the merge stands and the marker line is put back as it was."""
     rel = f"spec/{module}.md"
@@ -547,11 +564,17 @@ def _mark_spec(project: Path, checkout: Path, module: str, approval: int, merge_
     if _git(checkout, "diff", "--quiet", "--", rel).returncode == 0:
         return f"{rel} 早已是批准状态，没有改动"
     _git(checkout, "add", "--", rel)
-    done = _git(checkout, "commit", "-q", "-m", commits.message(f"合并批准事项 C{approval}：记下 {module} 修订后 Spec 的批准", prefix))
+    try:
+        done = probe._git(checkout, "commit", "-q", "-m",
+                          commits.message(f"合并批准事项 C{approval}：记下 {module} 修订后 Spec 的批准", prefix), timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _git(checkout, "reset", "-q", "--", rel)
+        _git(checkout, "checkout", "--", rel)
+        raise
     if done.returncode != 0:
         _git(checkout, "reset", "-q", "--", rel)
         _git(checkout, "checkout", "--", rel)
-        return f"{missed}：" + commits.failure(checkout, done, "提交失败") + later
+        return "\n".join([f"{missed}：" + commits.failure(checkout, done, "提交失败") + later] + commits.hook_lines(checkout, done))
     return f"已在集成分支记下 {module} 修订后 Spec 的批准 {_git(checkout, 'rev-parse', '--short=7', 'HEAD').stdout.strip()}"
 
 
@@ -578,7 +601,7 @@ def _gate_command(project: Path, checkout: Path, module: str) -> tuple[Path, lis
 
 
 def _tick(project: Path, checkout: Path, module: str, approval: int,
-          prefix: str = commits.PREFIX) -> tuple[str, str | None, str, list[str]]:
+          prefix: str = commits.PREFIX, timeout: float = DEFAULT_CHECK_TIMEOUT) -> tuple[str, str | None, str, list[str]]:
     """Have spec-guard tick the module's final gate on the integration branch, then commit it (0.9.6: gateTick).
 
     (status, commit, report line, hook lines); status is ticked / already / refused / unavailable / commit-failed.
@@ -602,7 +625,13 @@ def _tick(project: Path, checkout: Path, module: str, approval: int,
     if done_line is None:
         return "refused", None, f"gateTick 的输出看不懂，没有提交：{first}", []
     _git(checkout, "add", "--", rel)
-    done = _git(checkout, "commit", "-q", "-m", commits.message(f"合并批准事项 C{approval}：勾选 {module} 的最终验收", prefix))
+    try:
+        done = probe._git(checkout, "commit", "-q", "-m",
+                          commits.message(f"合并批准事项 C{approval}：勾选 {module} 的最终验收", prefix), timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _git(checkout, "reset", "-q", "--", rel)
+        _git(checkout, "checkout", "--", rel)
+        raise
     if done.returncode != 0:
         _git(checkout, "reset", "-q", "--", rel)
         _git(checkout, "checkout", "--", rel)
@@ -630,7 +659,10 @@ def tick(project: str | os.PathLike, module: str, original: str) -> str:
     if checkout is None or not _clean(checkout):
         raise AnswerRefused("集成分支所在的 checkout 不干净或集成分支没有被检出")
     n = merged[-1]
-    status, commit, line, _ = _tick(project, checkout, module, n, commits.prefix_of(db))
+    try:
+        status, commit, line, _ = _tick(project, checkout, module, n, commits.prefix_of(db), commit_timeout(cfg))
+    except subprocess.TimeoutExpired as exc:
+        raise AnswerRefused(probe.timed_out(f"勾选 {module} 的最终验收", exc) + "；没有勾上，可以重试") from None
     if status == "already":
         return line
     if commit is None:
@@ -738,6 +770,11 @@ def _next_number(db: store.Store) -> int:
 def push_timeout(cfg: dict) -> int:
     """Decision 11 (0.11.3): a project's pre-push hook may run the full check, so the push gets the check's timeout."""
     return int(cfg.get("checkTimeout") or DEFAULT_CHECK_TIMEOUT)
+
+
+def commit_timeout(cfg: dict) -> int:
+    """S28 (0.14.1): a commit runs the project's commit hooks, which may be as heavy as the full check."""
+    return push_timeout(cfg)
 
 
 def _pr_base(project: Path, cfg: dict, remote: str, integration: str, given: str | None) -> tuple[str | None, str]:

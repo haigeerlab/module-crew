@@ -171,8 +171,7 @@ def _status(as_json: bool) -> int:
     else:
         print(f"  模块 {m['done']}/{m['total']} 完成；spec-guard 当前：{m['activeModule'] or '无'}；spec-guard 进行中：{'、'.join(m['inProgress']) or '无'}")
         print("  （这是 spec-guard 按能力图算出的进度；由 module-crew 开工的模块见上面的「会话与待办」）")
-    print("模块协调：Codex 桌面版；模块会话：Codex 桌面版" if (report.store or {}).get("coordinatorHost") == "codex-desktop"
-          else "模块协调：Claude 桌面版；模块会话：Claude 或 Codex 桌面版")
+    print(report.host_line)
     cadence, source, via_map = start.cadence_info(".", report.map)
     if via_map:
         print(f"评审节奏：{cadence}（来源：{source}，读自 spec-guard /map）")
@@ -421,6 +420,22 @@ def _start_prepare(modules: list[str], original: str | None, original_file: str 
 
 def _original(original: str | None, original_file: str | None) -> str | None:
     return _read(original_file) if original_file is not None else original
+
+
+def _config_set(args) -> int:
+    """S23: change `commitPrefix` on a project already started, without start prepare; needs the user's words."""
+    original = _original(args.original, args.original_file)
+    if original is None:
+        return 2
+    if not original.strip():
+        print("❌ 用户原话不能为空：只记用户在本会话亲手输入的话", file=sys.stderr)
+        return 3
+    db = store.open_store()
+    with db.transaction(actor="coordinator") as tx:
+        tx.put("config", "main", {**(tx.get("config", "main") or {}), "commitPrefix": args.commit_prefix}, action="set",
+               data={"commitPrefix": args.commit_prefix, "original": original})
+    print(f"已改提交前缀：{args.commit_prefix!r}" + ("（不加前缀）" if args.commit_prefix == "" else ""))
+    return 0
 
 
 def _failure(args) -> int:
@@ -934,6 +949,13 @@ def _main(argv: list[str] | None = None) -> int:
     spr.add_argument("--host", choices=("claude", "codex"), help="默认跟随模块协调的宿主（crew-host-handover）")
     spr.add_argument("--commit-prefix", help="module-crew 提交信息的前缀（项目配置；不设按 chore(crew): ，空字符串表示不加）")
     spr.add_argument("--json", action="store_true")
+    cf = sub.add_parser("config", help="改项目配置（要用户原话）")
+    cfs = cf.add_subparsers(dest="action", required=True)
+    cfset = cfs.add_parser("set")
+    cfset.add_argument("--commit-prefix", required=True, help="module-crew 提交信息的前缀；空字符串表示不加")
+    cfg = cfset.add_mutually_exclusive_group(required=True)
+    cfg.add_argument("--original")
+    cfg.add_argument("--original-file")
     rv = sub.add_parser("review", help="交审与批量批准")
     rvs = rv.add_subparsers(dest="action", required=True)
     ra = rvs.add_parser("add")
@@ -989,7 +1011,7 @@ def _main(argv: list[str] | None = None) -> int:
     mr.add_argument("--replace-check", action="store_true")
     mr.add_argument("--detach", action="store_true", help="交给后台运行、立即返回（Codex 用；跑完用 merge result 取结果）")
     mr.add_argument("--detached-child", action="store_true", help=argparse.SUPPRESS)
-    mres = mgs.add_parser("result", help="取 merge run --detach 后台合并的结果与通知（只读）")
+    mres = mgs.add_parser("result", help="取 merge run --detach 后台合并的结果与通知（第一次取到时记进状态库）")
     mres.add_argument("number", nargs="?", type=refs.parse)
     mres.add_argument("--wait", type=float, default=0, help="最多等这么多分钟（上限 8）")
     mres.add_argument("--json", action="store_true")
@@ -1189,7 +1211,11 @@ def _permissions(args) -> int:
     from module_crew import permissions
     try:
         if args.action == "plan":
-            p = permissions.plan(".")
+            try:
+                p = permissions.plan(".")
+            except store.StoreNotFound:
+                print(f"❌ {permissions.NO_COORDINATOR}", file=sys.stderr)
+                return 2
             print(json.dumps(p, ensure_ascii=False, indent=2) if args.json else "\n".join(permissions.render_plan(p)))
             return 0
         if args.action == "verify":
@@ -1406,6 +1432,12 @@ def _run(args) -> int:
     if args.group == "change":
         try:
             return _change(args)
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
+    if args.group == "config":
+        try:
+            return _config_set(args)
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 2

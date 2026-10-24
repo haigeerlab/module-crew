@@ -5,7 +5,6 @@ import json
 import os
 import re
 import signal
-import subprocess
 import time
 import unittest
 from contextlib import redirect_stderr
@@ -118,7 +117,8 @@ class HostCheckCoordinatorTest(CodexCoordCase):
         """A module worktree keeps the module-session checks, now with role 'dev'."""
         doc = json.loads(self.cli("host-check", "--json", cwd=self.wt["b"]).stdout)
         self.assertEqual(doc["role"], "dev")
-        self.assertEqual([c["id"] for c in doc["checks"]], ["store", "registered", "version", "git-writable"])
+        self.assertEqual([c["id"] for c in doc["checks"]], ["store", "registered", "version", "git-writable",
+                                                          "commit-hooks"])   # S22
 
 
 SANDBOX = "Codex 沙箱不让写 git 目录：请申请在沙箱外运行这条命令"
@@ -151,8 +151,9 @@ class SandboxHintTest(unittest.TestCase):
         self.assertIsNone(probe.sandbox_hint("Operation not permitted"))
 
     def test_git_stderr_carries_hint(self):
-        failed = subprocess.CompletedProcess(["git"], 128, "", "fatal: Unable to create 'x/index.lock': Operation not permitted\n")
-        with self.codex(), mock.patch("subprocess.run", return_value=failed):
+        failed = mock.Mock(returncode=128, pid=0)       # S28: _git runs git through Popen
+        failed.communicate.return_value = ("", "fatal: Unable to create 'x/index.lock': Operation not permitted\n")
+        with self.codex(), mock.patch("subprocess.Popen", return_value=failed):
             out = probe._git(Path("."), "commit", "-m", "x")
         self.assertIn("Operation not permitted", out.stderr)
         self.assertIn(SANDBOX, out.stderr)

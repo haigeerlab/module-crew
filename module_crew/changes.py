@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
@@ -172,10 +173,18 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
     if left and not (original and original.strip()):
         return LandResult(3, ["部分落地要用户原话：请用户同意后加 --original-file <原话文件>"])
     probe._git(checkout, "add", "-A", "--", *changed)
-    done = probe._git(checkout, "commit", "-q", "-m",
-                      commits.message(f"公共变更请求 C{number}（{rec['from']}）：{rec['what'][:40]}", commits.prefix_of(db)))
+    from module_crew import merge
+    try:
+        done = probe._git(checkout, "commit", "-q", "-m",
+                          commits.message(f"公共变更请求 C{number}（{rec['from']}）：{rec['what'][:40]}", commits.prefix_of(db)),
+                          timeout=merge.commit_timeout(cfg))
+    except subprocess.TimeoutExpired as exc:
+        return LandResult(4, [probe.timed_out("集成分支提交", exc), "已暂存的文件：" + "、".join(changed) + "（仍是暂存状态）",
+                              f"这次没有提交，请求 C{number} 仍开着；确认没有 .git/index.lock、钩子进程已结束、"
+                              "集成 checkout 里除清单文件外没有别的改动后，可以重试同一条 change land，不用先 unstage"])
     if done.returncode != 0:
-        return LandResult(4, [commits.failure(checkout, done, "集成分支提交失败"), "已暂存的文件：" + "、".join(changed)])
+        return LandResult(4, [commits.failure(checkout, done, "集成分支提交失败")] + commits.hook_lines(checkout, done)
+                          + ["已暂存的文件：" + "、".join(changed)])
     commit = probe._git(checkout, "rev-parse", "HEAD").stdout.strip()
     from module_crew import unqueued
     unqueued.mark(db, checkout, "change-land")       # crew-unqueued-commits: module-crew's own commit
@@ -199,7 +208,6 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
             tx.put("request", str(number), dict(rec, state="closed", closedReason="landed", commit=commit, answer=answer_rec),
                    action="landed", data={"commit": commit})
             _close_ticket(tx, rec)
-        from module_crew import merge
         skip = merge.no_sync(tx)               # same rule as merge run (0.9.3); the requester still gets its reply
         for name, sess in sorted(tx.records("session").items()):
             if sess.get("role") != "dev" or sess.get("status") != "active":

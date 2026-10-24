@@ -1,5 +1,7 @@
 # Spec: crew-reopen-module
 
+<!-- spec-guard: review approved 887314112e7f -->
+
 > 能力图模块 `crew-reopen-module`（第九版）。需求来源：接缝 S18——LIVE-SAAS 后台要修订两个已完成模块（tenant-onboarding、site-operations）。
 > spec-guard 的口径（sg-coord，账本 DHW69MR）：修订已完成模块按 workflow-checkpoints.md「返工与小模块」原地重开——在原 `tasks/<id>/todo.md` 追加未勾任务、`plan.md` 补一节，模块回到进行中；
 > 范围内返工不改 Plan 批准，超出原范围把 Plan 改 pending 重新交审；`/map` 把它算 `in_progress`，不进 `startable`。module-crew 只认 `/map --json` 现有字段，不要 spec-guard 新字段。

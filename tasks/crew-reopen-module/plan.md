@@ -1,5 +1,7 @@
 # Implementation Plan: crew-reopen-module
 
+<!-- spec-guard: review approved -->
+
 > 依据：`spec/crew-reopen-module.md`（用户 2026-10-24 批准，事项 C68，「C68 A；Q1 接受；Q2 点名即开工」）。任务清单：`tasks/crew-reopen-module/todo.md`。
 > 未决问题已定：Q1 接受假设 2 的判据（看 `progress`、`firstTickAt`，不看 `review`）；Q2 Spec、Plan 都还是 `approved` 时点名重开即开工，不等开工通知。
 

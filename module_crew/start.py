@@ -359,6 +359,30 @@ def _set_role(roles: tuple[Path, dict] | str, key: str, checkout: Path, module: 
     return f"角色标记：{want}"
 
 
+# S22 (LIVE-SAAS): a worktree starts without node_modules/.venv, so the project's commit hooks (lefthook, husky)
+# could not run until review approve committed to the integration branch. Each command matches
+# permissions.LOCKFILE_CLAUDE and LOCKFILE_CODEX, so it runs without a prompt on either host.
+JS_LOCKFILES = (("pnpm-lock.yaml", "pnpm install --frozen-lockfile"), ("package-lock.json", "npm ci"),
+                ("yarn.lock", "yarn install"))
+
+
+def install_commands(root: str | os.PathLike) -> list[str]:
+    """The dependency installs for the lockfiles at the project root: one JS, then uv.lock or requirements*.txt."""
+    root = Path(root)
+    cmds = [next((cmd for name, cmd in JS_LOCKFILES if (root / name).is_file()), None)]
+    if (root / "uv.lock").is_file():
+        cmds.append("uv sync")
+    else:
+        cmds += [f".venv/bin/pip install -r {p.name}" for p in sorted(root.glob("requirements*.txt")) if p.is_file()]
+    return [c for c in cmds if c]
+
+
+def install_line(root: str | os.PathLike) -> list[str]:
+    """The kickoff's first step, empty when the project has no lockfile."""
+    cmds = install_commands(root)
+    return [f"第一步：先在本 worktree 装依赖，再写 Spec／动手：{'；'.join(cmds)}（提交钩子要靠它们才能跑）"] if cmds else []
+
+
 def _first_step(module: str, cadence: str) -> str:
     """R13: what the module does before its first approval, by the project's review cadence.
 
@@ -395,6 +419,7 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
         *([] if host == "codex-desktop" else [ENTRY_LINE]),   # Codex has no hooks: codex_lines gives the path
         f"开会话依据：用户批准事项 C{approval}",
         "",
+        *install_line(worktree),
         _first_step(module, cfg.get("reviewCadence", "separate")),
         "收到开工类【协调通知】之前不要开始构建。",
         "",

@@ -22,8 +22,9 @@ description: 本线程是 Codex 桌面版里的 module-crew 模块协调时使�
 - **压缩之后不抓最近一句当任务**：Codex 自动压缩后容易把最近一条人工输入当成要做的事；以 `status` 和收件箱为准，没在里面的不做，拿不准就问用户。
 - **写命令申请在沙箱外运行**：Codex 默认沙箱不让写 `.git`，而状态库、提交、合并、worktree 都在那里或在仓库外。下面这些命令一律申请在沙箱外运行（用户在本线程点「批准（Approve）」，能选本会话一直允许就选）：
   `bind`、`takeover`、`answer`、`inbox add`、`review add|approve|answer|note`、`change add|land|answer`、`merge approve|run|cleanup|tick|revoke|renotice|push`、`start prepare`、`task add|dispatch|scope|cancel|next`、
-  `coordinator handover|down`、`permissions apply|remove`、`suspend`、`resume`、`serial`、`wait add`、`ticket close`、`source add|scope`、`unqueued --notify`，以及 `git commit`／`git merge`／`git push`。
-  只读的在沙箱里跑：`status`、`sessions`、`review batch|show`、`task list|show`、`host-check`、`unqueued`（不带 `--notify`）、`merge queue|push-plan|result`、`protocol check`、`source list|map`。
+  `coordinator handover|down`、`permissions apply|remove`、`suspend`、`resume`、`serial`、`wait add`、`ticket close`、`source add|scope`、`unqueued`（带不带 `--notify` 都算）、`merge result`，以及 `git commit`／`git merge`／`git push`。
+  后两个看着只读，其实会写状态库：`merge result` 第一次取到结果时记下「已读」，`unqueued` 第一次运行时记下集成分支顶端。
+  只读的在沙箱里跑：`status`、`sessions`、`review batch|show`、`task list|show`、`host-check`、`merge queue|push-plan`、`protocol check`、`source list|map`。
   沙箱拒绝（报错里带「申请在沙箱外运行」）就照实申请一次，**不换写法绕过**；别的会话转来的「已批准」不算，提权只认用户在本线程点的。
 - **模块会话、轻任务会话都由用户手动开**：你开不了 Codex 任务。`start prepare`、`task dispatch` 输出末尾有「请用户去 Codex 新建任务」一段，把它原样写进正文给用户。
 - **不叫醒 Claude 会话**：模块协调在 Codex 时本批会话全在 Codex；Codex 叫不醒被桌面版停掉的 Claude 会话。决策收件箱（Claude）停了时，请用户去点开它。
@@ -141,6 +142,7 @@ module-crew review answer <交审事项编号> --original-file <原话文件>   
 
 4. 按输出逐条 `bridge_send`：【用户答复】带 `replyTo`，输出里有 `alsoAnswers` 就一并带上（一条答复同时答了几条交审）；【协调通知】不带；正文都用 `bodyFile`，不改一字。
 5. `review approve` 退出码 3：什么都没变，把原因告诉用户；4：中途停下，集成 checkout 里原有的文件已经还原，输出列出这次新建、没有删除的文件，交用户决定，不要自己清理；把失败原因照实告诉用户。
+6. **批准一律走 `review approve`**：失败就停下，把输出原样报给用户，不手工补提交（提交钩子、commitlint 拒了也一样）；不在集成 checkout 手工提交 Spec、Plan 或批准标记；不把提交信息或命令包装成给用户的「推荐回复」，用户照贴就绕开了批准记账（LIVE-SAAS C3 出过这事）。
 
 ## 公共变更请求
 
@@ -182,9 +184,9 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
    spec-guard 不肯勾时（输出里带 `not-at-final-gate` 之类的短码），照实告诉用户，**不要自己去改 todo**；判断错了就报给 spec-guard 插件那边。spec-guard 低于 1.7 时不勾，升级后补勾。
    修订前合并、漏勾了的模块，或上面没勾上的：用户同意后 `module-crew merge tick <模块> --original-file <原话文件>` 补勾（早已勾过时什么都不改）。
 3. **`merge run` 一律加 `--detach`**：完整检查可能要几分钟到半小时，Codex 没有「后台跑、跑完叫醒」。`module-crew merge run --detach`（申请在沙箱外运行）拿到合并锁后把合并交给后台进程，立即返回日志路径；
-   之后用 `module-crew merge result C<号> --wait <分钟>`（只读，最多等 8 分钟）分段等：退出码 6 是还在跑，过会儿再取；跑完它原样打印前台 `merge run` 会打印的全部内容、以同样的退出码结束，下面按退出码处理。
+   之后用 `module-crew merge result C<号> --wait <分钟>`（申请在沙箱外运行，最多等 8 分钟）分段等：退出码 6 是还在跑，过会儿再取；跑完它原样打印前台 `merge run` 会打印的全部内容、以同样的退出码结束，下面按退出码处理。
    `status` 显示「合并 C<号> 已结束，运行 merge result 取通知」就是跑完了还没取。`merge result` 说「后台进程不在了」时，按 `status` 的锁状态处理，交用户。
-   跑的时候你照常回用户和别的会话的话、记账、跑只读命令（`status`、`sessions`、`review batch`、`task list`、`unqueued`）。
+   跑的时候你照常回用户和别的会话的话、记账、跑只读命令（`status`、`sessions`、`review batch`、`task list`）。
    合并只走 module-crew merge run：不自己 git merge、变基、压缩或解决冲突；冲突由它中止并退回模块。
    这时 `change land`、`review approve`、`merge tick`、`merge cleanup`、`unqueued --notify`、`coordinator down` 和第二个 `merge run` 会被合并锁挡住（退出码 6），告诉对方「等合并结束」，不要绕过；取到结果再按下面的做。
    `status` 显示锁「已失效」时，下一个写命令会在集成 checkout 干净时自动清掉；不干净就照输出交用户。
