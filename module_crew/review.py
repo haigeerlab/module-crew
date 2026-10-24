@@ -1138,7 +1138,13 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
     # already has the approved content, so HEAD is the baseline (git would refuse an empty commit)
     empty = _git(checkout, "diff", "--quiet", "HEAD").returncode == 0
     if not empty:
-        commit_run = _git(checkout, "commit", "-q", "-m", commits.message(f"用户批准事项 C{approval_no}{hub}：批准 {nodes}", commits.prefix_of(db)))
+        from module_crew import merge
+        try:
+            commit_run = probe._git(checkout, "commit", "-q", "-m",
+                                    commits.message(f"用户批准事项 C{approval_no}{hub}：批准 {nodes}", commits.prefix_of(db)),
+                                    timeout=merge.commit_timeout(cfg))
+        except subprocess.TimeoutExpired as exc:
+            return ApproveResult(4, [probe.timed_out("集成分支提交", exc)] + _restore(checkout))
         if commit_run.returncode != 0:
             return ApproveResult(4, [commits.failure(checkout, commit_run, "集成分支提交失败")]
                                  + commits.hook_lines(checkout, commit_run) + _restore(checkout))

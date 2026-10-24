@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -276,8 +277,47 @@ def plugin_missing(reason: str) -> str:
     return f"{reason}；{CODEX_PLUGIN_HINT}" if _in_codex() else reason
 
 
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
-    out = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, timeout=30)
+GIT_TIMEOUT = 30            # read-only git calls; commit-class calls pass the project's checkTimeout (S28)
+KILL_GRACE = 5              # seconds between SIGTERM (git removes its lock files) and SIGKILL
+
+
+def _kill_group(proc: subprocess.Popen) -> None:
+    """S28: end git and every hook process it started. git leads its own group (start_new_session), so the group
+    is never module-crew's; SIGTERM first lets git drop index.lock, SIGKILL then takes whatever is left."""
+    try:
+        if os.getpgid(proc.pid) != proc.pid:
+            proc.kill()
+            return
+    except ProcessLookupError:
+        return
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(proc.pid, sig)
+        except (ProcessLookupError, PermissionError):     # macOS says EPERM once the group is gone
+            return
+        if sig == signal.SIGTERM:
+            try:
+                proc.wait(timeout=KILL_GRACE)
+            except subprocess.TimeoutExpired:
+                pass
+
+
+def timed_out(what: str, exc: subprocess.TimeoutExpired) -> str:
+    return (f"{what}超时（{exc.timeout:g} 秒）：项目的提交钩子没在时限内跑完，git 和它启动的钩子进程已结束；"
+            "钩子确实要这么久就把 checkTimeout 调大")
+
+
+def _git(cwd: Path, *args: str, timeout: float = GIT_TIMEOUT) -> subprocess.CompletedProcess:
+    """Raises subprocess.TimeoutExpired once git and its hooks have been ended."""
+    command = ["git", "-C", str(cwd), *args]
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_group(proc)
+        proc.communicate()
+        raise
+    out = subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
     hint = sandbox_hint(out.stderr) if out.returncode != 0 else None
     if hint:
         out.stderr = f"{out.stderr.rstrip()}\n{hint}\n"
