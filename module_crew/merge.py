@@ -7,6 +7,7 @@ goes to a new remote branch and a PR the user merges.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -20,6 +21,8 @@ from module_crew.inbox import AnswerRefused, Reply
 from module_crew.review import _reply_text, closing, closing_all
 
 DEFAULT_CHECK_TIMEOUT = 1800
+_SHELL_OPS = ("&&", "||", ";", "|", ">", "<", "`", "$(")   # S30: the check runs without a shell
+CANNOT_RUN = "完整检查跑不起来"
 
 
 @dataclass
@@ -198,9 +201,14 @@ def _check_config(db: store.Store, check_command: str | None, replace: bool) -> 
     if current and check_command != current and not replace:
         return cfg, [f"完整检查命令已定为「{current}」，要改成「{check_command}」须用户明确同意后加 --replace-check"], False
     try:
-        shlex.split(check_command)
+        argv = shlex.split(check_command)
     except ValueError as exc:
         return cfg, [f"检查命令拆不开：{exc}"], False
+    if check_command != current:        # S30: checked when written only; a stored command is not refused afterwards
+        bad = next((t for t in argv if t.startswith(_SHELL_OPS) or t.endswith(_SHELL_OPS)), None)
+        if bad is not None:
+            return cfg, [f"检查命令里有 shell 运算符（「{bad}」）：module-crew 不经 shell 执行检查命令，运算符会被当成普通参数。"
+                         f"改用两种写法之一：把这些步骤写进项目脚本，检查命令写这个脚本；或写成 /bin/sh -c '<原命令>'"], False
     new = dict(cfg, checkCommand=check_command)
     new.setdefault("checkTimeout", DEFAULT_CHECK_TIMEOUT)
     return new, [], check_command != current
@@ -213,18 +221,21 @@ def _write_config(db: store.Store, cfg: dict) -> None:
 
 
 def _run_check(cfg: dict, checkout: Path) -> str | None:
-    """None when the full check passes, else the reason."""
+    """None when the full check passes, else the reason; a reason starting with CANNOT_RUN means it never ran."""
     timeout = cfg.get("checkTimeout") or DEFAULT_CHECK_TIMEOUT
+    argv = shlex.split(cfg["checkCommand"])
+    shown = json.dumps(argv, ensure_ascii=False)
     try:
-        done = subprocess.run(shlex.split(cfg["checkCommand"]), cwd=checkout, capture_output=True, text=True,
-                              timeout=timeout)
+        done = subprocess.run(argv, cwd=checkout, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return f"完整检查超时（{timeout} 秒）"
     except OSError as exc:
-        return f"完整检查运行不了：{exc}"
+        return f"{CANNOT_RUN}（实际执行的参数：{shown}）：{exc}"
+    tail = "\n".join((done.stdout + done.stderr).strip().splitlines()[-40:])
+    if done.returncode in (126, 127):       # the shell could not find or execute the program
+        return f"{CANNOT_RUN}（退出码 {done.returncode}；实际执行的参数：{shown}）：{tail}"
     if done.returncode != 0:
-        tail = "\n".join((done.stdout + done.stderr).strip().splitlines()[-40:])
-        return f"完整检查失败（退出码 {done.returncode}）：{tail}"
+        return f"完整检查失败（退出码 {done.returncode}；实际执行的参数：{shown}）：{tail}"
     return None
 
 
@@ -234,8 +245,9 @@ MODULE_TODO = "同步集成分支、修好后重新发最终验收【交审】"
 
 
 def _return_kind(reason: str) -> str:
-    """R20⑤: `env` when the full check could not run or ran out of time, `module` when it ran and failed or conflicted."""
-    if reason.startswith(("完整检查超时", "完整检查运行不了")) or re.match(r"^完整检查失败（退出码 12[67]）", reason):
+    """R20⑤: `env` when the full check ran out of time, `module` when it ran and failed or conflicted
+    (a check that could not run at all is not returned, S30)."""
+    if reason.startswith("完整检查超时"):
         return "env"
     return "module"
 
@@ -464,6 +476,11 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
             if undo.returncode != 0:
                 return RunResult(4, [f"C{n}（{m}）{first}；撤销合并失败：{undo.stderr.strip()[:200]}",
                                      "集成 checkout 状态未知，交用户决定"], approval=n, merge_commit=result.merge_commit)
+            if reason.startswith(CANNOT_RUN):
+                # S30: not the module's fault and not a failed check: nothing is sent back, the approval stays open
+                return RunResult(4, [f"C{n}（{m}）{first}；已撤销合并，集成分支回到合并前的 {reset_to[:7]}",
+                                     "检查命令要改（项目脚本或 /bin/sh -c '…'，须用户同意后加 --replace-check）；"
+                                     "合并批准仍开着，交用户决定"], approval=n, merge_commit=result.merge_commit)
 
     # decision 10: record the revised Spec's approval before the tick; a light task has no Spec and no todo
     try:
