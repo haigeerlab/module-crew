@@ -30,12 +30,12 @@ class BaselineTest(ProbeCase):
         self.assertEqual(check.state, "ok", check.reason)
         self.assertIn("main", check.reason)
 
-    def test_dirty_and_untracked_count(self):
+    def test_dirty_counts_tracked_only(self):
         (self.repo / "README.md").write_text("changed\n")
         (self.repo / "new.txt").write_text("x\n")
         check = probe.check_baseline(self.repo)
         self.assertEqual(check.state, "blocker")
-        self.assertIn("2 个文件", check.reason)
+        self.assertIn("1 个已跟踪文件", check.reason)
 
     def test_configured_branch_checked_out_in_worktree(self):
         wt = make_worktree(self.repo, "integration")
@@ -46,7 +46,7 @@ class BaselineTest(ProbeCase):
         check = probe.check_baseline(self.repo)
         self.assertEqual(check.state, "ok", check.reason)
         self.assertIn(str(wt), check.reason)
-        (wt / "x.txt").write_text("x")
+        (wt / "README.md").write_text("x")
         self.assertEqual(probe.check_baseline(self.repo).state, "blocker")
 
     def test_configured_branch_not_checked_out(self):

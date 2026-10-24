@@ -38,7 +38,7 @@ class PlanTest(StartCase):
         self.assertEqual(start.plan(self.repo).conflicts, [{"modules": ["b", "c"], "paths": ["apps/x/"]}])
 
     def test_blockers_reported(self):
-        (self.repo / "dirty.txt").write_text("x")
+        (self.repo / "README.md").write_text("dirty\n")
         p = start.plan(self.repo)
         self.assertTrue(any("集成分支所在的 checkout 不干净" in b for b in p.blockers))
         self.assertEqual(p.modules, [])
@@ -55,7 +55,7 @@ class PlanCliTest(StartCase):
         self.assertEqual([m["id"] for m in doc["modules"]], ["b", "c"])
 
     def test_blocked_exit_3(self):
-        (self.repo / "dirty.txt").write_text("x")
+        (self.repo / "README.md").write_text("dirty\n")
         r = self.run_cli("start", "plan")
         self.assertEqual(r.returncode, 3)
         self.assertIn("集成分支所在的 checkout 不干净", r.stdout)

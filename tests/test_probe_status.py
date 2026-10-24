@@ -83,7 +83,7 @@ class CliTest(StatusCase):
         self.assertEqual(doc["map"], {"done": 1, "total": 3, "activeModule": "b", "inProgress": ["b"]})
 
     def test_blocker_exit_3(self):
-        (self.repo / "dirty.txt").write_text("x")
+        (self.repo / "README.md").write_text("dirty\n")
         r = self.run_cli("status")
         self.assertEqual(r.returncode, 3)
         self.assertIn("集成分支所在的 checkout 不干净", r.stdout)

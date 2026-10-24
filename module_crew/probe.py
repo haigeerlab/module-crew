@@ -371,11 +371,17 @@ def check_baseline(project: str | os.PathLike) -> Check:
     if checkout is None:
         return Check("baseline", "blocker", f"集成分支 {branch} 没有被任何 checkout 检出",
                      f"在某个 checkout 里 git switch {branch}")
-    changed = [x for x in _git(checkout, "--no-optional-locks", "status", "--porcelain").stdout.splitlines() if x.strip()]
+    # S26: only tracked changes block; untracked files are mentioned, not counted against the baseline
+    changed = [x for x in _git(checkout, "--no-optional-locks", "status", "--porcelain", "--untracked-files=no").stdout.splitlines()
+               if x.strip()]
     if changed:
-        return Check("baseline", "blocker", f"集成分支所在的 checkout 不干净：{checkout}（{branch}）有 {len(changed)} 个文件未提交或未跟踪",
+        return Check("baseline", "blocker", f"集成分支所在的 checkout 不干净：{checkout}（{branch}）有 {len(changed)} 个已跟踪文件未提交",
                      "提交或清理这些改动后再开工")
-    return Check("baseline", "ok", f"集成分支 {branch}，在 {checkout}，工作区干净")
+    untracked = [x for x in _git(checkout, "--no-optional-locks", "ls-files", "--others", "--exclude-standard").stdout.splitlines()
+                 if x.strip()]
+    note = (f"；另有 {len(untracked)} 个未跟踪文件，不挡开工与批准（与要写入的文件同路径时 git 会拒绝写入，先移走它）"
+            if untracked else "")
+    return Check("baseline", "ok", f"集成分支 {branch}，在 {checkout}，已跟踪文件没有改动{note}")
 
 
 # ---------------------------------------------------------------- summary
