@@ -35,6 +35,10 @@ def _asks_user(hints: list[str]) -> bool:
     return any(h.startswith(ASK_USER) for h in hints)
 
 
+def _module_of(sessions: dict, sender: str) -> str:
+    return (sessions.get(sender) or {}).get("module") or sender
+
+
 def _active(db: store.Store, sender: str) -> bool:
     rec = store.get(db, "session", sender)
     return bool(rec) and rec.get("role") == "dev" and rec.get("status") == "active"
@@ -56,6 +60,13 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             out.lines.append(f"已记过：{sender} 的邮箱消息 #{relay_id}，没有重复记账")
             return out
         open_reqs = {k: v for k, v in tx.records("request").items() if v.get("state") == "open"}
+        sessions = tx.records("session")
+        module = _module_of(sessions, sender)
+        # S27 (T133): the module's own older request on the same files, nothing landed yet, is replaced by this one
+        replaced = {k: v for k, v in sorted(open_reqs.items(), key=lambda kv: int(kv[0]))
+                    if _module_of(sessions, v["from"]) == module and not v.get("partial")
+                    and set(req_files) & set(v["files"])}
+        open_reqs = {k: v for k, v in open_reqs.items() if k not in replaced}
         hints = hints_for(req_files, {k: v["files"] for k, v in open_reqs.items()})
         ticket = None
         if doc["fullyStopped"]:
@@ -67,6 +78,11 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
                 "what": "公共变更请求的处理结果", "closedReason": None, "closedBy": None,
             }, action="opened", data={"relayId": relay_id})
         n = tx.allocate_number()
+        for k, rec in replaced.items():
+            tx.put("request", k, dict(rec, state="closed", closedReason="superseded", supersededBy=n),
+                   action="superseded", data={"by": n, "relayId": relay_id})
+            _close_ticket(tx, rec)
+            out.closed.append(int(k))
         for k in (k for k, v in open_reqs.items() if set(req_files) & set(v["files"])):
             tx.put("request", k, dict(open_reqs[k], hints=open_reqs[k]["hints"] + [f"conflict:{n}"]),
                    action="hinted", data={"relayId": relay_id})
@@ -78,6 +94,10 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         }, action="created", data={"relayId": relay_id})
         out.number = n
         out.lines.append(f"已记为公共变更请求 C{n}" + (f"，等待记录 W{ticket}" if ticket else ""))
+        if out.closed:
+            out.lines.append("取代了 " + "、".join(f"C{k}" for k in out.closed) + f"（{module} 未落地的旧请求，文件重叠），"
+                             "旧请求不再处理；告诉 " + "、".join(sorted({v["from"] for v in replaced.values()}))
+                             + f"：以新请求 C{n} 为准")
         if hints:
             out.lines.append("提示：" + "、".join(hints))
         out.lines.append("要问用户" if _asks_user(hints) else "可由模块协调判断是否在已批准 Spec 范围内直接办")
@@ -97,14 +117,31 @@ def _close_ticket(tx, rec: dict) -> None:
                    data={"reason": 3})
 
 
+def _open_request(tx, number: int) -> dict:
+    rec = tx.get("request", str(number))
+    if rec is None:
+        raise AnswerRefused(f"没有公共变更请求 C{number}")
+    if rec.get("state") != "open":
+        raise AnswerRefused(f"公共变更请求 C{number} 已关闭（{rec.get('closedReason')}）")
+    return rec
+
+
+def supersede(db: store.Store, number: int, by: int | None = None) -> dict:
+    """S27 (T133) fallback: close a request a newer one replaced; no user words, nothing sent, the baseline untouched."""
+    with db.transaction(actor="coordinator") as tx:
+        rec = _open_request(tx, number)
+        if by is not None and tx.get("request", str(by)) is None:
+            raise AnswerRefused(f"没有公共变更请求 C{by}")
+        tx.put("request", str(number), dict(rec, state="closed", closedReason="superseded", supersededBy=by),
+               action="superseded", data={"by": by})
+        _close_ticket(tx, rec)
+    return rec
+
+
 def answer(db: store.Store, number: int, original: str) -> Reply:
     """Decline a request with the user's words; the baseline is not touched."""
     with db.transaction(actor="coordinator") as tx:
-        rec = tx.get("request", str(number))
-        if rec is None:
-            raise AnswerRefused(f"没有公共变更请求 C{number}")
-        if rec.get("state") != "open":
-            raise AnswerRefused(f"公共变更请求 C{number} 已关闭（{rec.get('closedReason')}）")
+        rec = _open_request(tx, number)
         answered_at = store.now()
         try:
             text = protocol.render_user_reply(item=number, original=original, answered_at=answered_at,
