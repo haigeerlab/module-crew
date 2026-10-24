@@ -2,6 +2,14 @@
 
 各版本的变化，最新的在前。README 只写最新一版。
 
+## 0.14.1 的变化（热修）
+
+- 提交类的 git 调用不再写死 30 秒超时：`change land`、`review approve`、`merge run` 的合并提交，以及合并收尾的两次提交（记下修订后 Spec 的批准、勾选最终验收），超时改用项目的 `checkTimeout`（默认 1800 秒，与完整检查同级）；只读的 git 调用仍是 30 秒（S28）。
+- git 在独立的进程组里运行，超时就结束整组（先 SIGTERM 让 git 清掉 `index.lock`，5 秒后 SIGKILL），钩子启动的子进程不会留在后台。
+- 超时一律退出码 4，并给出恢复提示：`change land` 的文件仍是暂存状态、请求仍开着，确认没有 `.git/index.lock`、钩子进程已结束、集成 checkout 里除清单文件外没有别的改动后，直接重跑同一条 `change land`，不用先取消暂存；`review approve` 把集成 checkout 还原、交审仍开着；合并提交中止合并、集成分支不变、合并批准仍开着；合并收尾报「合并提交已在集成分支、检查已通过、状态库未记合并，不要重跑 merge run，交模块协调」，不自动重试。
+- 接口与契约不变（`interface.json` 1.0、session-protocol v2.6），状态库不变。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。0.14.0 下因超时中断、文件还暂存着的公共变更请求，升级后按上面那条直接重跑 `change land`。钩子确实超过 30 分钟的项目，把 `checkTimeout` 调大。
+
 ## 0.14.0 的变化（LIVE-SAAS 演练修复）
 
 - 已开工的项目也能改提交前缀：`module-crew config set --commit-prefix <值> --original-file <原话文件>`，凭用户原话改 module-crew 自己提交信息的前缀（空字符串表示不加），不用再借 `start prepare`；项目的 commitlint 不认 `chore(crew):` 时用它（S23）。

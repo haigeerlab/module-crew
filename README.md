@@ -3,15 +3,20 @@
 让多个 Claude 或 Codex 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.14.1。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.15.0。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
-## 0.14.1 的变化（热修）
+## 0.15.0 的变化（重开已完成模块与 LIVE-SAAS 修复）
 
-- 提交类的 git 调用不再写死 30 秒超时：`change land`、`review approve`、`merge run` 的合并提交，以及合并收尾的两次提交（记下修订后 Spec 的批准、勾选最终验收），超时改用项目的 `checkTimeout`（默认 1800 秒，与完整检查同级）；只读的 git 调用仍是 30 秒（S28）。
-- git 在独立的进程组里运行，超时就结束整组（先 SIGTERM 让 git 清掉 `index.lock`，5 秒后 SIGKILL），钩子启动的子进程不会留在后台。
-- 超时一律退出码 4，并给出恢复提示：`change land` 的文件仍是暂存状态、请求仍开着，确认没有 `.git/index.lock`、钩子进程已结束、集成 checkout 里除清单文件外没有别的改动后，直接重跑同一条 `change land`，不用先取消暂存；`review approve` 把集成 checkout 还原、交审仍开着；合并提交中止合并、集成分支不变、合并批准仍开着；合并收尾报「合并提交已在集成分支、检查已通过、状态库未记合并，不要重跑 merge run，交模块协调」，不自动重试。
-- 接口与契约不变（`interface.json` 1.0、session-protocol v2.6），状态库不变。
-- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。0.14.0 下因超时中断、文件还暂存着的公共变更请求，升级后按上面那条直接重跑 `change land`。钩子确实超过 30 分钟的项目，把 `checkTimeout` 调大。
+- 已合入的模块可以原地重开：在 spec-guard 里追加未勾任务后，`start prepare <模块 id> --original-file <原话文件>` 把旧模块分支快进到集成分支再开 worktree，新邮箱名带轮次后缀（`-r2`），开工说明写明只做 todo 新加的未勾项；Claude 与 Codex 两份 crew-dev skill 都写了做法（见「修订已完成的模块」，S18）。
+- 公共变更请求：「文件：」下有不像路径的行时，`protocol check` 与 `change add` 直接退回（问题码 `bad-file-line`）；同一模块的新请求和它未落地的旧请求文件重叠时，旧请求记为被取代（`closedReason=superseded`）；`change answer <号> --reason superseded` 可手工关掉被取代的请求（S27）。
+- 体检的「集成 checkout 干净」只看已跟踪的改动，未跟踪文件只提示、不再算作不干净（S26）。
+- 完整检查命令：`merge run --check-command` 写入新命令时，拒收含 shell 运算符（`&&`、`|`、`;`、`>`、`$(` 等）的命令（module-crew 不经 shell 执行，改写成项目脚本或 `/bin/sh -c '…'`），已存的命令不受影响；命令本身跑不起来（找不到、没有执行权限）时撤销这次合并、不退回模块，合并批准仍开着，提示「完整检查跑不起来」并附实际执行的参数（S30）。
+- 提交超时的后续（S28）：新增 `merge record C<号> --original-file <原话文件>`，合并收尾超时、状态库没记下合并时，核对合并提交确实在集成分支上再补记；`config set --check-timeout <秒>` 改提交与完整检查的时限；git 进程组结束后最多再等 10 秒输出，常驻进程占着管道也不卡；`change land`、`review approve` 输出提交用时，超时提示带实际用时。
+- 只有 `requirements*.txt` 的项目，worktree 里还没有 `.venv` 时，开工说明先给 `python3 -m venv .venv`，权限规则也放行它。
+- `host-check` 读固定入口时不再往状态库写字节码缓存（`bin/__pycache__`），在没设 `PYTHONDONTWRITEBYTECODE` 的环境里也保持只读。
+- crew-coordinator skill（两份）：Codex 版清单补上 `config set` 与 `review batch --for-hub`（后者限「接了决策收件箱时」），依赖类提示先对照已批 Plan 再决定问不问用户（S19）；最终验收退回后重新交审时，产品文件逐个与原批准一致的可沿用原批准，有任何差异就要用户给新原话；Codex 版写明调用 module-crew 一律用固定入口的绝对路径。
+- 接口不变（`interface.json` 1.0），契约仍钉 session-protocol v2.6，公共变更请求多了问题码 `bad-file-line`；状态库只增字段，不用迁移。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。钩子很慢的项目，由模块协调凭用户原话跑 `config set --check-timeout`。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -210,10 +215,11 @@ module-crew protocol check <文件>                消息自检
 module-crew inbox add <文件> --from --relay-id   收件记账
 module-crew answer <编号> --original(-file)      转达「你的答复」
 module-crew start plan|prepare                   开工
-module-crew config set --commit-prefix <值> --original(-file)  已开工项目改 module-crew 提交信息的前缀（空字符串表示不加）
+module-crew config set [--commit-prefix <值>] [--check-timeout <秒>] --original(-file)  已开工项目改提交信息前缀（空字符串表示不加）或提交与检查的时限
 module-crew review add|batch|approve|answer      交审与批量批准
-module-crew change add|list|land|answer          公共变更请求
+module-crew change add|list|land|answer [--reason superseded]  公共变更请求（被取代的可直接关）
 module-crew merge approve|revoke|queue|run|cleanup|push-plan|push
+module-crew merge record C<号> --original(-file)  合并收尾超时、状态库没记下合并时补记
 module-crew merge run --detach / merge result [C<号>] [--wait <分钟>]   后台合并（Codex 上的模块协调用）／取它的结果（第一次取到时记进状态库）
 module-crew host-check [--json]                  宿主预检：模块 worktree 里按模块会话查，集成 checkout 里按模块协调查
 module-crew suspend|resume|sessions|resume-kit|serial
