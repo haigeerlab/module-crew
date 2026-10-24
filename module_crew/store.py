@@ -288,12 +288,21 @@ def _positive(v) -> bool:
     return isinstance(v, int) and not isinstance(v, bool) and v >= 1
 
 
+def reopen_of(sessions: dict, module: str) -> dict | None:
+    """crew-reopen-module: the `reopen` of the module's in-use session, None when it was not reopened."""
+    return next((s["reopen"] for s in sessions.values() if s.get("role") == "dev" and s.get("status") == "active"
+                 and s.get("module") == module and s.get("reopen")), None)
+
+
 def round_since(sessions: dict, module: str) -> int:
     """crew-reopen-module: item numbers up to this belong to an earlier round of a reopened module; 0 when not reopened."""
-    for s in sessions.values():
-        if s.get("role") == "dev" and s.get("status") == "active" and s.get("module") == module and s.get("reopen"):
-            return s["reopen"]["since"]
-    return 0
+    return (reopen_of(sessions, module) or {}).get("since", 0)
+
+
+def round_items(items: dict, sessions: dict | None, module: str) -> dict:
+    """Items left after dropping a reopened module's earlier rounds; for code that only reads that module's items."""
+    since = round_since(sessions or {}, module)
+    return {k: v for k, v in items.items() if int(k) > since} if since else items
 
 
 def events(db: Store, key: str | None = None, kind: str | None = None) -> list[dict]:

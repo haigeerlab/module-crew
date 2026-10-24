@@ -6,7 +6,7 @@ import unittest
 
 from helpers import START_MAP, RepoCase, StartCase, git
 
-from module_crew import start, store
+from module_crew import hooks, merge, review, stall, start, store
 
 
 def dev(module, worktree="/tmp/w", status="active", **kw):
@@ -214,6 +214,67 @@ class PlanReopenTest(ReopenCase):
     def test_not_proposed_while_others_are(self):
         p = start.plan(self.repo)
         self.assertNotIn("a", [m["id"] for m in p.modules])
+
+
+class CurrentRoundTest(ReopenCase):
+    """Decision 4: after the reopen only items numbered above reopen.since count for module a."""
+
+    def setUp(self):
+        super().setUp()
+        with self.db.transaction(actor="t") as tx:     # an earlier round: approved Spec, a returned final, a rework
+            r = tx.allocate_number()
+            tx.put("item", str(r), {"state": "closed", "kind": "review", "module": "a", "node": "spec",
+                                    "from": "shop-a", "relayId": None}, action="added")
+            tx.put("item", str(tx.allocate_number()), {"state": "closed", "kind": "review-approval", "reviews": [r],
+                                                       "from": "coordinator", "relayId": None}, action="review-approved")
+            tx.put("item", str(tx.allocate_number()), {"state": "closed", "kind": "merge-approval", "module": "a",
+                                                       "closedReason": "returned", "from": "shop-a", "relayId": None},
+                   action="returned")
+            tx.put("item", str(r), {"state": "closed", "kind": "review", "module": "a", "node": "spec",
+                                    "from": "shop-a", "relayId": None}, action="rework-sent",
+                   data={"module": "a", "node": "spec"})
+
+    def reopen(self, review=("approved", "approved")):
+        self.set_map(reopened_map(review=review))
+        res = start.prepare(self.repo, ["a"], "重开 a", short="shop")
+        self.assertEqual(res.code, 0, res.lines)
+        return res
+
+    def test_before_reopen_old_round_counts(self):
+        self.assertIn("spec", review._approved_nodes(self.db).get("a", set()))
+        self.assertEqual(len(stall.returns(store.events(self.db), store.records(self.db, "item"), "a")), 1)
+
+    def test_slot_taken_and_not_merged(self):
+        self.reopen()
+        self.assertEqual(start.plan(self.repo).slots, start.DEFAULT_MAX - 1)
+        self.assertNotIn("a", start._merged_modules(self.db))
+
+    def test_stage_build_when_both_approved(self):
+        self.reopen()
+        items, sessions = store.records(self.db, "item"), store.records(self.db, "session")
+        self.assertEqual(hooks._stage(items, "a", sessions), hooks.STAGE_BUILD)
+        self.assertEqual(hooks._stage(items, "a"), hooks.STAGE_MERGED)      # without sessions: unchanged behaviour
+
+    def test_stage_write_when_plan_pending(self):
+        self.reopen(("approved", "pending"))
+        items, sessions = store.records(self.db, "item"), store.records(self.db, "session")
+        self.assertEqual(hooks._stage(items, "a", sessions), hooks.STAGE_WRITE)
+
+    def test_sync_and_cleanup(self):
+        self.reopen()
+        with self.db.transaction(actor="t") as tx:
+            self.assertNotIn("a", merge.no_sync(tx))
+            self.assertIn(("shop-a-r2", None), merge.sync_targets(tx))
+        res = merge.cleanup(self.repo, "a", "收回 a")
+        self.assertEqual(res.code, 3, res.lines)
+        self.assertIn("还没有合入", " ".join(res.lines))
+
+    def test_review_history_only_this_round(self):
+        self.reopen(("approved", "pending"))
+        self.assertEqual(review._approved_nodes(self.db).get("a", set()), set())
+        self.assertEqual(review._rounds(self.db, "a", "spec"), 0)
+        sessions = store.records(self.db, "session")
+        self.assertEqual(stall.returns(store.events(self.db), store.records(self.db, "item"), "a", sessions), [])
 
 
 class FreshStoreRoundTest(StartCase):

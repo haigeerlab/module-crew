@@ -104,8 +104,11 @@ STAGE_WAIT_FINAL = "最终验收已交审（交审事项 C{n}），等用户批�
 STAGE_MERGED = "已合入集成分支，停止开发，等模块协调收回 worktree"
 
 
-def _stage(items: dict, module: str) -> str:
-    approved = set()
+def _stage(items: dict, module: str, sessions: dict | None = None) -> str:
+    """With `sessions`, a reopened module only counts this round (crew-reopen-module decision 4)."""
+    items = store.round_items(items, sessions, module)
+    reopen = store.reopen_of(sessions or {}, module) or {}
+    approved = {"spec", "plan"} if reopen.get("review") == {"spec": "approved", "plan": "approved"} else set()
     for rec in items.values():
         if rec.get("kind") == "review-approval":
             for n in rec.get("reviews", []):
@@ -186,7 +189,7 @@ def session_start(cwd: str | os.PathLike, source: str = "startup", role: Role | 
                          if v.get("from") == role.name and v.get("state") == "open")
         lines = [f"module-crew：你是模块 {role.module} 的模块会话（邮箱名 {role.name}），模块协调是 {_coordinator_name(role.db)}，你只和它说话。",
                  "按 crew-dev skill 的规则做；被挡住必须发【等待其他会话】；发出前 module-crew protocol check。",
-                 f"当前：{_stage(store.records(role.db, 'item'), role.module)}",
+                 f"当前：{_stage(store.records(role.db, 'item'), role.module, store.records(role.db, 'session'))}",
                  "未关的等待记录：" + ("、".join(f"W{n}" for n in tickets) or "无")]
     else:
         lines = [f"module-crew：本会话是模块协调（{role.name}）。{_count_text(_counts(role.db))}。",
@@ -212,7 +215,7 @@ def prompt_line(cwd: str | os.PathLike, role: Role | None = None) -> str | None:
     if role.kind == "task":
         return f"module-crew：你是轻任务 T{role.task} 的会话（{role.name}），当前：{_task_stage(store.get(role.db, 'task', str(role.task)) or {})}"
     if role.kind == "dev":
-        stage = _stage(store.records(role.db, "item"), role.module).split("，")[0].split("（")[0]
+        stage = _stage(store.records(role.db, "item"), role.module, store.records(role.db, "session")).split("，")[0].split("（")[0]
         return f"module-crew：你是 {role.module} 的模块会话（{role.name}），当前：{stage}"
     return f"module-crew：模块协调；{_count_text(_counts(role.db))}"
 

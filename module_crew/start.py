@@ -48,8 +48,10 @@ def _active_devs(db: store.Store | None) -> dict[str, dict]:
 def _merged_modules(db: store.Store | None) -> set[str]:
     if db is None:
         return set()
-    return {v.get("module") for v in store.records(db, "item").values()
-            if v.get("kind") == "merge-approval" and v.get("closedReason") == "merged"}
+    sessions = store.records(db, "session")
+    return {v.get("module") for k, v in store.records(db, "item").items()
+            if v.get("kind") == "merge-approval" and v.get("closedReason") == "merged"
+            and int(k) > store.round_since(sessions, v.get("module"))}
 
 
 def _counted_devs(db: store.Store | None) -> dict[str, dict]:
