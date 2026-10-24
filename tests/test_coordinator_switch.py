@@ -69,7 +69,7 @@ class UpTest(StartCase):
         self.assertTrue(any(l.startswith("spec-guard-enabled") for l in lines), lines)
 
     def test_dirty_baseline_refused(self):
-        (self.repo / "dirty.txt").write_text("x")
+        (self.repo / "README.md").write_text("dirty\n")
         code, lines = self.up()
         self.assertEqual(code, 3)
         self.assertTrue(any(l.startswith("baseline") for l in lines), lines)

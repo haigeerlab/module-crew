@@ -23,7 +23,7 @@ class ValidateTest(StartCase):
         self.assertEqual(snapshot(self), before)
 
     def test_blocked_by_probe_store_not_created(self):
-        (self.repo / "dirty.txt").write_text("x")
+        (self.repo / "README.md").write_text("dirty\n")
         self.assert_refused(["b"], "集成分支所在的 checkout 不干净")
         self.assertFalse((self.repo / ".git" / "module-crew").exists())
 
