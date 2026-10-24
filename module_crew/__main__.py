@@ -423,18 +423,29 @@ def _original(original: str | None, original_file: str | None) -> str | None:
 
 
 def _config_set(args) -> int:
-    """S23: change `commitPrefix` on a project already started, without start prepare; needs the user's words."""
+    """S23: change `commitPrefix` (T136: or `checkTimeout`) on a project already started, without start prepare;
+    needs the user's words."""
+    if args.commit_prefix is None and args.check_timeout is None:
+        print("❌ 至少给一项：--commit-prefix 或 --check-timeout", file=sys.stderr)
+        return 2
+    if args.check_timeout is not None and args.check_timeout < 1:
+        print("❌ --check-timeout 要是正整数（秒）", file=sys.stderr)
+        return 2
     original = _original(args.original, args.original_file)
     if original is None:
         return 2
     if not original.strip():
         print("❌ 用户原话不能为空：只记用户在本会话亲手输入的话", file=sys.stderr)
         return 3
+    changed = {k: v for k, v in (("commitPrefix", args.commit_prefix), ("checkTimeout", args.check_timeout)) if v is not None}
     db = store.open_store()
     with db.transaction(actor="coordinator") as tx:
-        tx.put("config", "main", {**(tx.get("config", "main") or {}), "commitPrefix": args.commit_prefix}, action="set",
-               data={"commitPrefix": args.commit_prefix, "original": original})
-    print(f"已改提交前缀：{args.commit_prefix!r}" + ("（不加前缀）" if args.commit_prefix == "" else ""))
+        tx.put("config", "main", {**(tx.get("config", "main") or {}), **changed}, action="set",
+               data={**changed, "original": original})
+    if args.commit_prefix is not None:
+        print(f"已改提交前缀：{args.commit_prefix!r}" + ("（不加前缀）" if args.commit_prefix == "" else ""))
+    if args.check_timeout is not None:
+        print(f"已改检查时限：{args.check_timeout} 秒（完整检查、提交与推送都用它）")
     return 0
 
 
@@ -790,6 +801,14 @@ def _merge(args) -> int:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
         return 0
+    if args.action == "record":           # T136: the wrap-up timed out after the merge commit was made
+        res = merge.record(".", args.number, original)
+        for line in res.lines:
+            print(line, file=sys.stderr if res.code else sys.stdout)
+        for x in res.sends:
+            print(f"发送 【协调通知】（{x['kind']}）→ {x['to']}，正文文件：{x['path']}")
+            _sent(x['to'])
+        return res.code
     if args.action == "cleanup":
         res = merge.cleanup(".", args.module, original)
     else:
@@ -820,7 +839,7 @@ def _remind() -> None:
 
 
 # crew-background-checks: commands that write the integration checkout wait while a merge runs in the background
-_LOCKED = {("change", "land"), ("review", "approve"), ("merge", "tick"), ("merge", "cleanup"), ("coordinator", "down")}
+_LOCKED = {("change", "land"), ("review", "approve"), ("merge", "tick"), ("merge", "record"), ("merge", "cleanup"), ("coordinator", "down")}
 
 
 # crew-session-handover decision 3: commands any session may run (read-only, the module side, hooks); every other
@@ -962,7 +981,8 @@ def _main(argv: list[str] | None = None) -> int:
     cf = sub.add_parser("config", help="改项目配置（要用户原话）")
     cfs = cf.add_subparsers(dest="action", required=True)
     cfset = cfs.add_parser("set")
-    cfset.add_argument("--commit-prefix", required=True, help="module-crew 提交信息的前缀；空字符串表示不加")
+    cfset.add_argument("--commit-prefix", help="module-crew 提交信息的前缀；空字符串表示不加")
+    cfset.add_argument("--check-timeout", type=int, help="完整检查与提交钩子的时限（秒，正整数）")
     cfg = cfset.add_mutually_exclusive_group(required=True)
     cfg.add_argument("--original")
     cfg.add_argument("--original-file")
@@ -1034,7 +1054,8 @@ def _main(argv: list[str] | None = None) -> int:
     kg.add_argument("--env", action="store_const", const="env", dest="kind", help="检查环境出了问题，模块不用改代码")
     kg.add_argument("--module", action="store_const", const="module", dest="kind", help="模块需要修改")
     for name, positional in (("approve", ("numbers", refs.parse)), ("revoke", ("number", refs.parse)),
-                             ("cleanup", ("module", str)), ("tick", ("module", str)), ("push", None)):
+                             ("cleanup", ("module", str)), ("tick", ("module", str)), ("record", ("number", refs.parse)),
+                             ("push", None)):
         c = mgs.add_parser(name)
         if positional:
             c.add_argument(positional[0], type=positional[1], **({"nargs": "+"} if name == "approve" else {}))

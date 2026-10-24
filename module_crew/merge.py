@@ -492,7 +492,10 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
         # S28: the merge stands and the check passed, but nothing is recorded yet; a rerun would merge nothing new
         return RunResult(4, [probe.timed_out("合并收尾的提交", exc),
                              f"合并提交 {result.merge_commit[:7]} 已在集成分支、检查已通过、状态库未记合并，"
-                             "不要重跑 merge run，交模块协调"], approval=n, merge_commit=result.merge_commit)
+                             "不要重跑 merge run，交模块协调",
+                             f"补记合并：请用户同意后运行 module-crew merge record C{n} --original-file <原话文件>"
+                             + ("" if task else f"，再用 merge tick {m} 勾选最终验收")],
+                         approval=n, merge_commit=result.merge_commit)
     with db.transaction(actor="coordinator") as tx:
         current = tx.get("item", str(n))
         if reason:
@@ -506,18 +509,8 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
                     todo=ENV_TODO if kind == "env" else MODULE_TODO, task=task)
             result.lines.append(f"C{n}（{unit}）已退回（{'检查环境出了问题，模块不用改代码' if kind == 'env' else '模块需要修改'}）：{first}")
         else:
-            tx.put("item", str(n), dict(current, state="closed", closedReason="merged", mergeCommit=result.merge_commit),
-                   action="merged")
-            short = result.merge_commit[:7]
-            _notice(tx, db, result, rec["from"], "wrap-up",
-                    basis=f"最终验收的合并批准事项 C{n}；已合入集成分支 {short}",
-                    todo="停止在本 worktree 开发，等模块协调收回 worktree", task=task)
-            what = f"轻任务 {unit}" if task else f"模块 {m}"
-            for name, target_task in sync_targets(tx, exclude=rec["from"]):
-                _notice(tx, db, result, name, "sync-baseline",
-                        basis=f"{what} 已合入集成分支 {short}（合并批准记录 C{n}）",
-                        todo=f"{sync.STEP}，跑完整检查后继续", task=target_task)
-            result.lines.append(f"C{n}（{unit}）已合入集成分支 {short}")
+            _close_merged(tx, db, result, n, current, unit)
+            result.lines.append(f"C{n}（{unit}）已合入集成分支 {result.merge_commit[:7]}")
             if mark_line:
                 result.lines.append(mark_line)
             if tick_line:
@@ -529,6 +522,62 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
     if not reason:                  # crew-unqueued-commits: the merge (and tick) commits are module-crew's own
         from module_crew import unqueued
         unqueued.mark(db, checkout, "merge-run")
+    return result
+
+
+def _close_merged(tx, db: store.Store, result: RunResult, n: int, rec: dict, unit: str, data: dict | None = None) -> None:
+    """Close merge approval C{n} as merged into result.merge_commit: wrap-up to its session, sync to the others."""
+    task = rec.get("task")
+    tx.put("item", str(n), dict(rec, state="closed", closedReason="merged", mergeCommit=result.merge_commit),
+           action="merged", data=data)
+    short = result.merge_commit[:7]
+    _notice(tx, db, result, rec["from"], "wrap-up",
+            basis=f"最终验收的合并批准事项 C{n}；已合入集成分支 {short}",
+            todo="停止在本 worktree 开发，等模块协调收回 worktree", task=task)
+    what = f"轻任务 {unit}" if task else f"模块 {unit}"
+    for name, target_task in sync_targets(tx, exclude=rec["from"]):
+        _notice(tx, db, result, name, "sync-baseline",
+                basis=f"{what} 已合入集成分支 {short}（合并批准记录 C{n}）",
+                todo=f"{sync.STEP}，跑完整检查后继续", task=target_task)
+
+
+def record(project: str | os.PathLike, approval: int, original: str) -> RunResult:
+    """T136: with the user's words, record a merge whose wrap-up timed out after the merge commit was made (S28).
+    The merge commit must be on the integration branch: a first-parent merge whose second parent is the submitted
+    commit."""
+    if not original or not original.strip():
+        return RunResult(3, ["用户原话不能为空：补记合并要用户明确同意"], approval=approval)
+    project = Path(project)
+    db = store.open_store(project)
+    rec = store.get(db, "item", str(approval))
+    if rec is None or rec.get("kind") != "merge-approval":
+        return RunResult(3, [f"C{approval} 不是合并批准"], approval=approval)
+    if rec.get("state") != "open":
+        return RunResult(3, [f"合并批准 C{approval} 已关闭（{rec.get('closedReason')}），没有可补记的"], approval=approval)
+    task = rec.get("task")
+    m = f"task/t{task}" if task else rec["module"]
+    unit = f"T{task}" if task else m
+    branch = (store.get(db, "config", "main") or {}).get("integrationBranch", "")
+    merges = _git(project, "rev-list", "--first-parent", "--merges", "--parents", f"refs/heads/{branch}").stdout
+    found = next((line.split()[0] for line in merges.splitlines()
+                  if len(line.split()) == 3 and line.split()[2] == rec["commit"]), None)
+    if found is None:
+        return RunResult(3, [f"C{approval}（{unit}）没有补记：集成分支 {branch} 上没有合入交审提交 {rec['commit'][:7]} 的合并提交"],
+                         approval=approval)
+    result = RunResult(0, approval=approval, merge_commit=found)
+    with db.transaction(actor="coordinator") as tx:
+        _close_merged(tx, db, result, approval, tx.get("item", str(approval)), unit,
+                      data={"original": original, "recorded": True})
+    if task:
+        from module_crew import tasks
+        tasks.advance(db, task, "merged")
+    checkout = probe._checkout_of(project, branch)
+    if checkout is not None and _git(checkout, "rev-parse", "HEAD").stdout.strip() == found:
+        from module_crew import unqueued        # crew-unqueued-commits: the merge commit is module-crew's own
+        unqueued.mark(db, checkout, "merge-record")
+    result.lines.append(f"C{approval}（{unit}）已补记合并：合并提交 {found[:7]} 在集成分支上")
+    if not task:
+        result.lines.append(f"最终验收的勾选若没做成，用户同意后运行 module-crew merge tick {m}（已勾上的会说已勾选）")
     return result
 
 
