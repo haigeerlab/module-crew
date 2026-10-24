@@ -637,9 +637,19 @@ def _change(args) -> int:
         if not rows and not args.json:
             print("没有未处理的公共变更请求")
         return 0 if rows else 3
+    if args.action == "answer" and args.reason == "superseded":     # S27 (T133): no user words needed
+        try:
+            rec = changes.supersede(db, args.number, args.by)
+        except changes.AnswerRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        by = f"，由 C{args.by} 取代" if args.by is not None else ""
+        print(f"公共变更请求 C{args.number} 已记为被取代{by}；不发回复，需要时告诉 {rec['from']}：旧请求不再处理")
+        return 0
     original = _original(args.original, args.original_file)
     if args.action == "answer":
         if original is None:
+            print("❌ 拒绝请求要用户原话：加 --original 或 --original-file（被新请求取代的用 --reason superseded）", file=sys.stderr)
             return 2
         try:
             reply = changes.answer(db, args.number, original)
@@ -996,9 +1006,12 @@ def _main(argv: list[str] | None = None) -> int:
     for name in ("land", "answer"):
         c = chs.add_parser(name)
         c.add_argument("number", type=refs.parse)
-        g = c.add_mutually_exclusive_group(required=(name == "answer"))
+        g = c.add_mutually_exclusive_group()
         g.add_argument("--original")
         g.add_argument("--original-file")
+        if name == "answer":
+            g.add_argument("--reason", choices=["superseded"], help="旧请求已被同一模块的新请求取代：直接关闭，不要用户原话")
+            c.add_argument("--by", type=refs.parse, help="取代它的新请求编号（配合 --reason superseded）")
         if name == "land":
             c.add_argument("--partial", action="store_true", help="清单里还有文件没改时，先落地已改的部分（要用户原话），请求保持打开")
     mg = sub.add_parser("merge", help="本地合并、收尾与远端 PR")
