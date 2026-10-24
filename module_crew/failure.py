@@ -155,7 +155,7 @@ def sessions(db: store.Store, now: datetime | None = None) -> list[dict]:
             continue
         module = rec.get("module")
         last = next((e["at"] for e in reversed(events) if _related(e, name, module)), None)
-        text = hooks._stage(items, module)
+        text = hooks._stage(items, module, store.records(db, "session"))
         rows.append({
             "name": name, "relayName": name, "module": module, "worktree": rec.get("worktree"), "host": rec.get("host"),
             "stage": stage_code(text), "stageText": text,
@@ -171,7 +171,7 @@ def sessions(db: store.Store, now: datetime | None = None) -> list[dict]:
             "startedAt": (started := stall.started_at(events, name)),
             "commits": stall.commit_facts(rec.get("worktree"), integration, started),
             "asks": stall.asks(events, items, module),
-            "returns": stall.returns(events, items, module),
+            "returns": stall.returns(events, items, module, store.records(db, "session")),
             "waitUser": stall.wait_user(events, items, name),
             "answers": stall.answers(items, module, name, rec.get("worktree"), integration, started),
         })

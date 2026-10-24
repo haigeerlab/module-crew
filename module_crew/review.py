@@ -303,7 +303,8 @@ def _disagree_reasons(db: store.Store, worktree: Path, sub: dict) -> list[str]:
 
 def _rounds(db: store.Store, module: str, node: str) -> int:
     """Rework notices already sent for this module and node."""
-    return sum(1 for e in store.events(db, kind="item") if e.get("type") == "item.rework-sent"
+    since = store.round_since(store.records(db, "session"), module)
+    return sum(1 for e in store.events(db, kind="item") if e.get("type") == "item.rework-sent" and int(e["key"]) > since
                and (e.get("data") or {}).get("module") == module and (e.get("data") or {}).get("node") == node)
 
 
@@ -331,12 +332,14 @@ def _points(text: str) -> str:
 def _approved_nodes(db: store.Store) -> dict[str, set[str]]:
     """Modules -> nodes already approved through a review-approval."""
     items = store.records(db, "item")
+    sessions = store.records(db, "session")
     approved: dict[str, set[str]] = {}
     for rec in items.values():
         if rec.get("kind") == "review-approval":
             for n in rec.get("reviews", []):
                 r = items.get(str(n)) or {}
-                approved.setdefault(r.get("module"), set()).add(r.get("node"))
+                if n > store.round_since(sessions, r.get("module")):     # crew-reopen-module: this round only
+                    approved.setdefault(r.get("module"), set()).add(r.get("node"))
     return approved
 
 

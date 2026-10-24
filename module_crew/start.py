@@ -24,6 +24,7 @@ class Proposal:
     blockers: list[str] = field(default_factory=list)
     reasons: list[dict] = field(default_factory=list)      # {"module", "reason"} when nothing can be started
     cadence: str = "separate"                                 # effective reviewCadence (from /map when it has one)
+    reopen: dict = field(default_factory=dict)              # module -> {"round", "branch", "review", "info"} (prepare only)
 
 
 def _open_store(project: Path) -> store.Store | None:
@@ -47,8 +48,10 @@ def _active_devs(db: store.Store | None) -> dict[str, dict]:
 def _merged_modules(db: store.Store | None) -> set[str]:
     if db is None:
         return set()
-    return {v.get("module") for v in store.records(db, "item").values()
-            if v.get("kind") == "merge-approval" and v.get("closedReason") == "merged"}
+    sessions = store.records(db, "session")
+    return {v.get("module") for k, v in store.records(db, "item").items()
+            if v.get("kind") == "merge-approval" and v.get("closedReason") == "merged"
+            and int(k) > store.round_since(sessions, v.get("module"))}
 
 
 def _counted_devs(db: store.Store | None) -> dict[str, dict]:
@@ -57,7 +60,8 @@ def _counted_devs(db: store.Store | None) -> dict[str, dict]:
     return {k: v for k, v in _active_devs(db).items() if not v.get("suspended") and v.get("module") not in merged}
 
 
-def _why_not(m: dict, sessions: dict[str, dict], merged: set[str], done: set[str], slots: int) -> str | None:
+def _why_not(m: dict, sessions: dict[str, dict], merged: set[str], done: set[str], slots: int,
+             db: store.Store | None = None) -> str | None:
     """Why a capability-map module cannot be started now, or None when it is done."""
     mid = m.get("id")
     if m.get("status") == "done":
@@ -70,6 +74,8 @@ def _why_not(m: dict, sessions: dict[str, dict], merged: set[str], done: set[str
             return f"挂起中（{own['suspended'].get('reason')}）"
         return "已有模块会话"
     status = m.get("status")
+    if status == "in_progress" and _reopenable(m) is None:   # crew-reopen-module decision 6
+        return f"已重开（第 {_reopen_round(db, mid)} 轮待开），要用户点名：start prepare {mid}"
     if status == "in_progress":
         return f"spec-guard 的当前模块（{m.get('step') or '进行中'}），不在可开工列表"
     if status == "suspended":
@@ -105,7 +111,7 @@ def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal
     if not picked:
         merged, done = _merged_modules(db), {k for k, m in modules.items() if m.get("status") == "done"}
         for mid, m in modules.items():
-            why = _why_not(m, sessions, merged, done, slots)
+            why = _why_not(m, sessions, merged, done, slots, db)
             if why:
                 reasons.append({"module": mid, "reason": why})
     return Proposal(slots, picked, list((report.startable or {}).get("conflicts", [])), reasons=reasons, cadence=cadence)
@@ -191,6 +197,45 @@ def _settings(project: Path, db: store.Store | None, short: str | None, max_modu
             "crewDir": str(top.parent / f"{top.name}-crew")}, reasons
 
 
+def _reopenable(m: dict | None) -> str | None:
+    """crew-reopen-module decision 1: why a capability-map module is not a reopened one, or None when it is.
+    The caller checks separately that no module session is in use for it."""
+    if not m:
+        return "能力图里没有这个模块"
+    progress = m.get("progress") or {}
+    if m.get("status") != "in_progress":
+        return f"状态是 {m.get('status')}，不是 in_progress"
+    if m.get("worktree"):
+        return f"已被 checkout {m['worktree']} 领走"
+    if not (isinstance(progress.get("done"), int) and isinstance(progress.get("total"), int)
+            and progress["done"] < progress["total"]):
+        return "todo 没有未勾的项"
+    if not m.get("firstTickAt"):
+        return "以前没勾过任何项，不是做完后重开的模块"
+    return None
+
+
+def _reopen_round(db: store.Store | None, module: str) -> int:
+    """r<round>: every module session this module ever had, plus one; at least 2 (assumption 6)."""
+    seen = sum(1 for v in (store.records(db, "session").values() if db else [])
+               if v.get("role") == "dev" and v.get("module") == module)
+    return max(seen + 1, 2)
+
+
+def _reopen_branch(project: Path, module: str, integration: str) -> tuple[str | None, str | None]:
+    """(how, refusal) for the old module branch (decision 2): created / fast-forward, or why not."""
+    if _git(project, "rev-parse", "--verify", "--quiet", f"refs/heads/{module}").returncode != 0:
+        return "created", None
+    listing = _git(project, "worktree", "list", "--porcelain").stdout.splitlines()
+    if f"branch refs/heads/{module}" in listing:
+        return None, f"{module} 的旧分支正被别的 worktree 检出，先收回那个 worktree"
+    if _git(project, "merge-base", "--is-ancestor", module, integration).returncode != 0:
+        extra = _git(project, "rev-list", "--count", f"{integration}..{module}").stdout.strip()
+        return None, (f"{module} 的旧分支有 {extra} 个提交没合进集成分支 {integration}；"
+                      "交用户决定：合进集成分支、换名保留，或确认丢弃后再重开")
+    return "fast-forward", None
+
+
 def validate(project: Path, modules: list[str], original: str, short: str | None,
              max_modules: int | None) -> tuple[list[str], dict, Proposal]:
     reasons = []
@@ -205,20 +250,35 @@ def validate(project: Path, modules: list[str], original: str, short: str | None
         return reasons, cfg, proposal
     report = probe.run(project)
     startable = (report.startable or {}).get("modules", [])
-    active = {v.get("module") for v in _active_devs(db).values()}
+    active = {v.get("module"): k for k, v in _active_devs(db).items()}
+    merged = _merged_modules(db)
+    mapped = {m.get("id"): m for m in report.map.get("modules") or [] if isinstance(m, dict)}
     if len(set(modules)) != len(modules) or not modules:
         reasons.append("模块清单为空或有重复")
     if len(modules) > proposal.slots:
         reasons.append(f"空位只有 {proposal.slots} 个，要开 {len(modules)} 个")
     for m in modules:
         if m in active:
-            reasons.append(f"{m} 已有在用的模块会话")
+            reasons.append(f"旧会话 {active[m]} 还在用，先 merge cleanup {m}" if m in merged
+                           else f"{m} 已有在用的模块会话")
         elif m not in startable:
-            reasons.append(f"{m} 不在可开工列表（startable.modules）里")
+            why = _reopenable(mapped.get(m))
+            if why:
+                reasons.append(f"{m} 不在可开工列表（startable.modules）里，也不能按重开处理：{why}")
+            else:
+                info = {"id": m, "responsibility": mapped[m].get("responsibility", ""),
+                        "dependsOn": list(mapped[m].get("dependsOn") or [])}
+                proposal.reopen[m] = {"round": _reopen_round(db, m), "info": info,
+                                      "review": {k: str((mapped[m].get("review") or {}).get(k)) for k in ("spec", "plan")}}
     for m in modules:
         if (Path(cfg["crewDir"]) / m).exists():
             reasons.append(f"{m} 的 worktree 目录已存在：{Path(cfg['crewDir']) / m}")
-        if _git(project, "rev-parse", "--verify", "--quiet", f"refs/heads/{m}").returncode == 0:
+        if m in proposal.reopen:
+            how, refused = _reopen_branch(project, m, cfg["integrationBranch"])
+            if refused:
+                reasons.append(refused)
+            proposal.reopen[m]["branch"] = how
+        elif _git(project, "rev-parse", "--verify", "--quiet", f"refs/heads/{m}").returncode == 0:
             reasons.append(f"{m} 的分支已存在")
     return reasons, cfg, proposal
 
@@ -244,6 +304,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
     if reasons:
         return PrepareResult(3, ["没有执行，原因："] + reasons)
     info = {m["id"]: m for m in plan(project, len(modules) + len(_counted_devs(_open_store(project)))).modules}
+    info.update({m: r["info"] for m, r in proposal.reopen.items()})
     db = _open_store(project) or store.init_store(project)[0]
     short = cfg["projectShort"]
     coord = f"{short}-coord"
@@ -267,6 +328,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             "state": "closed", "kind": "start", "from": coord, "relayId": None, "modules": list(modules),
             "closedReason": "answered", "answer": {"original": original, "answeredAt": store.now(), **store.source_field()},
             **({"host": host_id} if host_id != "claude-desktop" else {}),
+            **({"reopened": [m for m in modules if m in proposal.reopen]} if proposal.reopen else {}),
         }, action="start-approved")
     from module_crew import unqueued
     unqueued.mark_integration(db, project, "start-prepare", only_if_unset=True)
@@ -279,23 +341,36 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             result.code = 4
             result.lines.append(f"{m}：worktree 目录在校验之后被占用（{path}），已停下")
             break
-        added = _git(project, "worktree", "add", "-b", m, str(path), cfg["integrationBranch"])
+        reopen = proposal.reopen.get(m)
+        if reopen and reopen["branch"] == "fast-forward":
+            # the old branch is an ancestor of the integration branch: moving it there loses no commit
+            added = _git(project, "branch", "-f", m, cfg["integrationBranch"])
+            if added.returncode == 0:
+                added = _git(project, "worktree", "add", str(path), m)
+        else:
+            added = _git(project, "worktree", "add", "-b", m, str(path), cfg["integrationBranch"])
         if added.returncode != 0:
             result.code = 4
             left = _git(project, "rev-parse", "--verify", "--quiet", f"refs/heads/{m}").returncode == 0
             result.lines.append(f"{m}：建 worktree 失败，已停下（{added.stderr.strip()[:200]}）"
                                 + ("；git 已留下分支 " + m + "，请决定是否删除" if left else ""))
             break
-        relay = f"{short}-{m}"
+        relay = f"{short}-{m}" + (f"-r{reopen['round']}" if reopen else "")
         text = render_kickoff(m, info.get(m, {}), path, {**cfg, "reviewCadence": proposal.cadence}, relay, coord,
-                              approval, host_id)
+                              approval, host_id, reopen=reopen)
+        extra = {"reopen": {"round": reopen["round"], "since": approval, "review": reopen["review"]}} if reopen else {}
         with db.transaction(actor=coord) as tx:
             tx.put("session", relay, {"role": "dev", "host": host_id, "status": "active",
-                                      "module": m, "worktree": str(path)}, action="registered")
+                                      "module": m, "worktree": str(path), **extra}, action="registered")
             body = tx.allocate_number()
             tx.write_body(body, text)
         result.prepared.append({"id": m, "worktree": path, "branch": m, "relayName": relay, "kickoff": body, "host": host_id,
-                                "kickoffPath": db.path / "bodies" / f"{body}.txt"})
+                                "kickoffPath": db.path / "bodies" / f"{body}.txt",
+                                **({"reopen": {"round": reopen["round"], "branch": reopen["branch"]}} if reopen else {})})
+        if reopen:
+            head = _git(project, "rev-parse", "--short", m).stdout.strip()
+            result.lines.append(f"{m}：按重开处理（第 {reopen['round']} 轮）；"
+                                + (f"旧分支已快进到 {head}" if reopen["branch"] == "fast-forward" else "没有旧分支，从集成分支新切"))
         from module_crew import permissions
         line = permissions.follow(project, relay)       # crew-host-permissions: same rules for a new worktree
         if line:
@@ -394,6 +469,24 @@ def _first_step(module: str, cadence: str) -> str:
             f"Spec 批准的【用户答复】到了再写 tasks/{module}/plan.md、todo.md 交审（节点 Plan）。项目评审节奏：separate。")
 
 
+def _reopen_lines(module: str, reopen: dict, integration: str, cadence: str) -> list[str]:
+    """crew-reopen-module decision 5: the revision paragraph and the first step, chosen by the review state at reopen."""
+    branch = (f"旧的模块分支已快进到集成分支 {integration}" if reopen["branch"] == "fast-forward"
+              else f"旧的模块分支不在了，已从集成分支 {integration} 新切")
+    lines = [f"这是重开修订（第 {reopen['round']} 轮）：模块 {module} 已经做完过，spec-guard 已把它原地重开。"
+             f"只做 tasks/{module}/todo.md 里新加的未勾项，已勾的不要重做；",
+             f"plan.md 里新补的一节说明这次为什么返工。{branch}，旧一轮的邮箱名已退役，不要用。"]
+    spec, plan = reopen["review"]["spec"], reopen["review"]["plan"]
+    if spec == "approved" and plan == "approved":   # in-scope rework: naming the module to reopen is the go-ahead (Q2)
+        return lines + [f"Spec 与 Plan 仍是批准状态（范围内返工）。先 module-crew sync，再从 tasks/{module}/todo.md 第一个未勾项开始构建，"
+                        "不用等开工通知；做完发最终验收【交审】。"]
+    if spec == "approved":
+        lines.append(f"这一步只做：把 tasks/{module}/plan.md、todo.md 发【交审】（节点 Plan）；Plan 批准后收到开工类【协调通知】再构建。")
+    else:
+        lines.append(_first_step(module, cadence))
+    return lines + ["收到开工类【协调通知】之前不要开始构建。"]
+
+
 def codex_open_lines(items: list[tuple[str, str, str]]) -> list[str]:
     """crew-codex-coordinator decision 7: with the coordinator on Codex every session is opened by hand in Codex.
 
@@ -404,7 +497,7 @@ def codex_open_lines(items: list[tuple[str, str, str]]) -> list[str]:
 
 
 def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: str, coord: str, approval: int,
-                   host: str = "claude-desktop") -> str:
+                   host: str = "claude-desktop", reopen: dict | None = None) -> str:
     deps = "\n".join(f"spec/{d}.md" for d in info.get("dependsOn") or []) or "无"
     from module_crew.hooks import ENTRY_LINE
     extra = codex_lines(relay, store.open_store(worktree).path) if host == "codex-desktop" else []
@@ -420,8 +513,8 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
         f"开会话依据：用户批准事项 C{approval}",
         "",
         *install_line(worktree),
-        _first_step(module, cfg.get("reviewCadence", "separate")),
-        "收到开工类【协调通知】之前不要开始构建。",
+        *(_reopen_lines(module, reopen, cfg["integrationBranch"], cfg.get("reviewCadence", "separate")) if reopen else
+          [_first_step(module, cfg.get("reviewCadence", "separate")), "收到开工类【协调通知】之前不要开始构建。"]),
         "",
         f"接口：\n{deps}",
         "全局约束：不改公共文件（要改发【公共变更请求】）；被挡住发【等待其他会话】；发出前 module-crew protocol check。",

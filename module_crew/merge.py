@@ -84,8 +84,10 @@ def no_sync(tx) -> set[str]:
     """Modules that get no sync-baseline notice now, the one rule for `merge run` and `change land` (0.9.3):
     an open or merged merge approval (syncing voids it or is pointless), an open final review (MC-10), or suspended
     (resume says what happened meanwhile)."""
-    approved = {v.get("module") for v in tx.records("item").values() if v.get("kind") == "merge-approval"
-                and (v.get("state") == "open" or v.get("closedReason") == "merged")}
+    sessions = tx.records("session")
+    approved = {v.get("module") for k, v in tx.records("item").items() if v.get("kind") == "merge-approval"
+                and (v.get("state") == "open" or v.get("closedReason") == "merged")
+                and int(k) > store.round_since(sessions, v.get("module"))}   # crew-reopen-module: this round only
     suspended = {s.get("module") for s in tx.records("session").values() if s.get("role") == "dev" and s.get("suspended")}
     return approved | awaiting_final(tx) | suspended
 
@@ -650,7 +652,7 @@ def tick(project: str | os.PathLike, module: str, original: str) -> str:
         raise AnswerRefused("用户原话不能为空：只记用户在本会话亲手输入的话")
     project = Path(project)
     db = store.open_store(project)
-    merged = sorted(int(k) for k, v in store.records(db, "item").items()
+    merged = sorted(int(k) for k, v in store.round_items(store.records(db, "item"), store.records(db, "session"), module).items()
                     if v.get("kind") == "merge-approval" and v.get("module") == module and v.get("closedReason") == "merged")
     if not merged:
         raise AnswerRefused(f"模块 {module} 没有已合并的合并批准")
@@ -699,7 +701,7 @@ def _cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
     import re
     if re.match(r"^[Tt][1-9]\d*$", module):
         return _cleanup_task(project, db, int(module[1:]), original)
-    merged = [v for v in store.records(db, "item").values()
+    merged = [v for v in store.round_items(store.records(db, "item"), store.records(db, "session"), module).values()
               if v.get("kind") == "merge-approval" and v.get("module") == module and v.get("closedReason") == "merged"]
     if not merged:
         return Simple(3, [f"模块 {module} 还没有合入集成分支，不能收回"])

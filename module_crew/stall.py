@@ -10,6 +10,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from module_crew import store
 
 _SEEN: dict[tuple, subprocess.CompletedProcess] = {}
 
@@ -146,11 +147,11 @@ def asks(events: list[dict], items: dict, module: str) -> list[dict]:
     return out
 
 
-def returns(events: list[dict], items: dict, module: str) -> list[dict]:
-    """Final acceptances approved by the user and then returned by the merge check."""
+def returns(events: list[dict], items: dict, module: str, sessions: dict | None = None) -> list[dict]:
+    """Final acceptances approved by the user and then returned by the merge check (this round only, given `sessions`)."""
     at = _event_at(events)
     return [{"ref": f"C{n}", "returnKind": v.get("returnKind"), "at": at.get(("item.returned", str(n)))}
-            for n, v in sorted((int(k), v) for k, v in items.items())
+            for n, v in sorted((int(k), v) for k, v in store.round_items(items, sessions, module).items())
             if v.get("kind") == "merge-approval" and v.get("module") == module and v.get("closedReason") == "returned"]
 
 

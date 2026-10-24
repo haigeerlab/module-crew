@@ -91,6 +91,12 @@ module-crew start prepare <模块 id>… --original-file <原话文件> [--proje
    开好后按「权限预配」第 2 步让它跑实测清单并记下结果。
 5. 模块会话按项目的评审节奏交审（`module-crew status` 显示生效的 reviewCadence）：`separate`（默认）先只交 Spec，Spec 的批准答复到了再写 Plan 交审；
    `combined` 时 Spec 与 Plan 一起交。Spec 与 Plan 都批了之前，不要发开工通知。
+6. **重开已完成的模块（第九版起）**：用户要修订一个已合入的模块时——
+   - 先确认它已在 spec-guard 里按「返工与小模块」原地重开（todo 追加了未勾项、plan.md 补了一节；超出原范围的把 Plan 改回 pending）：`start plan` 的原因里会写「已重开…要用户点名」，它不会出现在提议里；
+   - 旧一轮的会话要已收回（`merge cleanup <id>`），没收回 `start prepare` 会拒绝；
+   - 用户点名后照第 3 步运行 `start prepare <id>`：旧模块分支已合入就快进到集成分支再开 worktree；旧分支有没合进来的提交就退出码 3，把提交数和三条路（合进集成分支、换名保留、确认丢弃后再重开）交用户决定；
+   - 新邮箱名是 `<简称>-<id>-r<轮次>`；旧邮箱名由用户在 agent-relay 里退役，不要 `reactivate`；
+   - Spec、Plan 都还是批准状态（范围内返工）时，用户点名重开就是开工批准，模块会话按开工说明直接构建，不再发开工通知；Plan 要重新交审时照第 5 步。
 
 ## 权限预配
 

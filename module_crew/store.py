@@ -284,6 +284,27 @@ def records(db: Store, kind: str) -> dict:
     return dict(_read_view(db, kind).records)
 
 
+def _positive(v) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool) and v >= 1
+
+
+def reopen_of(sessions: dict, module: str) -> dict | None:
+    """crew-reopen-module: the `reopen` of the module's in-use session, None when it was not reopened."""
+    return next((s["reopen"] for s in sessions.values() if s.get("role") == "dev" and s.get("status") == "active"
+                 and s.get("module") == module and s.get("reopen")), None)
+
+
+def round_since(sessions: dict, module: str) -> int:
+    """crew-reopen-module: item numbers up to this belong to an earlier round of a reopened module; 0 when not reopened."""
+    return (reopen_of(sessions, module) or {}).get("since", 0)
+
+
+def round_items(items: dict, sessions: dict | None, module: str) -> dict:
+    """Items left after dropping a reopened module's earlier rounds; for code that only reads that module's items."""
+    since = round_since(sessions or {}, module)
+    return {k: v for k, v in items.items() if int(k) > since} if since else items
+
+
 def events(db: Store, key: str | None = None, kind: str | None = None) -> list[dict]:
     _check_meta(db.path)
     log = _scan_log(db.path / "events.jsonl")
@@ -342,6 +363,15 @@ def _validate_session(key: str, rec: dict, others: dict) -> None:
             isinstance(x, dict) and isinstance(x.get("sessionId"), str) and x["sessionId"].strip()
             and isinstance(x.get("at"), str) for x in prev)):
         raise bad("previousSessions 必须是列表，每项带非空的 sessionId 与 at")
+    reopen = rec.get("reopen")                  # crew-reopen-module: a finished module opened again for a revision
+    if reopen is not None:
+        if role != "dev":
+            raise bad("reopen 只用于模块会话")
+        review = reopen.get("review") if isinstance(reopen, dict) else None
+        if not (isinstance(reopen, dict) and _positive(reopen.get("round")) and reopen["round"] >= 2
+                and _positive(reopen.get("since")) and isinstance(review, dict)
+                and all(isinstance(review.get(k), str) for k in ("spec", "plan"))):
+            raise bad("reopen 必须带 round（≥2 的整数）、since（正整数）与含 spec、plan 的 review")
     if role == "dev":
         module, worktree = rec.get("module"), rec.get("worktree")
         if not isinstance(module, str) or not module:
