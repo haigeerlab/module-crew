@@ -12,6 +12,6 @@
 - [x] Task 7：端到端——重开 → bind → 交审 → 批准 → merge run → merge cleanup（Spec 验收 6）——`EndToEndTest`：第一轮 b 合入并收回后重开，`-r2` 的 worktree 在集成分支顶端、`hooks.bind` 成功、阶段依次为构建、最终验收已交审、等合并、已合入，本轮合入前 `merge cleanup` 拒绝、合入后收回并退役 `shop-b-r2`；没有新增漏网的地方。换回 Task 6 之前的代码时它报错（`_stage` 不收 `sessions`），不是在断言上失败；只看本轮的先红由 Task 6 的单元测试证明
 - [x] Checkpoint 2（report）：命令层做完，全量测试通过——2dc2e8a 上全量 851 个测试通过
 - [x] Task 8：skill 两份「开工」、crew-dev、README（Spec 验收 9）——断言先红后绿（写在 test_reopen_module 的 `DocsTest`）；两份协调 skill「开工」加第 6 步、crew-dev「交审节奏」加「重开修订」一条、README 加「修订已完成的模块（第九版）」一节；test_skills 照常通过。Codex 版 `codex-skills/crew-dev` 不在并行边界里，没改（重开的做法已写在开工说明里），作为后续建议报
-- [ ] Task 9：`module-crew sync` 后全量测试（Spec 验收 10）
+- [x] Task 9：`module-crew sync` 后全量测试（Spec 验收 10）——同步 main 2a86001（HEAD 1823bbd）后全量 860 个测试通过
 - [ ] Checkpoint 3（gate）：最终验收
 - [ ] 回告：ecosystem-lead（S18 的 module-crew 一侧已就位），经 mc-coord 转
