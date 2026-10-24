@@ -101,6 +101,52 @@ class ReadOnlyGitTest(ReviewCase):
         set_writable(git_dir, True)
         self.assertEqual(snapshot(git_dir), before)
 
+    def test_writing_variants_are_refused_in_sandbox_and_listed_outside_it(self):
+        """T134: `review batch --for-hub` writes originals/ and `config set` writes the config (LIVE-SAAS frontend)."""
+        text = SKILL.read_text(encoding="utf-8")
+        outside = text.split("写命令申请在沙箱外运行", 1)[1].split("只读的在沙箱里跑", 1)[0]
+        inside = next(x for x in text.splitlines() if "只读的在沙箱里跑" in x)
+        self.assertIn("`review batch --for-hub`", outside)
+        self.assertIn("`config set`", outside)
+        self.assertIn("不带 `--for-hub`", inside)
+        self.assertNotIn(["review", "batch", "--for-hub"], sandbox_commands())
+        git_dir = self.repo / ".git"
+        set_writable(git_dir, False)
+        self.addCleanup(set_writable, git_dir, True)
+        # a write the sandbox refuses, so it must go outside (chmod gives EACCES, the sandbox EPERM: no 「写不了」 here)
+        for args, where in ((["review", "batch", "--for-hub"], "originals"),
+                            (["config", "set", "--commit-prefix", "x", "--original", "改"], "module-crew")):
+            ran = self.run_cli(*args)
+            self.assertNotEqual(ran.returncode, 0, args)
+            self.assertIn("Permission denied", ran.stderr, args)
+            self.assertIn(where, ran.stderr, args)
+
+
+class SkillRulesTest(unittest.TestCase):
+    """T134: both coordinator skills say when --for-hub applies and how a dependency hint inside the Plan is handled."""
+
+    SKILLS = (PLUGIN_ROOT / "skills" / "crew-coordinator" / "SKILL.md", SKILL)
+
+    def test_for_hub_lines_are_limited_to_a_decision_inbox(self):
+        for path in self.SKILLS:
+            text = path.read_text(encoding="utf-8")
+            if "写命令申请在沙箱外运行" in text:      # the Codex sandbox lists only name commands, they say nothing of use
+                head, rest = text.split("写命令申请在沙箱外运行", 1)
+                text = head + rest.split("只读的在沙箱里跑", 1)[1].split("\n", 1)[1]
+            for line in text.splitlines():
+                if "--for-hub" in line:
+                    with self.subTest(skill=str(path), line=line[:40]):
+                        self.assertIn("接了决策收件箱", line)
+
+    def test_dependency_hint_inside_approved_plan_is_done_and_reported(self):
+        for path in self.SKILLS:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(skill=str(path)):
+                line = next(x for x in text.splitlines() if "dependency" in x and "已批 Plan" in x)
+                self.assertIn("范围内直接办", line)
+                self.assertIn("事后汇总", line)
+                self.assertIn("超出 Plan", line)
+
 
 class HookTailTest(MergeCase):
     """A pnpm banner as the hook's first line must not hide the real error (S21)."""
