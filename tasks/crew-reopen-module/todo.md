@@ -2,7 +2,7 @@
 
 > 依据 `tasks/crew-reopen-module/plan.md`。
 
-- [ ] Task 1：状态库认 `reopen` 与 `reopened`，加 `round_since`
+- [x] Task 1：状态库认 `reopen` 与 `reopened`，加 `round_since`——测试先红后绿；状态库没有事项字段的校验器，`reopened` 不另加校验（与 `modules` 等字段一致），只校验会话的 `reopen`
 - [ ] Task 2：`prepare` 校验——可重开判据、旧会话未收回、旧分支非祖先或已检出时退出码 3 且什么都不写（Spec 验收 2 拒绝部分、3）
 - [ ] Task 3：`prepare` 落地——快进或新切、worktree、`-r<轮次>` 登记、开工批准事项 `reopened`、输出与 `--json`（Spec 验收 1、2、4、8）
 - [ ] Task 4：开工说明「重开修订」一段与三种 `review` 写法（Spec 验收 5）
