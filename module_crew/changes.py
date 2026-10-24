@@ -230,6 +230,7 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
         result.lines.append(f"公共变更请求 C{number} 部分落地 {commit[:7]}，还剩 {'、'.join(left)}；请求保持打开，改完再 change land")
     else:
         result.lines.append(f"公共变更请求 C{number} 已在集成分支提交 {commit[:7]}")
+    result.lines.append(probe.took_line(done, merge.commit_timeout(cfg)))
     if original is None and _asks_user(rec.get("hints", [])):
         result.lines.append("提醒：这条请求带「要问用户」提示，但没有记下用户原话")
     basis = (f"公共变更请求 C{number} 部分落地 {commit[:7]}（还剩 {'、'.join(left)}）" if left

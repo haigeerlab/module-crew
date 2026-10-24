@@ -1196,6 +1196,7 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
         result.lines.append(f"批准记录 C{approval}；集成分支已是批准内容、没有差异，未提交，基线记为 HEAD {commit[:7]}")
         return result
     result.lines.append(f"批准记录 C{approval}；集成分支提交 {commit[:7]}")
+    result.lines.append(probe.took_line(commit_run, merge.commit_timeout(cfg)))
     if approval != approval_no:
         result.lines.append(f"注意：提交信息里写的是 C{approval_no}，实际批准事项是 C{approval}（期间有其他写入）")
     return result

@@ -10,6 +10,7 @@ import json
 import os
 import signal
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -279,6 +280,7 @@ def plugin_missing(reason: str) -> str:
 
 GIT_TIMEOUT = 30            # read-only git calls; commit-class calls pass the project's checkTimeout (S28)
 KILL_GRACE = 5              # seconds between SIGTERM (git removes its lock files) and SIGKILL
+OUTPUT_WAIT = 10            # T136: seconds to read what is left once the group is ended; a daemon may hold the pipe
 
 
 def _kill_group(proc: subprocess.Popen) -> None:
@@ -303,21 +305,36 @@ def _kill_group(proc: subprocess.Popen) -> None:
 
 
 def timed_out(what: str, exc: subprocess.TimeoutExpired) -> str:
-    return (f"{what}超时（{exc.timeout:g} 秒）：项目的提交钩子没在时限内跑完，git 和它启动的钩子进程已结束；"
-            "钩子确实要这么久就把 checkTimeout 调大")
+    took = getattr(exc, "elapsed", None)
+    return (f"{what}超时（{exc.timeout:g} 秒）" + (f"，实际用时 {took:.1f} 秒" if took is not None else "")
+            + "：项目的提交钩子没在时限内跑完，git 和它启动的钩子进程已结束；"
+            "钩子确实要这么久就把 checkTimeout 调大（module-crew config set --check-timeout <秒>）")
+
+
+def took_line(out: subprocess.CompletedProcess, limit: float) -> str:
+    """T136: how long a commit took against its limit, so the user can judge checkTimeout."""
+    return f"提交用时 {out.elapsed:.1f} 秒（时限 {limit:g} 秒）"
 
 
 def _git(cwd: Path, *args: str, timeout: float = GIT_TIMEOUT) -> subprocess.CompletedProcess:
-    """Raises subprocess.TimeoutExpired once git and its hooks have been ended."""
+    """Raises subprocess.TimeoutExpired once git and its hooks have been ended; both carry `elapsed` (seconds)."""
     command = ["git", "-C", str(cwd), *args]
+    start = time.monotonic()
     proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         _kill_group(proc)
-        proc.communicate()
+        try:
+            proc.communicate(timeout=OUTPUT_WAIT)
+        except subprocess.TimeoutExpired:       # a process outside the group still holds the pipe: stop reading
+            for pipe in (proc.stdout, proc.stderr):
+                pipe.close()
+            proc.wait()
+        exc.elapsed = time.monotonic() - start
         raise
     out = subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
+    out.elapsed = time.monotonic() - start
     hint = sandbox_hint(out.stderr) if out.returncode != 0 else None
     if hint:
         out.stderr = f"{out.stderr.rstrip()}\n{hint}\n"
