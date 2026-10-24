@@ -3,19 +3,15 @@
 让多个 Claude 或 Codex 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.14.0。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.14.1。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
-## 0.14.0 的变化（LIVE-SAAS 演练修复）
+## 0.14.1 的变化（热修）
 
-- 已开工的项目也能改提交前缀：`module-crew config set --commit-prefix <值> --original-file <原话文件>`，凭用户原话改 module-crew 自己提交信息的前缀（空字符串表示不加），不用再借 `start prepare`；项目的 commitlint 不认 `chore(crew):` 时用它（S23）。
-- `review approve` 遇到集成分支已经是批准内容、没有差异时不再提交，把当前 HEAD 记为基线，照常闭合交审、发答复与开工通知；批准标记写不上仍报失败（S23）。
-- 提交被钩子拒时，`review approve`、`change land` 与合并后补记 Spec 批准都附上钩子的退出码和最后 10 行；`review batch` 比对并行边界的临时 Spec 改放系统临时目录、比完即删，不再写 `.git`（S19、S21）。
-- 开工说明第一步按项目根的锁文件给出装依赖命令（`pnpm install --frozen-lockfile`、`npm ci`、`uv sync` 等）；`host-check` 新增「提交钩子」一项，试跑 pre-commit，跑不通报最后几行（S22）。
-- `host-check` 认轻任务会话的登记；版本一项改为和固定入口当前转到的版本比，本机升级后不再误报（S24）。
-- 换宿主：交接说明在新宿主的规则文件没被 git 忽略时多一步「加进 .gitignore 再重跑 permissions apply」，「在 Codex 里信任项目」提到贴开场文字之前；`status --json` 的 `host` 按登记的模块协调宿主输出；`permissions plan` 没有模块协调登记时提示先 `coordinator up`（S20）。
-- crew-coordinator skill（Claude、Codex 两份）写明：批准一律走 `review approve`，失败就停下报给用户，不手工补提交，不把提交信息包装成给用户的推荐回复（S25）。README 写明模块协调也能换到 Codex（S17）。
-- 状态库只增字段，不用迁移；接口与契约不变（`interface.json` 1.0、session-protocol v2.6）。
-- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。commitlint 拒 `chore(crew):` 的项目，由模块协调凭用户原话跑一次 `config set --commit-prefix`。Codex 上的模块协调跑它要申请沙箱外运行：Codex 版 crew-coordinator skill 的清单里还没列这条命令，第一次会被沙箱拒绝，照实申请一次提权即可（下一版补进 skill）。
+- 提交类的 git 调用不再写死 30 秒超时：`change land`、`review approve`、`merge run` 的合并提交，以及合并收尾的两次提交（记下修订后 Spec 的批准、勾选最终验收），超时改用项目的 `checkTimeout`（默认 1800 秒，与完整检查同级）；只读的 git 调用仍是 30 秒（S28）。
+- git 在独立的进程组里运行，超时就结束整组（先 SIGTERM 让 git 清掉 `index.lock`，5 秒后 SIGKILL），钩子启动的子进程不会留在后台。
+- 超时一律退出码 4，并给出恢复提示：`change land` 的文件仍是暂存状态、请求仍开着，确认没有 `.git/index.lock`、钩子进程已结束、集成 checkout 里除清单文件外没有别的改动后，直接重跑同一条 `change land`，不用先取消暂存；`review approve` 把集成 checkout 还原、交审仍开着；合并提交中止合并、集成分支不变、合并批准仍开着；合并收尾报「合并提交已在集成分支、检查已通过、状态库未记合并，不要重跑 merge run，交模块协调」，不自动重试。
+- 接口与契约不变（`interface.json` 1.0、session-protocol v2.6），状态库不变。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。0.14.0 下因超时中断、文件还暂存着的公共变更请求，升级后按上面那条直接重跑 `change land`。钩子确实超过 30 分钟的项目，把 `checkTimeout` 调大。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。
 

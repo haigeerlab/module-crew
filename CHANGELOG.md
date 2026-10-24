@@ -2,6 +2,18 @@
 
 各版本的变化，最新的在前。README 只写最新一版。
 
+## 0.14.0 的变化（LIVE-SAAS 演练修复）
+
+- 已开工的项目也能改提交前缀：`module-crew config set --commit-prefix <值> --original-file <原话文件>`，凭用户原话改 module-crew 自己提交信息的前缀（空字符串表示不加），不用再借 `start prepare`；项目的 commitlint 不认 `chore(crew):` 时用它（S23）。
+- `review approve` 遇到集成分支已经是批准内容、没有差异时不再提交，把当前 HEAD 记为基线，照常闭合交审、发答复与开工通知；批准标记写不上仍报失败（S23）。
+- 提交被钩子拒时，`review approve`、`change land` 与合并后补记 Spec 批准都附上钩子的退出码和最后 10 行；`review batch` 比对并行边界的临时 Spec 改放系统临时目录、比完即删，不再写 `.git`（S19、S21）。
+- 开工说明第一步按项目根的锁文件给出装依赖命令（`pnpm install --frozen-lockfile`、`npm ci`、`uv sync` 等）；`host-check` 新增「提交钩子」一项，试跑 pre-commit，跑不通报最后几行（S22）。
+- `host-check` 认轻任务会话的登记；版本一项改为和固定入口当前转到的版本比，本机升级后不再误报（S24）。
+- 换宿主：交接说明在新宿主的规则文件没被 git 忽略时多一步「加进 .gitignore 再重跑 permissions apply」，「在 Codex 里信任项目」提到贴开场文字之前；`status --json` 的 `host` 按登记的模块协调宿主输出；`permissions plan` 没有模块协调登记时提示先 `coordinator up`（S20）。
+- crew-coordinator skill（Claude、Codex 两份）写明：批准一律走 `review approve`，失败就停下报给用户，不手工补提交，不把提交信息包装成给用户的推荐回复（S25）。README 写明模块协调也能换到 Codex（S17）。
+- 状态库只增字段，不用迁移；接口与契约不变（`interface.json` 1.0、session-protocol v2.6）。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。commitlint 拒 `chore(crew):` 的项目，由模块协调凭用户原话跑一次 `config set --commit-prefix`。Codex 上的模块协调跑它要申请沙箱外运行：Codex 版 crew-coordinator skill 的清单里还没列这条命令，第一次会被沙箱拒绝，照实申请一次提权即可（下一版补进 skill）。
+
 ## 0.13.0 的变化（第八版：空档换宿主）
 
 - 空档整体换宿主：一批模块和轻任务都收尾、没有未结事项时，`merge cleanup` 与 `status` 提示「本批已收尾，具备换宿主的条件」；用户说换后 `coordinator handover --check` 逐条核对条件，`coordinator handover --to codex|claude --original-file <原话文件>` 改模块协调登记的宿主、给集成 checkout 追加新宿主的权限规则、生成逐步交接说明（每步写去哪个会话、做什么、做完的样子）。`bind --takeover` 核对调用者宿主与登记一致；模块协调在 Codex 时开工与派任务默认 Codex、拒绝 `--host claude`。
