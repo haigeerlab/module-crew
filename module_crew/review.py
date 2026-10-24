@@ -1134,10 +1134,14 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
     nodes = "、".join(f"{rec['module']} 的 {NODE_NAME[rec['node']]}" for _, rec in picked)
     _git(checkout, "add", "--", *written)
     hub = f"（待决事项 #{src['item']}）" if src.get("kind") == "hub" else ""
-    commit_run = _git(checkout, "commit", "-q", "-m", commits.message(f"用户批准事项 C{approval_no}{hub}：批准 {nodes}", commits.prefix_of(db)))
-    if commit_run.returncode != 0:
-        return ApproveResult(4, [commits.failure(checkout, commit_run, "集成分支提交失败")]
-                             + commits.hook_lines(checkout, commit_run) + _restore(checkout))
+    # S23: files written and markers in place, yet nothing differs from HEAD (staged or not): the integration branch
+    # already has the approved content, so HEAD is the baseline (git would refuse an empty commit)
+    empty = _git(checkout, "diff", "--quiet", "HEAD").returncode == 0
+    if not empty:
+        commit_run = _git(checkout, "commit", "-q", "-m", commits.message(f"用户批准事项 C{approval_no}{hub}：批准 {nodes}", commits.prefix_of(db)))
+        if commit_run.returncode != 0:
+            return ApproveResult(4, [commits.failure(checkout, commit_run, "集成分支提交失败")]
+                                 + commits.hook_lines(checkout, commit_run) + _restore(checkout))
     commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
     from module_crew import unqueued
     unqueued.mark(db, checkout, "review-approve")    # crew-unqueued-commits: module-crew's own commit
@@ -1168,7 +1172,8 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
                 continue
             sender = next(rec["from"] for _, rec in picked if rec["module"] == m)
             text = protocol.render_coordination_notice(
-                kind="start", basis=f"用户批准事项 C{approval}（{m} 的 Spec 与 Plan），已提交到集成分支 {commit[:7]}",
+                kind="start", basis=f"用户批准事项 C{approval}（{m} 的 Spec 与 Plan），"
+                                    + (f"集成分支 {commit[:7]} 已是批准内容" if empty else f"已提交到集成分支 {commit[:7]}"),
                 todo=(f"{sync.STEP}（spec/{m}.md、tasks/{m}/ 冲突时 sync 自动取集成分支的版本，它带批准标记），"
                       f"然后按 tasks/{m}/plan.md 开始构建；公共文件只能经【公共变更请求】改"
                       + "".join(f"\n审查原文：module-crew review show C{k}（写 Plan、构建时吸收遗留建议）"
@@ -1178,6 +1183,9 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
             result.sends.append({"kind": "coordination-notice", "to": sender, "replyTo": None, "body": body,
                                  "path": db.path / meta["path"]})
     result.approval = approval
+    if empty:
+        result.lines.append(f"批准记录 C{approval}；集成分支已是批准内容、没有差异，未提交，基线记为 HEAD {commit[:7]}")
+        return result
     result.lines.append(f"批准记录 C{approval}；集成分支提交 {commit[:7]}")
     if approval != approval_no:
         result.lines.append(f"注意：提交信息里写的是 C{approval_no}，实际批准事项是 C{approval}（期间有其他写入）")
