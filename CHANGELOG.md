@@ -2,6 +2,14 @@
 
 各版本的变化，最新的在前。README 只写最新一版。
 
+## 0.13.0 的变化（第八版：空档换宿主）
+
+- 空档整体换宿主：一批模块和轻任务都收尾、没有未结事项时，`merge cleanup` 与 `status` 提示「本批已收尾，具备换宿主的条件」；用户说换后 `coordinator handover --check` 逐条核对条件，`coordinator handover --to codex|claude --original-file <原话文件>` 改模块协调登记的宿主、给集成 checkout 追加新宿主的权限规则、生成逐步交接说明（每步写去哪个会话、做什么、做完的样子）。`bind --takeover` 核对调用者宿主与登记一致；模块协调在 Codex 时开工与派任务默认 Codex、拒绝 `--host claude`。
+- 模块协调能在 Codex 桌面版上运行：新增 Codex 版 crew-coordinator skill（每轮开头重新注册→`status`→读收件箱、写命令申请沙箱外运行、请用户手动开任务）；`status` 在 Codex 里首行认出本线程是不是模块协调；`host-check` 在集成 checkout 按模块协调查；沙箱拒绝写 `.git`、找不到插件时报错带补句；`merge run --detach` 把合并连同锁交给后台子进程，`merge result [--wait]` 取结果（与前台逐字一致）。
+- 修复：已登记的会话不再算进「没登记的会话」（S7）；Spec 以接口提案交审时批完 Plan 照常发开工通知（S14）；轻任务会话派出时也写上权限规则、`module-crew sync` 能在轻任务 worktree 里跑（S15、S16）；crew-coordinator skill 写明合并只走 `merge run`（S1）。
+- 状态库只增字段（`hostHandover`、合并记录的 `detached`／`adopted` 等），不用迁移；接口与契约不变（`interface.json` 1.0、session-protocol v2.6）。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；想用 Codex 做模块协调或模块会话的，在 Codex 里装上本插件并完全退出 ChatGPT 再打开。在 Codex 上实际跑一批、来回换一次宿主还没实测（见「尚未验证」）。
+
 ## 0.12.1 的变化（热修）
 
 - Claude 会话也改用状态库里的固定入口 `<git公共目录>/module-crew/bin/module-crew`：`permissions apply` 先写出它，Claude 规则放行它而不再放行带版本号的插件路径；钩子注入的「module-crew 命令入口」也是它（状态库还没有固定入口时照旧给插件路径，并提示跑一次 `permissions apply` 或 `coordinator up`）。以后升级插件不用再重跑 `permissions apply`。
