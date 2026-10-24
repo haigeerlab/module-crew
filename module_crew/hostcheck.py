@@ -7,11 +7,10 @@ write `.git`, and a worktree's git directory lives outside the worktree), so it 
 
 from __future__ import annotations
 
-import importlib.machinery
-import importlib.util
 import json
 import subprocess
 import tempfile
+import types
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -116,10 +115,10 @@ def entry_version(db: store.Store) -> str | None:
     common = db.path.parent
     project = common.parent if common.name == ".git" else common
     try:
-        loader = importlib.machinery.SourceFileLoader("module_crew_fixed_entry", str(path))
-        spec = importlib.util.spec_from_loader(loader.name, loader)
-        mod = importlib.util.module_from_spec(spec)
-        loader.exec_module(mod)
+        # Compile from source rather than import it: an import would cache bytecode next to the entry (T167).
+        mod = types.ModuleType("module_crew_fixed_entry")
+        mod.__file__ = str(path)
+        exec(compile(Path(path).read_bytes(), str(path), "exec"), mod.__dict__)
         root = mod.locate(project)
         if isinstance(root, str):
             return None
