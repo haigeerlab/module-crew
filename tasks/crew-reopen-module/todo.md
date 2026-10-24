@@ -9,7 +9,7 @@
 - [x] Task 5：`start plan` 不提议、原因写「已重开…要用户点名」（Spec 验收 7）——测试先红后绿；`_why_not` 多一个可选参数 `db` 用来算轮次
 - [x] Checkpoint 1（report）：重开能开出来，开工说明与 plan 输出对——test_reopen_module 与 start_plan、start_prepare、failure、light_task、store_session 共 91 个测试通过
 - [x] Task 6：只看本轮——start、hooks、merge、review、stall 按模块查的地方只算本轮（Spec 验收 6 单元部分）——测试先红后绿；`store` 加 `reopen_of`、`round_items`；改了 `start._merged_modules`、`hooks._stage`（多一个可选参数 `sessions`）、`merge.no_sync`／`tick`／`_cleanup`、`review._approved_nodes`／`_rounds`、`stall.returns`（多一个可选参数 `sessions`）。`review._approved_nodes` 不改会让重开模块 Plan 重新批准后发不出开工通知（旧一轮的批准算在 approved_before 里）。另改了并行边界外的 `module_crew/failure.py` 两处调用（传 `sessions` 给 `_stage` 与 `returns`，没人在改它），最终验收的越界检查里报。`review._previous_commit`／`_last_changes` 没改：它们给交审正文找上一版做对比，跨轮拿到上一轮批准的版本正合用。受影响模块 213 个测试通过
-- [ ] Task 7：端到端——重开 → bind → 交审 → 批准 → merge run → merge cleanup（Spec 验收 6）
+- [x] Task 7：端到端——重开 → bind → 交审 → 批准 → merge run → merge cleanup（Spec 验收 6）——`EndToEndTest`：第一轮 b 合入并收回后重开，`-r2` 的 worktree 在集成分支顶端、`hooks.bind` 成功、阶段依次为构建、最终验收已交审、等合并、已合入，本轮合入前 `merge cleanup` 拒绝、合入后收回并退役 `shop-b-r2`；没有新增漏网的地方。换回 Task 6 之前的代码时它报错（`_stage` 不收 `sessions`），不是在断言上失败；只看本轮的先红由 Task 6 的单元测试证明
 - [ ] Checkpoint 2（report）：命令层做完，全量测试通过
 - [ ] Task 8：skill 两份「开工」、crew-dev、README（Spec 验收 9）
 - [ ] Task 9：`module-crew sync` 后全量测试（Spec 验收 10）

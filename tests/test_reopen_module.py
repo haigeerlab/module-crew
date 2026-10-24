@@ -4,7 +4,7 @@ import copy
 import json
 import unittest
 
-from helpers import START_MAP, RepoCase, StartCase, git
+from helpers import START_MAP, MergeCase, RepoCase, StartCase, git, review_text
 
 from module_crew import hooks, merge, review, stall, start, store
 
@@ -275,6 +275,56 @@ class CurrentRoundTest(ReopenCase):
         self.assertEqual(review._rounds(self.db, "a", "spec"), 0)
         sessions = store.records(self.db, "session")
         self.assertEqual(stall.returns(store.events(self.db), store.records(self.db, "item"), "a", sessions), [])
+
+
+class EndToEndTest(MergeCase):
+    """Acceptance 6: round 1 of b merged and cleaned up, then reopened, worked, approved, merged and cleaned up again."""
+
+    def test_reopen_round_trip(self):
+        db = store.open_store(self.repo)
+        self.approve_final("b", 1)
+        self.assertEqual(merge.run(self.repo, check_command="python3 -c pass").code, 0)
+        self.assertEqual(merge.cleanup(self.repo, "b", "b 可以收回").code, 0)
+
+        doc = copy.deepcopy(START_MAP)
+        doc["modules"][1].update({"status": "in_progress", "worktree": None, "progress": {"done": 1, "total": 2},
+                                  "firstTickAt": "2026-10-01T10:00:00+08:00",
+                                  "review": {"spec": "approved", "plan": "approved"}})
+        doc["startable"] = {"modules": [], "conflicts": []}
+        self.set_map(doc)
+        res = start.prepare(self.repo, ["b"], "重开 b", short="shop")
+        self.assertEqual(res.code, 0, res.lines)
+        wt = res.prepared[0]["worktree"]
+        self.assertEqual(git(wt, "rev-parse", "HEAD").strip(), git(self.repo, "rev-parse", "main").strip())
+        hooks.bind(db, "shop-b-r2", "sid-b-r2", wt)
+        self.assertEqual(store.get(db, "session", "shop-b-r2")["hostSession"]["sessionId"], "sid-b-r2")
+
+        stage = lambda: hooks._stage(store.records(db, "item"), "b", store.records(db, "session"))
+        self.assertEqual(stage(), hooks.STAGE_BUILD)
+        refused = merge.cleanup(self.repo, "b", "收回 b")
+        self.assertEqual(refused.code, 3, refused.lines)
+
+        f = wt / "src" / "b2.py"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("VALUE = 'b2'\n", encoding="utf-8")
+        git(wt, "add", "-A")
+        git(wt, "commit", "-q", "-m", "b: revision")
+        text = review_text("b", "最终验收", [("src/b2.py", f)]).replace(
+            "要点：\n", "要点：\n验收结果：\n1：test_value 通过\n\n", 1) + "改动统计：1 file changed\n越界检查：无越界\n"
+        out = review.add(db, text, "shop-b-r2", 2)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertTrue(stage().startswith("最终验收已交审"))
+        merge.approve(db, out.number, "b 修订通过")
+        self.assertEqual(stage(), hooks.STAGE_WAIT_MERGE)
+        ran = merge.run(self.repo, check_command="python3 -c pass")
+        self.assertEqual(ran.code, 0, ran.lines)
+        self.assertTrue((self.repo / "src" / "b2.py").exists())
+        self.assertEqual(stage(), hooks.STAGE_MERGED)
+
+        done = merge.cleanup(self.repo, "b", "b 可以收回")
+        self.assertEqual(done.code, 0, done.lines)
+        self.assertEqual(store.get(db, "session", "shop-b-r2")["status"], "retired")
+        self.assertIn("待退役的邮箱名：shop-b-r2", " ".join(done.lines))
 
 
 class FreshStoreRoundTest(StartCase):
