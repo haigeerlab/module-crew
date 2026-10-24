@@ -32,14 +32,14 @@ PIPED = ["curl * | sh", "curl * | bash"]          # Claude only: not expressible
 # are listed at final acceptance by spec-guard SG-5). Bare `pip install x` gets no rule: outside a venv it installs
 # into the system or user Python. Installing globally stays denied, wherever the flag sits.
 LOCKFILE_CLAUDE = ["npm ci", "npm ci *", "npm install", "pnpm install", "pnpm install --frozen-lockfile", "yarn install",
-                   "uv sync", "uv sync *", "pip install -r *", ".venv/bin/pip install -r *",
+                   "uv sync", "uv sync *", "python3 -m venv .venv", "pip install -r *", ".venv/bin/pip install -r *",
                    "npm install *", "pnpm add *", "yarn add *", "uv add *", "uv pip install *", ".venv/bin/pip install *"]
 GLOBAL_CLAUDE = ["npm * -g", "npm * -g *", "npm * --global", "npm * --global *", "pnpm * -g", "pnpm * -g *",
                  "pnpm * --global", "pnpm * --global *", "yarn global *", "uv * --system", "uv * --system *"]
 # Codex prefix rules only match from the start: allowing `npm install` would let `npm install x -g` through, so adding a
 # package stays with Codex's own approval there, and only prefixes that never add a package are allowed.
-LOCKFILE_CODEX = ["npm ci", "pnpm install --frozen-lockfile", "yarn install", "uv sync", "pip install -r",
-                  ".venv/bin/pip install -r"]
+LOCKFILE_CODEX = ["npm ci", "pnpm install --frozen-lockfile", "yarn install", "uv sync", "python3 -m venv .venv",
+                  "pip install -r", ".venv/bin/pip install -r"]
 GLOBAL_CODEX = ["npm i -g", "npm install --global", "npm i --global", "pnpm add --global", "yarn global add"]
 
 

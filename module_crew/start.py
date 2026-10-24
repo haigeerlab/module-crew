@@ -442,13 +442,17 @@ JS_LOCKFILES = (("pnpm-lock.yaml", "pnpm install --frozen-lockfile"), ("package-
 
 
 def install_commands(root: str | os.PathLike) -> list[str]:
-    """The dependency installs for the lockfiles at the project root: one JS, then uv.lock or requirements*.txt."""
+    """The dependency installs for the lockfiles at the project root: one JS, then uv.lock or requirements*.txt
+    (creating .venv first when the worktree has none)."""
     root = Path(root)
     cmds = [next((cmd for name, cmd in JS_LOCKFILES if (root / name).is_file()), None)]
     if (root / "uv.lock").is_file():
         cmds.append("uv sync")
     else:
-        cmds += [f".venv/bin/pip install -r {p.name}" for p in sorted(root.glob("requirements*.txt")) if p.is_file()]
+        reqs = [f".venv/bin/pip install -r {p.name}" for p in sorted(root.glob("requirements*.txt")) if p.is_file()]
+        if reqs and not (root / ".venv").exists():
+            cmds.append("python3 -m venv .venv")   # T135: a new worktree has no .venv for pip to run from
+        cmds += reqs
     return [c for c in cmds if c]
 
 
