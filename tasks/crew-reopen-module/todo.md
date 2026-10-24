@@ -3,8 +3,8 @@
 > 依据 `tasks/crew-reopen-module/plan.md`。
 
 - [x] Task 1：状态库认 `reopen` 与 `reopened`，加 `round_since`——测试先红后绿；状态库没有事项字段的校验器，`reopened` 不另加校验（与 `modules` 等字段一致），只校验会话的 `reopen`
-- [ ] Task 2：`prepare` 校验——可重开判据、旧会话未收回、旧分支非祖先或已检出时退出码 3 且什么都不写（Spec 验收 2 拒绝部分、3）
-- [ ] Task 3：`prepare` 落地——快进或新切、worktree、`-r<轮次>` 登记、开工批准事项 `reopened`、输出与 `--json`（Spec 验收 1、2、4、8）
+- [x] Task 2：`prepare` 校验——可重开判据、旧会话未收回、旧分支非祖先或已检出时退出码 3 且什么都不写（Spec 验收 2 拒绝部分、3）——与 Task 3 一起实现后补测试，换回改前 `start.py` 确认新测试全红（12 失败 1 错误）再还原；重开计划挂在 `Proposal.reopen` 上，`validate` 仍返回三元组（`test_failure` 照用）
+- [x] Task 3：`prepare` 落地——快进或新切、worktree、`-r<轮次>` 登记、开工批准事项 `reopened`、输出与 `--json`（Spec 验收 1、2、4、8）——`--json` 原样带出 prepared 的键，未改 `__main__.py`；test_start_prepare、test_start_plan、test_failure 照常通过
 - [ ] Task 4：开工说明「重开修订」一段与三种 `review` 写法（Spec 验收 5）
 - [ ] Task 5：`start plan` 不提议、原因写「已重开…要用户点名」（Spec 验收 7）
 - [ ] Checkpoint 1（report）：重开能开出来，开工说明与 plan 输出对，相关测试通过
