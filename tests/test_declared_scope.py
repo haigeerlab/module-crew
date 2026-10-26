@@ -282,5 +282,88 @@ class ChangeAddTest(DeclaredMixin, ReviewCase):
         self.assertEqual(out.lines[-1], "可由模块协调判断是否在已批准 Spec 范围内直接办")
 
 
+class LandFromModuleTest(DeclaredMixin, ReviewCase):
+    """Acceptance 6 and 7."""
+
+    def setUp(self):
+        super().setUp()
+        self.with_declared({"b": usable()})
+        self.db = self.switch("on")
+        f = self.wt["b"] / "shared" / "x.ts"
+        f.parent.mkdir(parents=True)
+        f.write_text("export const X = 1\n", encoding="utf-8")
+        git(self.wt["b"], "add", "-A")
+        git(self.wt["b"], "commit", "-q", "-m", "b: shared x")
+        self.module_commit = git(self.wt["b"], "rev-parse", "HEAD").strip()
+
+    def add(self, files=("shared/x.ts",), rid=4700):
+        from module_crew import changes
+        out = changes.add(self.db, request(list(files)), "shop-b", rid)
+        assert out.code == 0, out.lines
+        return out.number
+
+    def land(self, n, *extra):
+        return self.run_cli("change", "land", str(n), "--from-module", *extra)
+
+    def test_lands_from_the_module_branch(self):
+        from module_crew import protocol
+        n = self.add()
+        before = git(self.repo, "rev-parse", "main").strip()
+        out = self.land(n)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(git(self.repo, "rev-list", "--count", f"{before}..main").strip(), "1")
+        self.assertEqual(git(self.repo, "diff", "--name-only", before, "main").split(), ["shared/x.ts"])
+        self.assertEqual(git(self.repo, "show", "main:shared/x.ts"), "export const X = 1\n")
+        subject = git(self.repo, "log", "-1", "--format=%s", "main")
+        self.assertIn(f"公共变更请求 C{n}（shop-b）提前落地", subject)
+        rec = store.get(self.db, "request", str(n))
+        self.assertEqual((rec["state"], rec["closedReason"]), ("closed", "landed"))
+        self.assertEqual(rec["fromModule"], {"commit": self.module_commit})
+        self.assertIs(rec["toldUser"], False)
+        self.assertIn("提前落地，记入待汇总（change landed）", out.stdout)
+        self.assertEqual(git(self.repo, "status", "--porcelain"), "")
+        bodies = {}
+        for line in out.stdout.splitlines():
+            if line.startswith("发送 【协调通知】 → "):
+                to = line.split("→ ")[1].split("，")[0]
+                bodies[to] = Path(line.rsplit("正文文件：", 1)[1]).read_text(encoding="utf-8")
+        self.assertEqual(set(bodies), {"shop-b", "shop-c"})
+        self.assertTrue(bodies["shop-b"].startswith("回复：#4700\n"))
+        self.assertFalse(bodies["shop-c"].startswith("回复："))
+        for text in bodies.values():
+            self.assertTrue(protocol.parse(text).ok, text)
+
+    def refused(self, n, why):
+        before = (git(self.repo, "rev-parse", "main"), git(self.repo, "status", "--porcelain"),
+                  store.get(self.db, "request", str(n)))
+        out = self.land(n)
+        self.assertEqual(out.returncode, 3, out.stdout + out.stderr)
+        self.assertIn(why, out.stdout + out.stderr)
+        self.assertEqual(before, (git(self.repo, "rev-parse", "main"), git(self.repo, "status", "--porcelain"),
+                                  store.get(self.db, "request", str(n))))
+
+    def test_not_declared(self):
+        n = self.add(["shared/x.ts", "tsconfig.base.json"])
+        self.refused(n, "不是名单内的提前落地请求")
+
+    def test_dirty_checkout(self):
+        n = self.add()
+        (self.repo / "stray.txt").write_text("x\n")
+        self.refused(n, "集成 checkout 落地前就有改动")
+
+    def test_file_missing_on_module_branch(self):
+        n = self.add(["shared/x.ts", "shared/gone.ts"])
+        self.refused(n, "模块分支上没有 shared/gone.ts")
+
+    def test_declaration_gone_before_landing(self):
+        n = self.add()
+        self.with_declared({"b": {"code": 0, "out": {"planApproved": False, "declared": True}}})
+        self.refused(n, "声明不可用")
+
+    def test_scope_is_open_to_module_sessions(self):
+        from module_crew import __main__ as cli
+        self.assertIn(("scope", None), cli._ANY_SESSION)
+
+
 if __name__ == "__main__":
     unittest.main()

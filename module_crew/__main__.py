@@ -682,7 +682,8 @@ def _change(args) -> int:
         return 0
     if args.original_file is not None and original is None:
         return 2
-    res = changes.land(".", args.number, original, partial=getattr(args, "partial", False))
+    res = changes.land(".", args.number, original, partial=getattr(args, "partial", False),
+                       from_module=getattr(args, "from_module", False))
     for line in res.lines:
         print(line)
     for x in res.sends:
@@ -854,7 +855,7 @@ _LOCKED = {("change", "land"), ("review", "approve"), ("merge", "tick"), ("merge
 # command is the coordinator's and is refused (exit 7) when it comes from a conversation that is not the bound one.
 # (group, action); action None = the whole group.
 _ANY_SESSION = {("status", None), ("sessions", None), ("protocol", None), ("hook", None), ("bind", None), ("sync", None),
-                ("host-check", None), ("store", "check"), ("start", "plan"), ("review", "batch"), ("review", "show"),
+                ("host-check", None), ("scope", None), ("store", "check"), ("start", "plan"), ("review", "batch"), ("review", "show"),
                 ("change", "list"), ("merge", "queue"), ("merge", "push-plan"), ("source", "list"), ("source", "map"),
                 ("task", "list"), ("task", "show"), ("task", "next"), ("permissions", "plan"), ("coordinator", "up")}
 
@@ -1044,6 +1045,8 @@ def _main(argv: list[str] | None = None) -> int:
             c.add_argument("--by", type=refs.parse, help="取代它的新请求编号（配合 --reason superseded）")
         if name == "land":
             c.add_argument("--partial", action="store_true", help="清单里还有文件没改时，先落地已改的部分（要用户原话），请求保持打开")
+            c.add_argument("--from-module", action="store_true",
+                           help="名单内的提前落地：从请求方模块分支取清单文件再提交（crew-declared-scope）")
     mg = sub.add_parser("merge", help="本地合并、收尾与远端 PR")
     mgs = mg.add_subparsers(dest="action", required=True)
     for name in ("queue", "push-plan"):

@@ -211,8 +211,42 @@ def _changed_paths(checkout: Path) -> list[str]:
     return paths
 
 
-def land(project: str | os.PathLike, number: int, original: str | None = None, partial: bool = False) -> LandResult:
-    """Commit the coordinator's edits for one request on the integration baseline and prepare the notices."""
+def _from_module(db: store.Store, checkout: Path, rec: dict, number: int) -> tuple[str | None, str | None]:
+    """crew-declared-scope decision 4: (module commit, None) once every check passed and the listed files are taken
+    from the requester's module branch into the integration checkout; (None, why) when refused, nothing touched."""
+    from module_crew import declared
+    if not rec.get("declared"):
+        return None, f"C{number} 不是名单内的提前落地请求（change add 时没认成名单内），不能 --from-module"
+    dirty = _changed_paths(checkout)
+    if dirty:
+        return None, "集成 checkout 落地前就有改动，没有取文件：" + "、".join(dirty)
+    module = _module_of(store.records(db, "session"), rec["from"])
+    commit = probe._git(checkout, "rev-parse", "--verify", "--quiet", f"refs/heads/{module}^{{commit}}").stdout.strip()
+    if not commit:
+        return None, f"找不到模块分支 {module}"
+    for f in rec["files"]:
+        if probe._git(checkout, "cat-file", "-e", f"{commit}:{f}").returncode != 0:
+            return None, f"模块分支上没有 {f}（{commit[:7]}）；删除不能预先声明，照今天的做法处理"
+    same = [f for f in rec["files"] if probe._git(checkout, "rev-parse", f"{commit}:{f}").stdout
+            == probe._git(checkout, "rev-parse", f"HEAD:{f}").stdout]
+    if same:
+        return None, f"模块分支上这些文件和集成分支一样，没有可落地的：{'、'.join(same)}"
+    scope = declared.read(checkout, module)
+    if not scope.usable:
+        return None, f"声明不可用：{scope.reason}；照今天的做法处理"
+    outside = [f for f in rec["files"] if not scope.inside(f)]
+    if outside:
+        return None, "这些文件已不在名单内：" + "、".join(outside) + "；照今天的做法处理"
+    took = probe._git(checkout, "checkout", commit, "--", *rec["files"])
+    if took.returncode != 0:
+        return None, f"从模块分支取文件失败：{(took.stderr or took.stdout).strip()[:200]}"
+    return commit, None
+
+
+def land(project: str | os.PathLike, number: int, original: str | None = None, partial: bool = False,
+         from_module: bool = False) -> LandResult:
+    """Commit the coordinator's edits for one request on the integration baseline and prepare the notices;
+    with `from_module`, take the declared files from the requester's module branch first (crew-declared-scope)."""
     project = Path(project)
     db = store.open_store(project)
     rec = store.get(db, "request", str(number))
@@ -224,6 +258,13 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
     checkout = probe._checkout_of(project, cfg.get("integrationBranch", "")) if cfg else None
     if checkout is None:
         return LandResult(3, ["找不到集成分支所在的 checkout"])
+    module_commit = None
+    if from_module:
+        if partial:
+            return LandResult(3, ["--from-module 不和 --partial 一起用"])
+        module_commit, why = _from_module(db, checkout, rec, number)
+        if why:
+            return LandResult(3, [why])
     changed = _changed_paths(checkout)
     outside = [p for p in changed if p not in rec["files"]]
     if outside:
@@ -241,7 +282,8 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
     from module_crew import merge
     try:
         done = probe._git(checkout, "commit", "-q", "-m",
-                          commits.message(f"公共变更请求 C{number}（{rec['from']}）：{rec['what'][:40]}", commits.prefix_of(db)),
+                          commits.message(f"公共变更请求 C{number}（{rec['from']}）{'提前落地' if module_commit else ''}："
+                                          f"{rec['what'][:40]}", commits.prefix_of(db)),
                           timeout=merge.commit_timeout(cfg))
     except subprocess.TimeoutExpired as exc:
         return LandResult(4, [probe.timed_out("集成分支提交", exc), "已暂存的文件：" + "、".join(changed) + "（仍是暂存状态）",
@@ -258,6 +300,8 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
         result.lines.append(f"公共变更请求 C{number} 部分落地 {commit[:7]}，还剩 {'、'.join(left)}；请求保持打开，改完再 change land")
     else:
         result.lines.append(f"公共变更请求 C{number} 已在集成分支提交 {commit[:7]}")
+    if module_commit:
+        result.lines.append(f"从模块分支 {module_commit[:7]} 取的文件；提前落地，记入待汇总（change landed）")
     result.lines.append(probe.took_line(done, merge.commit_timeout(cfg)))
     if original is None and _asks_user(rec.get("hints", [])):
         result.lines.append("提醒：这条请求带「要问用户」提示，但没有记下用户原话")
@@ -271,8 +315,10 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
             tx.put("request", str(number), dict(rec, partial=parts), action="partly-landed",
                    data={"commit": commit, "left": left})
         else:
-            tx.put("request", str(number), dict(rec, state="closed", closedReason="landed", commit=commit, answer=answer_rec),
-                   action="landed", data={"commit": commit})
+            early = {"fromModule": {"commit": module_commit}, "toldUser": False} if module_commit else {}
+            tx.put("request", str(number), dict(rec, state="closed", closedReason="landed", commit=commit, answer=answer_rec,
+                                                **early),
+                   action="landed", data={"commit": commit, **({"fromModule": module_commit} if module_commit else {})})
             _close_ticket(tx, rec)
         skip = merge.no_sync(tx)               # same rule as merge run (0.9.3); the requester still gets its reply
         for name, sess in sorted(tx.records("session").items()):
