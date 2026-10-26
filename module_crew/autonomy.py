@@ -364,3 +364,57 @@ def suggestion_line(db: store.Store, project: str | os.PathLike) -> str | None:
         pass
     return (f"可以建议升到 {up}：最近 {STREAK} 个模块（{names}）合并退回 0、撤销 0、返工 ≤ {MAX_REWORK}、用户退回 0。"
             f"只是建议，不自动升；{how}")
+
+
+INTEGRATION = "集成分支"
+
+
+def digest(db: store.Store, project: str | os.PathLike, mark_told: bool = False) -> tuple[int, dict, list[str]]:
+    """Decision 6: the sync, check-ledger, unqueued-commit and early-landing messages since the last wrap-up, by
+    module, for a relaxed tier's one summary; `mark_told` is bookkeeping, not an approval."""
+    from module_crew import changes, checks, unqueued
+    told = int(state(db).get("toldSeq") or 0)
+    sessions = store.records(db, "session")
+    module_of = lambda name: (sessions.get(name) or {}).get("module") or name
+    groups: dict[str, list[str]] = {}
+    add = lambda who, text: groups.setdefault(who, []).append(text)
+    last = told
+    for e in store.events(db):
+        last = max(last, e["seq"])
+        if e["seq"] <= told:
+            continue
+        rec = (e.get("data") or {}).get("record") or {}
+        if e["type"] == "item.merged" and rec.get("kind") == "merge-approval" and rec.get("module"):
+            commit = (rec.get("mergeCommit") or "")[:7]
+            add(rec["module"], f"合入集成分支{f' {commit}' if commit else ''}，已给其他在用模块发同步基线通知")
+        elif e["type"] in ("request.landed", "request.partly-landed"):
+            early = "（名单内提前落地）" if rec.get("fromModule") else ""
+            add(module_of(rec.get("from")), f"公共变更 C{e['key']}（{'、'.join(rec.get('files') or [])}）落地 "
+                f"{((e.get('data') or {}).get('commit') or '')[:7]}{early}，已通知各模块同步")
+        elif e["type"] == "check.recorded":
+            who = rec.get("by")
+            add(module_of(who) if who in sessions else INTEGRATION,
+                f"{checks.NAMES.get(rec.get('kind'), rec.get('kind'))} {checks.RESULT_NAMES.get(rec.get('result'), rec.get('result'))}"
+                f"（树 {(rec.get('tree') or '')[:7]}{'' if who in sessions else f'，{who}'}）")
+        elif e["type"] == "config.integration-seen" and (e.get("data") or {}).get("by") == "unqueued":
+            d = e["data"]
+            add(INTEGRATION, f"不经合并队列的提交已通知各模块同步（到 {(d.get('new') or '')[:7]}）")
+    found = unqueued.find(db, project)
+    if found.commits and found.head != state(db).get("toldUnqueued"):
+        add(INTEGRATION, unqueued.describe(found) + "，还没通知各模块同步")
+    landed = changes.landed_rows(db)
+    doc = {"groups": groups, "landed": [r["request"] for r in landed], "toldSeq": told}
+    if not groups:
+        return 3, doc, ["没有要汇总的：上次汇总之后没有同步、检查账、不经队列的提交或提前落地"]
+    lines = ["收尾汇总（relaxed：以下几类不逐条告诉用户，收尾时一次说明）："]
+    for who, texts in groups.items():
+        lines.append(f"- {who}：")
+        lines += [f"  - {t}" for t in texts]
+    if mark_told:
+        if landed:
+            changes.mark_told(db, [r["request"] for r in landed])
+        with db.transaction(actor="coordinator") as tx:
+            _put(tx, dict(_state(tx), toldSeq=last, toldUnqueued=found.head if found.commits else None), "digest-told",
+                 {"toldSeq": last})
+        lines.append("已记为汇总给用户（只是记账，不是批准）")
+    return 0, doc, lines

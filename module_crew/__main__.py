@@ -986,6 +986,10 @@ def _tier(args) -> int:
             code, lines = autonomy.preflight(db, ".")
             print("\n".join(lines))
             return code
+        if args.action == "digest":
+            code, doc, lines = autonomy.digest(db, ".", args.mark_told)
+            print(json.dumps(doc, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+            return code
         if args.action == "restore":
             original = _original(args.original, args.original_file)
             if original is None:

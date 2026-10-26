@@ -430,5 +430,41 @@ class AdviceTest(IncidentBase):
         self.assertIn("可以建议升到 relaxed：最近 3 个模块（x、y、b）", "\n".join(res.lines))
 
 
+class DigestTest(IncidentBase):
+    """Acceptance 5."""
+
+    def test_lists_and_marks(self):
+        from module_crew import checks
+        fake_merged(self.db, "b")
+        checks.record(self.db, {"tree": "a" * 40, "kind": "quick", "command": "q", "result": "pass", "exitCode": 0,
+                                "tail": "", "commit": None, "where": str(self.wt["c"]), "by": "shop-c",
+                                "startedAt": store.now(), "seconds": 1, "inheritedFrom": None})
+        with self.db.transaction(actor="test") as tx:
+            n = tx.allocate_number()
+            tx.put("request", str(n), {"from": "shop-c", "files": ["shared/x.ts"], "state": "closed",
+                                       "closedReason": "landed", "commit": "c" * 40, "fromModule": {"commit": "d" * 40},
+                                       "toldUser": False}, action="landed", data={"commit": "c" * 40})
+        autonomy.incident(self.db, self.repo, "revoked", "77")                # never in the digest
+        code, out = self.cli("tier", "digest")
+        self.assertEqual(code, 0, out)
+        self.assertIn("收尾汇总", out)
+        self.assertIn("- b：", out)
+        self.assertIn("合入集成分支", out)
+        self.assertIn("- c：", out)
+        self.assertIn("快检查 通过（树 aaaaaaa）", out)
+        self.assertIn(f"C{n}", out)
+        self.assertIn("shared/x.ts", out)
+        self.assertNotIn("降到", out)
+        code, out = self.cli("tier", "digest", "--json")
+        doc = json.loads(out)
+        self.assertEqual(sorted(doc["groups"]), ["b", "c", "集成分支"])          # the tier commit is unqueued
+        self.assertIn("不经合并队列的提交", "".join(doc["groups"]["集成分支"]))
+        code, out = self.cli("tier", "digest", "--mark-told")
+        self.assertEqual(code, 0)
+        self.assertEqual(store.get(self.db, "request", str(n))["toldUser"], True)
+        code, out = self.cli("tier", "digest")
+        self.assertEqual(code, 3, out)
+
+
 if __name__ == "__main__":
     unittest.main()
