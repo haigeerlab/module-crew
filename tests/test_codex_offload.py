@@ -93,6 +93,30 @@ class OffloadCase(MergeCase):
     def quick_count(self) -> int:
         return len(self.quick_calls.read_text()) if self.quick_calls.exists() else 0
 
+    def approve_b(self, todo: str | None = None) -> int:
+        """Approve b's Spec and Plan in the integration checkout, then sync b so its branch has the approval."""
+        from module_crew import review, sync
+        wt = self.wt["b"]
+        if todo is not None:
+            (wt / "tasks" / "b" / "todo.md").write_text(todo, encoding="utf-8")
+            git(wt, "add", "-A")
+            git(wt, "commit", "-q", "-m", "b: todo")
+        s = review.add(self.db, self.spec_review("b"), "shop-b", 1).number
+        p = review.add(self.db, self.plan_review("b"), "shop-b", 2).number
+        res = review.approve(self.repo, [s, p], "批准 b")
+        assert res.code == 0, res.lines
+        out = sync.run(wt)
+        assert out.code == 0, out.lines
+        self.db = store.open_store(self.repo)
+        return res.approval
+
+    def started(self, todo: str | None = None) -> offload.Outcome:
+        self.switch_on()
+        self.approve_b(todo)
+        out = offload.start(self.repo, "b")
+        assert out.code == 0, out.lines
+        return out
+
 
 class SwitchTest(OffloadCase):
     """Acceptance 1."""
@@ -198,6 +222,132 @@ class ReadyTest(OffloadCase):
         self.assertFalse(offload.delegate_interface(self.repo).resume_timeout)
         (self.delegate / "interface.json").write_text(json.dumps(DELEGATE_12))
         self.assertTrue(offload.delegate_interface(self.repo).resume_timeout)
+
+
+
+TODO = "# Todo: b\n\n- [x] Task 1：打底\n- [ ] Task 2：做页面\n- [ ] Checkpoint 1（report）：页面就位\n- [ ] Checkpoint 2（gate）：最终验收\n"
+
+
+class ParseTest(unittest.TestCase):
+    """What delegate printed, sorted into done / needs-input / timeout / unknown (assumption 6)."""
+
+    def test_done(self):
+        r = offload.parse_result("做完了\ndelegate: run_id=r1 status=done resumable=true\n", 0)
+        self.assertEqual((r.kind, r.run_id), ("done", "r1"))
+
+    def test_needs_input(self):
+        r = offload.parse_result("先做了 A\nNEED_USER: 用哪个库？\n选 x 还是 y\ndelegate: run_id=r2 status=needs-input resumable=true\n", 0)
+        self.assertEqual((r.kind, r.run_id, r.question), ("needs-input", "r2", "用哪个库？\n选 x 还是 y"))
+
+    def test_needs_input_without_marker_is_unknown(self):
+        r = offload.parse_result("问题\ndelegate: run_id=r2 status=needs-input resumable=true\n", 0)
+        self.assertEqual(r.kind, "unknown")
+
+    def test_timeout_11(self):
+        r = offload.parse_result("半截输出\n", 124)
+        self.assertEqual((r.kind, r.run_id), ("timeout", None))
+
+    def test_timeout_12(self):
+        text = "进度：做完一半\ndelegate: run_id=r3 status=timeout resumable=true\n"
+        self.assertEqual(offload.parse_result(text, 124).kind, "unknown")
+        r = offload.parse_result(text, 124, resume_timeout=True)
+        self.assertEqual((r.kind, r.run_id), ("timeout", "r3"))
+
+    def test_unknown(self):
+        for text, code in (("拒绝\n", 64), ("坏了\n", 1), ("没结果行\n", 0),
+                           ("x\ndelegate: run_id=r4 status=weird resumable=true\n", 0),
+                           ("x\ndelegate: run_id=r4 status=done resumable=true\n", 3)):
+            self.assertEqual(offload.parse_result(text, code).kind, "unknown", (text, code))
+
+    def test_next_item(self):
+        self.assertEqual(offload.next_item(TODO)[:2], ("Task 2：做页面", True))
+        self.assertEqual(offload.next_item(TODO.replace("- [ ] Task 2", "- [x] Task 2"))[:2],
+                         ("Checkpoint 1（report）：页面就位", False))
+        self.assertIsNone(offload.next_item("# Todo\n\n- [x] Task 1\n"))
+
+
+class StartTest(OffloadCase):
+    """Acceptance 5 and the start part of acceptance 2."""
+
+    def test_off(self):
+        self.approve_b(TODO)
+        out = offload.start(self.repo, "b")
+        self.assertEqual(out.code, 3)
+        self.assertIn("codexOffload", "\n".join(out.lines))
+        self.assertIsNone(store.get(self.db, "offload", "b"))
+
+    def test_start_task(self):
+        out = self.started(TODO)
+        text = "\n".join(out.lines)
+        self.assertIn("/delegate:run --write --resumable", text)
+        self.assertIn(str(self.wt["b"]), text)
+        self.assertIn("offload settle b", text)
+        rec = store.get(store.open_store(self.repo), "offload", "b")
+        self.assertEqual(rec["state"], "running")
+        self.assertEqual(rec["task"], "Task 2：做页面")
+        self.assertEqual(rec["base"], git(self.wt["b"], "rev-parse", "HEAD").strip())
+        brief = Path(rec["runs"][-1]["brief"]).read_text(encoding="utf-8")
+        for words in ("Task 2：做页面", "spec/b.md", "tasks/b/plan.md", "不要提交", "不要推送", "不要删除", "NEED_USER:",
+                      "Spec 没覆盖的决策", "测试改不红", "高风险不可逆"):
+            self.assertIn(words, brief)
+        self.assertIn(rec["runs"][-1]["brief"], text)
+
+    def test_checkpoint_not_sent(self):
+        self.switch_on()
+        self.approve_b(TODO.replace("- [ ] Task 2", "- [x] Task 2"))
+        out = offload.start(self.repo, "b")
+        self.assertEqual(out.code, 3)
+        self.assertIn("offload handback b", "\n".join(out.lines))
+        self.assertIsNone(store.get(self.db, "offload", "b"))
+
+    def test_dirty_worktree(self):
+        self.switch_on()
+        self.approve_b(TODO)
+        (self.wt["b"] / "src").mkdir(exist_ok=True)
+        (self.wt["b"] / "src" / "x.py").write_text("x = 1\n")
+        out = offload.start(self.repo, "b")
+        self.assertEqual(out.code, 3)
+        self.assertIn("不干净", "\n".join(out.lines))
+        self.assertIsNone(store.get(self.db, "offload", "b"))
+
+    def test_not_synced(self):
+        from module_crew import review
+        self.switch_on()
+        (self.wt["b"] / "tasks" / "b" / "todo.md").write_text(TODO, encoding="utf-8")
+        git(self.wt["b"], "commit", "-qam", "b: todo")
+        s = review.add(self.db, self.spec_review("b"), "shop-b", 1).number
+        p = review.add(self.db, self.plan_review("b"), "shop-b", 2).number
+        assert review.approve(self.repo, [s, p], "批准 b").code == 0
+        out = offload.start(self.repo, "b")
+        self.assertEqual(out.code, 3)
+        self.assertIn("sync", "\n".join(out.lines))
+
+    def test_not_approved(self):
+        self.switch_on()
+        out = offload.start(self.repo, "b")
+        self.assertEqual(out.code, 3)
+        self.assertIn("Plan", "\n".join(out.lines))
+
+    def test_already_running(self):
+        self.started(TODO)
+        out = offload.start(self.repo, "b")
+        self.assertEqual(out.code, 3)
+        self.assertIn("running", "\n".join(out.lines))
+
+    def test_not_ready(self):
+        self.switch_on()
+        self.approve_b(TODO)
+        self.set_cfg(checkLedger="off")
+        out = offload.start(self.repo, "b")
+        self.assertEqual(out.code, 3)
+        self.assertIn("checkLedger", "\n".join(out.lines))
+
+    def test_cli(self):
+        self.switch_on()
+        self.approve_b(TODO)
+        out = self.run_cli("offload", "start", "b")
+        self.assertEqual(out.returncode, 0, out.stderr + out.stdout)
+        self.assertIn("/delegate:run --write --resumable", out.stdout)
 
 
 if __name__ == "__main__":

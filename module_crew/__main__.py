@@ -430,6 +430,23 @@ def _original(original: str | None, original_file: str | None) -> str | None:
     return _read(original_file) if original_file is not None else original
 
 
+def _offload(args) -> int:
+    """crew-codex-offload: hand a module's Tasks to Codex through delegate, settle what comes back."""
+    from module_crew import offload
+    original = _original(getattr(args, "original", None), getattr(args, "original_file", None))
+    if args.action == "start":
+        if args.again and not (original or "").strip():
+            print("❌ 重派要用户原话（--original 或 --original-file）", file=sys.stderr)
+            return 3
+        out = offload.start(Path.cwd(), args.module, again=args.again,
+                            answer={"original": original, **store.source_field()} if args.again else None)
+    else:
+        print(f"❌ offload {args.action} 还没实现", file=sys.stderr)
+        return 2
+    print("\n".join(out.lines), file=sys.stdout if out.code in (0, 5) else sys.stderr)
+    return out.code
+
+
 def _check(args) -> int:
     """crew-check-ledger: quick check, baseline check and the ledger of results per tree."""
     from module_crew import checks
@@ -927,7 +944,8 @@ _LOCKED = {("change", "land"), ("review", "approve"), ("merge", "tick"), ("merge
 _ANY_SESSION = {("status", None), ("sessions", None), ("protocol", None), ("hook", None), ("bind", None), ("sync", None),
                 ("host-check", None), ("scope", None), ("store", "check"), ("start", "plan"), ("review", "batch"), ("review", "show"),
                 ("change", "list"), ("merge", "queue"), ("merge", "push-plan"), ("source", "list"), ("source", "map"),
-                ("task", "list"), ("task", "show"), ("task", "next"), ("permissions", "plan"), ("coordinator", "up")}
+                ("task", "list"), ("task", "show"), ("task", "next"), ("permissions", "plan"), ("coordinator", "up"),
+                ("offload", "show")}
 
 
 def _session_guard(args) -> int | None:
@@ -1295,6 +1313,29 @@ def _main(argv: list[str] | None = None) -> int:
     ckl = cks.add_parser("list", help="只读：最近的检查账")
     ckl.add_argument("--limit", type=int, default=20)
     ckl.add_argument("--json", action="store_true")
+    of = sub.add_parser("offload", help="额度外包：把 Task 经 delegate 交给 Codex，核对后代提交（项目开关 codexOffload）")
+    ofs = of.add_subparsers(dest="action", required=True)
+    ofst = ofs.add_parser("start", help="派出模块的下一个 Task：生成任务说明与 /delegate:run 写法")
+    ofst.add_argument("module")
+    ofst.add_argument("--again", action="store_true", help="超时、认不出或核对失败后重派（要用户原话）")
+    ofg = ofst.add_mutually_exclusive_group()
+    ofg.add_argument("--original")
+    ofg.add_argument("--original-file")
+    ofse = ofs.add_parser("settle", help="收 delegate 的输出：按结束状态分流，做完的核对范围、跑快检查后代提交")
+    ofse.add_argument("module")
+    ofse.add_argument("--output", required=True, help="/delegate:run 的标准输出文件")
+    ofse.add_argument("--exit", dest="exit_code", type=int, required=True, help="/delegate:run 的退出码")
+    for name, text in (("resume", "带用户的答复续跑（needs-input；delegate ≥ 1.2 的超时）"),
+                       ("decline", "外包条件不满足时改由模块会话构建：发今天的开工通知（要用户原话）")):
+        c = ofs.add_parser(name, help=text)
+        c.add_argument("module")
+        g = c.add_mutually_exclusive_group(required=True)
+        g.add_argument("--original")
+        g.add_argument("--original-file")
+    ofs.add_parser("handback", help="交还模块会话：生成恢复通知（检查点、最终验收，或用户选交还）").add_argument("module")
+    ofsh = ofs.add_parser("show", help="只读：各模块的外包状态")
+    ofsh.add_argument("module", nargs="?")
+    ofsh.add_argument("--json", action="store_true")
     sub.add_parser("resume-kit", help="生成换会话恢复说明").add_argument("module")
     se = sub.add_parser("serial", help="退回串行／恢复并行")
     se.add_argument("--off", action="store_true")
@@ -1579,6 +1620,12 @@ def _run(args) -> int:
     if args.group == "change":
         try:
             return _change(args)
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
+    if args.group == "offload":
+        try:
+            return _offload(args)
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 2
