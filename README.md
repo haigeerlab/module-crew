@@ -88,6 +88,17 @@ bin/module-crew status
 
 每条要发的消息，命令都会生成正文文件；模块协调用 `bridge_send` 的 `bodyFile` 原样发出，不改一字。
 
+## 检查记账（第十版，项目开关 checkLedger，默认关）
+
+模块协调凭用户原话设快检查命令（项目自己的脚本，只跑受影响部分）并打开 `checkLedger` 之后：
+
+1. **平时快检查**：同步后、自测、交最终验收前，模块会话跑 `module-crew check quick`；结果按树哈希记进状态库的检查账，同一棵树不重跑。通知里的「跑完整检查」都改成「跑 `module-crew check quick`」。
+2. **完整检查只在合并队列里跑**：`merge run` 照旧每次跑，结果自动记账；合入后的勾选、批准标记提交继承这次结果。
+3. **基线只跑一次**：集成分支被落地或不经队列的提交推进后，模块协调把 `module-crew check baseline` 放后台跑一次；红了自动建一个「修基线」bug 任务，不再让每个模块各记一遍。
+4. **最终验收引用检查账**：交审事项自动附上那棵树的检查记录，模块不再提交证据文件。`change land` 提交前也先跑快检查。
+
+开关关着时一切照旧。
+
 ## 轻任务（单个需求或 bug，第六版）
 
 不值得开模块的活走轻流程，不写 Spec、不调 spec-guard，但和模块一样只从合并队列进集成分支：
@@ -216,8 +227,11 @@ module-crew inbox add <文件> --from --relay-id   收件记账
 module-crew answer <编号> --original(-file)      转达「你的答复」
 module-crew start plan|prepare                   开工
 module-crew config set [--commit-prefix <值>] [--check-timeout <秒>] --original(-file)  已开工项目改提交信息前缀（空字符串表示不加）或提交与检查的时限
+module-crew config set --quick-check-command "<命令>" | --check-ledger on|off --original(-file)  快检查命令与检查记账开关（默认关）
+module-crew check quick|baseline [--rerun]       检查记账：模块 worktree 里跑快检查／模块协调对集成基线跑一次完整检查（放后台），同一棵树不重跑
+module-crew check show [<提交>]|list [--json]    检查账（只读）：一个提交的树跑过哪些检查／最近的记录
 module-crew review add|batch|approve|answer      交审与批量批准
-module-crew change add|list|land|answer [--reason superseded]  公共变更请求（被取代的可直接关）
+module-crew change add|list|land|answer [--reason superseded]  公共变更请求（被取代的可直接关；检查记账打开时 land 先跑快检查，--skip-quick-check 要原话）
 module-crew merge approve|revoke|queue|run|cleanup|push-plan|push
 module-crew merge record C<号> --original(-file)  合并收尾超时、状态库没记下合并时补记
 module-crew merge run --detach / merge result [C<号>] [--wait <分钟>]   后台合并（Codex 上的模块协调用）／取它的结果（第一次取到时记进状态库）

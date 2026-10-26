@@ -612,5 +612,20 @@ class StatusTest(LedgerCase):
         self.assertIn(f"修基线任务 T{doc['baselineTask']}", text)
 
 
+class SkillTextTest(unittest.TestCase):
+    """Task 9 (Spec AC 13): both copies of each skill say what to do with the switch on."""
+
+    def test_dev_and_coordinator(self):
+        for host in ("skills", "codex-skills"):
+            dev = (PLUGIN_ROOT / host / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
+            coord = (PLUGIN_ROOT / host / "crew-coordinator" / "SKILL.md").read_text(encoding="utf-8")
+            with self.subTest(host=host):
+                for words in ("module-crew check quick", "见检查账", "不再提交测试输出或证据文件", "修基线任务"):
+                    self.assertIn(words, dev)
+                for words in ("--check-ledger on --original-file", "check baseline", "修基线任务", "--skip-quick-check",
+                              "合并锁"):
+                    self.assertIn(words, coord)
+
+
 if __name__ == "__main__":
     unittest.main()
