@@ -455,9 +455,9 @@ def _config_set(args) -> int:
     """S23: change `commitPrefix` (T136: or `checkTimeout`) on a project already started, without start prepare;
     needs the user's words."""
     if all(v is None for v in (args.commit_prefix, args.check_timeout, args.declared_scope, args.quick_check_command,
-                               args.check_ledger)):
-        print("❌ 至少给一项：--commit-prefix、--check-timeout、--declared-scope、--quick-check-command 或 --check-ledger",
-              file=sys.stderr)
+                               args.check_ledger, args.codex_offload)):
+        print("❌ 至少给一项：--commit-prefix、--check-timeout、--declared-scope、--quick-check-command、--check-ledger"
+              " 或 --codex-offload", file=sys.stderr)
         return 2
     if args.check_timeout is not None and args.check_timeout < 1:
         print("❌ --check-timeout 要是正整数（秒）", file=sys.stderr)
@@ -473,6 +473,13 @@ def _config_set(args) -> int:
         from module_crew import checks
         try:
             print("\n".join(checks.set_config(db, args.quick_check_command, args.check_ledger, original)))
+        except checks.ConfigRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+    if args.codex_offload is not None:                          # crew-codex-offload
+        from module_crew import checks, offload
+        try:
+            print("\n".join(offload.set_switch(db, Path.cwd(), args.codex_offload, original)))
         except checks.ConfigRefused as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
@@ -1059,6 +1066,7 @@ def _main(argv: list[str] | None = None) -> int:
                        help="Plan「预先声明」名单内的公共文件由模块直接改（crew-declared-scope）")
     cfset.add_argument("--quick-check-command", help="快检查命令（项目脚本，只跑受影响部分；不经 shell）")
     cfset.add_argument("--check-ledger", choices=("on", "off"), help="检查记账开关：平时快检查、完整检查只在合并队列与基线检查里跑")
+    cfset.add_argument("--codex-offload", choices=("on", "off"), help="额度外包开关：Spec、Plan 批准后把 Task 经 delegate 交给 Codex")
     cfg = cfset.add_mutually_exclusive_group(required=True)
     cfg.add_argument("--original")
     cfg.add_argument("--original-file")
