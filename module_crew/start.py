@@ -500,6 +500,14 @@ def codex_open_lines(items: list[tuple[str, str, str]]) -> list[str]:
     return lines
 
 
+def _constraint_line(cfg: dict) -> str:
+    """crew-declared-scope decision 6: with the switch on, declared public files are edited in the module branch."""
+    if cfg.get("declaredScope") == "on":
+        return ("全局约束：Plan「预先声明」名单内的公共文件直接在本分支改（`module-crew scope <文件>` 可查）；名单外的不改，"
+                "要改发【公共变更请求】；被挡住发【等待其他会话】；发出前 module-crew protocol check。")
+    return "全局约束：不改公共文件（要改发【公共变更请求】）；被挡住发【等待其他会话】；发出前 module-crew protocol check。"
+
+
 def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: str, coord: str, approval: int,
                    host: str = "claude-desktop", reopen: dict | None = None) -> str:
     deps = "\n".join(f"spec/{d}.md" for d in info.get("dependsOn") or []) or "无"
@@ -521,5 +529,5 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
           [_first_step(module, cfg.get("reviewCadence", "separate")), "收到开工类【协调通知】之前不要开始构建。"]),
         "",
         f"接口：\n{deps}",
-        "全局约束：不改公共文件（要改发【公共变更请求】）；被挡住发【等待其他会话】；发出前 module-crew protocol check。",
+        _constraint_line(cfg),
     ] + extra) + "\n"

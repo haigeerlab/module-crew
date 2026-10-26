@@ -99,3 +99,28 @@ def read(project: str | os.PathLike, module: str) -> Declared:
         out.public_paths, out.configs, out.patches = (list(map(str, x)) for x in lists[:3])
         out.dependencies = [d for d in lists[3] if isinstance(d, dict)]
     return out
+
+
+OFF_LINE = "开关没开：公共文件一律发【公共变更请求】"
+INSIDE = "名单内，直接在本分支改"
+OUTSIDE = "名单外，要改发【公共变更请求】"
+
+
+def scope(cwd: str | os.PathLike, files: list[str]) -> tuple[int, list[str], dict]:
+    """`module-crew scope` (range item 3): run in a module worktree, read the Plan synced into it (assumption 3)."""
+    from module_crew import hooks
+    role = hooks.detect(cwd)
+    if role is None or role.kind != "dev" or not role.module:
+        return 2, ["这里不是登记过的在用模块会话的 worktree：scope 只在模块 worktree 里跑"], {}
+    top = Path(probe._git(Path(cwd), "rev-parse", "--show-toplevel").stdout.strip() or cwd)
+    on = enabled(role.db)
+    found = read(top, role.module) if on else Declared(role.module)
+    lines = [] if found.usable else [OFF_LINE if not on else f"声明不可用：{found.reason}，公共文件一律发【公共变更请求】"]
+    rows = [{"path": f, "inside": found.inside(f)} for f in files]
+    lines += [f"{r['path']}：{INSIDE if r['inside'] else OUTSIDE}" for r in rows]
+    if found.usable and not files:
+        lines.append("名单：" + ("、".join(found.public_paths + found.configs + found.patches) or "空"))
+    data = {"switch": "on" if on else "off", "usable": found.usable, "reason": found.reason if on else None,
+            "module": role.module, "approvedCommit": found.approved_commit, "paths": found.paths(),
+            "dependencies": found.dependencies, "files": rows}
+    return 0, lines, data

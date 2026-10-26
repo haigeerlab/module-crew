@@ -150,5 +150,79 @@ class ConfigSetTest(DeclaredMixin, ReviewCase):
         self.assertEqual(store.get(store.open_store(self.repo), "config", "main")["declaredScope"], "off")
 
 
+class ScopeCommandTest(DeclaredMixin, ReviewCase):
+    """Acceptance 3: `module-crew scope` in a module worktree."""
+
+    FILES = ("config/app.json", "shared/a/b.ts", "package.json")
+
+    def scope(self, *extra):
+        return self.run_cli("scope", *self.FILES, *extra, cwd=self.wt["b"])
+
+    def test_inside_and_outside(self):
+        self.with_declared({"b": usable()})
+        self.switch("on")
+        out = self.scope()
+        self.assertEqual(out.returncode, 0, out.stderr)
+        lines = out.stdout.splitlines()
+        self.assertIn("config/app.json：名单内，直接在本分支改", lines)
+        self.assertIn("shared/a/b.ts：名单内，直接在本分支改", lines)
+        self.assertIn("package.json：名单外，要改发【公共变更请求】", lines)
+        call = json.loads(self.args_log.read_text().splitlines()[-1])
+        self.assertEqual(Path(call[call.index("--project") + 1]).resolve(), self.wt["b"].resolve())   # assumption 3
+        data = json.loads(self.scope("--json").stdout)
+        self.assertEqual((data["switch"], data["usable"], data["module"]), ("on", True, "b"))
+        self.assertEqual([f["inside"] for f in data["files"]], [True, True, False])
+
+    def test_unusable_says_why_first(self):
+        cases = [({"b": {"code": 0, "out": {"planApproved": False, "declared": True}}}, "1.11"),
+                 ({"b": {"code": 0, "out": {"planApproved": True, "declared": False}}}, "1.11"),
+                 ({"b": {"code": 4, "out": {"error": "unknown-line"}}}, "1.11"),
+                 ({"b": usable()}, "1.10")]
+        self.switch("on")
+        for answers, version in cases:
+            self.with_declared(answers, version)
+            out = self.scope()
+            self.assertEqual(out.returncode, 0, out.stderr)
+            lines = out.stdout.splitlines()
+            self.assertTrue(lines[0].startswith("声明不可用："), lines)
+            self.assertEqual(sum("名单外" in x for x in lines[1:]), 3, lines)
+
+    def test_switch_off(self):
+        self.with_declared({"b": usable()})
+        for value in (None, "off"):
+            self.switch(value)
+            lines = self.scope().stdout.splitlines()
+            self.assertEqual(lines[0], "开关没开：公共文件一律发【公共变更请求】")
+            self.assertEqual(sum("名单外" in x for x in lines[1:]), 3, lines)
+        self.assertFalse(self.args_log.exists())      # off: spec-guard is not even asked
+
+    def test_not_a_module_worktree(self):
+        self.assertEqual(self.run_cli("scope", "x").returncode, 2)
+
+
+class KickoffTest(DeclaredMixin, StartCase):
+    """Acceptance 4: the 全局约束 line of the kickoff text."""
+
+    OLD = "全局约束：不改公共文件（要改发【公共变更请求】）；被挡住发【等待其他会话】；发出前 module-crew protocol check。"
+    NEW = ("全局约束：Plan「预先声明」名单内的公共文件直接在本分支改（`module-crew scope <文件>` 可查）；名单外的不改，"
+           "要改发【公共变更请求】；被挡住发【等待其他会话】；发出前 module-crew protocol check。")
+
+    def kickoff(self, module):
+        from module_crew import start
+        res = start.prepare(self.repo, [module], f"开 {module}", short="shop", max_modules=3)
+        assert res.code == 0, res.lines
+        return store.read_body(store.open_store(self.repo), res.prepared[0]["kickoff"]).splitlines()
+
+    def test_on_and_off(self):
+        lines = self.kickoff("b")
+        self.assertIn(self.OLD, lines)
+        self.switch("on")
+        lines = self.kickoff("c")
+        self.assertIn(self.NEW, lines)
+        self.assertNotIn(self.OLD, lines)
+        self.switch("off")
+        self.assertIn(self.OLD, self.kickoff("d"))
+
+
 if __name__ == "__main__":
     unittest.main()

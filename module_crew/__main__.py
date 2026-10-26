@@ -1199,6 +1199,9 @@ def _main(argv: list[str] | None = None) -> int:
         pg.add_argument("--original")
         pg.add_argument("--original-file")
     sub.add_parser("host-check", help="在模块 worktree 里预检宿主能否完成工作（Codex 必跑）").add_argument("--json", action="store_true")
+    scp = sub.add_parser("scope", help="在模块 worktree 里查文件在不在 Plan「预先声明」的名单里（只读）")
+    scp.add_argument("files", nargs="*")
+    scp.add_argument("--json", action="store_true")
     sub.add_parser("sync", help="在模块 worktree 里把集成分支合进模块分支（本模块 Spec、tasks 冲突取集成分支版本）")
     sub.add_parser("resume-kit", help="生成换会话恢复说明").add_argument("module")
     se = sub.add_parser("serial", help="退回串行／恢复并行")
@@ -1298,6 +1301,14 @@ def _run(args) -> int:
             return 2
     if args.group == "permissions":
         return _permissions(args)
+    if args.group == "scope":
+        from module_crew import declared
+        code, lines, data = declared.scope(".", args.files)
+        if args.json and code == 0:
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+        else:
+            print("\n".join(lines), file=sys.stderr if code else sys.stdout)
+        return code
     if args.group == "sync":
         from module_crew import sync
         res = sync.run(".")
