@@ -88,6 +88,40 @@ def _why_not(m: dict, sessions: dict[str, dict], merged: set[str], done: set[str
     return "没有空位" if slots == 0 else "不在 spec-guard 的可开工列表"
 
 
+def _related(mapped: dict[str, dict], module: str) -> set[str]:
+    """crew-declared-scope decision 8: every module upstream or downstream of `module` in the capability map."""
+    up = {mid: set(m.get("dependsOn") or []) for mid, m in mapped.items()}
+    down: dict[str, set[str]] = {}
+    for mid, deps in up.items():
+        for d in deps:
+            down.setdefault(d, set()).add(mid)
+
+    def walk(edges: dict[str, set[str]]) -> set[str]:
+        seen, todo = set(), [module]
+        while todo:
+            for nxt in edges.get(todo.pop(), ()):
+                if nxt not in seen:
+                    seen.add(nxt)
+                    todo.append(nxt)
+        return seen
+    return (walk(up) | walk(down)) - {module}
+
+
+def _held(db: store.Store | None, mapped: dict[str, dict], modules: list[str]) -> dict[str, str]:
+    """Decision 8: with the switch on, modules related to one whose session is in use and not merged this round."""
+    from module_crew import declared
+    if not declared.enabled(db):
+        return {}
+    merged = _merged_modules(db)
+    busy = {v.get("module") for v in _active_devs(db).values()} - merged
+    held = {}
+    for mid in modules:
+        hit = sorted(_related(mapped, mid) & busy)
+        if hit:
+            held[mid] = f"和在用的 {'、'.join(hit)} 有依赖关系，等它合入再开"
+    return held
+
+
 def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal:
     """Read-only: free slots and the first startable modules in Build order."""
     project = Path(project)
@@ -104,16 +138,19 @@ def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal
         return Proposal(slots, blockers=blockers, cadence=cadence)
     modules = {m.get("id"): m for m in report.map.get("modules") or [] if isinstance(m, dict)}
     sessions = {v.get("module"): v for v in _active_devs(db).values()}
+    held = _held(db, modules, [mid for mid in (report.startable or {}).get("modules", []) if mid not in sessions])
     picked = [{"id": mid, "responsibility": modules.get(mid, {}).get("responsibility", ""),
                "dependsOn": list(modules.get(mid, {}).get("dependsOn") or [])}
-              for mid in (report.startable or {}).get("modules", []) if mid not in sessions][:slots]
+              for mid in (report.startable or {}).get("modules", []) if mid not in sessions and mid not in held][:slots]
     reasons = []
     if not picked:
         merged, done = _merged_modules(db), {k for k, m in modules.items() if m.get("status") == "done"}
         for mid, m in modules.items():
-            why = _why_not(m, sessions, merged, done, slots, db)
+            why = held.get(mid) or _why_not(m, sessions, merged, done, slots, db)
             if why:
                 reasons.append({"module": mid, "reason": why})
+    else:
+        reasons = [{"module": mid, "reason": why} for mid, why in held.items()]   # shown as 暂不提议
     return Proposal(slots, picked, list((report.startable or {}).get("conflicts", [])), reasons=reasons, cadence=cadence)
 
 
@@ -270,6 +307,14 @@ def validate(project: Path, modules: list[str], original: str, short: str | None
                         "dependsOn": list(mapped[m].get("dependsOn") or [])}
                 proposal.reopen[m] = {"round": _reopen_round(db, m), "info": info,
                                       "review": {k: str((mapped[m].get("review") or {}).get(k)) for k in ("spec", "plan")}}
+    held = _held(db, mapped, [m for m in modules if m in mapped])
+    reasons += [f"{m} {why}" for m, why in held.items()]
+    from module_crew import declared
+    if declared.enabled(db):
+        for i, a in enumerate(modules):
+            for b in modules[i + 1:]:
+                if a in mapped and b in _related(mapped, a):
+                    reasons.append(f"同一次要开的 {a} 和 {b} 有依赖关系，不能同时开")
     for m in modules:
         if (Path(cfg["crewDir"]) / m).exists():
             reasons.append(f"{m} 的 worktree 目录已存在：{Path(cfg['crewDir']) / m}")
@@ -500,6 +545,14 @@ def codex_open_lines(items: list[tuple[str, str, str]]) -> list[str]:
     return lines
 
 
+def _constraint_line(cfg: dict) -> str:
+    """crew-declared-scope decision 6: with the switch on, declared public files are edited in the module branch."""
+    if cfg.get("declaredScope") == "on":
+        return ("全局约束：Plan「预先声明」名单内的公共文件直接在本分支改（`module-crew scope <文件>` 可查）；名单外的不改，"
+                "要改发【公共变更请求】；被挡住发【等待其他会话】；发出前 module-crew protocol check。")
+    return "全局约束：不改公共文件（要改发【公共变更请求】）；被挡住发【等待其他会话】；发出前 module-crew protocol check。"
+
+
 def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: str, coord: str, approval: int,
                    host: str = "claude-desktop", reopen: dict | None = None) -> str:
     deps = "\n".join(f"spec/{d}.md" for d in info.get("dependsOn") or []) or "无"
@@ -521,5 +574,5 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
           [_first_step(module, cfg.get("reviewCadence", "separate")), "收到开工类【协调通知】之前不要开始构建。"]),
         "",
         f"接口：\n{deps}",
-        "全局约束：不改公共文件（要改发【公共变更请求】）；被挡住发【等待其他会话】；发出前 module-crew protocol check。",
+        _constraint_line(cfg),
     ] + extra) + "\n"

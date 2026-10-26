@@ -54,6 +54,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         return Outcome(msg.kind, 3, lines=["消息不合格，请退回：" + "、".join(msg.problems)])
     doc = msg.contract()
     req_files = doc["changeRequest"]["files"]
+    scope = _declared_scope(db, sender)          # crew-declared-scope: a subprocess, so outside the transaction
     with db.transaction(actor=sender) as tx:
         out = Outcome(msg.kind, 0)
         if any(e["actor"] == sender and e["data"].get("relayId") == relay_id for e in store.events(db)):
@@ -68,6 +69,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
                     and set(req_files) & set(v["files"])}
         open_reqs = {k: v for k, v in open_reqs.items() if k not in replaced}
         hints = hints_for(req_files, {k: v["files"] for k, v in open_reqs.items()})
+        inside = [f for f in req_files if scope is not None and scope.inside(f)]
+        early = bool(inside) and len(inside) == len(req_files) and not any(h.startswith("conflict:") for h in hints)
         ticket = None
         if doc["fullyStopped"]:
             coord = next((k for k, v in tx.records("session").items()
@@ -91,6 +94,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             "what": msg.fields.get("改什么", ""), "why": msg.fields.get("为什么", ""),
             "fullyStopped": doc["fullyStopped"], "hints": hints, "ticket": ticket,
             "closedReason": None, "commit": None, "answer": None,
+            **({"declared": early} if scope is not None else {}),
+            **({"declaredCommit": scope.approved_commit} if early else {}),
         }, action="created", data={"relayId": relay_id})
         out.number = n
         out.lines.append(f"已记为公共变更请求 C{n}" + (f"，等待记录 W{ticket}" if ticket else ""))
@@ -100,8 +105,31 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
                              + f"：以新请求 C{n} 为准")
         if hints:
             out.lines.append("提示：" + "、".join(hints))
-        out.lines.append("要问用户" if _asks_user(hints) else "可由模块协调判断是否在已批准 Spec 范围内直接办")
+        if scope is not None and not scope.usable:
+            out.lines.append(f"声明不可用：{scope.reason}，照今天处理")
+        elif inside and not early and len(inside) < len(req_files):
+            out.lines.append(f"名单内：{'、'.join(inside)}；有名单外的文件，整条照今天处理")
+        elif inside and not early:
+            out.lines.append("名单内，但和别的请求改同一个文件：照今天处理")
+        if early:
+            out.lines.append(f"名单内：提前落地，不用问用户；用 change land C{n} --from-module")
+        else:
+            out.lines.append("要问用户" if _asks_user(hints) else "可由模块协调判断是否在已批准 Spec 范围内直接办")
         return out
+
+
+def _declared_scope(db: store.Store, sender: str):
+    """crew-declared-scope decision 3: the sender module's declaration, read in the integration checkout, or None
+    when the switch is off."""
+    from module_crew import declared
+    if not declared.enabled(db):
+        return None
+    module = _module_of(store.records(db, "session"), sender)
+    branch = (store.get(db, "config", "main") or {}).get("integrationBranch", "")
+    checkout = probe._checkout_of(db.path.parent, branch) if branch else None
+    if checkout is None:
+        return declared.Declared(module, reason="找不到集成分支所在的 checkout")
+    return declared.read(checkout, module)
 
 
 def pending(db: store.Store) -> list[tuple[int, dict]]:
@@ -183,8 +211,42 @@ def _changed_paths(checkout: Path) -> list[str]:
     return paths
 
 
-def land(project: str | os.PathLike, number: int, original: str | None = None, partial: bool = False) -> LandResult:
-    """Commit the coordinator's edits for one request on the integration baseline and prepare the notices."""
+def _from_module(db: store.Store, checkout: Path, rec: dict, number: int) -> tuple[str | None, str | None]:
+    """crew-declared-scope decision 4: (module commit, None) once every check passed and the listed files are taken
+    from the requester's module branch into the integration checkout; (None, why) when refused, nothing touched."""
+    from module_crew import declared
+    if not rec.get("declared"):
+        return None, f"C{number} 不是名单内的提前落地请求（change add 时没认成名单内），不能 --from-module"
+    dirty = _changed_paths(checkout)
+    if dirty:
+        return None, "集成 checkout 落地前就有改动，没有取文件：" + "、".join(dirty)
+    module = _module_of(store.records(db, "session"), rec["from"])
+    commit = probe._git(checkout, "rev-parse", "--verify", "--quiet", f"refs/heads/{module}^{{commit}}").stdout.strip()
+    if not commit:
+        return None, f"找不到模块分支 {module}"
+    for f in rec["files"]:
+        if probe._git(checkout, "cat-file", "-e", f"{commit}:{f}").returncode != 0:
+            return None, f"模块分支上没有 {f}（{commit[:7]}）；删除不能预先声明，照今天的做法处理"
+    same = [f for f in rec["files"] if probe._git(checkout, "rev-parse", f"{commit}:{f}").stdout
+            == probe._git(checkout, "rev-parse", f"HEAD:{f}").stdout]
+    if same:
+        return None, f"模块分支上这些文件和集成分支一样，没有可落地的：{'、'.join(same)}"
+    scope = declared.read(checkout, module)
+    if not scope.usable:
+        return None, f"声明不可用：{scope.reason}；照今天的做法处理"
+    outside = [f for f in rec["files"] if not scope.inside(f)]
+    if outside:
+        return None, "这些文件已不在名单内：" + "、".join(outside) + "；照今天的做法处理"
+    took = probe._git(checkout, "checkout", commit, "--", *rec["files"])
+    if took.returncode != 0:
+        return None, f"从模块分支取文件失败：{(took.stderr or took.stdout).strip()[:200]}"
+    return commit, None
+
+
+def land(project: str | os.PathLike, number: int, original: str | None = None, partial: bool = False,
+         from_module: bool = False) -> LandResult:
+    """Commit the coordinator's edits for one request on the integration baseline and prepare the notices;
+    with `from_module`, take the declared files from the requester's module branch first (crew-declared-scope)."""
     project = Path(project)
     db = store.open_store(project)
     rec = store.get(db, "request", str(number))
@@ -196,6 +258,13 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
     checkout = probe._checkout_of(project, cfg.get("integrationBranch", "")) if cfg else None
     if checkout is None:
         return LandResult(3, ["找不到集成分支所在的 checkout"])
+    module_commit = None
+    if from_module:
+        if partial:
+            return LandResult(3, ["--from-module 不和 --partial 一起用"])
+        module_commit, why = _from_module(db, checkout, rec, number)
+        if why:
+            return LandResult(3, [why])
     changed = _changed_paths(checkout)
     outside = [p for p in changed if p not in rec["files"]]
     if outside:
@@ -213,7 +282,8 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
     from module_crew import merge
     try:
         done = probe._git(checkout, "commit", "-q", "-m",
-                          commits.message(f"公共变更请求 C{number}（{rec['from']}）：{rec['what'][:40]}", commits.prefix_of(db)),
+                          commits.message(f"公共变更请求 C{number}（{rec['from']}）{'提前落地' if module_commit else ''}："
+                                          f"{rec['what'][:40]}", commits.prefix_of(db)),
                           timeout=merge.commit_timeout(cfg))
     except subprocess.TimeoutExpired as exc:
         return LandResult(4, [probe.timed_out("集成分支提交", exc), "已暂存的文件：" + "、".join(changed) + "（仍是暂存状态）",
@@ -230,6 +300,8 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
         result.lines.append(f"公共变更请求 C{number} 部分落地 {commit[:7]}，还剩 {'、'.join(left)}；请求保持打开，改完再 change land")
     else:
         result.lines.append(f"公共变更请求 C{number} 已在集成分支提交 {commit[:7]}")
+    if module_commit:
+        result.lines.append(f"从模块分支 {module_commit[:7]} 取的文件；提前落地，记入待汇总（change landed）")
     result.lines.append(probe.took_line(done, merge.commit_timeout(cfg)))
     if original is None and _asks_user(rec.get("hints", [])):
         result.lines.append("提醒：这条请求带「要问用户」提示，但没有记下用户原话")
@@ -243,8 +315,10 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
             tx.put("request", str(number), dict(rec, partial=parts), action="partly-landed",
                    data={"commit": commit, "left": left})
         else:
-            tx.put("request", str(number), dict(rec, state="closed", closedReason="landed", commit=commit, answer=answer_rec),
-                   action="landed", data={"commit": commit})
+            early = {"fromModule": {"commit": module_commit}, "toldUser": False} if module_commit else {}
+            tx.put("request", str(number), dict(rec, state="closed", closedReason="landed", commit=commit, answer=answer_rec,
+                                                **early),
+                   action="landed", data={"commit": commit, **({"fromModule": module_commit} if module_commit else {})})
             _close_ticket(tx, rec)
         skip = merge.no_sync(tx)               # same rule as merge run (0.9.3); the requester still gets its reply
         for name, sess in sorted(tx.records("session").items()):
@@ -262,3 +336,39 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
             meta = tx.write_body(body, text)
             result.sends.append({"to": name, "replyTo": reply_to, "body": body, "path": db.path / meta["path"]})
     return result
+
+
+def landed(db: store.Store) -> list[tuple[int, dict]]:
+    """crew-declared-scope decision 5: early landings of declared files not yet summarised to the user, in order."""
+    return sorted(((int(k), v) for k, v in store.records(db, "request").items()
+                   if v.get("closedReason") == "landed" and v.get("fromModule") and v.get("toldUser") is False),
+                  key=lambda kv: kv[0])
+
+
+def landed_rows(db: store.Store) -> list[dict]:
+    sessions = store.records(db, "session")
+    rows = []
+    for n, rec in landed(db):
+        when = next((e["at"] for e in store.events(db, key=str(n), kind="request") if e["type"] == "request.landed"), None)
+        rows.append({"request": n, "module": _module_of(sessions, rec["from"]), "files": rec["files"],
+                     "commit": rec["commit"], "at": when})
+    return rows
+
+
+def landed_summary(rows: list[dict]) -> list[str]:
+    """The text the coordinator puts in its next message to the user."""
+    return [f"C{r['request']} {r['module']}：{'、'.join(r['files'])} 已提前进集成分支（{r['commit'][:7]}，{r['at'] or '时间未知'}），"
+            "名单内、没问用户" for r in rows]
+
+
+def mark_told(db: store.Store, numbers: list[int]) -> None:
+    """Record that these early landings were summarised to the user: bookkeeping, not an approval."""
+    with db.transaction(actor="coordinator") as tx:
+        waiting = {int(k) for k, v in tx.records("request").items()
+                   if v.get("closedReason") == "landed" and v.get("fromModule") and v.get("toldUser") is False}
+        bad = [n for n in numbers if n not in waiting]
+        if bad:
+            raise AnswerRefused("不是待汇总的提前落地：" + "、".join(f"C{n}" for n in bad))
+        for n in numbers:
+            tx.put("request", str(n), dict(tx.get("request", str(n)), toldUser=True), action="told-user", data={})
+

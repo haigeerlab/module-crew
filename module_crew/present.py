@@ -194,8 +194,44 @@ def final_tables(project: Path, db: store.Store, rec: dict) -> dict:
             deps += _new_dependencies(wt, base, commit, path)
     commits = list(reversed(_git(wt, "log", "--no-merges", "--format=%h %s", f"{base}..{commit}").stdout.splitlines()))
     revised = rec.get("specRevised")
-    return {"docs": docs, "code": code, "commits": commits, "dependencies": deps,
-            "specDiff": revised["diff"] if revised else None, "planKnown": bool(planned)}
+    out = {"docs": docs, "code": code, "commits": commits, "dependencies": deps,
+           "specDiff": revised["diff"] if revised else None, "planKnown": bool(planned)}
+    out["declared"] = _declared_section(project, db, rec["module"], out)
+    return out
+
+
+def _declared_section(project: Path, db: store.Store, module: str, t: dict) -> dict:
+    """crew-declared-scope decision 7: move the declared public files out of the docs and code tables into a section
+    of their own, mark early landings and undeclared dependencies; `off` leaves the tables exactly as before."""
+    from module_crew import declared
+    if not declared.enabled(db):
+        return {"state": "off", "reason": None, "files": []}
+    branch = (store.get(db, "config", "main") or {}).get("integrationBranch") or ""
+    checkout = probe._checkout_of(project, branch) if branch else None
+    scope = declared.read(checkout, module) if checkout else declared.Declared(module, reason="找不到集成分支所在的 checkout")
+    if not scope.usable:
+        return {"state": "unavailable", "reason": scope.reason, "files": []}
+    sessions = store.records(db, "session")
+    early = [(int(k), v) for k, v in store.records(db, "request").items()
+             if v.get("closedReason") == "landed" and v.get("fromModule")
+             and (sessions.get(v.get("from")) or {}).get("module") == module]
+    files = []
+    for table in ("docs", "code"):
+        keep = []
+        for r in t[table]:
+            if not scope.inside(r["path"]):
+                keep.append(r)
+                continue
+            row = {k: v for k, v in r.items() if k != "beyondPlan"}
+            hit = max((n for n, v in early if r["path"] in v.get("files", [])), default=None)
+            if hit is not None:
+                row["landed"] = {"request": hit, "commit": str(dict(early)[hit].get("commit") or "")[:7]}
+            files.append(row)
+        t[table] = keep
+    names = {d.get("name") for d in scope.dependencies}
+    t["dependencies"] = [d if d.endswith("有改动，请看差异") or d.split(" ", 1)[0] in names else d + "（未声明）"
+                         for d in t["dependencies"]]
+    return {"state": "ok", "reason": None, "files": files}
 
 
 def table_lines(t: dict) -> list[str]:
@@ -205,6 +241,7 @@ def table_lines(t: dict) -> list[str]:
     lines = ["改了哪些文件："]
     lines += ["文档："] + ([row(r) for r in t["docs"]] or ["- 无"])
     lines += ["代码：" + ("" if t["planKnown"] else "（超出 Plan：无法判断（Plan 没写文件））")] + ([row(r) for r in t["code"]] or ["- 无"])
+    lines += _declared_lines(t.get("declared") or {}, row)
     lines += ["提交："] + ([f"- {c}" for c in t["commits"]] or ["- 无"])
     lines += ["新增依赖："] + ([f"- {d}" for d in t["dependencies"]] or ["- 无"])
     if t["specDiff"]:
@@ -212,6 +249,21 @@ def table_lines(t: dict) -> list[str]:
     else:
         lines.append("Spec 中途改过吗：没有")
     return lines
+
+
+def _declared_lines(d: dict, row) -> list[str]:
+    """crew-declared-scope decision 7: the 「声明内公共文件」 section, nothing when the switch is off."""
+    if d.get("state") == "unavailable":
+        return [f"声明内公共文件：声明不可用：{d['reason']}，名单内外没有区分"]
+    if d.get("state") != "ok":
+        return []
+    def landed(r):
+        text = row(r)
+        if not r.get("landed"):
+            return text
+        mark = f"已提前落地 C{r['landed']['request']}（{r['landed']['commit']}）"
+        return text[:-1] + f"，{mark}）" if text.endswith("）") else f"{text}（{mark}）"
+    return ["声明内公共文件："] + ([landed(r) for r in d["files"]] or ["- 无"])
 
 
 # ------------------------------------------------------------------ request cards (decision 3)
