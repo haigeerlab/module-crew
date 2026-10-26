@@ -2,7 +2,7 @@
 
 > 依据 `tasks/crew-declared-scope/plan.md`。
 
-- [ ] Task 1：`declared.py`（`enabled`、`read`、`inside`）与 `config set --declared-scope`（Spec 验收 1；验收 3 的四种不可用在 `read` 层）
+- [x] Task 1：`declared.py`（`enabled`、`read`、`inside`）与 `config set --declared-scope`（Spec 验收 1；验收 3 的四种不可用在 `read` 层）——测试先红后绿（移走 declared.py 时导入失败）；test_declared_scope 11 个通过，test_commit_prefix_config、test_commit_timeout 照常通过；另加 `interface_reason` 给 config set 打开时的警告用
 - [ ] Task 2：`module-crew scope` 子命令与开工说明「全局约束」一行（Spec 验收 3、4）
 - [ ] Task 3：`change add` 分类——名单内、混合、冲突、不可用、开关关（Spec 验收 5）
 - [ ] Task 4：`change land --from-module`——成功路径与四种拒绝（Spec 验收 6、7）

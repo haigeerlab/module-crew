@@ -425,8 +425,8 @@ def _original(original: str | None, original_file: str | None) -> str | None:
 def _config_set(args) -> int:
     """S23: change `commitPrefix` (T136: or `checkTimeout`) on a project already started, without start prepare;
     needs the user's words."""
-    if args.commit_prefix is None and args.check_timeout is None:
-        print("❌ 至少给一项：--commit-prefix 或 --check-timeout", file=sys.stderr)
+    if args.commit_prefix is None and args.check_timeout is None and args.declared_scope is None:
+        print("❌ 至少给一项：--commit-prefix、--check-timeout 或 --declared-scope", file=sys.stderr)
         return 2
     if args.check_timeout is not None and args.check_timeout < 1:
         print("❌ --check-timeout 要是正整数（秒）", file=sys.stderr)
@@ -437,7 +437,8 @@ def _config_set(args) -> int:
     if not original.strip():
         print("❌ 用户原话不能为空：只记用户在本会话亲手输入的话", file=sys.stderr)
         return 3
-    changed = {k: v for k, v in (("commitPrefix", args.commit_prefix), ("checkTimeout", args.check_timeout)) if v is not None}
+    changed = {k: v for k, v in (("commitPrefix", args.commit_prefix), ("checkTimeout", args.check_timeout),
+                                 ("declaredScope", args.declared_scope)) if v is not None}
     db = store.open_store()
     with db.transaction(actor="coordinator") as tx:
         tx.put("config", "main", {**(tx.get("config", "main") or {}), **changed}, action="set",
@@ -446,6 +447,13 @@ def _config_set(args) -> int:
         print(f"已改提交前缀：{args.commit_prefix!r}" + ("（不加前缀）" if args.commit_prefix == "" else ""))
     if args.check_timeout is not None:
         print(f"已改检查时限：{args.check_timeout} 秒（完整检查、提交与推送都用它）")
+    if args.declared_scope is not None:
+        from module_crew import declared
+        print("已打开声明范围：Plan「预先声明」名单内的公共文件由模块直接改，名单外照旧发【公共变更请求】"
+              if args.declared_scope == "on" else "已关闭声明范围：公共文件一律发【公共变更请求】")
+        why = declared.interface_reason(Path.cwd()) if args.declared_scope == "on" else None
+        if why:
+            print(f"⚠️ {why}；读不到声明，打开后仍照今天的做法")
     return 0
 
 
@@ -983,6 +991,8 @@ def _main(argv: list[str] | None = None) -> int:
     cfset = cfs.add_parser("set")
     cfset.add_argument("--commit-prefix", help="module-crew 提交信息的前缀；空字符串表示不加")
     cfset.add_argument("--check-timeout", type=int, help="完整检查与提交钩子的时限（秒，正整数）")
+    cfset.add_argument("--declared-scope", choices=("on", "off"),
+                       help="Plan「预先声明」名单内的公共文件由模块直接改（crew-declared-scope）")
     cfg = cfset.add_mutually_exclusive_group(required=True)
     cfg.add_argument("--original")
     cfg.add_argument("--original-file")
