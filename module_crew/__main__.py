@@ -929,6 +929,8 @@ def _session_guard(args) -> int | None:
         return None
     if args.group == "unqueued" and not getattr(args, "notify", False):
         return None
+    if args.group == "tier" and (key[1] is None or (key[1] == "digest" and not getattr(args, "mark_told", False))):
+        return None                         # crew-autonomy-tier: reading the tier and the digest is read only
     if key == ("permissions", "verify") and not getattr(args, "record", None):
         return None
     if key == ("coordinator", "handover") and getattr(args, "check", False):
@@ -971,6 +973,19 @@ def _handover(args) -> int:
         return 2
     print(json.dumps({"code": code, "lines": lines}, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
     return code
+
+
+def _tier(args) -> int:
+    """crew-autonomy-tier: `tier [--json] | --preflight | restore | digest`."""
+    from module_crew import autonomy
+    try:
+        db = store.open_store()
+        doc, lines = autonomy.report(db, ".")
+    except store.StoreError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(doc, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+    return 0
 
 
 def _merge_lock_guard(args) -> int | None:
@@ -1287,6 +1302,17 @@ def _main(argv: list[str] | None = None) -> int:
     ckl = cks.add_parser("list", help="只读：最近的检查账")
     ckl.add_argument("--limit", type=int, default=20)
     ckl.add_argument("--json", action="store_true")
+    ti = sub.add_parser("tier", help="自治档位：查看、写入前核对、恢复降档、收尾汇总（crew-autonomy-tier）")
+    ti.add_argument("--json", action="store_true")
+    ti.add_argument("--preflight", action="store_true", help="写 autonomyTier 之前核对 spec-guard 版本与接口（只读）")
+    tis = ti.add_subparsers(dest="action")
+    tir = tis.add_parser("restore", help="降档后恢复一档（要用户原话）")
+    tirg = tir.add_mutually_exclusive_group(required=True)
+    tirg.add_argument("--original")
+    tirg.add_argument("--original-file")
+    tid = tis.add_parser("digest", help="relaxed 档的收尾汇总：同步、检查账、不经队列的提交、提前落地")
+    tid.add_argument("--json", action="store_true")
+    tid.add_argument("--mark-told", action="store_true", help="记为已汇总给用户（只是记账，不是批准）")
     sub.add_parser("resume-kit", help="生成换会话恢复说明").add_argument("module")
     se = sub.add_parser("serial", help="退回串行／恢复并行")
     se.add_argument("--off", action="store_true")
@@ -1393,6 +1419,8 @@ def _run(args) -> int:
         else:
             print("\n".join(lines), file=sys.stderr if code else sys.stdout)
         return code
+    if args.group == "tier":
+        return _tier(args)
     if args.group == "sync":
         from module_crew import sync
         res = sync.run(".")

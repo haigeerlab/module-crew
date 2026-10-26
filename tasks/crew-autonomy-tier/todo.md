@@ -2,7 +2,7 @@
 
 > 依据 `tasks/crew-autonomy-tier/plan.md`。
 
-- [ ] Task 1：读档位与生效档位、`tier [--json]`（Spec 验收 2、1）
+- [x] Task 1：读档位与生效档位、`tier [--json]`（Spec 验收 2、1）——测试先红（没有 tier 子命令）后绿；config 种类只允许键 main，降档记录改放 `config/main.autonomy`（不改 store.py，Spec 待补变更记录）
 - [ ] Task 2：`tier --preflight`（Spec 验收 3）
 - [ ] Checkpoint 1（report）：读档位就位
 - [ ] Task 3：standard 的评审节奏与声明范围（Spec 验收 4、6）
