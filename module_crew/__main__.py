@@ -444,9 +444,17 @@ def _offload(args) -> int:
         out = offload.settle(Path.cwd(), args.module, args.output, args.exit_code)
     elif args.action == "resume":
         out = offload.resume(Path.cwd(), args.module, {"original": original or "", **store.source_field()})
-    else:
-        print(f"❌ offload {args.action} 还没实现", file=sys.stderr)
-        return 2
+    elif args.action == "decline":
+        out = offload.decline(Path.cwd(), args.module, original or "")
+    elif args.action == "handback":
+        out = offload.handback(Path.cwd(), args.module)
+    elif args.action == "show":
+        code, rows, lines = offload.show(Path.cwd(), args.module)
+        if args.json:
+            print(json.dumps({"offload": rows}, ensure_ascii=False, indent=2))
+        else:
+            print("\n".join(lines), file=sys.stdout if code == 0 else sys.stderr)
+        return code
     print("\n".join(out.lines), file=sys.stdout if out.code in (0, 5) else sys.stderr)
     return out.code
 

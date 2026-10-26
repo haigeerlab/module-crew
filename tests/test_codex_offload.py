@@ -659,5 +659,111 @@ class ResumeTest(SettleCase):
         self.assertIn("offload resume", "\n".join(res.lines))
 
 
+
+class NoticeTest(SettleCase):
+    """Acceptance 4, 10 and the approve part of acceptance 2."""
+
+    def notice(self, res) -> list:
+        from module_crew import protocol
+        db = store.open_store(self.repo)
+        return [protocol.parse(store.read_body(db, x["body"])) for x in res.sends if x["kind"] == "coordination-notice"]
+
+    def approve(self):
+        from module_crew import review
+        (self.wt["b"] / "tasks" / "b" / "todo.md").write_text(TODO, encoding="utf-8")
+        git(self.wt["b"], "commit", "-qam", "b: todo")
+        s = review.add(self.db, self.spec_review("b"), "shop-b", 1).number
+        p = review.add(self.db, self.plan_review("b"), "shop-b", 2).number
+        return review.approve(self.repo, [s, p], "批准 b")
+
+    def test_off_is_today(self):
+        from module_crew import review
+        res = self.approve()
+        [msg] = self.notice(res)
+        self.assertEqual(msg.fields["要你做什么"], review.start_todo_today("b"))
+        self.assertFalse(any("外包" in x for x in res.lines))
+
+    def test_offload_notice(self):
+        self.switch_on()
+        res = self.approve()
+        [msg] = self.notice(res)
+        self.assertFalse(msg.problems, msg.problems)
+        todo = msg.fields["要你做什么"]
+        for words in ("外包给 Codex", "module-crew sync", "不构建", "【等待其他会话】", "先不同步"):
+            self.assertIn(words, todo)
+        self.assertIn("offload start b", "\n".join(res.lines))
+
+    def test_held_when_not_ready(self):
+        self.switch_on()
+        (self.codex_home / "config.toml").write_text(f'[projects."{self.repo}"]\ntrust_level = "untrusted"\n')
+        res = self.approve()
+        self.assertEqual(self.notice(res), [])
+        self.assertIn("外包条件不满足", "\n".join(res.lines))
+        out = self.run_cli("offload", "decline", "b", "--original", "让模块会话自己做")
+        self.assertEqual(out.returncode, 0, out.stderr + out.stdout)
+        from module_crew import protocol, review
+        path = out.stdout.split("正文文件：")[1].strip()
+        msg = protocol.parse(Path(path).read_text(encoding="utf-8"))
+        self.assertFalse(msg.problems, msg.problems)
+        self.assertEqual(msg.fields["类型"], "开工")
+        self.assertEqual(msg.fields["要你做什么"], review.start_todo_today("b"))
+        self.assertEqual(self.rec()["state"], "handed-back")
+        self.assertEqual(self.run_cli("offload", "decline", "b", "--original", " ").returncode, 3)
+
+    def test_handback_checkpoint(self):
+        self.started(TODO)
+        self.codex()
+        out = offload.handback(self.repo, "b")
+        self.assertEqual(out.code, 0, out.lines)
+        from module_crew import protocol
+        path = out.lines[-1].split("正文文件：")[1].strip()
+        msg = protocol.parse(Path(path).read_text(encoding="utf-8"))
+        self.assertFalse(msg.problems, msg.problems)
+        self.assertEqual(msg.fields["类型"], "恢复")
+        self.assertIn("C", msg.fields["依据"])
+        self.assertIn("Checkpoint 1", msg.fields["要你做什么"])
+        self.assertEqual(self.rec()["state"], "idle")
+
+    def test_handback_after_stop(self):
+        self.started(TODO)
+        self.codex(tick=(), output="做到一半\n", code=124)
+        out = offload.handback(self.repo, "b")
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertEqual(self.rec()["state"], "handed-back")
+        res = offload.start(self.repo, "b")
+        self.assertEqual(res.code, 3)
+        self.assertIn("--again", "\n".join(res.lines))
+
+    def test_handback_refused(self):
+        self.switch_on()
+        self.approve_b(TODO)
+        self.assertEqual(offload.handback(self.repo, "b").code, 3)            # never offloaded
+        offload.start(self.repo, "b")
+        self.assertEqual(offload.handback(self.repo, "b").code, 3)            # running
+
+
+
+class ShowTest(SettleCase):
+    """Acceptance 11."""
+
+    def test_show(self):
+        self.assertEqual(self.run_cli("offload", "show").returncode, 3)
+        self.started(TODO)
+        self.codex(tick=(), output=NEEDS)
+        out = self.run_cli("offload", "show", "b")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("等用户回答", out.stdout)
+        self.assertIn("Task 2：做页面", out.stdout)
+        self.assertIn("金额用分还是元？", out.stdout)
+        js = json.loads(self.run_cli("offload", "show", "--json").stdout)
+        self.assertEqual(js["offload"][0]["state"], "needs-input")
+
+    def test_show_commits(self):
+        self.started(TODO)
+        self.codex()
+        out = self.run_cli("offload", "show")
+        self.assertIn(self.head()[:7], out.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

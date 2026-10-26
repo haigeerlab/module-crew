@@ -552,3 +552,115 @@ def _timeout(db: store.Store, rec: dict, result: Result, text: str, exit_code: i
                f"Codex 做 {task} 超时；" + "；".join(x.strip() for x in progress[1:4] if x.strip())[:200],
                _options(module, go_on, BACK, HOLD)),
     ])
+
+
+# ------------------------------------------------------------------ start notice, decline, hand back (decisions 4, 10)
+
+def start_todo_offload(module: str) -> str:
+    """Decision 4: the start notice's 要你做什么 when Codex takes the Tasks."""
+    from module_crew import sync
+    return (f"本模块的实现外包给 Codex（项目开关 codexOffload）：先{sync.STEP}"
+            f"（spec/{module}.md、tasks/{module}/ 冲突时 sync 自动取集成分支的版本，它带批准标记），然后不构建、不改本 worktree；"
+            "发一条【等待其他会话】给模块协调（在等谁：模块协调；等什么：Codex 外包实现）后停下；外包期间收到同步基线通知先不同步。"
+            "做到检查点或最终验收时模块协调会发恢复通知交还给你。")
+
+
+def _dev_name(db: store.Store, module: str) -> str | None:
+    return next((n for n, r in store.records(db, "session").items()
+                 if r.get("role") == "dev" and r.get("module") == module and r.get("status") == "active"), None)
+
+
+def _notice(db: store.Store, module: str, kind: str, basis: str, todo: str, state: str, extra: dict) -> Outcome:
+    from module_crew import protocol
+    to = _dev_name(db, module)
+    text = protocol.render_coordination_notice(kind=kind, basis=basis, todo=todo)
+    with db.transaction(actor="coordinator") as tx:
+        n = tx.allocate_number()
+        meta = tx.write_body(n, text)
+        rec = dict(tx.get("offload", module) or {"module": module, "runs": []})
+        rec.update(state=state, **extra)
+        tx.put("offload", module, rec, action=state)
+    return Outcome(0, [f"发送 【协调通知】 → {to}，正文文件：{db.path / meta['path']}"])
+
+
+def decline(project: str | os.PathLike, module: str, original: str) -> Outcome:
+    """Decision 4: offloading cannot happen and the user chose the module session building as today."""
+    from module_crew import review
+    project = Path(project)
+    db = store.open_store(project)
+    if not enabled(db):
+        return Outcome(3, ["项目开关 codexOffload 没打开：开工通知照今天由 review approve 发出"])
+    if not original.strip():
+        return Outcome(3, ["改由模块会话构建要用户原话（--original 或 --original-file）"])
+    approval = _approval(db, module)
+    if approval is None:
+        return Outcome(3, [f"{module} 的 Spec 与 Plan 还没都批准"])
+    if (store.get(db, "offload", module) or {}).get("runs"):
+        return Outcome(3, [f"{module} 已经外包过：要交还模块会话用 offload handback {module}"])
+    out = _notice(db, module, "start", f"用户批准事项 C{approval[0]}（{module} 的 Spec 与 Plan），集成分支 {approval[1][:7]}；"
+                  "额度外包条件不满足，用户选择由模块会话自己构建", review.start_todo_today(module), "handed-back",
+                  {"approval": approval[0], "declined": {"original": original, **store.source_field(), "at": _now()}})
+    return Outcome(0, [f"{module} 改由模块会话自己构建（照今天的开工通知）", *out.lines])
+
+
+def handback(project: str | os.PathLike, module: str) -> Outcome:
+    """Decision 10: a checkpoint, the final acceptance, or the user's B: the module session takes over again."""
+    project = Path(project)
+    db = store.open_store(project)
+    if not enabled(db):
+        return Outcome(3, ["项目开关 codexOffload 没打开"])
+    rec = store.get(db, "offload", module)
+    if not rec or not rec.get("runs"):
+        return Outcome(3, [f"{module} 没有外包过，没有可交还的"])
+    if rec["state"] == "running":
+        return Outcome(3, [f"{module} 的外包正在跑：跑完先 offload settle {module}"])
+    if rec["state"] == "handed-back":
+        return Outcome(3, [f"{module} 已经交还过模块会话"])
+    worktree = Path(rec["worktree"])
+    if rec["state"] == "idle":
+        try:
+            item = next_item((worktree / "tasks" / module / "todo.md").read_text(encoding="utf-8"))
+        except OSError as exc:
+            return Outcome(3, [f"读不出 tasks/{module}/todo.md：{exc}"])
+        at, state = (item[0] if item else "todo 末尾"), "idle"
+    else:
+        at, state = f"{rec['task']}（{rec['state']}，用户选交还）", "handed-back"
+    made = [r["commit"] for r in rec["runs"] if r.get("commit")]
+    span = f"{made[0][:7]}…{made[-1][:7]}（{len(made)} 个）" if made else "无"
+    more = ("做完检查点、还有 Task 时再发【等待其他会话】，模块协调接着外包" if state == "idle" else
+            "之后本模块不再外包，按 Plan 自己做完剩下的项")
+    todo = (f"外包已停在 {at}：先 module-crew sync，对照 Spec 看一遍 Codex 的提交（{span}）"
+            + ("，工作区里留着 Codex 没提交的改动，看懂后自己决定怎么处理" if state == "handed-back"
+               and _git(worktree, "status", "--porcelain").stdout.strip() else "")
+            + f"，再按 Plan 处理这一项（检查点照 gate／report 规则、最终验收照常交审）；{more}。"
+            "然后自己发【已恢复】结项你那张等待记录。")
+    out = _notice(db, module, "resume", f"用户批准事项 C{rec['approval']}（{module} 的 Spec 与 Plan）；外包提交 {span}",
+                  todo, state, {"handedBackAt": _now()})
+    return Outcome(0, [f"交还 {module} 的模块会话：停在 {at}", *out.lines])
+
+
+# ------------------------------------------------------------------ show (decision 12)
+
+STATE_NAMES = {"running": "Codex 在跑", "needs-input": "等用户回答 Codex 的问题", "timeout": "超时，等用户决定",
+               "stopped": "停下，等用户决定", "idle": "空闲（上一项已代提交）", "handed-back": "已交还模块会话"}
+
+
+def show(project: str | os.PathLike, module: str | None = None) -> tuple[int, list[dict], list[str]]:
+    """Read only: (exit code, records, lines)."""
+    db = store.open_store(Path(project))
+    recs = store.records(db, "offload")
+    rows = [recs[module]] if module and module in recs else ([] if module else [recs[k] for k in sorted(recs)])
+    if not rows:
+        return 3, [], [f"{module or '本项目'} 没有外包记录" + ("" if enabled(db) else "（项目开关 codexOffload 没打开）")]
+    lines = [] if enabled(db) else ["项目开关 codexOffload 没打开（下面是以前的记录）"]
+    for r in rows:
+        runs = r.get("runs") or []
+        made = [x["commit"][:7] for x in runs if x.get("commit")]
+        lines.append(f"{r['module']}：{STATE_NAMES.get(r.get('state'), r.get('state'))}；当前项 {r.get('task') or '无'}；"
+                     f"已代提交 {'、'.join(made) or '无'}；共派出 {len(runs)} 次")
+        last = runs[-1] if runs else {}
+        if r.get("state") == "needs-input":
+            lines.append(f"  待答问题（delegate run {last.get('runId')}）：{last.get('question')}")
+        elif r.get("state") in ("stopped", "timeout"):
+            lines.append(f"  原因：{last.get('reason') or '超时'}")
+    return 0, rows, lines
