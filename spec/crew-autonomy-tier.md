@@ -1,545 +1,211 @@
-"""crew-autonomy-tier: spec-guard autonomyTier, the step-down cap, standard and relaxed, step-up advice
-(see spec/crew-autonomy-tier.md)."""
-
-import io
-import json
-import os
-import unittest
-from contextlib import redirect_stdout
-from pathlib import Path
-
-from helpers import MergeCase, ReviewCase, StartCase, git
-
-from module_crew import autonomy, declared, merge, review, sources, start, store
-from test_declared_scope import DeclaredMixin, request, usable
-
-READ_FROM = ("python3 -B hooks/project_config.py show --project <project-root> --format json: the item whose key is "
-             "autonomyTier, with value and source")
-
-# A spec-guard project_config.py show that reads the checkout's own .agent/config.json like the real one.
-FAKE_CONFIG = '''import json, os, sys
-args = sys.argv[1:]
-if os.environ.get("FAKE_CONFIG_FAIL"):
-    sys.exit(int(os.environ["FAKE_CONFIG_FAIL"]))
-project = args[args.index("--project") + 1]
-try:
-    cfg = json.load(open(os.path.join(project, ".agent", "config.json")))
-except (OSError, ValueError):
-    cfg = None
-items = []
-for key, default in (("reviewCadence", "separate"), ("autonomyTier", "strict")):
-    if cfg is None:
-        items.append({"key": key, "value": default, "source": "default (config invalid)"})
-    elif key in cfg:
-        ok = {"reviewCadence": ("separate", "combined"), "autonomyTier": ("strict", "standard", "relaxed")}[key]
-        if cfg[key] in ok:
-            items.append({"key": key, "value": cfg[key], "source": ".agent/config.json"})
-        else:
-            items.append({"key": key, "value": default, "source": "default (config invalid)"})
-    else:
-        items.append({"key": key, "value": default, "source": "default"})
-print(json.dumps({"items": items, "problems": []}))
-'''
-
-
-class TierMixin:
-    """A fake spec-guard 1.11 with autonomyTier; the tier lives in the integration checkout's .agent/config.json."""
-
-    def with_tier(self, version: str = "1.11", read_from: str = READ_FROM, plugin_version: str = "0.85.0"):
-        entry = self.plugins.entries["spec-guard@m"][-1]
-        entry["version"] = plugin_version
-        self.plugins.write()
-        root = Path(entry["installPath"])
-        doc = json.loads((root / "interface.json").read_text())
-        doc["interface"] = version
-        if version >= "1.11":
-            doc["autonomyTier"] = {"config": ".agent/config.json", "key": "autonomyTier", "default": "strict",
-                                   "readFrom": read_from}
-        else:
-            doc.pop("autonomyTier", None)
-        (root / "interface.json").write_text(json.dumps(doc))
-        (root / "hooks" / "project_config.py").write_text(FAKE_CONFIG)
-        self.addCleanup(lambda: os.environ.pop("FAKE_CONFIG_FAIL", None))
-
-    def set_tier(self, tier: str | None, cadence: str | None = None, raw: str | None = None):
-        path = self.repo / ".agent" / "config.json"
-        if raw is not None:
-            path.write_text(raw)
-            return
-        cfg = json.loads(path.read_text())
-        for key, value in (("autonomyTier", tier), ("reviewCadence", cadence)):
-            if value is None:
-                cfg.pop(key, None)
-            else:
-                cfg[key] = value
-        path.write_text(json.dumps(cfg))
-
-    def db(self):
-        return store.open_store(self.repo)
-
-    def cli(self, *argv) -> tuple[int, str]:
-        from module_crew.__main__ import main
-        out = io.StringIO()
-        old = os.getcwd()
-        os.chdir(self.repo)
-        try:
-            with redirect_stdout(out):
-                code = main(list(argv))
-        finally:
-            os.chdir(old)
-        return code, out.getvalue()
-
-
-class ReadTest(TierMixin, ReviewCase):
-    def test_three_values_and_sources(self):
-        self.with_tier()
-        for value in ("strict", "standard", "relaxed"):
-            self.set_tier(value)
-            t = autonomy.read(self.repo)
-            self.assertEqual((t.value, t.source, t.usable, t.explicit), (value, ".agent/config.json", True, True))
-        self.set_tier(None)
-        t = autonomy.read(self.repo)
-        self.assertEqual((t.value, t.source, t.explicit), ("strict", "default", False))
-        self.set_tier("loose")
-        t = autonomy.read(self.repo)
-        self.assertEqual((t.value, t.source, t.explicit), ("strict", "default (config invalid)", False))
-
-    def test_unreadable_reads_as_strict_with_reason(self):
-        self.with_tier(version="1.10")
-        self.set_tier("relaxed")
-        t = autonomy.read(self.repo)
-        self.assertEqual((t.value, t.usable), ("strict", False))
-        self.assertIn("低于 1.11", t.reason)
-
-        self.with_tier(read_from="python3 hooks/config.py --json")
-        t = autonomy.read(self.repo)
-        self.assertEqual(t.value, "strict")
-        self.assertIn("readFrom 写法和预期不同", t.reason)
-
-        self.with_tier()
-        os.environ["FAKE_CONFIG_FAIL"] = "1"
-        self.set_tier("standard")          # a new mtime: no cached answer
-        t = autonomy.read(self.repo)
-        self.assertEqual((t.value, t.usable), ("strict", False))
-        self.assertIn("退出码 1", t.reason)
-
-    def test_unset_writes_nothing(self):
-        self.with_tier()
-        db = self.db()
-        eff = autonomy.effective(db, self.repo)
-        self.assertEqual((eff.value, eff.active), ("strict", False))
-        self.assertNotIn("autonomy", store.get(db, "config", "main") or {})
-        code, out = self.cli("tier")
-        self.assertEqual(code, 0)
-        self.assertIn("档位没设（spec-guard 默认 strict），module-crew 照今天做", out)
-        self.assertNotIn("autonomy", store.get(self.db(), "config", "main") or {})
-
-    def test_set_tier_is_seen_once(self):
-        self.with_tier()
-        self.set_tier("standard")
-        db = self.db()
-        self.assertEqual(autonomy.effective(db, self.repo).value, "standard")
-        autonomy.effective(db, self.repo)
-        seen = [e for e in autonomy.marks(db) if e["type"] == "config.tier-seen"]
-        self.assertEqual(len(seen), 1)
-        code, out = self.cli("tier", "--json")
-        doc = json.loads(out)
-        self.assertEqual((doc["configured"]["value"], doc["effective"], doc["explicit"], doc["cap"]),
-                         ("standard", "standard", True, None))
-
-    def test_cap_lowers_and_clears_when_configured_changes(self):
-        self.with_tier()
-        self.set_tier("relaxed")
-        db = self.db()
-        with db.transaction(actor="test") as tx:
-            cfg = tx.get("config", "main")
-            tx.put("config", "main", {**cfg, "autonomy": {"cap": "standard", "capFor": "relaxed"}}, action="tier-lowered")
-        eff = autonomy.effective(db, self.repo)
-        self.assertEqual((eff.value, eff.cap), ("standard", "standard"))
-        self.set_tier("strict")
-        eff = autonomy.effective(db, self.repo)
-        self.assertEqual((eff.value, eff.cap), ("strict", None))
-        self.assertIn("config.tier-cap-cleared", [e["type"] for e in autonomy.marks(db)])
-
-
-class PreflightTest(TierMixin, ReviewCase):
-    def test_085_passes(self):
-        self.with_tier()
-        code, out = self.cli("tier", "--preflight")
-        self.assertEqual(code, 0, out)
-        self.assertIn("可以写 autonomyTier", out)
-
-    def test_older_version_or_interface_refused(self):
-        self.with_tier(plugin_version="0.84.2")
-        code, out = self.cli("tier", "--preflight")
-        self.assertEqual(code, 3)
-        self.assertIn("0.84.2 低于 0.85.0", out)
-        self.with_tier(version="1.10")
-        code, out = self.cli("tier", "--preflight")
-        self.assertEqual(code, 3)
-        self.assertIn("没有 autonomyTier", out)
-
-    def test_codex_session_adds_a_reminder(self):
-        self.with_tier()
-        db = self.db()
-        with db.transaction(actor="test") as tx:
-            tx.put("session", "shop-x", {"role": "dev", "host": "codex-desktop", "status": "active", "module": "x",
-                                         "worktree": "/tmp/wx"}, action="registered")
-        code, out = self.cli("tier", "--preflight")
-        self.assertEqual(code, 0)
-        self.assertIn("Codex 那边的 spec-guard 版本 module-crew 查不到", out)
-
-
-def cap(db, to: str, configured: str):
-    """Pretend an incident lowered the tier to `to` while `configured` was set."""
-    with db.transaction(actor="test") as tx:
-        cfg = tx.get("config", "main")
-        tx.put("config", "main", {**cfg, "autonomy": {"cap": to, "capFor": configured}}, action="tier-lowered")
-
-
-class StandardTest(TierMixin, DeclaredMixin, ReviewCase):
-    """Acceptance 4 and the cadence part of 6."""
-
-    def test_declared_scope_follows_the_tier_unless_set(self):
-        self.with_declared({"b": usable()})
-        self.with_tier()
-        db = self.db()
-        self.assertFalse(declared.enabled(db))                     # tier unset
-        self.set_tier("strict")
-        self.assertFalse(declared.enabled(db))
-        self.set_tier("standard", "combined")
-        self.assertTrue(declared.enabled(db))
-        from module_crew import changes
-        out = changes.add(db, request(["config/app.json"]), "shop-b", 1)
-        self.assertIs(store.get(db, "request", str(out.number))["declared"], True)
-        self.switch("off")
-        self.assertFalse(declared.enabled(db))                     # the user's own switch wins
-        self.switch("on")
-        self.set_tier(None)
-        self.assertTrue(declared.enabled(db))
-
-    def test_combined_cadence_and_the_hint(self):
-        self.with_tier()
-        self.set_tier("standard", "combined")
-        self.assertEqual(start.review_cadence(self.repo), "combined")
-        code, out = self.cli("tier")
-        self.assertNotIn("reviewCadence 是 separate", out)
-        self.set_tier("standard", "separate")
-        self.assertEqual(start.review_cadence(self.repo), "separate")
-        code, out = self.cli("tier", "--json")
-        doc = json.loads(out)
-        self.assertEqual(doc["cadence"], "separate")
-        self.assertIn("档位 standard 要 Spec 与 Plan 一起审，但 reviewCadence 是 separate", doc["cadenceHint"])
-
-    def test_cap_to_strict_reads_as_separate(self):
-        self.with_tier()
-        self.set_tier("standard", "combined")
-        cap(self.db(), "strict", "standard")
-        value, source, _ = start.cadence_info(self.repo)
-        self.assertEqual(value, "separate")
-        self.assertIn("降到 strict", source)
-        self.set_tier("strict", "combined")                        # the user said something new: cap cleared
-        self.assertEqual(start.review_cadence(self.repo), "combined")
-
-
-class StandardKickoffTest(TierMixin, StartCase):
-    def kickoff(self, module):
-        res = start.prepare(self.repo, [module], f"开 {module}", short="shop", max_modules=3)
-        assert res.code == 0, res.lines
-        return store.read_body(store.open_store(self.repo), res.prepared[0]["kickoff"])
-
-    def test_kickoff_cadence(self):
-        self.with_tier()
-        self.set_tier("standard", "combined")
-        git(self.repo, "commit", "-qam", "tier")
-        self.assertIn("项目评审节奏：combined", self.kickoff("b"))
-        cap(store.open_store(self.repo), "strict", "standard")
-        self.assertIn("项目评审节奏：separate", self.kickoff("c"))
-
-
-class IncidentBase(TierMixin, MergeCase):
-    def setUp(self):
-        super().setUp()
-        self.with_tier()
-        self.set_tier("relaxed", "combined")
-        git(self.repo, "commit", "-qam", "tier relaxed")
-        self.db = store.open_store(self.repo)
-
-    def lowered(self):
-        return [e for e in autonomy.marks(self.db) if e["type"] == "config.tier-lowered"]
-
-    def effective(self):
-        return autonomy.effective(self.db, self.repo).value
-
-
-class IncidentTest(IncidentBase):
-    """Acceptance 6 and 7."""
-
-    def test_merge_returned_lowers_one_step_once(self):
-        n = self.approve_final("b", 1)
-        res = merge.run(self.repo, check_command=self.check_script(fail_if="src/b.py"))
-        self.assertEqual(res.code, 5)
-        text = "\n".join(res.lines)
-        self.assertIn("自治档位已从 relaxed 降到 standard：合并因模块的原因退回", text)
-        self.assertIn("马上告诉用户", text)
-        self.assertEqual(self.effective(), "standard")
-        self.assertEqual(autonomy.incident(self.db, self.repo, "merge-returned", str(n)), None)   # same item: once
-        self.assertEqual(len(self.lowered()), 1)
-
-    def test_env_return_does_not_lower(self):
-        self.approve_final("b", 1)
-        res = merge.run(self.repo, check_command=self.check_script(sleep=3))
-        self.assertNotIn("自治档位", "\n".join(res.lines))
-        self.assertEqual(self.effective(), "relaxed")
-
-    def test_revoke_lowers(self):
-        n = self.approve_final("b", 1)
-        note = merge.revoke(self.db, n, "撤回")
-        self.assertIn("降到 standard：用户撤销合并批准", note.tier_line)
-
-    def test_down_to_strict_then_nothing(self):
-        self.assertIsNotNone(autonomy.incident(self.db, self.repo, "baseline-red", "t1"))
-        self.assertIsNotNone(autonomy.incident(self.db, self.repo, "baseline-red", "t2"))
-        self.assertEqual(self.effective(), "strict")
-        self.assertIsNone(autonomy.incident(self.db, self.repo, "baseline-red", "t3"))
-        self.assertEqual(len(self.lowered()), 2)
-        self.assertEqual(start.review_cadence(self.repo), "separate")
-
-    def test_restore(self):
-        with self.assertRaises(autonomy.Refused):
-            autonomy.restore(self.db, self.repo, "恢复")              # no cap yet
-        autonomy.incident(self.db, self.repo, "revoked", "1")
-        autonomy.incident(self.db, self.repo, "revoked", "2")
-        with self.assertRaises(autonomy.Refused):
-            autonomy.restore(self.db, self.repo, " ")
-        self.assertIn("恢复到 standard", autonomy.restore(self.db, self.repo, "恢复一档")[0])
-        self.assertEqual(self.effective(), "standard")
-        self.assertIn("降档上限清掉", autonomy.restore(self.db, self.repo, "再恢复")[0])
-        self.assertEqual((self.effective(), autonomy.state(self.db).get("cap")), ("relaxed", None))
-        restored = [e for e in autonomy.marks(self.db) if e["type"] == "config.tier-restored"]
-        self.assertEqual(restored[0]["data"]["original"], "恢复一档")
-
-    def test_restore_cli_needs_words(self):
-        autonomy.incident(self.db, self.repo, "revoked", "1")
-        code, _ = self.cli("tier", "restore", "--original", " ")
-        self.assertEqual(code, 3)
-        code, out = self.cli("tier", "restore", "--original", "恢复")
-        self.assertEqual(code, 0)
-        self.assertIn("恢复到 relaxed", out)
-
-    def test_strict_tier_never_lowers(self):
-        self.set_tier("strict")
-        self.assertIsNone(autonomy.incident(self.db, self.repo, "revoked", "9"))
-
-
-class ReworkIncidentTest(IncidentBase):
-    def test_rework_over_limit_lowers(self):
-        from test_review_nearby import CHANGES, conclusion
-        sources.add(self.db, "arch", "lead", "登记审查会话", scope=sources.ALL_SCOPE)
-        rid = 5000
-
-        def submit():
-            nonlocal rid
-            rid += 1
-            return review.add(self.db, self.spec_review("b"), "shop-b", rid).number
-        n = submit()
-        for _ in range(3):
-            review.note(self.db, n, "arch", conclusion("有须修改项2条", CHANGES))
-            n = submit()
-        res = review.note(self.db, n, "arch", conclusion("有须修改项2条", CHANGES))
-        self.assertIn("降到 standard：返工满 3 次", "\n".join(res.lines))
-
-
-class BaselineIncidentTest(TierMixin, MergeCase):
-    def test_new_red_baseline_lowers_old_record_does_not(self):
-        import test_check_ledger as tcl
-        from module_crew import hooks
-        self.with_tier()
-        self.set_tier("relaxed", "combined")
-        git(self.repo, "commit", "-qam", "tier relaxed")
-        ledger = tcl.BaselineTest.__new__(tcl.BaselineTest)        # borrow its helpers on this repo
-        ledger.__dict__.update(self.__dict__)
-        ledger.db = store.open_store(self.repo)
-        hooks.bind(ledger.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
-        ledger.red_switch()
-        ledger.commit_main("fail.flag")
-        out = ledger.baseline()
-        self.assertEqual(out.returncode, 5, out.stdout + out.stderr)
-        self.assertIn("自治档位已从 relaxed 降到 standard：基线完整检查新跑出失败", out.stdout)
-        out = ledger.baseline()                                    # the recorded failure, not a new run
-        self.assertNotIn("自治档位", out.stdout)
-        self.assertEqual(autonomy.effective(ledger.db, self.repo).value, "standard")
-
-
-def fake_merged(db, module: str, rework: int = 0):
-    """A module merged through the queue (and its rework rounds), as the store records it."""
-    with db.transaction(actor="test") as tx:
-        for _ in range(rework):
-            k = tx.allocate_number()
-            tx.put("item", str(k), {"kind": "review", "module": module, "node": "spec", "state": "open"},
-                   action="rework-sent", data={"module": module, "node": "spec"})
-        n = tx.allocate_number()
-        tx.put("item", str(n), {"kind": "merge-approval", "module": module, "task": None, "state": "closed",
-                                "closedReason": "merged"}, action="merged")
-
-
-class AdviceTest(IncidentBase):
-    """Acceptance 8."""
-
-    def setUp(self):
-        super().setUp()
-        self.set_tier("standard", "combined")
-        git(self.repo, "commit", "-qam", "tier standard")
-        autonomy.effective(self.db, self.repo)                     # the start of the evidence
-
-    def test_three_good_modules_advise_once(self):
-        fake_merged(self.db, "x")
-        fake_merged(self.db, "y", rework=1)
-        code, out = self.cli("tier")
-        self.assertNotIn("可以建议升到", out)
-        fake_merged(self.db, "z")
-        code, out = self.cli("tier", "--json")
-        doc = json.loads(out)
-        self.assertEqual(doc["suggest"], "relaxed")
-        self.assertEqual([r["module"] for r in doc["evidence"]], ["x", "y", "z"])
-        code, out = self.cli("tier")
-        self.assertIn("可以建议升到 relaxed：最近 3 个模块（x、y、z）", out)
-        self.assertIn("不自动升", out)
-        self.cli("tier")
-        self.assertEqual(len([e for e in store.events(self.db, key="main", kind="config")
-                              if e["type"] == "config.tier-suggested"]), 1)
-        self.assertEqual(autonomy.effective(self.db, self.repo).value, "standard")   # never a step up by itself
-
-    def test_two_rework_rounds_break_the_streak(self):
-        for m, r in (("x", 0), ("y", 2), ("z", 0)):
-            fake_merged(self.db, m, rework=r)
-        self.assertIsNone(json.loads(self.cli("tier", "--json")[1])["suggest"])
-
-    def test_unset_tier_never_advises(self):
-        self.set_tier(None)
-        for m in ("x", "y", "z"):
-            fake_merged(self.db, m)
-        self.assertIsNone(json.loads(self.cli("tier", "--json")[1])["suggest"])
-
-    def test_merge_run_prints_the_advice(self):
-        fake_merged(self.db, "x")
-        fake_merged(self.db, "y")
-        self.approve_final("b", 1)
-        res = merge.run(self.repo, check_command="python3 -c pass")
-        self.assertEqual(res.code, 0, res.lines)
-        self.assertIn("可以建议升到 relaxed：最近 3 个模块（x、y、b）", "\n".join(res.lines))
-        self.approve_final("c", 2)
-        res = merge.run(self.repo)
-        self.assertEqual(res.code, 0, res.lines)
-        self.assertNotIn("可以建议升到", "\n".join(res.lines))          # pushed once per start
-        self.assertIn("可以建议升到 relaxed", self.cli("tier")[1])      # still shown when asked
-
-
-class DigestTest(IncidentBase):
-    """Acceptance 5."""
-
-    def test_lists_and_marks(self):
-        from module_crew import checks
-        fake_merged(self.db, "b")
-        checks.record(self.db, {"tree": "a" * 40, "kind": "quick", "command": "q", "result": "pass", "exitCode": 0,
-                                "tail": "", "commit": None, "where": str(self.wt["c"]), "by": "shop-c",
-                                "startedAt": store.now(), "seconds": 1, "inheritedFrom": None})
-        with self.db.transaction(actor="test") as tx:
-            n = tx.allocate_number()
-            tx.put("request", str(n), {"from": "shop-c", "files": ["shared/x.ts"], "state": "closed",
-                                       "closedReason": "landed", "commit": "c" * 40, "fromModule": {"commit": "d" * 40},
-                                       "toldUser": False}, action="landed", data={"commit": "c" * 40})
-        autonomy.incident(self.db, self.repo, "revoked", "77")                # never in the digest
-        code, out = self.cli("tier", "digest")
-        self.assertEqual(code, 0, out)
-        self.assertIn("收尾汇总", out)
-        self.assertIn("- b：", out)
-        self.assertIn("合入集成分支", out)
-        self.assertIn("- c：", out)
-        self.assertIn("快检查 通过（树 aaaaaaa）", out)
-        self.assertIn(f"C{n}", out)
-        self.assertIn("shared/x.ts", out)
-        self.assertNotIn("降到", out)
-        code, out = self.cli("tier", "digest", "--json")
-        doc = json.loads(out)
-        self.assertEqual(sorted(doc["groups"]), ["b", "c", "集成分支"])          # the tier commit is unqueued
-        self.assertIn("不经合并队列的提交", "".join(doc["groups"]["集成分支"]))
-        code, out = self.cli("tier", "digest", "--mark-told")
-        self.assertEqual(code, 0)
-        self.assertEqual(store.get(self.db, "request", str(n))["toldUser"], True)
-        code, out = self.cli("tier", "digest")
-        self.assertEqual(code, 3, out)
-
-
-class StatusTest(TierMixin, ReviewCase):
-    """Decision 9."""
-
-    def test_unset_shows_nothing(self):
-        self.with_tier()
-        code, out = self.cli("status")
-        self.assertNotIn("自治档位", out)
-        self.assertNotIn("档位", out)
-        code, out = self.cli("status", "--json")
-        self.assertIsNone(json.loads(out)["store"]["autonomy"])
-
-    def test_set_tier_and_cap(self):
-        self.with_tier()
-        self.set_tier("relaxed", "combined")
-        code, out = self.cli("status")
-        self.assertIn("自治档位：设的 relaxed（.agent/config.json），生效 relaxed", out)
-        cap(self.db(), "standard", "relaxed")
-        code, out = self.cli("status", "--json")
-        doc = json.loads(out)["store"]["autonomy"]
-        self.assertEqual((doc["configured"], doc["cap"], doc["effective"]), ("relaxed", "standard", "standard"))
-        code, out = self.cli("status")
-        self.assertIn("生效 standard", out)
-        self.assertIn("恢复要用户原话", out)
-
-
-class FloorTest(TierMixin, MergeCase):
-    """Acceptance 9: no tier goes below the floor."""
-
-    def setUp(self):
-        super().setUp()
-        self.with_tier()
-        self.set_tier("relaxed", "combined")
-        git(self.repo, "commit", "-qam", "tier relaxed")
-        self.db = store.open_store(self.repo)
-        self.assertEqual(autonomy.effective(self.db, self.repo).value, "relaxed")
-
-    def test_spec_approval_still_needs_words(self):
-        n = review.add(self.db, self.spec_review("b"), "shop-b", 1).number
-        res = review.approve(self.repo, [n], " ")
-        self.assertEqual(res.code, 3)
-        self.assertIn("用户原话不能为空", "\n".join(res.lines))
-
-    def test_final_acceptance_still_needs_an_answer(self):
-        out = review.add(self.db, self.finish("b"), "shop-b", 2)
-        res = review.approve(self.repo, [out.number], "批")
-        self.assertEqual(res.code, 3)
-        self.assertIn("最终验收：用 review answer 答复", "\n".join(res.lines))
-
-    def test_kickoff_still_waits_for_the_start_notice(self):
-        res = start.prepare(self.repo, ["d"], "开 d", short="shop", max_modules=3)
-        self.assertEqual(res.code, 0, res.lines)
-        text = store.read_body(self.db, res.prepared[0]["kickoff"])
-        self.assertIn("收到开工类【协调通知】之前不要开始构建", text)
-
-
-class SkillTest(unittest.TestCase):
-    """Acceptance 10."""
-    ROOT = Path(__file__).resolve().parent.parent
-
-    def test_coordinator_and_dev_skills(self):
-        for d in ("skills", "codex-skills"):
-            coord = (self.ROOT / d / "crew-coordinator" / "SKILL.md").read_text(encoding="utf-8")
-            for words in ("module-crew tier --preflight", "reviewCadence=combined", "/spec-guard:config",
-                          "module-crew tier digest", "马上告诉用户", "不要自己升", "tier restore --original-file"):
-                self.assertIn(words, coord, (d, words))
-            dev = (self.ROOT / d / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
-            self.assertIn("不改变你的停点", dev)
-            self.assertIn("gate", dev)
-
-
-if __name__ == "__main__":
-    unittest.main()
+# Spec: crew-autonomy-tier
+
+<!-- spec-guard: review approved 14e853135b51 -->
+
+> 能力图模块 `crew-autonomy-tier`（第十版第 3 个）。需求来源：接缝 S32，已批方案 plugin-ecosystem `proposals/2026-10-24-S32-并行流畅与额度外包.md`（612634c，用户 2026-10-24「按推荐批准」）
+> 第二节 module-crew 第 5 条（自治档位、升档建议、出事降档）与 spec-guard 第 2、3 条（`autonomyTier` 配置项、底线）；第三节守门：开关默认关、凭用户原话开，读不到新接口照今天问用户。开会话依据：用户批准事项 C230。
+> 依赖 `crew-declared-scope`（`declared.enabled`、声明范围处理公共文件）、`crew-check-ledger`（检查账、`check list --json`、基线检查）；上游 spec-guard 0.85.0（interface 1.11）的 `autonomyTier`。
+> 标「新」的是写 Spec 时补的实现取舍，请重点审。
+
+## 目标
+
+项目在 spec-guard 的 `.agent/config.json` 里设了 `autonomyTier` 后，module-crew 按档位放开三件事，并替用户盯着档位合不合适：
+
+- `strict`：今天的做法，什么都不变。
+- `standard`：Spec 和 Plan 一起交审；Plan「预先声明」名单内的公共文件按 `crew-declared-scope` 处理（直接改、合并时一并审、确需提前进集成分支的自动落地事后汇总）。
+- `relaxed`：在 `standard` 的基础上，同步、快检查、记账类的消息不再逐条告诉用户，只在收尾时汇总一次。
+- 工具从状态库算证据，最近几个模块连续达标就建议升一档，用户一句话确认才升；出事自动降一档并马上告诉用户。
+
+任何档位都不低于 spec-guard 共享检查点规则「自治档位与底线」：能力图、Spec（可以和 Plan 一起批）、最终验收要用户批；测试改不红、Spec 没覆盖的决策、高风险不可逆改动这三种情况必停。
+没设档位、或读不到 spec-guard 的新接口时，一切和今天一样。
+
+## 范围
+
+**范围内**
+
+1. **读档位**：新文件 `module_crew/autonomy.py` 按 interface.json 的 `autonomyTier.readFrom` 调用 spec-guard，取值与来源；读不到一律当 `strict` 并写明原因。
+2. **写入前提核对**：`module-crew tier --preflight` 确认本机 spec-guard ≥ 0.85.0 且接口有 `autonomyTier`，不满足时退出码 3、说明为什么现在不能写。写入本身由模块协调用 `/spec-guard:config` 做，要用户原话（决策 2）。
+3. **生效档位** = spec-guard 里设的档位，再受 module-crew 记下的「降档上限」约束（决策 3）。
+4. **standard 的两项效果**：评审节奏与声明范围（决策 4、5）。
+5. **relaxed 的收尾汇总**：新命令 `module-crew tier digest [--json] [--mark-told]`（决策 6）。
+6. **升档建议**：按状态库证据算，显示在 `tier`、`status` 与 `merge run` 合入后的输出里（决策 7）。
+7. **出事降档**：四类事件自动降一档、记账、输出要马上告诉用户的一行（决策 8）；降档后恢复要用户原话（`tier restore`）。
+8. **`status` 显示档位一段**。
+9. **skill 与文档**：`crew-coordinator`、`crew-dev`（Claude 与 Codex 各一份）、README。
+
+**范围外**
+
+- 改 spec-guard：`autonomyTier`、`reviewCadence` 的存储、校验、`--confirm` 流程都照 spec-guard 的；module-crew 不直接写 `.agent/config.json`，也不调用没在 interface.json 声明的 `project_config.py set`。
+- 声明范围本身的判定与提前落地（`crew-declared-scope`）、检查账与基线检查本身（`crew-check-ledger`）：本模块只读它们、在它们的出口挂降档。
+- 额度外包（`crew-codex-offload`）：本模块不定义它在各档的行为；它要按档位放开时，读本模块的 `autonomy.effective`。
+- 档位影响模块会话自己的停点：三种必停情况、`gate` 检查点照旧，模块会话不读档位。
+- 决策收件箱、session-protocol 的消息格式：不新增消息类型、不改字段。
+
+## 假设（请逐条确认）
+
+1. **（新）档位本身就是开关**：spec-guard 里没设 `autonomyTier`（来源 `default`）时，module-crew 的所有新行为都不出现——包括升档建议；用户亲口要求、模块协调用 `/spec-guard:config` 写入任一档（含显式写 `strict`）后才算打开。
+   不另设 module-crew 自己的开关，免得两个键说法不一。显式写 `strict` 的效果只有一个：开始给升档建议。
+2. **读法照 interface.json**：`readFrom` 写的是一段文字而不是命令数组，module-crew 只认它以 `python3 -B hooks/project_config.py show --project <project-root> --format json` 开头这一种写法，按这个固定参数列表运行（带超时、不经 shell、脚本必须在 spec-guard 安装目录内，同 `probe.safe_command` 的安全限制）；
+   写法变了、接口没有 `autonomyTier`、命令跑不成、输出里没有这一项，一律读作 `strict`，原因写给看的人（「读不到档位：<原因>，按 strict」）。值不合法时 spec-guard 自己报 `strict`、来源 `default (config invalid)`，照收。
+3. **在哪个 checkout 读**：`.agent/config.json` 入库，各分支可能不同；module-crew 一律在集成 checkout（`integrationBranch` 所在的 checkout）读，以集成分支为准。模块 worktree 里不读档位。
+4. **写入后要提交**：`/spec-guard:config` 只改集成 checkout 的工作区。模块协调写入后立刻把 `.agent/config.json` 单独提交（提交信息带用户原话），这条提交按 `crew-unqueued-commits` 算「不经合并队列的提交」照常处理；各模块下次同步时拿到。
+5. **（新）「出事」的四类**：① `merge run` 因模块的原因退回（完整检查失败或冲突，`returnKind: module`；检查环境的退回不算）；② 用户撤销合并批准（`merge revoke`）；③ 返工满 3 次（`rework-over-limit`）；④ `check baseline` 新跑出的基线失败（读到旧记录不算）。
+   用户在交审时答「退回」不算出事（那是正常评审），只算进升档证据。
+6. **（新）升档证据的口径**：只看「当前档位开始以后」合入的模块（轻任务不算）。「开始」= module-crew 最近一次看到生效档位变化的时刻（决策 3 记的事件）。每个模块的四个数：
+   合并退回次数（`returnKind: module`）、撤销批准次数、返工轮次（`rework-sent` 次数）、用户退回次数（交审事项以 `closedReason: answered` 关闭）。
+   **达标** = 合并退回 0、撤销 0、返工 ≤ 1、用户退回 0；**连续 3 个模块达标**就建议升一档。3 与 1 写成常量，以后要调再改。
+7. **底线是检查项，不是可选项**：任何档位下 `review approve` 仍要用户原话、最终验收仍要用户答复、开工说明仍写「收到开工类【协调通知】之前不要开始构建」、`【等待用户】` 照常立刻转给用户；relaxed 收进汇总的只有决策 6 列的几类消息。项目规则更严时以项目为准（例如项目没设 `reviewCadence=combined`，standard 也照 separate 交审，见决策 4）。
+
+## 关键决策与取舍（请重点审）
+
+1. **（新）读档位的入口放在新文件 `module_crew/autonomy.py`**：`read(project) -> Tier`，`Tier` 有 `value`（`strict`／`standard`／`relaxed`）、`source`（spec-guard 报的来源）、`usable`、`reason`；
+   `effective(db, project) -> Effective`，有 `configured`（`Tier`）、`cap`（降档上限或 `None`）、`value`（两者取低）、`explicit`（来源不是 `default`，即假设 1 的开关）；同一进程内读一次就缓存。
+2. **（新）写入走 spec-guard，module-crew 只做写入前核对**：`module-crew tier --preflight` 核对三件事：Claude 的插件安装记录里 spec-guard 版本 ≥ 0.85.0；它的 interface.json 有 `autonomyTier`；
+   状态库登记过 Codex 会话（`codex-desktop`）时另起一行「Codex 那边的 spec-guard 版本 module-crew 查不到：0.67.1 及更早会把整份配置判无效，请用户确认 Codex 也装了 0.85.0 以上」（只提醒、不拒）。
+   前两项不满足退出码 3。crew-coordinator skill 写明：用户要设或改档位时，先跑 `tier --preflight`，通过后在回复里引用用户原话，用 `/spec-guard:config` 写 `autonomyTier`；
+   要设成 `standard` 或 `relaxed` 时同一句原话里一并写 `reviewCadence=combined`（spec-guard 不联动它）；写完照假设 4 提交。
+3. **（新）降档上限记在 module-crew 的状态库**：自动降档不能写 spec-guard（写入要用户原话），所以 module-crew 记在 `config/main` 的 `autonomy` 字段（状态库的 config 种类只有 `main` 一个键）：`{"cap": "standard", "capFor": "relaxed", "incident": {...}, "seen": "relaxed", "toldSeq": 123}`。
+   - `cap` 生效时，生效档位 = min(设的档位, `cap`)；`capFor` 记降档时设的是哪一档。之后设的档位改了（≠ `capFor`，说明用户又说了新的话），`cap` 自动清掉并记一条事件，以用户最新的话为准。
+   - `seen` 是 module-crew 最近一次看到的生效档位；每次读到和它不同就更新并记事件 `tier-seen`，作为升档证据的起点（假设 6）。
+   - 恢复：`module-crew tier restore --original-file <原话文件>` 把 `cap` 往上抬一档（抬到设的档位就清掉），要用户原话，记进事件；没有 `cap` 时退出码 3，提示「要升到设的档位以上，用 /spec-guard:config」。
+4. **（新）standard 的评审节奏**：module-crew **不替** spec-guard 改 `reviewCadence`，只读它（`start.cadence_info` 照旧）。生效档位 ≥ standard 而 `reviewCadence` 不是 `combined` 时，`tier` 与 `status` 写一行
+   「档位 standard 要 Spec 与 Plan 一起审，但 reviewCadence 是 separate：请用户确认后用 /spec-guard:config 设成 combined」，开工说明与 `review batch` 照 separate（宁严勿松）。
+   反过来，`cap` 把生效档位压到 strict 而 `reviewCadence` 是 `combined` 时，`start.review_cadence` 返回 `separate`（开工说明写 separate、`review batch` 不合并 Spec 与 Plan）；没有 `cap` 时完全照 spec-guard 的 `reviewCadence`，和今天一样。
+5. **（新）standard 的声明范围：派生，不替用户写开关**：`declared.enabled(db)` 改为：`declaredScope` 是 `on` → 开；是 `off`（用户明说过关）→ 关；**没设过**时，生效档位 ≥ standard → 开。
+   不在切档时写 `declaredScope` 键——否则降档时要再写一次，而关开关按 `crew-declared-scope` 也要用户原话。用户显式设过的开关永远优先。`crew-declared-scope` 的「读不到声明照今天问用户」照旧生效。
+6. **（新）relaxed 的收尾汇总**：`tier digest` 从事件日志里取 `toldSeq` 之后的这几类，按模块分组列出、给一段可以直接给用户看的汇总正文：
+   - 同步：合入后发出的同步基线通知、公共变更落地后的同步通知（模块 `module-crew sync` 不记账，不在汇总里）；
+   - 快检查与记账：检查账新增的记录（快检查／完整检查、通过／失败、树短号，取自 `check list --json`）；
+   - 不经合并队列的提交（`crew-unqueued-commits` 记下的）；提前落地（`change landed` 里还没汇总的，`--mark-told` 时一并标记）。
+   `--mark-told` 把 `toldSeq` 推到当前最新事件号，并记下当时集成分支的顶端（`toldUnqueued`），之后没有新的不经队列提交就不再列（只是记账，不要原话）。退出码：`0` 有内容、`3` 没有。
+   crew-coordinator skill 写明：生效档位是 relaxed 时，这几类消息不再逐条告诉用户；**给用户发批量交审、最终验收，或 `merge cleanup` 本批收尾时**，先 `tier digest`，把正文写进那条消息，再 `--mark-told`。
+   降档通知、`【等待用户】`、基线变红建的修基线任务、权限弹窗、任何要用户决定的事**不进汇总**，照常立刻告诉用户。生效档位低于 relaxed 时 `tier digest` 照样能跑（只读），但 skill 不要求用它。
+7. **（新）升档建议**：`tier` 与 `status` 在假设 1 的开关打开、生效档位不是 relaxed、且满足假设 6 时写
+   「可以建议升到 <下一档>：最近 3 个模块（a、b、c）合并退回 0、撤销 0、返工 ≤ 1、用户退回 0」；`merge run` 合入后满足时在输出末尾加同一行。
+   这只是建议：skill 写明把它转告用户、用户一句话确认后，没有 `cap` 的照决策 2 写 spec-guard，有 `cap` 的用 `tier restore`。同一个起点只主动推一次（记 `suggestedFor`）：`merge run` 只在第一次写这一行，用户不理就不再重复，直到证据起点变了；`tier`、`status` 是用户或模块协调主动查看，照样显示。
+8. **（新）出事降档**：假设 5 的四个出口各调一次 `autonomy.incident(db, project, kind, detail)`。生效档位是 strict 时什么都不做；否则把 `cap` 设成低一档，记事件 `tier-lowered`（含原因、事项号），
+   返回一行「自治档位已从 <原档> 降到 <新档>：<原因>。马上告诉用户；恢复要用户原话（module-crew tier restore）」，由调用它的命令原样输出。同一次 `merge run`、同一个事项只降一次。
+   挂钩的位置（供模块协调排写码先后）：
+   - `module_crew/merge.py`：`_run` 退回分支（`returnKind == "module"` 时）、`revoke` 成功后；
+   - `module_crew/review.py`：`note` 里记 `rework-over-limit` 之后；
+   - `module_crew/checks.py`：`baseline` 新跑出失败、调用 `fix_task` 的地方。
+9. **`status` 的档位一段**：只在开关打开（假设 1）或有 `cap` 时显示：「自治档位：设的 <值>（<来源>），生效 <值>」，有 `cap` 加「（<日期> 因 <原因> 降档，恢复要用户原话）」，再跟决策 4 的提示、决策 7 的建议。`status --json` 的 `store` 多 `autonomy`：`null` 或 `{"configured", "source", "cap", "effective", "suggest": <档或 null>, "evidence": [...]}`。读不到档位时写「读不到档位：<原因>，按 strict」。
+
+## 接口约定
+
+### 命令
+
+```bash
+bin/module-crew tier [--json]                              # 只读：设的档位、来源、降档上限、生效档位、证据、建议
+bin/module-crew tier --preflight                           # 只读：写入 autonomyTier 之前核对 spec-guard 版本与接口
+bin/module-crew tier restore (--original <原话> | --original-file <文件>)
+bin/module-crew tier digest [--json] [--mark-told]
+```
+
+- `tier`：`0`。`--json`：`{"configured": {"value", "source", "usable", "reason"}, "explicit": bool, "cap": str|null, "effective": str, "cadence": str, "cadenceHint": str|null, "evidence": [{"module", "returned", "revoked", "rework", "userReturned", "ok": bool}], "suggest": str|null}`。
+- `tier --preflight`：`0` 可以写；`3` 不能写（原因逐条）。
+- `tier restore`：`0` 抬了一档；`2` 参数错；`3` 原话为空或没有 `cap`。
+- `tier digest`：`0` 有内容；`3` 没有。
+
+### Python 入口（供 crew-codex-offload 等后续模块读）
+
+```python
+autonomy.effective(db, project) -> Effective     # value: "strict" | "standard" | "relaxed"
+autonomy.incident(db, project, kind, detail) -> str | None   # kind: "merge-returned" | "revoked" | "rework-over-limit" | "baseline-red"
+```
+
+### 记录（只增不改）
+
+```json
+// config/main 的 autonomy 字段（config 种类只有 main 一个键）
+{"cap": "standard", "capFor": "relaxed", "incident": {"kind": "merge-returned", "item": 231, "at": "..."},
+ "seen": "standard", "seenAt": "...", "suggestedFor": null, "toldSeq": 0, "toldUnqueued": null}
+```
+
+事件动作：`tier-seen`、`tier-lowered`、`tier-restored`、`tier-cap-cleared`、`tier-suggested`、`digest-told`。
+
+## 项目结构
+
+```text
+module_crew/autonomy.py          新：读档位、生效档位、降档上限、证据与建议、digest
+module_crew/declared.py          enabled()：没设开关时看生效档位（决策 5）
+module_crew/start.py             cadence_info／review_cadence：cap 压到 strict 时返回 separate（决策 4）
+module_crew/merge.py             _run 退回分支、revoke 之后挂 incident；合入后输出升档建议（决策 7、8）
+module_crew/review.py            note：rework-over-limit 之后挂 incident
+module_crew/checks.py            baseline：新跑出的失败挂 incident
+module_crew/probe.py             status：store.autonomy
+module_crew/__main__.py          tier 子命令；status 显示档位一段
+skills/crew-coordinator/SKILL.md、codex-skills/crew-coordinator/SKILL.md
+skills/crew-dev/SKILL.md、codex-skills/crew-dev/SKILL.md
+README.md
+tests/test_autonomy_tier.py
+```
+
+不改：`module_crew/changes.py`、`module_crew/present.py`、`module_crew/unqueued.py`、`module_crew/protocol.py`、`module_crew/store.py`（`config` 种类已有，不加新种类）。
+
+## 命令
+
+```bash
+python3 -m unittest discover -s tests
+PYTHONPATH=tests python3 -m unittest test_autonomy_tier
+```
+
+## 代码风格
+
+沿用现有模块：代码与注释英文，输出中文；只用标准库；spec-guard 调用带超时、参数列表、不经 shell，入口一律经 interface.json 取。
+
+## 测试策略
+
+- 假 spec-guard 夹具：一份声明 1.11、`autonomyTier.readFrom` 指向小脚本（按环境变量返回 `strict`／`standard`／`relaxed`、来源 `default`／`.agent/config.json`／`default (config invalid)`）；一份只有 1.10；一份 `readFrom` 写法不同；一份脚本跑不成。
+- 复用 `crew-declared-scope`、`crew-check-ledger` 的测试基类（b、c 两个模块会话、集成 checkout）。
+- 档位没设（来源 `default`）：现有测试原样通过，`status`、`merge run`、`start`、`review batch` 输出逐字不变，`config/main` 里没有 `autonomy` 字段。
+- 降档：分别造出四类事件，档位 relaxed → standard → strict，strict 再出事不变；改设的档位后 `cap` 清掉。
+- 证据：造 3 个合入的模块（其中一个返工 2 次），看建议出现与不出现。
+
+## 边界
+
+- **始终**：读不到档位就当 strict；降档立刻告诉用户；任何档位都守住底线；module-crew 不直接写 `.agent/config.json`。
+- **先问**：设或改档位（用户原话，经 `/spec-guard:config`）；恢复降档（`tier restore` 要原话）；`reviewCadence` 跟档位不一致时改不改。
+- **绝不**：自动升档；替用户写 `autonomyTier`、`reviewCadence`、`declaredScope`；把要用户决定的事收进汇总；因档位跳过任何用户批准或合并队列里的完整检查。
+
+## 验收标准
+
+1. 档位没设：全量测试原样通过；`status`、`start plan`、开工说明、`review batch`、`merge run`、`change add` 的输出与改前逐字相同；`config/main` 里没有 `autonomy` 字段；`tier` 写「档位没设（spec-guard 默认 strict），module-crew 照今天做」。
+2. 读档位：1.11 夹具三种值与三种来源都读对；1.10、`readFrom` 写法不同、脚本跑不成三种情况都读作 strict 且 `reason` 写明原因；`default (config invalid)` 读作 strict。
+3. `tier --preflight`：spec-guard 0.85.0 夹具退出码 0；0.84.2 或接口没有 `autonomyTier` 退出码 3 并写原因；登记过 Codex 会话时多一行提醒、退出码不变。
+4. standard（`reviewCadence=combined`）：开工说明写 combined、`review batch` 合并同一模块的 Spec 与 Plan；`declaredScope` 没设时 `declared.enabled` 为真、`change add` 走名单内分类；`declaredScope: off` 时为假。
+   standard 而 `reviewCadence=separate`：照 separate，`tier`、`status` 有提示行。
+5. relaxed：`tier digest` 列出 `toldSeq` 之后的同步通知、检查账记录、不经队列的提交、未汇总的提前落地，按模块分组并给汇总正文；`--mark-told` 后再跑退出码 3；降档、【等待用户】、修基线任务不在汇总里。
+6. 降档：四类事件各自把 relaxed 降到 standard（再一次到 strict），输出带「马上告诉用户」那一行、记 `tier-lowered`；strict 时不变、无输出；同一事项只降一次；检查环境的退回与读到旧基线失败记录不降。
+   `cap` 压到 strict 且 `reviewCadence=combined` 时开工说明写 separate。
+7. 恢复与清除：`tier restore` 没原话或没 `cap` 退出码 3；有原话时抬一档并记原话；设的档位改了之后 `cap` 自动清掉并记事件。
+8. 升档建议：开关打开、档位开始后连续 3 个合入模块达标时，`tier`、`status`、`merge run` 合入输出写建议；有一个返工 2 次就不写；档位没设时不写；同一起点只记一次 `tier-suggested`。
+9. 底线：relaxed 下 `review approve` 没原话仍被拒、开工说明仍有「收到开工类【协调通知】之前不要开始构建」、最终验收仍要 `review answer`；有测试逐条断言。
+10. skill：`crew-coordinator`（两份）写明设档位的步骤（先 `tier --preflight`、引用原话、`/spec-guard:config` 同时设 `reviewCadence`、写完提交）、relaxed 时何时跑 `tier digest`、降档马上告诉用户、升档只建议不自动、`tier restore` 要原话；
+    `crew-dev`（两份）写明档位不改变模块会话的停点：三种必停情况与 `gate` 检查点照旧。
+11. 全量测试通过（后台跑）；本机 spec-guard 0.85.0 实测一次 `project_config.py show` 读档位，结果写进最终验收。
+
+## 并行边界
+
+- 独占：`module_crew/autonomy.py`、`tests/test_autonomy_tier.py`
+- 共享（和 `crew-codex-offload` 可能同时改，改不同段落）：`module_crew/merge.py`（`_run` 退回分支、`revoke`、合入后的输出行）、`module_crew/__main__.py`（新增 `tier` 子命令、`status` 一段）、`module_crew/probe.py`（`status` 的 `store`）、
+  `module_crew/declared.py`（`enabled`）、`module_crew/start.py`（`cadence_info`／`review_cadence`）、`module_crew/review.py`（`note`）、`module_crew/checks.py`（`baseline`）、两份 `crew-coordinator` skill、两份 `crew-dev` skill、README
+- 公共：测试资源
+
+## 并行说明
+
+本模块对 `merge.py`、`review.py`、`checks.py` 都只在已有分支里加一行调用和一行输出，不改合并、返工、检查本身的逻辑。和 `crew-codex-offload` 最可能碰到的是 `merge.py`、`__main__.py`、`probe.py` 的 `status` 与两份 `crew-coordinator` skill；
+若它也要在合入后的输出或 `status` 里加段落，先合入的一方定位置，后合入的一方 `module-crew sync` 后接在后面。
+
+## 未决问题
+
+- 「收尾」的时机这一版取「批量交审、最终验收、`merge cleanup` 本批收尾」三处；LIVE-SAAS 下一轮用下来嫌汇总太晚或太碎再调。
+- 升档门槛（连续 3 个、返工 ≤ 1）是先定的常量，要等 LIVE-SAAS 下一轮的数（方案第一节第 5 条）再校准。
+
+## 文档建议
+
+README 加一小节「自治档位」：三档各放开什么、怎么设（先 `tier --preflight`、`/spec-guard:config` 同时设 `reviewCadence`）、升档建议与出事降档、底线；「命令一览」补 `tier` 四种用法。CHANGELOG 随发版写。
+
+## 变更记录
+
+- 2026-10-26：降档记录从「新键 `config/autonomy`」改为 `config/main` 的 `autonomy` 字段；收尾汇总去掉「模块 `module-crew sync` 的结果」，并补记 `toldUnqueued`；升档建议的「只建议一次」写明是 `merge run` 只推一次、`tier`／`status` 照样显示，记录字段名 `suggestedAt` 改为 `suggestedFor`（记的是证据起点而非时间）。原因：构建时发现状态库的 config 种类只允许键 `main`（不改 `store.py` 的前提下只能这样存）；`module-crew sync` 本身不记账、无从汇总；不经队列的提交是现状而非事件，要记下汇总到哪个顶端才不会重复列出；主动查看的命令不该因为推过一次就隐藏建议。来源：本模块构建 Task 1、Task 5、Task 6，随最终验收交用户复审。

@@ -428,6 +428,11 @@ class AdviceTest(IncidentBase):
         res = merge.run(self.repo, check_command="python3 -c pass")
         self.assertEqual(res.code, 0, res.lines)
         self.assertIn("可以建议升到 relaxed：最近 3 个模块（x、y、b）", "\n".join(res.lines))
+        self.approve_final("c", 2)
+        res = merge.run(self.repo)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertNotIn("可以建议升到", "\n".join(res.lines))          # pushed once per start
+        self.assertIn("可以建议升到 relaxed", self.cli("tier")[1])      # still shown when asked
 
 
 class DigestTest(IncidentBase):
