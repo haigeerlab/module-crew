@@ -538,6 +538,9 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
     if not reason:                  # crew-unqueued-commits: the merge (and tick) commits are module-crew's own
         from module_crew import unqueued
         unqueued.mark(db, checkout, "merge-run")
+        from module_crew import autonomy          # crew-autonomy-tier decision 7: advice only, never a step up
+        advice = autonomy.suggestion_line(db, project)
+        result.lines += [advice] if advice else []
     return result
 
 

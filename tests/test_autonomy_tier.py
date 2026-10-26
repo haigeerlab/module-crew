@@ -371,5 +371,64 @@ class BaselineIncidentTest(TierMixin, MergeCase):
         self.assertEqual(autonomy.effective(ledger.db, self.repo).value, "standard")
 
 
+def fake_merged(db, module: str, rework: int = 0):
+    """A module merged through the queue (and its rework rounds), as the store records it."""
+    with db.transaction(actor="test") as tx:
+        for _ in range(rework):
+            k = tx.allocate_number()
+            tx.put("item", str(k), {"kind": "review", "module": module, "node": "spec", "state": "open"},
+                   action="rework-sent", data={"module": module, "node": "spec"})
+        n = tx.allocate_number()
+        tx.put("item", str(n), {"kind": "merge-approval", "module": module, "task": None, "state": "closed",
+                                "closedReason": "merged"}, action="merged")
+
+
+class AdviceTest(IncidentBase):
+    """Acceptance 8."""
+
+    def setUp(self):
+        super().setUp()
+        self.set_tier("standard", "combined")
+        git(self.repo, "commit", "-qam", "tier standard")
+        autonomy.effective(self.db, self.repo)                     # the start of the evidence
+
+    def test_three_good_modules_advise_once(self):
+        fake_merged(self.db, "x")
+        fake_merged(self.db, "y", rework=1)
+        code, out = self.cli("tier")
+        self.assertNotIn("可以建议升到", out)
+        fake_merged(self.db, "z")
+        code, out = self.cli("tier", "--json")
+        doc = json.loads(out)
+        self.assertEqual(doc["suggest"], "relaxed")
+        self.assertEqual([r["module"] for r in doc["evidence"]], ["x", "y", "z"])
+        code, out = self.cli("tier")
+        self.assertIn("可以建议升到 relaxed：最近 3 个模块（x、y、z）", out)
+        self.assertIn("不自动升", out)
+        self.cli("tier")
+        self.assertEqual(len([e for e in store.events(self.db, key="main", kind="config")
+                              if e["type"] == "config.tier-suggested"]), 1)
+        self.assertEqual(autonomy.effective(self.db, self.repo).value, "standard")   # never a step up by itself
+
+    def test_two_rework_rounds_break_the_streak(self):
+        for m, r in (("x", 0), ("y", 2), ("z", 0)):
+            fake_merged(self.db, m, rework=r)
+        self.assertIsNone(json.loads(self.cli("tier", "--json")[1])["suggest"])
+
+    def test_unset_tier_never_advises(self):
+        self.set_tier(None)
+        for m in ("x", "y", "z"):
+            fake_merged(self.db, m)
+        self.assertIsNone(json.loads(self.cli("tier", "--json")[1])["suggest"])
+
+    def test_merge_run_prints_the_advice(self):
+        fake_merged(self.db, "x")
+        fake_merged(self.db, "y")
+        self.approve_final("b", 1)
+        res = merge.run(self.repo, check_command="python3 -c pass")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertIn("可以建议升到 relaxed：最近 3 个模块（x、y、b）", "\n".join(res.lines))
+
+
 if __name__ == "__main__":
     unittest.main()

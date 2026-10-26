@@ -205,6 +205,10 @@ def report(db: store.Store, project: str | os.PathLike) -> tuple[dict, list[str]
         doc["cadence"] = start.review_cadence(project)
         doc["cadenceHint"] = cadence_hint(eff, doc["cadence"])
         lines += [doc["cadenceHint"]] if doc["cadenceHint"] else []
+        doc["evidence"] = evidence(db)
+        doc["suggest"] = suggestion(db, eff, doc["evidence"])
+        advice = suggestion_line(db, project) if doc["suggest"] else None
+        lines += [advice] if advice else []
     return doc, lines
 
 
@@ -299,3 +303,64 @@ def restore(db: store.Store, project: str | os.PathLike, original: str | None) -
         rec.update(seen=up, seenAt=store.now())
         _put(tx, rec, "tier-restored", {"from": eff.value, "to": up, "original": original, **store.source_field()})
     return [f"自治档位已从 {eff.value} 恢复到 {up}" + ("（已回到设的档位，降档上限清掉）" if up == eff.configured.value else "")]
+
+
+def _start(db: store.Store) -> int:
+    """Assumption 6: the evidence counts from the last change of the effective tier."""
+    found = marks(db)
+    return found[-1]["seq"] if found else 0
+
+
+def evidence(db: store.Store) -> list[dict]:
+    """Per module merged since the start, in merge order: merge returns (module's fault), revocations, rework rounds,
+    the user's own returns of a submission; `ok` when it meets the bar (light tasks are not counted)."""
+    since = _start(db)
+    events = [e for e in store.events(db, kind="item") if e["seq"] > since]
+    rec_of = lambda e: (e.get("data") or {}).get("record") or {}
+    merged = [rec_of(e)["module"] for e in events if e["type"] == "item.merged"
+              and rec_of(e).get("kind") == "merge-approval" and not rec_of(e).get("task") and rec_of(e).get("module")]
+    rows = []
+    for m in dict.fromkeys(merged):
+        mine = lambda e: rec_of(e).get("module") == m
+        row = {"module": m,
+               "returned": sum(1 for e in events if e["type"] == "item.returned" and mine(e)
+                               and rec_of(e).get("returnKind") == "module"),
+               "revoked": sum(1 for e in events if e["type"] == "item.revoked" and mine(e)),
+               "rework": sum(1 for e in events if e["type"] == "item.rework-sent" and (e.get("data") or {}).get("module") == m),
+               "userReturned": sum(1 for e in events if e["type"] == "item.answered" and mine(e)
+                                   and rec_of(e).get("kind") == "review"
+                                   and not (rec_of(e).get("answer") or {}).get("approval"))}
+        row["ok"] = row["returned"] == 0 and row["revoked"] == 0 and row["rework"] <= MAX_REWORK and row["userReturned"] == 0
+        rows.append(row)
+    return rows
+
+
+def suggestion(db: store.Store, eff: Effective, rows: list[dict]) -> str | None:
+    """Decision 7: the next tier once the last STREAK merged modules all met the bar; advice only."""
+    if not eff.explicit or eff.value == "relaxed":
+        return None
+    last = rows[-STREAK:]
+    if len(last) < STREAK or not all(r["ok"] for r in last):
+        return None
+    return _higher(eff.value)
+
+
+def suggestion_line(db: store.Store, project: str | os.PathLike) -> str | None:
+    """The advice line for `tier`, `status` and a merge; the first time for a start it is also recorded, once."""
+    eff = effective(db, project)
+    rows = evidence(db)
+    up = suggestion(db, eff, rows)
+    if up is None:
+        return None
+    names = "、".join(r["module"] for r in rows[-STREAK:])
+    how = "用户确认后用 module-crew tier restore（要原话）" if eff.cap else \
+        "用户确认后先 module-crew tier --preflight，再引用原话用 /spec-guard:config"
+    since = _start(db)
+    try:
+        if state(db).get("suggestedFor") != since:
+            with db.transaction(actor="autonomy") as tx:
+                _put(tx, dict(_state(tx), suggestedFor=since), "tier-suggested", {"to": up, "modules": names})
+    except store.StoreError:
+        pass
+    return (f"可以建议升到 {up}：最近 {STREAK} 个模块（{names}）合并退回 0、撤销 0、返工 ≤ {MAX_REWORK}、用户退回 0。"
+            f"只是建议，不自动升；{how}")
