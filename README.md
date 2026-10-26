@@ -101,6 +101,17 @@ bin/module-crew status
 
 开关关着时一切照旧。
 
+## 额度外包（第十版，项目开关 codexOffload，默认关）
+
+打开检查记账后，模块协调凭用户原话打开 `codexOffload`，Spec、Plan 照旧由模块会话写、由用户批，之后：
+
+1. **开工**：开工通知改成外包写法，模块会话 sync 后发【等待其他会话】停下；外包条件不满足（delegate 低于 1.1、模块协调在 Codex、Codex 把项目标为不信任等）时不发开工通知，交用户决定。
+2. **派出与收结果**：模块协调 `module-crew offload start <模块>` 取 todo 第一个未勾的 Task，照输出执行 `/delegate:run --write --resumable`（放后台）；跑完 `module-crew offload settle` 收结果。一次只派一个 Task（delegate 单次上限 540 秒）。
+3. **三种结束状态**：做完就核对改动都在本模块范围内（spec-guard scopeCheck，加预先声明名单）、跑快检查，在模块分支代提交；Codex 要问用户就把问题原样转给用户，带着答复 `offload resume`；超时不提交、先交进度，续跑要用户点头。认不出的一律停下问用户，不自动重派。
+4. **交还**：做到检查点或最终验收时 `offload handback` 交还模块会话，最终验收照常由用户批。Codex 只改文件，从不提交、推送或删除。
+
+开关关着时一切照旧。
+
 ## 轻任务（单个需求或 bug，第六版）
 
 不值得开模块的活走轻流程，不写 Spec、不调 spec-guard，但和模块一样只从合并队列进集成分支：
@@ -232,6 +243,12 @@ module-crew config set [--commit-prefix <值>] [--check-timeout <秒>] [--declar
 module-crew config set --quick-check-command "<命令>" | --check-ledger on|off --original(-file)  快检查命令与检查记账开关（默认关）
 module-crew check quick|baseline [--rerun]       检查记账：模块 worktree 里跑快检查／模块协调对集成分支跑一次完整检查（放后台），同一棵树不重跑
 module-crew check show [<提交>]|list [--json]    检查账（只读）：一个提交的树跑过哪些检查／最近的记录
+module-crew config set --codex-offload on|off --original(-file)  额度外包开关（默认关；要先开检查记账）
+module-crew offload start <模块> [--again]        额度外包：派出下一个 Task，给出 /delegate:run 写法（重派要原话）
+module-crew offload settle <模块> --output <文件> --exit <码>  收 delegate 的输出：做完的核对范围、跑快检查后代提交，其余停下问用户
+module-crew offload resume|decline <模块> --original(-file)  带用户的答复续跑／外包条件不满足时改由模块会话构建
+module-crew offload handback <模块>               交还模块会话（检查点、最终验收，或用户选交还）
+module-crew offload show [<模块>] [--json]        外包状态（只读）
 module-crew review add|batch|approve|answer      交审与批量批准
 module-crew change add|list|land|answer [--reason superseded]  公共变更请求（被取代的可直接关；检查记账打开时 land 先跑快检查，--skip-quick-check 要原话）
 module-crew change land <编号> --from-module / change landed [--mark-told <编号>…]  名单内提前落地（从模块分支取文件）／待汇总给用户的提前落地

@@ -231,6 +231,11 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 - **公共变更落地**：开关打开时 `change land` 提交前先对暂存的文件跑快检查；失败退出码 5、不提交、文件保持暂存、请求仍开着，交用户：修好再落地，或用户同意后加 `--skip-quick-check --original-file <原话文件>`。
 - Codex 上 `check baseline` 没有 `--detach`，前台运行，申请在沙箱外运行（写状态库）；`config set` 照旧申请。
 
+## 额度外包（项目开关 codexOffload，第十版）
+
+- delegate 是 Claude Code 插件：模块协调在 Codex 上时**不外包**。开关打开时 `review approve` 会输出「外包条件不满足：模块协调在 Codex…」并扣下开工通知；把这句交用户，用户选由模块会话自己构建就 `offload decline <模块> --original-file <原话文件>` 发今天的开工通知，或换回 Claude 后再外包。
+- `offload show` 只读，可以照常看。
+
 ## 出状况时
 
 - **集成分支上有不经合并队列的提交**（`status` 显示数量，或 `merge run` 输出里列出）：把这一行告诉用户一次（哪几个提交、谁提交的），
