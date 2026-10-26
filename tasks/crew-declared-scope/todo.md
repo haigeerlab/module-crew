@@ -14,5 +14,5 @@
 - [x] Checkpoint 2（report）：命令层做完，全量测试通过——52e8813（工作区带着 Task 9 的文档改动）上全量 939 个测试通过（1897 秒）
 - [x] Task 9：skill 四份与 README（Spec 验收 11）——断言先红后绿（`DocsTest` 3 失败）；两份 crew-dev 在「不改公共文件」后加一条，两份 crew-coordinator「公共变更请求」加第 7 条，README「一次完整流程」第 4、5 步与命令一览各补一处；test_skills、test_readme_hosts、test_glossary 照常通过
 - [x] Task 10：本机 spec-guard 0.85.0 实测 `declaredScope`；`module-crew sync` 后全量测试（Spec 验收 12）——在会话草稿目录建临时仓库（能力图一个模块 shop，Plan 带「预先声明」四行、标记 approved 并提交）：真实 `module_scope.py declared` 退出码 0，输出 planApproved true、approvedCommit、四类清单，与 interface.json 声明一致；`declared.read` 经真实安装记录读到可用，`shared/a.ts`、`config/app.json`、`package.json`、`patches/x.patch` 判名单内，`pnpm-lock.yaml` 判名单外；Plan 改一行后读到「Plan 批准后改过或未批准」。`module-crew sync` 报已是最新（main 04d0d73），全量 939 个测试通过（Checkpoint 2 那次，之后只有文档与 todo 提交），test_declared_scope 42 个通过
-- [ ] Checkpoint 3（gate）：最终验收
+- [x] Checkpoint 3（gate）：最终验收
 - [ ] 回告：ecosystem-lead（S32 第二节 module-crew 第 1、2 条已就位），经 mc-coord 转
