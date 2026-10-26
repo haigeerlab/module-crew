@@ -220,11 +220,13 @@ def _write_config(db: store.Store, cfg: dict) -> None:
         tx.put("config", "main", cfg, action="set", data={"previousCheckCommand": previous})
 
 
-def _run_check(cfg: dict, checkout: Path) -> str | None:
-    """None when the full check passes, else the reason; a reason starting with CANNOT_RUN means it never ran."""
+def _run_check(cfg: dict, checkout: Path, db: store.Store | None = None) -> str | None:
+    """None when the full check passes, else the reason; a reason starting with CANNOT_RUN means it never ran.
+    crew-check-ledger: with the switch on, a check that ran is recorded against the checkout's tree."""
     timeout = cfg.get("checkTimeout") or DEFAULT_CHECK_TIMEOUT
     argv = shlex.split(cfg["checkCommand"])
     shown = json.dumps(argv, ensure_ascii=False)
+    started = store.now()
     try:
         done = subprocess.run(argv, cwd=checkout, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -234,6 +236,9 @@ def _run_check(cfg: dict, checkout: Path) -> str | None:
     tail = "\n".join((done.stdout + done.stderr).strip().splitlines()[-40:])
     if done.returncode in (126, 127):       # the shell could not find or execute the program
         return f"{CANNOT_RUN}（退出码 {done.returncode}；实际执行的参数：{shown}）：{tail}"
+    if db is not None:
+        from module_crew import checks
+        checks.note_full(db, cfg, checkout, done.returncode, tail, started)
     if done.returncode != 0:
         return f"完整检查失败（退出码 {done.returncode}；实际执行的参数：{shown}）：{tail}"
     return None
@@ -463,7 +468,7 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
     else:
         result.merge_commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
         result.lines += commits.hook_lines(checkout, merged)
-        reason = _run_check(cfg, checkout)
+        reason = _run_check(cfg, checkout, db)
         if reason:
             # The merge commit was made just now, locally, and nobody has synced it: drop it rather than revert it,
             # so the module branch can be merged again later with all of its changes (pilot round 2, problem K).
@@ -496,6 +501,9 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
                              f"补记合并：请用户同意后运行 module-crew merge record C{n} --original-file <原话文件>"
                              + ("" if task else f"，再用 merge tick {m} 勾选最终验收")],
                          approval=n, merge_commit=result.merge_commit)
+    if not reason:              # crew-check-ledger decision 5: the tick and Spec-mark commits keep the check result
+        from module_crew import checks
+        checks.inherit(db, cfg, checkout, result.merge_commit, m)
     with db.transaction(actor="coordinator") as tx:
         current = tx.get("item", str(n))
         if reason:
@@ -535,10 +543,11 @@ def _close_merged(tx, db: store.Store, result: RunResult, n: int, rec: dict, uni
             basis=f"最终验收的合并批准事项 C{n}；已合入集成分支 {short}",
             todo="停止在本 worktree 开发，等模块协调收回 worktree", task=task)
     what = f"轻任务 {unit}" if task else f"模块 {unit}"
+    from module_crew import checks
     for name, target_task in sync_targets(tx, exclude=rec["from"]):
         _notice(tx, db, result, name, "sync-baseline",
                 basis=f"{what} 已合入集成分支 {short}（合并批准记录 C{n}）",
-                todo=f"{sync.STEP}，跑完整检查后继续", task=target_task)
+                todo=f"{sync.STEP}，{checks.after_sync(tx.get('config', 'main'))}后继续", task=target_task)
 
 
 def record(project: str | os.PathLike, approval: int, original: str) -> RunResult:

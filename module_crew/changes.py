@@ -244,7 +244,7 @@ def _from_module(db: store.Store, checkout: Path, rec: dict, number: int) -> tup
 
 
 def land(project: str | os.PathLike, number: int, original: str | None = None, partial: bool = False,
-         from_module: bool = False) -> LandResult:
+         from_module: bool = False, skip_quick: bool = False) -> LandResult:
     """Commit the coordinator's edits for one request on the integration baseline and prepare the notices;
     with `from_module`, take the declared files from the requester's module branch first (crew-declared-scope)."""
     project = Path(project)
@@ -278,7 +278,17 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
                               "全部改完再 change land；确实要先落地已改的部分，请用户同意后加 --partial --original-file <原话文件>"])
     if left and not (original and original.strip()):
         return LandResult(3, ["部分落地要用户原话：请用户同意后加 --original-file <原话文件>"])
+    from module_crew import checks
+    quick = checks.enabled(cfg)
+    if quick and skip_quick and not (original and original.strip()):
+        return LandResult(3, ["跳过快检查要用户原话：请用户同意后加 --original-file <原话文件>"])
     probe._git(checkout, "add", "-A", "--", *changed)
+    if quick and not skip_quick:     # crew-check-ledger decision 9: the staged tree passes the quick check first
+        tree = probe._git(checkout, "write-tree").stdout.strip()
+        out = checks.check_tree(db, cfg, "quick", tree, checkout, "change-land", None)
+        if out.code != 0:
+            return LandResult(out.code, out.lines + [f"没有提交，清单文件保持暂存，请求 C{number} 仍开着：修好后再 change land，"
+                                                     "或请用户同意后加 --skip-quick-check --original-file <原话文件>"])
     from module_crew import merge
     try:
         done = probe._git(checkout, "commit", "-q", "-m",
@@ -307,17 +317,19 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
         result.lines.append("提醒：这条请求带「要问用户」提示，但没有记下用户原话")
     basis = (f"公共变更请求 C{number} 部分落地 {commit[:7]}（还剩 {'、'.join(left)}）" if left
              else f"公共变更请求 C{number} 已在集成分支提交 {commit[:7]}")
-    todo = f"{sync.STEP}，跑完整检查后继续"
+    from module_crew import checks
+    todo = f"{sync.STEP}，{checks.after_sync(cfg)}后继续"
     with db.transaction(actor="coordinator") as tx:
         answer_rec = {"original": original, "answeredAt": store.now(), **store.source_field()} if original is not None else None
+        skipped = {"quickCheckSkipped": {"original": original, "at": store.now()}} if quick and skip_quick else {}
         if left:
             parts = list(rec.get("partial") or []) + [{"commit": commit, "files": changed, "answer": answer_rec}]
-            tx.put("request", str(number), dict(rec, partial=parts), action="partly-landed",
+            tx.put("request", str(number), dict(rec, partial=parts, **skipped), action="partly-landed",
                    data={"commit": commit, "left": left})
         else:
             early = {"fromModule": {"commit": module_commit}, "toldUser": False} if module_commit else {}
             tx.put("request", str(number), dict(rec, state="closed", closedReason="landed", commit=commit, answer=answer_rec,
-                                                **early),
+                                                **early, **skipped),
                    action="landed", data={"commit": commit, **({"fromModule": module_commit} if module_commit else {})})
             _close_ticket(tx, rec)
         skip = merge.no_sync(tx)               # same rule as merge run (0.9.3); the requester still gets its reply

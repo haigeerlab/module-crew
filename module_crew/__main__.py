@@ -138,8 +138,12 @@ def _status(as_json: bool) -> int:
     lock = (report.store or {}).get("mergeLock")
     if lock:
         took = f"已跑 {lock['minutes']} 分钟" if lock["minutes"] is not None else "开始时间读不出"
-        print(f"  合并 C{lock['approval']}（{lock['unit']}）" + ("的锁已失效（进程不在了；下一个写命令会在集成 checkout 干净时清掉）"
+        from module_crew import mergelock
+        print(f"  {mergelock.what(lock)}" + ("的锁已失效（进程不在了；下一个写命令会在集成 checkout 干净时清掉）"
               if lock["stale"] else f"正在后台跑（{took}）：别的写命令会被挡住，等它结束"))
+    from module_crew import checks          # crew-check-ledger
+    for line in checks.status_lines((report.store or {}).get("checks")):
+        print(line)
     unq = (report.store or {}).get("unqueued")
     if unq and unq["missingSeen"]:
         print("  集成分支：还没有记下认得的顶端（下次 merge run 或 module-crew unqueued 时记下）")
@@ -426,11 +430,34 @@ def _original(original: str | None, original_file: str | None) -> str | None:
     return _read(original_file) if original_file is not None else original
 
 
+def _check(args) -> int:
+    """crew-check-ledger: quick check, baseline check and the ledger of results per tree."""
+    from module_crew import checks
+    if args.action in ("quick", "baseline"):
+        out = checks.quick(Path.cwd(), args.rerun) if args.action == "quick" else checks.baseline(Path.cwd(), args.rerun)
+        print("\n".join(out.lines), file=sys.stdout if out.code in (0, 5) else sys.stderr)
+        return out.code
+    if args.action == "show":
+        code, rows = checks.show(Path.cwd(), args.rev)
+        if code:
+            print(f"❌ 找不到提交 {args.rev}", file=sys.stderr)
+            return code
+    else:
+        rows = checks.listing(store.open_store(), args.limit)
+    if args.json:
+        print(json.dumps({"checks": rows}, ensure_ascii=False, indent=2))
+    else:
+        print("\n".join(checks.describe(r) for r in rows) if rows else "没有检查记录")
+    return 0
+
+
 def _config_set(args) -> int:
     """S23: change `commitPrefix` (T136: or `checkTimeout`) on a project already started, without start prepare;
     needs the user's words."""
-    if args.commit_prefix is None and args.check_timeout is None and args.declared_scope is None:
-        print("❌ 至少给一项：--commit-prefix、--check-timeout 或 --declared-scope", file=sys.stderr)
+    if all(v is None for v in (args.commit_prefix, args.check_timeout, args.declared_scope, args.quick_check_command,
+                               args.check_ledger)):
+        print("❌ 至少给一项：--commit-prefix、--check-timeout、--declared-scope、--quick-check-command 或 --check-ledger",
+              file=sys.stderr)
         return 2
     if args.check_timeout is not None and args.check_timeout < 1:
         print("❌ --check-timeout 要是正整数（秒）", file=sys.stderr)
@@ -441,9 +468,18 @@ def _config_set(args) -> int:
     if not original.strip():
         print("❌ 用户原话不能为空：只记用户在本会话亲手输入的话", file=sys.stderr)
         return 3
+    db = store.open_store()
+    if args.quick_check_command is not None or args.check_ledger is not None:     # crew-check-ledger
+        from module_crew import checks
+        try:
+            print("\n".join(checks.set_config(db, args.quick_check_command, args.check_ledger, original)))
+        except checks.ConfigRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
     changed = {k: v for k, v in (("commitPrefix", args.commit_prefix), ("checkTimeout", args.check_timeout),
                                  ("declaredScope", args.declared_scope)) if v is not None}
-    db = store.open_store()
+    if not changed:
+        return 0
     with db.transaction(actor="coordinator") as tx:
         tx.put("config", "main", {**(tx.get("config", "main") or {}), **changed}, action="set",
                data={**changed, "original": original})
@@ -579,6 +615,9 @@ def _review(args) -> int:
                 print(f"C{i['number']} {i['module']} 的 {review.NODE_NAME.get(i['node'], i['node'])}（{i['from']}）："
                       + "、".join(f["path"] for f in i["files"]))
                 print("  要点：" + i["points"].replace("\n", "\n        "))
+                if i.get("checks"):             # crew-check-ledger
+                    from module_crew import checks
+                    print("  " + checks.review_line(i["checks"]))
                 if i.get("display"):            # crew-review-display: the final-acceptance tables, from git
                     from module_crew import present
                     print("\n".join("  " + x for x in present.table_lines(i["display"])))
@@ -706,7 +745,8 @@ def _change(args) -> int:
     if args.original_file is not None and original is None:
         return 2
     res = changes.land(".", args.number, original, partial=getattr(args, "partial", False),
-                       from_module=getattr(args, "from_module", False))
+                       from_module=getattr(args, "from_module", False),
+                       skip_quick=getattr(args, "skip_quick_check", False))
     for line in res.lines:
         print(line)
     for x in res.sends:
@@ -1017,6 +1057,8 @@ def _main(argv: list[str] | None = None) -> int:
     cfset.add_argument("--check-timeout", type=int, help="完整检查与提交钩子的时限（秒，正整数）")
     cfset.add_argument("--declared-scope", choices=("on", "off"),
                        help="Plan「预先声明」名单内的公共文件由模块直接改（crew-declared-scope）")
+    cfset.add_argument("--quick-check-command", help="快检查命令（项目脚本，只跑受影响部分；不经 shell）")
+    cfset.add_argument("--check-ledger", choices=("on", "off"), help="检查记账开关：平时快检查、完整检查只在合并队列与基线检查里跑")
     cfg = cfset.add_mutually_exclusive_group(required=True)
     cfg.add_argument("--original")
     cfg.add_argument("--original-file")
@@ -1073,6 +1115,7 @@ def _main(argv: list[str] | None = None) -> int:
             c.add_argument("--partial", action="store_true", help="清单里还有文件没改时，先落地已改的部分（要用户原话），请求保持打开")
             c.add_argument("--from-module", action="store_true",
                            help="名单内的提前落地：从请求方模块分支取清单文件再提交（crew-declared-scope）")
+            c.add_argument("--skip-quick-check", action="store_true", help="检查记账打开时跳过提交前的快检查（要用户原话）")
     mg = sub.add_parser("merge", help="本地合并、收尾与远端 PR")
     mgs = mg.add_subparsers(dest="action", required=True)
     for name in ("queue", "push-plan"):
@@ -1232,6 +1275,18 @@ def _main(argv: list[str] | None = None) -> int:
     scp.add_argument("files", nargs="*")
     scp.add_argument("--json", action="store_true")
     sub.add_parser("sync", help="在模块 worktree 里把集成分支合进模块分支（本模块 Spec、tasks 冲突取集成分支版本）")
+    ck = sub.add_parser("check", help="检查记账：快检查、基线检查、查检查账（项目开关 checkLedger）")
+    cks = ck.add_subparsers(dest="action", required=True)
+    ckq = cks.add_parser("quick", help="在模块或轻任务 worktree 里跑快检查并记账")
+    ckq.add_argument("--rerun", action="store_true")
+    ckb = cks.add_parser("baseline", help="模块协调：对集成分支顶端跑一次完整检查并记账（放后台跑）")
+    ckb.add_argument("--rerun", action="store_true")
+    ckw = cks.add_parser("show", help="只读：一个提交的树有哪些检查记录")
+    ckw.add_argument("rev", nargs="?", default="HEAD")
+    ckw.add_argument("--json", action="store_true")
+    ckl = cks.add_parser("list", help="只读：最近的检查账")
+    ckl.add_argument("--limit", type=int, default=20)
+    ckl.add_argument("--json", action="store_true")
     sub.add_parser("resume-kit", help="生成换会话恢复说明").add_argument("module")
     se = sub.add_parser("serial", help="退回串行／恢复并行")
     se.add_argument("--off", action="store_true")
@@ -1516,6 +1571,12 @@ def _run(args) -> int:
     if args.group == "change":
         try:
             return _change(args)
+        except store.StoreError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
+    if args.group == "check":
+        try:
+            return _check(args)
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 2

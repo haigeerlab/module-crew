@@ -81,6 +81,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
     carries_spec = sub["node"] == "plan" and any(f["path"] == f"spec/{sub['module']}.md" for f in sub["files"])
     revised = (_spec_revision(db, worktree, sub["module"], commit)          # decision 10 (final), decision 7 (plan)
                if sub["node"] == "final" or carries_spec else None)
+    from module_crew import checks
+    ledger = checks.attach(db, worktree, commit) if sub["node"] == "final" else None     # crew-check-ledger
     with db.transaction(actor=sender) as tx:
         out = Outcome(msg.kind, 0)
         if any(e["actor"] == sender and e["data"].get("relayId") == relay_id for e in store.events(db)):
@@ -110,6 +112,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             rec["disputes"] = sub["disputes"]
         if revised:
             rec["specRevised"] = revised
+        if ledger is not None:
+            rec["checks"] = ledger
         if reviewers:                      # 送审: the 【交审】 goes unchanged to the reviewers whose scope covers it
             body = tx.allocate_number()
             meta = tx.write_body(body, text)
@@ -127,7 +131,16 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         if revised:
             out.lines.append(f"{revised['path']} 在构建中改过（和集成分支上已批准的不同）：提请用户批准这次最终验收时附上 Spec 的改动差异"
                              f"（review show C{n} --spec-diff），写明一次批准同时批准修订后的 Spec；合入后由 merge run 记下它的批准")
+        out.lines += _ledger_lines(ledger)
         return out
+
+
+def _ledger_lines(ledger: dict | None) -> list[str]:
+    from module_crew import checks
+    if ledger is None:
+        return []
+    return [checks.review_line(ledger)] + ([] if checks.covered(ledger) else
+                                           ["提醒：交审的提交没有快检查记录，请模块在 worktree 里跑 module-crew check quick（不拒收）"])
 
 
 _MARKER = "<!-- spec-guard: review"
@@ -204,6 +217,8 @@ def _add_task(db: store.Store, msg, text: str, sender: str, relay_id: int) -> Ou
     extra = sorted(f for f in changed if not any(tasks.clash(f, e) for e in t["expectedFiles"]))
     clashes, _ = tasks.overlaps(db, worktree, extra, exclude=n) if extra else ([], [])   # any checkout of the repo
     commit = _git(worktree, "rev-parse", "HEAD").stdout.strip()
+    from module_crew import checks
+    ledger = checks.attach(db, worktree, commit)        # crew-check-ledger
     out = Outcome(msg.kind, 0)
     with db.transaction(actor=sender) as tx:
         number = tx.allocate_number()
@@ -215,7 +230,8 @@ def _add_task(db: store.Store, msg, text: str, sender: str, relay_id: int) -> Ou
         tx.put("item", str(number), {
             "state": "open", "kind": "review", "from": sender, "relayId": relay_id, "text": text, "module": None,
             "task": n, "node": "final", "files": sub["files"], "commit": commit, "changedFiles": changed,
-            "extraFiles": extra, "overlapExtra": clashes, "closedReason": None, "answer": None},
+            "extraFiles": extra, "overlapExtra": clashes, "closedReason": None, "answer": None,
+            **({"checks": ledger} if ledger is not None else {})},
             action="created", data={"relayId": relay_id})
     tasks.advance(db, n, "returned", result={**(t.get("result") or {}), "files": changed, "commit": commit})
     out.number = number
@@ -228,6 +244,7 @@ def _add_task(db: store.Store, msg, text: str, sender: str, relay_id: int) -> Ou
         out.lines.append("提示：这是 bug，「要点」里没写复现测试；问做事的会话补没补能复现问题的测试")
     if out.closed:
         out.lines.append("取代了 " + "、".join(f"C{k}" for k in out.closed))
+    out.lines += _ledger_lines(ledger)
     return out
 
 
@@ -384,6 +401,7 @@ def batch(project: str | os.PathLike) -> dict:
                       "files": v["files"], "points": _points(v["text"]), "reviews": list(v.get("reviews") or []),
                       "reviewState": state, "round": _rounds(db, v["module"], v["node"]), "ready": state in READY,
                       "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state),
+                      **({"checks": v["checks"]} if "checks" in v else {}),
                       **({"display": present.final_tables(project, db, v)} if v["node"] == "final" and v.get("module")
                          and not v.get("task") else {})})
     return {"items": items, "groups": groups, "dependencyIssues": issues, "conflicts": conflicts, "overlap": over}
@@ -553,7 +571,8 @@ def show(db: store.Store, number: int, submission: bool = False, spec_diff: bool
     if spec_diff:
         revised = rec.get("specRevised")
         return [revised["diff"].rstrip("\n")] if revised else [f"C{number} 交审时 Spec 和集成分支上的一样，没有改动差异"]
-    out = []
+    from module_crew import checks
+    out = [checks.review_line(rec["checks"])] if rec.get("checks") else []     # crew-check-ledger
     if submission:
         out += [f"交审原文（C{number}，{rec['module']} 的 {NODE_NAME.get(rec['node'], rec['node'])}）"
                 f" sha256:{hashlib.sha256(rec['text'].encode('utf-8')).hexdigest()}：", rec["text"].rstrip("\n"), ""]

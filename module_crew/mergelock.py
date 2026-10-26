@@ -145,9 +145,22 @@ def minutes(info: dict) -> int | None:
     return max(int((datetime.now(started.tzinfo) - started).total_seconds() // 60), 0)
 
 
+def what(info: dict) -> str:
+    """「合并 C<号>（<单位>）」, or the unit alone for a lock that is not a merge (crew-check-ledger: the baseline check)."""
+    if info.get("approval") is None and info.get("unit"):
+        return str(info["unit"])
+    return f"合并 C{info.get('approval')}（{info.get('unit') or '?'}）"
+
+
+def _gone(info: dict) -> str:
+    if info.get("approval") is None and info.get("unit"):
+        return f"{info['unit']}的进程不在了"
+    return f"C{info.get('approval')} 的合并进程不在了"
+
+
 def describe(info: dict) -> str:
     took = minutes(info)
-    return (f"合并 C{info.get('approval')}（{info.get('unit') or '?'}）正在后台跑"
+    return (f"{what(info)}正在后台跑"
             + (f"（已跑 {took} 分钟）" if took is not None else ""))
 
 
@@ -168,7 +181,7 @@ def guard(db: store.Store, project: str | os.PathLike) -> tuple[str | None, str 
     mid = (Path(checkout) / gitdir / "MERGE_HEAD").exists() if gitdir else False
     dirty = bool(probe._git(checkout, "status", "--porcelain").stdout.strip())
     if mid or dirty:
-        return (f"合并锁已失效（C{info.get('approval')} 的合并进程不在了），集成 checkout {checkout} "
+        return (f"合并锁已失效（{_gone(info)}），集成 checkout {checkout} "
                 + ("有做到一半的合并" if mid else "不干净") + "：没有清锁，请用户核对"), None
     _write(db, {**info, "running": False, "clearedAt": store.now(), "cleared": "stale"})
-    return None, f"合并锁已失效（C{info.get('approval')} 的合并进程不在了），集成 checkout 干净，已清掉"
+    return None, f"合并锁已失效（{_gone(info)}），集成 checkout 干净，已清掉"
