@@ -442,8 +442,9 @@ def summarize_store(project: Path) -> tuple[Check, dict | None]:
                "missingSeen": found.missing_seen, "notInHistory": found.not_in_history}
     except store.StoreError as exc:
         return Check("store", "warning", f"状态库读不出：{exc}", "运行 module-crew store check 排查"), None
-    from module_crew import checks          # crew-check-ledger
-    return Check("store", "ok", str(db.path)), {"checks": checks.status(db, project),"sessions": active, "open": open_counts,
+    from module_crew import autonomy, checks          # crew-check-ledger, crew-autonomy-tier
+    return Check("store", "ok", str(db.path)), {"checks": checks.status(db, project), "autonomy": autonomy.status(db, project),
+                                                "sessions": active, "open": open_counts,
                                                 "coordinator": coord, "sightings": seen, "tasks": task_rows,
                                                 "unqueued": unq, "mergeLock": _merge_lock(db), "mergeResult": _merge_result(db),
                                                 "permissionsStale": _stale_permissions(db), "selfIsCoordinator": self_coord,

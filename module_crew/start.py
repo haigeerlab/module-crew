@@ -197,7 +197,22 @@ CADENCES = ("separate", "combined")
 
 def cadence_info(project: str | os.PathLike, map_doc: dict | None = None) -> tuple[str, str, bool]:
     """(value, source, read from /map). spec-guard 0.73.0+ puts the effective reviewCadence in /map --json; use it when
-    the caller already has the map, otherwise read .agent/config.json (same source, same value); `separate` by default."""
+    the caller already has the map, otherwise read .agent/config.json (same source, same value); `separate` by default.
+    crew-autonomy-tier decision 4: `separate` while a step down has capped the tier at strict."""
+    value, source, via_map = _spec_guard_cadence(project, map_doc)
+    if value == "combined":
+        from module_crew import autonomy
+        try:
+            db = store.open_store(Path(project))
+        except store.StoreError:
+            return value, source, via_map
+        eff = autonomy.effective(db, project) if autonomy.state(db).get("cap") else None
+        if eff is not None and eff.cap and eff.value == "strict":
+            return "separate", "自治档位降到 strict（降档上限），恢复要用户原话", via_map
+    return value, source, via_map
+
+
+def _spec_guard_cadence(project: str | os.PathLike, map_doc: dict | None = None) -> tuple[str, str, bool]:
     given = (map_doc or {}).get("reviewCadence")
     if isinstance(given, dict) and given.get("value") in CADENCES:
         return given["value"], str(given.get("source") or "default"), True

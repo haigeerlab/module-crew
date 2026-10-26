@@ -144,6 +144,9 @@ def _status(as_json: bool) -> int:
     from module_crew import checks          # crew-check-ledger
     for line in checks.status_lines((report.store or {}).get("checks")):
         print(line)
+    from module_crew import autonomy        # crew-autonomy-tier
+    for line in autonomy.status_lines((report.store or {}).get("autonomy")):
+        print(line)
     unq = (report.store or {}).get("unqueued")
     if unq and unq["missingSeen"]:
         print("  集成分支：还没有记下认得的顶端（下次 merge run 或 module-crew unqueued 时记下）")
@@ -900,6 +903,8 @@ def _merge(args) -> int:
         else:
             print(f"已撤回合并批准 C{args.number}；交审已被 C{note.superseded_by} 取代，不重开")
         print(f"发送 撤销批准通知 → {note.to}，正文文件：{note.path}")
+        if note.tier_line:
+            print(note.tier_line)
         _sent(note.to)
         return 0
     if args.action == "tick":
@@ -966,6 +971,8 @@ def _session_guard(args) -> int | None:
         return None
     if args.group == "unqueued" and not getattr(args, "notify", False):
         return None
+    if args.group == "tier" and (key[1] is None or (key[1] == "digest" and not getattr(args, "mark_told", False))):
+        return None                         # crew-autonomy-tier: reading the tier and the digest is read only
     if key == ("permissions", "verify") and not getattr(args, "record", None):
         return None
     if key == ("coordinator", "handover") and getattr(args, "check", False):
@@ -1008,6 +1015,36 @@ def _handover(args) -> int:
         return 2
     print(json.dumps({"code": code, "lines": lines}, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
     return code
+
+
+def _tier(args) -> int:
+    """crew-autonomy-tier: `tier [--json] | --preflight | restore | digest`."""
+    from module_crew import autonomy
+    try:
+        db = store.open_store()
+        if args.preflight:
+            code, lines = autonomy.preflight(db, ".")
+            print("\n".join(lines))
+            return code
+        if args.action == "digest":
+            code, doc, lines = autonomy.digest(db, ".", args.mark_told)
+            print(json.dumps(doc, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+            return code
+        if args.action == "restore":
+            original = _original(args.original, args.original_file)
+            if original is None:
+                return 2
+            print("\n".join(autonomy.restore(db, ".", original)))
+            return 0
+        doc, lines = autonomy.report(db, ".")
+    except autonomy.Refused as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 3
+    except store.StoreError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(doc, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+    return 0
 
 
 def _merge_lock_guard(args) -> int | None:
@@ -1325,6 +1362,17 @@ def _main(argv: list[str] | None = None) -> int:
     ckl = cks.add_parser("list", help="只读：最近的检查账")
     ckl.add_argument("--limit", type=int, default=20)
     ckl.add_argument("--json", action="store_true")
+    ti = sub.add_parser("tier", help="自治档位：查看、写入前核对、恢复降档、收尾汇总（crew-autonomy-tier）")
+    ti.add_argument("--json", action="store_true")
+    ti.add_argument("--preflight", action="store_true", help="写 autonomyTier 之前核对 spec-guard 版本与接口（只读）")
+    tis = ti.add_subparsers(dest="action")
+    tir = tis.add_parser("restore", help="降档后恢复一档（要用户原话）")
+    tirg = tir.add_mutually_exclusive_group(required=True)
+    tirg.add_argument("--original")
+    tirg.add_argument("--original-file")
+    tid = tis.add_parser("digest", help="relaxed 档的收尾汇总：同步、检查账、不经队列的提交、提前落地")
+    tid.add_argument("--json", action="store_true")
+    tid.add_argument("--mark-told", action="store_true", help="记为已汇总给用户（只是记账，不是批准）")
     of = sub.add_parser("offload", help="额度外包：把 Task 经 delegate 交给 Codex，核对后代提交（项目开关 codexOffload）")
     ofs = of.add_subparsers(dest="action", required=True)
     ofst = ofs.add_parser("start", help="派出模块的下一个 Task：生成任务说明与 /delegate:run 写法")
@@ -1454,6 +1502,8 @@ def _run(args) -> int:
         else:
             print("\n".join(lines), file=sys.stderr if code else sys.stdout)
         return code
+    if args.group == "tier":
+        return _tier(args)
     if args.group == "sync":
         from module_crew import sync
         res = sync.run(".")

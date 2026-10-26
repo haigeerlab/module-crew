@@ -113,6 +113,7 @@ def sync_targets(tx, exclude: str | None = None) -> list[tuple[str, int | None]]
 @dataclass(frozen=True)
 class Revoked(Reply):
     superseded_by: int | None = None          # the newer submission that keeps the old one closed (MC-6)
+    tier_line: str | None = None              # crew-autonomy-tier decision 8: the step down to tell the user
 
 
 REVOKE_TODO = "最终验收批准已撤回，不会合并：停在当前停点，不要再提交，等新的答复"
@@ -147,7 +148,10 @@ def revoke(db: store.Store, approval: int, original: str) -> Revoked:
         body = tx.allocate_number()
         meta = tx.write_body(body, protocol.render_coordination_notice(
             "approval-revoked", f"C{approval}（用户撤回批准 C{record}；交审 C{rec['review']}）", REVOKE_TODO))
-    return Revoked(rec["from"], None, body, db.path / meta["path"], superseded_by=max(newer) if newer else None)
+    from module_crew import autonomy
+    line = autonomy.incident(db, autonomy.project_of(db), "revoked", str(approval), f"C{approval}，{rec['module']}")
+    return Revoked(rec["from"], None, body, db.path / meta["path"], superseded_by=max(newer) if newer else None,
+                   tier_line=line)
 
 
 def _build_order(project: Path) -> list[str] | None:
@@ -524,12 +528,19 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
             if tick_line:
                 result.lines.append(tick_line)
             result.lines += tick_hooks
+    if reason and kind == "module":          # crew-autonomy-tier decision 8, after the merge is recorded
+        from module_crew import autonomy
+        line = autonomy.incident(db, project, "merge-returned", str(n), f"C{n}，{unit}")
+        result.lines += [line] if line else []
     if task:
         from module_crew import tasks
         tasks.advance(db, task, "working" if reason else "merged")
     if not reason:                  # crew-unqueued-commits: the merge (and tick) commits are module-crew's own
         from module_crew import unqueued
         unqueued.mark(db, checkout, "merge-run")
+        from module_crew import autonomy          # crew-autonomy-tier decision 7: advice only, never a step up
+        advice = autonomy.suggestion_line(db, project, once=True)
+        result.lines += [advice] if advice else []
     return result
 
 

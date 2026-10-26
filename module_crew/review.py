@@ -502,6 +502,7 @@ def note(db: store.Store, number: int | None, sender: str, text: str) -> NoteRes
             raise NoteRefused(f"{where}C{n} 没有送给 {sender} 审（" + (f"送审对象：{'、'.join(sent)}" if sent else "没有送审") + "）")
         picked.append((n, msg, section))
     res = NoteResult()
+    over: list[tuple[int, str]] = []
     with db.transaction(actor="coordinator") as tx:
         for n, msg, section in picked:
             c = msg.contract()["conclusion"]
@@ -521,6 +522,7 @@ def note(db: store.Store, number: int | None, sender: str, text: str) -> NoteRes
             done = _rounds(db, rec["module"], rec["node"])
             if done >= REWORK_LIMIT:
                 tx.put("item", str(n), dict(rec, overLimit=True), action="rework-over-limit")
+                over.append((n, rec["module"]))
                 res.lines.append(f"C{n} 返工已满 {REWORK_LIMIT} 次：不再返工，作为待你决定（D 编号）的问题提请批准")
                 continue
             todo = "\n".join(f"{i}. {x}" for i, x in enumerate(c.get("changes") or [], 1)) or row["points"] or "按审查意见修改"
@@ -533,6 +535,11 @@ def note(db: store.Store, number: int | None, sender: str, text: str) -> NoteRes
                    data={"module": rec["module"], "node": rec["node"], "round": done + 1, "body": body})
             res.sends.append({"kind": "rework", "to": rec["from"], "replyTo": None, "body": body, "path": db.path / meta["path"]})
             res.lines.append(f"C{n} 返工第 {done + 1} 轮：通知 {rec['from']} 按审查意见修改")
+    if over:                                # crew-autonomy-tier decision 8, once the conclusions are recorded
+        from module_crew import autonomy
+        for n, module in over:
+            line = autonomy.incident(db, autonomy.project_of(db), "rework-over-limit", str(n), f"C{n}，{module}")
+            res.lines += [line] if line else []
     return res
 
 

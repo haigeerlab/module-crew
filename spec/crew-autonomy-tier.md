@@ -1,6 +1,6 @@
 # Spec: crew-autonomy-tier
 
-<!-- spec-guard: review approved 14e853135b51 -->
+<!-- spec-guard: review approved 94db256ed3d2 -->
 
 > 能力图模块 `crew-autonomy-tier`（第十版第 3 个）。需求来源：接缝 S32，已批方案 plugin-ecosystem `proposals/2026-10-24-S32-并行流畅与额度外包.md`（612634c，用户 2026-10-24「按推荐批准」）
 > 第二节 module-crew 第 5 条（自治档位、升档建议、出事降档）与 spec-guard 第 2、3 条（`autonomyTier` 配置项、底线）；第三节守门：开关默认关、凭用户原话开，读不到新接口照今天问用户。开会话依据：用户批准事项 C230。
@@ -64,7 +64,7 @@
    状态库登记过 Codex 会话（`codex-desktop`）时另起一行「Codex 那边的 spec-guard 版本 module-crew 查不到：0.67.1 及更早会把整份配置判无效，请用户确认 Codex 也装了 0.85.0 以上」（只提醒、不拒）。
    前两项不满足退出码 3。crew-coordinator skill 写明：用户要设或改档位时，先跑 `tier --preflight`，通过后在回复里引用用户原话，用 `/spec-guard:config` 写 `autonomyTier`；
    要设成 `standard` 或 `relaxed` 时同一句原话里一并写 `reviewCadence=combined`（spec-guard 不联动它）；写完照假设 4 提交。
-3. **（新）降档上限记在 module-crew 的状态库**：自动降档不能写 spec-guard（写入要用户原话），所以 module-crew 记 `config/autonomy`：`{"cap": "standard", "capFor": "relaxed", "incident": {...}, "seen": "relaxed", "toldSeq": 123}`。
+3. **（新）降档上限记在 module-crew 的状态库**：自动降档不能写 spec-guard（写入要用户原话），所以 module-crew 记在 `config/main` 的 `autonomy` 字段（状态库的 config 种类只有 `main` 一个键）：`{"cap": "standard", "capFor": "relaxed", "incident": {...}, "seen": "relaxed", "toldSeq": 123}`。
    - `cap` 生效时，生效档位 = min(设的档位, `cap`)；`capFor` 记降档时设的是哪一档。之后设的档位改了（≠ `capFor`，说明用户又说了新的话），`cap` 自动清掉并记一条事件，以用户最新的话为准。
    - `seen` 是 module-crew 最近一次看到的生效档位；每次读到和它不同就更新并记事件 `tier-seen`，作为升档证据的起点（假设 6）。
    - 恢复：`module-crew tier restore --original-file <原话文件>` 把 `cap` 往上抬一档（抬到设的档位就清掉），要用户原话，记进事件；没有 `cap` 时退出码 3，提示「要升到设的档位以上，用 /spec-guard:config」。
@@ -74,15 +74,15 @@
 5. **（新）standard 的声明范围：派生，不替用户写开关**：`declared.enabled(db)` 改为：`declaredScope` 是 `on` → 开；是 `off`（用户明说过关）→ 关；**没设过**时，生效档位 ≥ standard → 开。
    不在切档时写 `declaredScope` 键——否则降档时要再写一次，而关开关按 `crew-declared-scope` 也要用户原话。用户显式设过的开关永远优先。`crew-declared-scope` 的「读不到声明照今天问用户」照旧生效。
 6. **（新）relaxed 的收尾汇总**：`tier digest` 从事件日志里取 `toldSeq` 之后的这几类，按模块分组列出、给一段可以直接给用户看的汇总正文：
-   - 同步：合入后发出的同步基线通知（几条、发给谁）、公共变更落地后的同步通知、模块 `module-crew sync` 的结果；
+   - 同步：合入后发出的同步基线通知、公共变更落地后的同步通知（模块 `module-crew sync` 不记账，不在汇总里）；
    - 快检查与记账：检查账新增的记录（快检查／完整检查、通过／失败、树短号，取自 `check list --json`）；
    - 不经合并队列的提交（`crew-unqueued-commits` 记下的）；提前落地（`change landed` 里还没汇总的，`--mark-told` 时一并标记）。
-   `--mark-told` 把 `toldSeq` 推到当前最新事件号（只是记账，不要原话）。退出码：`0` 有内容、`3` 没有。
+   `--mark-told` 把 `toldSeq` 推到当前最新事件号，并记下当时集成分支的顶端（`toldUnqueued`），之后没有新的不经队列提交就不再列（只是记账，不要原话）。退出码：`0` 有内容、`3` 没有。
    crew-coordinator skill 写明：生效档位是 relaxed 时，这几类消息不再逐条告诉用户；**给用户发批量交审、最终验收，或 `merge cleanup` 本批收尾时**，先 `tier digest`，把正文写进那条消息，再 `--mark-told`。
    降档通知、`【等待用户】`、基线变红建的修基线任务、权限弹窗、任何要用户决定的事**不进汇总**，照常立刻告诉用户。生效档位低于 relaxed 时 `tier digest` 照样能跑（只读），但 skill 不要求用它。
 7. **（新）升档建议**：`tier` 与 `status` 在假设 1 的开关打开、生效档位不是 relaxed、且满足假设 6 时写
    「可以建议升到 <下一档>：最近 3 个模块（a、b、c）合并退回 0、撤销 0、返工 ≤ 1、用户退回 0」；`merge run` 合入后满足时在输出末尾加同一行。
-   这只是建议：skill 写明把它转告用户、用户一句话确认后，没有 `cap` 的照决策 2 写 spec-guard，有 `cap` 的用 `tier restore`。同一个起点只建议一次（记 `suggestedAt`），用户不理就不再重复，直到证据起点变了。
+   这只是建议：skill 写明把它转告用户、用户一句话确认后，没有 `cap` 的照决策 2 写 spec-guard，有 `cap` 的用 `tier restore`。同一个起点只主动推一次（记 `suggestedFor`）：`merge run` 只在第一次写这一行，用户不理就不再重复，直到证据起点变了；`tier`、`status` 是用户或模块协调主动查看，照样显示。
 8. **（新）出事降档**：假设 5 的四个出口各调一次 `autonomy.incident(db, project, kind, detail)`。生效档位是 strict 时什么都不做；否则把 `cap` 设成低一档，记事件 `tier-lowered`（含原因、事项号），
    返回一行「自治档位已从 <原档> 降到 <新档>：<原因>。马上告诉用户；恢复要用户原话（module-crew tier restore）」，由调用它的命令原样输出。同一次 `merge run`、同一个事项只降一次。
    挂钩的位置（供模块协调排写码先后）：
@@ -117,9 +117,9 @@ autonomy.incident(db, project, kind, detail) -> str | None   # kind: "merge-retu
 ### 记录（只增不改）
 
 ```json
-// config/autonomy（新键，config 种类已有）
+// config/main 的 autonomy 字段（config 种类只有 main 一个键）
 {"cap": "standard", "capFor": "relaxed", "incident": {"kind": "merge-returned", "item": 231, "at": "..."},
- "seen": "standard", "seenAt": "...", "suggestedAt": null, "toldSeq": 0}
+ "seen": "standard", "seenAt": "...", "suggestedFor": null, "toldSeq": 0, "toldUnqueued": null}
 ```
 
 事件动作：`tier-seen`、`tier-lowered`、`tier-restored`、`tier-cap-cleared`、`tier-suggested`、`digest-told`。
@@ -158,7 +158,7 @@ PYTHONPATH=tests python3 -m unittest test_autonomy_tier
 
 - 假 spec-guard 夹具：一份声明 1.11、`autonomyTier.readFrom` 指向小脚本（按环境变量返回 `strict`／`standard`／`relaxed`、来源 `default`／`.agent/config.json`／`default (config invalid)`）；一份只有 1.10；一份 `readFrom` 写法不同；一份脚本跑不成。
 - 复用 `crew-declared-scope`、`crew-check-ledger` 的测试基类（b、c 两个模块会话、集成 checkout）。
-- 档位没设（来源 `default`）：现有测试原样通过，`status`、`merge run`、`start`、`review batch` 输出逐字不变，状态库没有 `config/autonomy`。
+- 档位没设（来源 `default`）：现有测试原样通过，`status`、`merge run`、`start`、`review batch` 输出逐字不变，`config/main` 里没有 `autonomy` 字段。
 - 降档：分别造出四类事件，档位 relaxed → standard → strict，strict 再出事不变；改设的档位后 `cap` 清掉。
 - 证据：造 3 个合入的模块（其中一个返工 2 次），看建议出现与不出现。
 
@@ -170,7 +170,7 @@ PYTHONPATH=tests python3 -m unittest test_autonomy_tier
 
 ## 验收标准
 
-1. 档位没设：全量测试原样通过；`status`、`start plan`、开工说明、`review batch`、`merge run`、`change add` 的输出与改前逐字相同；没有 `config/autonomy` 记录；`tier` 写「档位没设（spec-guard 默认 strict），module-crew 照今天做」。
+1. 档位没设：全量测试原样通过；`status`、`start plan`、开工说明、`review batch`、`merge run`、`change add` 的输出与改前逐字相同；`config/main` 里没有 `autonomy` 字段；`tier` 写「档位没设（spec-guard 默认 strict），module-crew 照今天做」。
 2. 读档位：1.11 夹具三种值与三种来源都读对；1.10、`readFrom` 写法不同、脚本跑不成三种情况都读作 strict 且 `reason` 写明原因；`default (config invalid)` 读作 strict。
 3. `tier --preflight`：spec-guard 0.85.0 夹具退出码 0；0.84.2 或接口没有 `autonomyTier` 退出码 3 并写原因；登记过 Codex 会话时多一行提醒、退出码不变。
 4. standard（`reviewCadence=combined`）：开工说明写 combined、`review batch` 合并同一模块的 Spec 与 Plan；`declaredScope` 没设时 `declared.enabled` 为真、`change add` 走名单内分类；`declaredScope: off` 时为假。
@@ -205,3 +205,7 @@ PYTHONPATH=tests python3 -m unittest test_autonomy_tier
 ## 文档建议
 
 README 加一小节「自治档位」：三档各放开什么、怎么设（先 `tier --preflight`、`/spec-guard:config` 同时设 `reviewCadence`）、升档建议与出事降档、底线；「命令一览」补 `tier` 四种用法。CHANGELOG 随发版写。
+
+## 变更记录
+
+- 2026-10-26：降档记录从「新键 `config/autonomy`」改为 `config/main` 的 `autonomy` 字段；收尾汇总去掉「模块 `module-crew sync` 的结果」，并补记 `toldUnqueued`；升档建议的「只建议一次」写明是 `merge run` 只推一次、`tier`／`status` 照样显示，记录字段名 `suggestedAt` 改为 `suggestedFor`（记的是证据起点而非时间）。原因：构建时发现状态库的 config 种类只允许键 `main`（不改 `store.py` 的前提下只能这样存）；`module-crew sync` 本身不记账、无从汇总；不经队列的提交是现状而非事件，要记下汇总到哪个顶端才不会重复列出；主动查看的命令不该因为推过一次就隐藏建议。来源：本模块构建 Task 1、Task 5、Task 6，随最终验收交用户复审。
