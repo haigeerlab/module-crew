@@ -1,6 +1,6 @@
 # Implementation Plan: crew-check-ledger
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-check-ledger.md`（用户 2026-10-26 批准，事项 C204「C204 A」）。任务清单：`tasks/crew-check-ledger/todo.md`。
 
