@@ -7,7 +7,7 @@
 - [x] Task 3：`merge run` 记账与继承记录（Spec 验收 5）——测试先红后绿；merge.py 只改 `_run_check`（加 db 参数记账）与 `_run`（合入通过后调 `checks.inherit`）
 - [x] Checkpoint 1（report）：检查账与快检查就位——本模块 20 个测试与合并、后台检查、轻任务等 76 个回归测试通过
 - [x] Task 4：六处通知措辞跟着开关走（Spec 验收 6、1）——测试先红（开关开时六处仍写完整检查）后绿；关着时原文不变，128 个回归测试通过
-- [ ] Task 5：`check baseline`、锁互挡、修基线任务、基线红提示（Spec 验收 7、8、9）
+- [x] Task 5：`check baseline`、锁互挡、修基线任务、基线红提示（Spec 验收 7、8、9）——测试先红后绿；合并锁的描述在基线检查时写「基线检查（集成分支 <短哈希>）」，合并的原措辞不变
 - [ ] Task 6：`change land` 提交前快检查（Spec 验收 10）
 - [ ] Task 7：最终验收附检查账（Spec 验收 11）
 - [ ] Task 8：`status` 的检查账（Spec 验收 12）

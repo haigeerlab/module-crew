@@ -204,12 +204,20 @@ def quick(cwd: str | os.PathLike, rerun: bool = False) -> Outcome:
     head = _git(top, "rev-parse", "HEAD").stdout.strip()
     out = check_tree(db, cfg, "quick", tree, top, role.name, head, rerun)
     if out.code == 5:
-        out.lines += baseline_hint(db, cfg)
+        out.lines += baseline_hint(db, cfg, top)
     return out
 
 
-def baseline_hint(db: store.Store, cfg: dict) -> list[str]:
-    return []
+def baseline_hint(db: store.Store, cfg: dict, cwd: Path) -> list[str]:
+    """Decision 3: a failing quick check points at a red integration baseline, so it is not recorded twice."""
+    branch = cfg.get("integrationBranch")
+    tree = _git(cwd, "rev-parse", f"refs/heads/{branch}^{{tree}}").stdout.strip() if branch else ""
+    rec = lookup(db, tree, "full", cfg["checkCommand"]) if tree else None
+    if rec is None or rec["result"] != "fail":
+        return []
+    task = open_fix_task(db)
+    return [f"集成基线 {tree[:7]} 的完整检查也是红的" + (f"（修基线任务 T{task}）" if task else "")
+            + "：先看失败是不是来自基线，是就不用另记、照常继续"]
 
 
 def show(cwd: str | os.PathLike, rev: str = "HEAD") -> tuple[int, list[dict]]:
@@ -225,10 +233,6 @@ def show(cwd: str | os.PathLike, rev: str = "HEAD") -> tuple[int, list[dict]]:
 def listing(db: store.Store, limit: int = 20) -> list[dict]:
     rows = sorted(store.records(db, "check").values(), key=lambda r: r.get("startedAt") or "", reverse=True)
     return rows[:limit]
-
-
-def baseline(project: str | os.PathLike, rerun: bool = False) -> Outcome:
-    return Outcome(3, ["基线检查还没实现"])
 
 
 def note_full(db: store.Store, cfg: dict, checkout: Path, exit_code: int, tail: str, started: str) -> None:
@@ -271,3 +275,100 @@ FULL_STEP = "跑完整检查"
 def after_sync(cfg: dict | None) -> str:
     """Decision 8: what a session runs after `module-crew sync`; unchanged while the switch is off."""
     return QUICK_STEP if enabled(cfg) else FULL_STEP
+
+
+def baseline(cwd: str | os.PathLike, rerun: bool = False) -> Outcome:
+    """`check baseline` (decisions 6, 7): the coordinator's one full check of the integration head, under the merge lock."""
+    from module_crew import hooks, mergelock, probe
+    cwd = Path(cwd)
+    try:
+        db = store.open_store(cwd)
+    except store.StoreError as exc:
+        return Outcome(3, [f"不在 module-crew 管理的仓库里：{exc}"])
+    cfg = store.get(db, "config", "main") or {}
+    if not enabled(cfg):
+        return Outcome(3, ["检查记账没打开（项目开关 checkLedger）：照今天的做法，完整检查只在 merge run 里跑"])
+    role = hooks.detect(cwd)
+    if role is None or role.kind != "coordinator":
+        return Outcome(3, ["check baseline 只在模块协调会话里跑（集成 checkout）"])
+    project = cwd
+    checkout = probe._checkout_of(project, cfg.get("integrationBranch", ""))
+    tree = clean_tree(checkout) if checkout else None
+    if tree is None:
+        return Outcome(3, ["集成分支所在的 checkout 不干净或集成分支没有被检出：没有跑基线检查"])
+    head = _git(checkout, "rev-parse", "HEAD").stdout.strip()
+    if not rerun and lookup(db, tree, "full", cfg["checkCommand"]):
+        out = check_tree(db, cfg, "full", tree, checkout, "baseline", head)
+        if out.code == 5:
+            task = open_fix_task(db)
+            out.lines.append(f"修基线任务 T{task} 还没结束" if task else "这次没有新跑，不建修基线任务")
+        return out
+    note = None
+    if mergelock.read(db) is not None or mergelock.locked(db):
+        reason, note = mergelock.guard(db, project)
+        if reason:
+            return Outcome(6, [reason])
+    lock = mergelock.acquire(db, None, f"基线检查（集成分支 {head[:7]}）")
+    if isinstance(lock, mergelock.Held):
+        return Outcome(6, [mergelock.describe(lock.info) + "，等它结束再做"])
+    try:
+        out = check_tree(db, cfg, "full", tree, checkout, "baseline", head, rerun=True)
+    finally:
+        mergelock.release(db, lock)
+    if note:
+        out.lines.insert(0, note)
+    if out.code == 5:
+        out.lines += fix_task(db, project, cfg, checkout, out.entry)
+    return out
+
+
+TASK_DONE = ("merged", "cancelled", "promoted")
+
+
+def open_fix_task(db: store.Store) -> int | None:
+    rows = [int(k) for k, t in store.records(db, "task").items() if t.get("baseline") and t.get("state") not in TASK_DONE]
+    return min(rows) if rows else None
+
+
+def _last_green(db: store.Store, cfg: dict, checkout: Path, head: str) -> str | None:
+    """The newest passing full check of an earlier integration commit (the head's ancestors only)."""
+    rows = sorted((r for r in store.records(db, "check").values()
+                   if r.get("kind") == "full" and r.get("result") == "pass" and r.get("commit")
+                   and r.get("command") == cfg["checkCommand"] and r["commit"] != head),
+                  key=lambda r: r.get("startedAt") or "", reverse=True)
+    for r in rows:
+        if _git(checkout, "merge-base", "--is-ancestor", r["commit"], head).returncode == 0:
+            return r["commit"]
+    return None
+
+
+def _switch_words(db: store.Store) -> str:
+    on = [e for e in store.events(db, kind="config") if (e.get("data") or {}).get(SWITCH) == "on"]
+    return (on[-1]["data"].get("original") or "") if on else ""
+
+
+def fix_task(db: store.Store, project: Path, cfg: dict, checkout: Path, entry: dict) -> list[str]:
+    """Decision 7: a newly red baseline gets one bug task, files taken from the last green baseline to here."""
+    from module_crew import tasks
+    task = open_fix_task(db)
+    if task:
+        return [f"修基线任务 T{task} 还没结束，不再建"]
+    head = entry["commit"]
+    green = _last_green(db, cfg, checkout, head)
+    files = [f for f in _git(checkout, "diff", "--name-only", green, head).stdout.splitlines() if f] if green else []
+    if not files:
+        return ["没有可比的绿基线（检查账里没有更早的完整检查通过记录）：请用户说明要修哪些文件后用 task add 建任务"]
+    hits = failed_lines(entry.get("tail") or "")
+    what = f"集成分支 {head[:7]} 的完整检查失败（退出码 {entry.get('exitCode')}）" + (f"：{'；'.join(hits)}" if hits else "")
+    original = f"（自动建立）依据项目开关 {SWITCH} 打开时的用户原话：{_switch_words(db)}"
+    try:
+        added = tasks.add(db, project, "bug", f"修基线：集成分支 {head[:7]} 完整检查失败", what, files,
+                          "集成分支上完整检查通过", original)
+    except tasks.TaskRefused as exc:
+        return [f"没有建修基线任务：{exc}"]
+    with db.transaction(actor="checks") as tx:
+        rec = tx.get("task", str(added.number))
+        tx.put("task", str(added.number), {**rec, "baseline": {"tree": entry["tree"], "commit": head}},
+               action="baseline-noted")
+    return [f"已建修基线任务 T{added.number}（{'可开' if added.state == 'ready' else '排队'}；预计改 {'、'.join(files)}），"
+            "照轻任务流程派出；告诉用户一次，不用各模块另记"]

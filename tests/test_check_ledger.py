@@ -1,7 +1,7 @@
 """crew-check-ledger: quick and full checks kept apart, results recorded per tree (see spec/crew-check-ledger.md)."""
 import unittest
 
-from helpers import MergeCase, git
+from helpers import PLUGIN_ROOT, MergeCase, git
 
 from module_crew import checks, merge, store
 
@@ -327,6 +327,134 @@ class WordingTest(LedgerCase):
             with self.subTest(name=name):
                 self.assertIn("完整检查", text)
                 self.assertNotIn("check quick", text)
+
+
+class BaselineTest(LedgerCase):
+    """Task 5 (Spec AC 7, 8, 9): one full check per baseline tree, the merge lock both ways, one fix task per red run."""
+
+    def setUp(self):
+        super().setUp()
+        from module_crew import hooks
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+
+    def baseline(self, *args):
+        return self.run_cli("check", "baseline", *args, cwd=self.repo)
+
+    def commit_main(self, *names):
+        for name in names:
+            (self.repo / name).write_text(f"{name}\n", encoding="utf-8")
+        git(self.repo, "add", *names)
+        git(self.repo, "commit", "-q", "-m", f"手动提交 {' '.join(names)}")
+        return git(self.repo, "rev-parse", "HEAD").strip()
+
+    def fix_tasks(self):
+        return {k: t for k, t in store.records(self.db, "task").items() if t.get("baseline")}
+
+    def red_switch(self):
+        self.switch_on(quick=self.counting_script("quick", fail_if="fail.flag"),
+                       full=self.counting_script("full", fail_if="fail.flag"))
+
+    def test_off_and_not_coordinator(self):
+        self.assertEqual(self.baseline().returncode, 3)
+        self.switch_on()
+        out = self.run_cli("check", "baseline", cwd=self.wt["b"])
+        self.assertEqual(out.returncode, 3, out.stdout + out.stderr)
+        self.assertEqual(self.calls("full"), 0)
+
+    def test_records_once(self):
+        self.switch_on()
+        out = self.baseline()
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        tree = git(self.repo, "rev-parse", "HEAD^{tree}").strip()
+        rec = store.get(self.db, "check", f"{tree}.full")
+        self.assertEqual((rec["result"], rec["by"]), ("pass", "baseline"))
+        self.assertEqual(self.baseline().returncode, 0)
+        self.assertEqual(self.calls("full"), 1)
+        self.assertEqual(self.baseline("--rerun").returncode, 0)
+        self.assertEqual(self.calls("full"), 2)
+
+    def test_merge_lock_held(self):
+        from module_crew import mergelock
+        self.switch_on()
+        lock = mergelock.acquire(self.db, 99, "b")
+        try:
+            out = self.baseline()
+            self.assertEqual(out.returncode, 6, out.stdout + out.stderr)
+            self.assertIn("合并 C99", out.stdout + out.stderr)
+        finally:
+            mergelock.release(self.db, lock)
+        self.assertEqual(self.calls("full"), 0)
+
+    def test_merge_refused_while_baseline_runs(self):
+        import subprocess, time
+        from module_crew import mergelock
+        slow = self.tmp / "slow.py"
+        slow.write_text("import time\ntime.sleep(4)\n", encoding="utf-8")
+        self.switch_on(full=f"python3 {slow}")
+        self.approve_final("b", 1)
+        child = subprocess.Popen([str(PLUGIN_ROOT / "bin" / "module-crew"), "check", "baseline"], cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            for _ in range(100):
+                if mergelock.read(self.db):
+                    break
+                time.sleep(0.05)
+            self.assertIn("基线检查", mergelock.describe(mergelock.read(self.db)))
+            res = merge.run(self.repo)
+            self.assertEqual(res.code, 6, res.lines)
+            self.assertIn("基线检查", res.lines[0])
+        finally:
+            out, err = child.communicate(timeout=60)
+        self.assertEqual(child.returncode, 0, out + err)
+        self.assertEqual(merge.run(self.repo).code, 0)
+
+    def test_red_baseline_makes_one_fix_task(self):
+        self.red_switch()
+        green = git(self.repo, "rev-parse", "HEAD").strip()
+        self.assertEqual(self.baseline().returncode, 0)
+        red = self.commit_main("fail.flag", "other.txt")
+        out = self.baseline()
+        self.assertEqual(out.returncode, 5, out.stdout + out.stderr)
+        [(n, t)] = self.fix_tasks().items()
+        self.assertIn(f"T{n}", out.stdout)
+        self.assertEqual(t["type"], "bug")
+        self.assertIn("修基线", t["title"])
+        self.assertIn("FAIL: test_value", t["what"])
+        self.assertEqual(sorted(t["expectedFiles"]), ["fail.flag", "other.txt"])
+        self.assertEqual(t["baseline"], {"tree": git(self.repo, "rev-parse", "HEAD^{tree}").strip(), "commit": red})
+        self.assertIn("checkLedger", t["original"])
+        self.assertIn("打开检查记账", t["original"])
+        self.assertNotEqual(green, red)
+        again = self.baseline()                       # the old record: no rerun, no second task
+        self.assertEqual(again.returncode, 5)
+        self.assertIn(f"T{n}", again.stdout)
+        self.commit_main("more.txt")                   # a new red tree while the fix task is still open
+        third = self.baseline()
+        self.assertEqual(third.returncode, 5)
+        self.assertIn(f"T{n}", third.stdout)
+        self.assertEqual(len(self.fix_tasks()), 1)
+        self.assertEqual(self.calls("full"), 3)
+
+    def test_no_green_baseline_no_task(self):
+        self.red_switch()
+        self.commit_main("fail.flag")
+        out = self.baseline()
+        self.assertEqual(out.returncode, 5, out.stdout + out.stderr)
+        self.assertIn("没有可比的绿基线", out.stdout)
+        self.assertEqual(self.fix_tasks(), {})
+
+    def test_quick_failure_mentions_red_baseline(self):
+        self.red_switch()
+        self.baseline()
+        self.commit_main("fail.flag")
+        self.baseline()
+        [n] = self.fix_tasks()
+        f = self.wt["b"] / "fail.flag"
+        f.write_text("", encoding="utf-8")
+        git(self.wt["b"], "add", "-A")
+        git(self.wt["b"], "commit", "-q", "-m", "b: red")
+        out = self.run_cli("check", "quick", cwd=self.wt["b"])
+        self.assertEqual(out.returncode, 5, out.stdout + out.stderr)
+        self.assertIn(f"修基线任务 T{n}", out.stdout)
 
 
 if __name__ == "__main__":

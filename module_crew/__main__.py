@@ -138,7 +138,8 @@ def _status(as_json: bool) -> int:
     lock = (report.store or {}).get("mergeLock")
     if lock:
         took = f"已跑 {lock['minutes']} 分钟" if lock["minutes"] is not None else "开始时间读不出"
-        print(f"  合并 C{lock['approval']}（{lock['unit']}）" + ("的锁已失效（进程不在了；下一个写命令会在集成 checkout 干净时清掉）"
+        from module_crew import mergelock
+        print(f"  {mergelock.what(lock)}" + ("的锁已失效（进程不在了；下一个写命令会在集成 checkout 干净时清掉）"
               if lock["stale"] else f"正在后台跑（{took}）：别的写命令会被挡住，等它结束"))
     unq = (report.store or {}).get("unqueued")
     if unq and unq["missingSeen"]:
