@@ -14,8 +14,15 @@ SWITCH = "declaredScope"
 
 
 def enabled(db: store.Store | None) -> bool:
-    """Decision 1: the project switch, off unless the user turned it on."""
-    return db is not None and (store.get(db, "config", "main") or {}).get(SWITCH) == "on"
+    """Decision 1: the project switch, off unless the user turned it on. crew-autonomy-tier decision 5: never set,
+    it follows the effective autonomy tier (standard and above); a switch the user set always wins."""
+    if db is None:
+        return False
+    switch = (store.get(db, "config", "main") or {}).get(SWITCH)
+    if switch in ("on", "off"):
+        return switch == "on"
+    from module_crew import autonomy
+    return autonomy.rank(autonomy.effective(db, autonomy.project_of(db)).value) >= autonomy.rank("standard")
 
 
 @dataclass

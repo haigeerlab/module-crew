@@ -8,9 +8,10 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from helpers import ReviewCase, git
+from helpers import ReviewCase, StartCase, git
 
-from module_crew import autonomy, store
+from module_crew import autonomy, declared, start, store
+from test_declared_scope import DeclaredMixin, request, usable
 
 READ_FROM = ("python3 -B hooks/project_config.py show --project <project-root> --format json: the item whose key is "
              "autonomyTier, with value and source")
@@ -187,6 +188,73 @@ class PreflightTest(TierMixin, ReviewCase):
         code, out = self.cli("tier", "--preflight")
         self.assertEqual(code, 0)
         self.assertIn("Codex 那边的 spec-guard 版本 module-crew 查不到", out)
+
+
+def cap(db, to: str, configured: str):
+    """Pretend an incident lowered the tier to `to` while `configured` was set."""
+    with db.transaction(actor="test") as tx:
+        cfg = tx.get("config", "main")
+        tx.put("config", "main", {**cfg, "autonomy": {"cap": to, "capFor": configured}}, action="tier-lowered")
+
+
+class StandardTest(TierMixin, DeclaredMixin, ReviewCase):
+    """Acceptance 4 and the cadence part of 6."""
+
+    def test_declared_scope_follows_the_tier_unless_set(self):
+        self.with_declared({"b": usable()})
+        self.with_tier()
+        db = self.db()
+        self.assertFalse(declared.enabled(db))                     # tier unset
+        self.set_tier("strict")
+        self.assertFalse(declared.enabled(db))
+        self.set_tier("standard", "combined")
+        self.assertTrue(declared.enabled(db))
+        from module_crew import changes
+        out = changes.add(db, request(["config/app.json"]), "shop-b", 1)
+        self.assertIs(store.get(db, "request", str(out.number))["declared"], True)
+        self.switch("off")
+        self.assertFalse(declared.enabled(db))                     # the user's own switch wins
+        self.switch("on")
+        self.set_tier(None)
+        self.assertTrue(declared.enabled(db))
+
+    def test_combined_cadence_and_the_hint(self):
+        self.with_tier()
+        self.set_tier("standard", "combined")
+        self.assertEqual(start.review_cadence(self.repo), "combined")
+        code, out = self.cli("tier")
+        self.assertNotIn("reviewCadence 是 separate", out)
+        self.set_tier("standard", "separate")
+        self.assertEqual(start.review_cadence(self.repo), "separate")
+        code, out = self.cli("tier", "--json")
+        doc = json.loads(out)
+        self.assertEqual(doc["cadence"], "separate")
+        self.assertIn("档位 standard 要 Spec 与 Plan 一起审，但 reviewCadence 是 separate", doc["cadenceHint"])
+
+    def test_cap_to_strict_reads_as_separate(self):
+        self.with_tier()
+        self.set_tier("standard", "combined")
+        cap(self.db(), "strict", "standard")
+        value, source, _ = start.cadence_info(self.repo)
+        self.assertEqual(value, "separate")
+        self.assertIn("降到 strict", source)
+        self.set_tier("strict", "combined")                        # the user said something new: cap cleared
+        self.assertEqual(start.review_cadence(self.repo), "combined")
+
+
+class StandardKickoffTest(TierMixin, StartCase):
+    def kickoff(self, module):
+        res = start.prepare(self.repo, [module], f"开 {module}", short="shop", max_modules=3)
+        assert res.code == 0, res.lines
+        return store.read_body(store.open_store(self.repo), res.prepared[0]["kickoff"])
+
+    def test_kickoff_cadence(self):
+        self.with_tier()
+        self.set_tier("standard", "combined")
+        git(self.repo, "commit", "-qam", "tier")
+        self.assertIn("项目评审节奏：combined", self.kickoff("b"))
+        cap(store.open_store(self.repo), "strict", "standard")
+        self.assertIn("项目评审节奏：separate", self.kickoff("c"))
 
 
 if __name__ == "__main__":

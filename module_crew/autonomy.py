@@ -199,7 +199,21 @@ def report(db: store.Store, project: str | os.PathLike) -> tuple[dict, list[str]
     doc = {"configured": {"value": t.value, "source": t.source, "usable": t.usable, "reason": t.reason},
            "explicit": eff.explicit, "cap": eff.cap, "effective": eff.value, "cadence": None, "cadenceHint": None,
            "evidence": [], "suggest": None}
-    return doc, [describe(eff)]
+    lines = [describe(eff)]
+    if eff.active:
+        from module_crew import start
+        doc["cadence"] = start.review_cadence(project)
+        doc["cadenceHint"] = cadence_hint(eff, doc["cadence"])
+        lines += [doc["cadenceHint"]] if doc["cadenceHint"] else []
+    return doc, lines
+
+
+def cadence_hint(eff: Effective, cadence: str) -> str | None:
+    """Decision 4: spec-guard does not link reviewCadence to the tier; module-crew only points it out."""
+    if rank(eff.value) >= rank("standard") and cadence != "combined":
+        return (f"档位 {eff.value} 要 Spec 与 Plan 一起审，但 reviewCadence 是 {cadence}："
+                "请用户确认后用 /spec-guard:config 设成 combined（在那之前照 separate 交审）")
+    return None
 
 
 def _version(text: str | None) -> tuple[int, ...] | None:
@@ -233,3 +247,55 @@ def preflight(db: store.Store, project: str | os.PathLike) -> tuple[int, list[st
     return 0, [f"可以写 autonomyTier：本机 spec-guard {found.version}，接口有 autonomyTier。"
                "引用用户原话后用 /spec-guard:config 写入；要设 standard 或 relaxed 时同一句原话里一并设 reviewCadence=combined，"
                "写完把 .agent/config.json 单独提交", *note]
+
+
+INCIDENT_NAMES = {"merge-returned": "合并因模块的原因退回", "revoked": "用户撤销合并批准",
+                  "rework-over-limit": "返工满 3 次", "baseline-red": "基线完整检查新跑出失败"}
+
+
+def incident(db: store.Store, project: str | os.PathLike, kind: str, ref: str, reason: str = "") -> str | None:
+    """Decision 8: one step down per incident (never below strict, never twice for the same item); the line the
+    calling command prints so the coordinator tells the user at once. Errors only cost the line, never the caller."""
+    try:
+        eff = effective(db, project)
+        if eff.value == "strict":
+            return None
+        key = f"{kind}:{ref}"
+        new = _lower(eff.value)
+        what = INCIDENT_NAMES.get(kind, kind) + (f"（{reason}）" if reason else "")
+        with db.transaction(actor="autonomy") as tx:
+            rec = _state(tx)
+            if key in (rec.get("incidentKeys") or []):
+                return None
+            rec.update(cap=new, capFor=eff.configured.value, seen=new, seenAt=store.now(),
+                       incident={"kind": kind, "key": key, "reason": what, "at": store.now()},
+                       incidentKeys=((rec.get("incidentKeys") or []) + [key])[-50:])
+            _put(tx, rec, "tier-lowered", {"from": eff.value, "to": new, "kind": kind, "key": key, "reason": what})
+    except (store.StoreError, OSError) as exc:
+        return f"自治档位没能降档（{exc}）：请告诉用户，由用户决定是否用 /spec-guard:config 调低档位"
+    return f"自治档位已从 {eff.value} 降到 {new}：{what}。马上告诉用户；恢复要用户原话（module-crew tier restore）"
+
+
+class Refused(Exception):
+    pass
+
+
+def restore(db: store.Store, project: str | os.PathLike, original: str | None) -> list[str]:
+    """Decision 3: one step back up toward the configured tier, on the user's words."""
+    if not original or not original.strip():
+        raise Refused("用户原话不能为空：恢复降档要用户明确说")
+    eff = effective(db, project)
+    if not eff.cap:
+        raise Refused("现在没有降档上限：要升到设的档位以上，先 module-crew tier --preflight，再引用用户原话用 /spec-guard:config")
+    up = _higher(eff.cap)
+    with db.transaction(actor="coordinator") as tx:
+        rec = _state(tx)
+        if rank(up) >= rank(eff.configured.value):
+            rec.pop("cap", None)
+            rec.pop("capFor", None)
+            up = eff.configured.value
+        else:
+            rec["cap"] = up
+        rec.update(seen=up, seenAt=store.now())
+        _put(tx, rec, "tier-restored", {"from": eff.value, "to": up, "original": original, **store.source_field()})
+    return [f"自治档位已从 {eff.value} 恢复到 {up}" + ("（已回到设的档位，降档上限清掉）" if up == eff.configured.value else "")]
