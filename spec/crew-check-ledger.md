@@ -1,6 +1,6 @@
 # Spec: crew-check-ledger
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 30e5acf4cb33 -->
 
 > 能力图模块 `crew-check-ledger`（第十版第 2 个）。需求来源：已批方案 plugin-ecosystem `proposals/2026-10-24-S32-并行流畅与额度外包.md`（612634c，用户 2026-10-24 批准「按推荐批准」）第二节 module-crew 第 3、4 条，第三节守门；
 > 方案第五节决定 3：快检查命令由项目自己写成脚本。开会话依据：用户批准事项 C201。
