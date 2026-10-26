@@ -864,6 +864,8 @@ def _merge(args) -> int:
         else:
             print(f"已撤回合并批准 C{args.number}；交审已被 C{note.superseded_by} 取代，不重开")
         print(f"发送 撤销批准通知 → {note.to}，正文文件：{note.path}")
+        if note.tier_line:
+            print(note.tier_line)
         _sent(note.to)
         return 0
     if args.action == "tick":
@@ -984,7 +986,16 @@ def _tier(args) -> int:
             code, lines = autonomy.preflight(db, ".")
             print("\n".join(lines))
             return code
+        if args.action == "restore":
+            original = _original(args.original, args.original_file)
+            if original is None:
+                return 2
+            print("\n".join(autonomy.restore(db, ".", original)))
+            return 0
         doc, lines = autonomy.report(db, ".")
+    except autonomy.Refused as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 3
     except store.StoreError as exc:
         print(f"❌ {exc}", file=sys.stderr)
         return 2

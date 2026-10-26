@@ -8,9 +8,9 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from helpers import ReviewCase, StartCase, git
+from helpers import MergeCase, ReviewCase, StartCase, git
 
-from module_crew import autonomy, declared, start, store
+from module_crew import autonomy, declared, merge, review, sources, start, store
 from test_declared_scope import DeclaredMixin, request, usable
 
 READ_FROM = ("python3 -B hooks/project_config.py show --project <project-root> --format json: the item whose key is "
@@ -255,6 +255,120 @@ class StandardKickoffTest(TierMixin, StartCase):
         self.assertIn("项目评审节奏：combined", self.kickoff("b"))
         cap(store.open_store(self.repo), "strict", "standard")
         self.assertIn("项目评审节奏：separate", self.kickoff("c"))
+
+
+class IncidentBase(TierMixin, MergeCase):
+    def setUp(self):
+        super().setUp()
+        self.with_tier()
+        self.set_tier("relaxed", "combined")
+        git(self.repo, "commit", "-qam", "tier relaxed")
+        self.db = store.open_store(self.repo)
+
+    def lowered(self):
+        return [e for e in autonomy.marks(self.db) if e["type"] == "config.tier-lowered"]
+
+    def effective(self):
+        return autonomy.effective(self.db, self.repo).value
+
+
+class IncidentTest(IncidentBase):
+    """Acceptance 6 and 7."""
+
+    def test_merge_returned_lowers_one_step_once(self):
+        n = self.approve_final("b", 1)
+        res = merge.run(self.repo, check_command=self.check_script(fail_if="src/b.py"))
+        self.assertEqual(res.code, 5)
+        text = "\n".join(res.lines)
+        self.assertIn("自治档位已从 relaxed 降到 standard：合并因模块的原因退回", text)
+        self.assertIn("马上告诉用户", text)
+        self.assertEqual(self.effective(), "standard")
+        self.assertEqual(autonomy.incident(self.db, self.repo, "merge-returned", str(n)), None)   # same item: once
+        self.assertEqual(len(self.lowered()), 1)
+
+    def test_env_return_does_not_lower(self):
+        self.approve_final("b", 1)
+        res = merge.run(self.repo, check_command=self.check_script(sleep=3))
+        self.assertNotIn("自治档位", "\n".join(res.lines))
+        self.assertEqual(self.effective(), "relaxed")
+
+    def test_revoke_lowers(self):
+        n = self.approve_final("b", 1)
+        note = merge.revoke(self.db, n, "撤回")
+        self.assertIn("降到 standard：用户撤销合并批准", note.tier_line)
+
+    def test_down_to_strict_then_nothing(self):
+        self.assertIsNotNone(autonomy.incident(self.db, self.repo, "baseline-red", "t1"))
+        self.assertIsNotNone(autonomy.incident(self.db, self.repo, "baseline-red", "t2"))
+        self.assertEqual(self.effective(), "strict")
+        self.assertIsNone(autonomy.incident(self.db, self.repo, "baseline-red", "t3"))
+        self.assertEqual(len(self.lowered()), 2)
+        self.assertEqual(start.review_cadence(self.repo), "separate")
+
+    def test_restore(self):
+        with self.assertRaises(autonomy.Refused):
+            autonomy.restore(self.db, self.repo, "恢复")              # no cap yet
+        autonomy.incident(self.db, self.repo, "revoked", "1")
+        autonomy.incident(self.db, self.repo, "revoked", "2")
+        with self.assertRaises(autonomy.Refused):
+            autonomy.restore(self.db, self.repo, " ")
+        self.assertIn("恢复到 standard", autonomy.restore(self.db, self.repo, "恢复一档")[0])
+        self.assertEqual(self.effective(), "standard")
+        self.assertIn("降档上限清掉", autonomy.restore(self.db, self.repo, "再恢复")[0])
+        self.assertEqual((self.effective(), autonomy.state(self.db).get("cap")), ("relaxed", None))
+        restored = [e for e in autonomy.marks(self.db) if e["type"] == "config.tier-restored"]
+        self.assertEqual(restored[0]["data"]["original"], "恢复一档")
+
+    def test_restore_cli_needs_words(self):
+        autonomy.incident(self.db, self.repo, "revoked", "1")
+        code, _ = self.cli("tier", "restore", "--original", " ")
+        self.assertEqual(code, 3)
+        code, out = self.cli("tier", "restore", "--original", "恢复")
+        self.assertEqual(code, 0)
+        self.assertIn("恢复到 relaxed", out)
+
+    def test_strict_tier_never_lowers(self):
+        self.set_tier("strict")
+        self.assertIsNone(autonomy.incident(self.db, self.repo, "revoked", "9"))
+
+
+class ReworkIncidentTest(IncidentBase):
+    def test_rework_over_limit_lowers(self):
+        from test_review_nearby import CHANGES, conclusion
+        sources.add(self.db, "arch", "lead", "登记审查会话", scope=sources.ALL_SCOPE)
+        rid = 5000
+
+        def submit():
+            nonlocal rid
+            rid += 1
+            return review.add(self.db, self.spec_review("b"), "shop-b", rid).number
+        n = submit()
+        for _ in range(3):
+            review.note(self.db, n, "arch", conclusion("有须修改项2条", CHANGES))
+            n = submit()
+        res = review.note(self.db, n, "arch", conclusion("有须修改项2条", CHANGES))
+        self.assertIn("降到 standard：返工满 3 次", "\n".join(res.lines))
+
+
+class BaselineIncidentTest(TierMixin, MergeCase):
+    def test_new_red_baseline_lowers_old_record_does_not(self):
+        import test_check_ledger as tcl
+        from module_crew import hooks
+        self.with_tier()
+        self.set_tier("relaxed", "combined")
+        git(self.repo, "commit", "-qam", "tier relaxed")
+        ledger = tcl.BaselineTest.__new__(tcl.BaselineTest)        # borrow its helpers on this repo
+        ledger.__dict__.update(self.__dict__)
+        ledger.db = store.open_store(self.repo)
+        hooks.bind(ledger.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+        ledger.red_switch()
+        ledger.commit_main("fail.flag")
+        out = ledger.baseline()
+        self.assertEqual(out.returncode, 5, out.stdout + out.stderr)
+        self.assertIn("自治档位已从 relaxed 降到 standard：基线完整检查新跑出失败", out.stdout)
+        out = ledger.baseline()                                    # the recorded failure, not a new run
+        self.assertNotIn("自治档位", out.stdout)
+        self.assertEqual(autonomy.effective(ledger.db, self.repo).value, "standard")
 
 
 if __name__ == "__main__":

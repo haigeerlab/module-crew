@@ -319,6 +319,9 @@ def baseline(cwd: str | os.PathLike, rerun: bool = False) -> Outcome:
         out.lines.insert(0, note)
     if out.code == 5:
         out.lines += fix_task(db, project, cfg, checkout, out.entry)
+        from module_crew import autonomy          # crew-autonomy-tier decision 8: a newly red baseline
+        line = autonomy.incident(db, project, "baseline-red", tree, f"集成分支 {head[:7]}")
+        out.lines += [line] if line else []
     return out
 
 
