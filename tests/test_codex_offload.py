@@ -24,6 +24,9 @@ SCOPE_COMMAND = ["python3", "-B", "hooks/module_scope.py", "check", "--project",
 # spec and tasks own, anything else outside). FAKE_SCOPE_CODE forces an exit code.
 FAKE_SCOPE = '''import json, os, subprocess, sys
 a = sys.argv[1:]
+if a[0] == "declared":
+    print(os.environ.get("FAKE_DECLARED_JSON", '{"declared": false}'))
+    sys.exit(0)
 if os.environ.get("FAKE_SCOPE_CODE"):
     sys.exit(int(os.environ["FAKE_SCOPE_CODE"]))
 root, module, base = a[a.index("--project") + 1], a[a.index("--module") + 1], a[a.index("--base") + 1]
@@ -58,7 +61,7 @@ class OffloadCase(MergeCase):
         doc["scopeCheck"] = {"command": SCOPE_COMMAND}
         (root / "interface.json").write_text(json.dumps(doc))
         (root / "hooks" / "module_scope.py").write_text(FAKE_SCOPE)
-        self.addCleanup(lambda: os.environ.pop("FAKE_SCOPE_CODE", None))
+        self.addCleanup(lambda: [os.environ.pop(k, None) for k in ("FAKE_SCOPE_CODE", "FAKE_DECLARED_JSON")])
         self.codex_home = self.tmp / "codex-home"
         self.codex_home.mkdir()
         old = os.environ.get("CODEX_HOME")
@@ -69,7 +72,7 @@ class OffloadCase(MergeCase):
         self.quick.write_text(
             "import os, sys\n"
             f"open({str(self.quick_calls)!r}, 'a').write('x')\n"
-            "sys.exit(1 if os.path.exists('BROKEN') else 0)\n", encoding="utf-8")
+            "sys.exit(1 if os.path.exists('src/BROKEN.py') else 0)\n", encoding="utf-8")
         self.db = store.open_store(self.repo)
         with self.db.transaction(actor="test") as tx:
             cfg = dict(tx.get("config", "main") or {})
@@ -348,6 +351,157 @@ class StartTest(OffloadCase):
         out = self.run_cli("offload", "start", "b")
         self.assertEqual(out.returncode, 0, out.stderr + out.stdout)
         self.assertIn("/delegate:run --write --resumable", out.stdout)
+
+
+
+DONE = "改好了\ndelegate: run_id=r1 status=done resumable=true\n"
+
+
+class SettleCase(OffloadCase):
+    def codex(self, files: dict | None = None, tick=("Task 2",), output: str = DONE, code: int = 0) -> offload.Outcome:
+        """Pretend Codex changed files (None deletes) and ticked items, then settle what delegate printed."""
+        wt = self.wt["b"]
+        for rel, text in (files if files is not None else {"src/page.py": "PAGE = 1\n"}).items():
+            if text is None:
+                (wt / rel).unlink()
+            else:
+                (wt / rel).parent.mkdir(parents=True, exist_ok=True)
+                (wt / rel).write_text(text, encoding="utf-8")
+        todo = wt / "tasks" / "b" / "todo.md"
+        body = todo.read_text(encoding="utf-8")
+        for name in tick:
+            body = body.replace(f"- [ ] {name}", f"- [x] {name}")
+        todo.write_text(body, encoding="utf-8")
+        out = self.tmp / "delegate.out"
+        out.write_text(output, encoding="utf-8")
+        return offload.settle(self.repo, "b", out, code)
+
+    def head(self) -> str:
+        return git(self.wt["b"], "rev-parse", "HEAD").strip()
+
+    def rec(self) -> dict:
+        return store.get(store.open_store(self.repo), "offload", "b")
+
+
+class DoneTest(SettleCase):
+    """Acceptance 6."""
+
+    def test_commits_for_codex(self):
+        self.started(TODO)
+        before = self.head()
+        out = self.codex()
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertNotEqual(self.head(), before)
+        subject = git(self.wt["b"], "log", "-1", "--format=%s")
+        self.assertIn("Task 2", subject)
+        self.assertIn("r1", subject)
+        self.assertEqual(git(self.wt["b"], "status", "--porcelain").strip(), "")
+        changed = git(self.wt["b"], "diff", "--name-only", before, "HEAD").split()
+        self.assertEqual(sorted(changed), ["src/page.py", "tasks/b/todo.md"])
+        rec = self.rec()
+        self.assertEqual(rec["state"], "idle")
+        self.assertEqual(rec["runs"][-1]["commit"], self.head())
+        self.assertEqual(rec["runs"][-1]["runId"], "r1")
+        ledger = [r for r in store.records(store.open_store(self.repo), "check").values() if r.get("by") == "offload"]
+        self.assertEqual([r["result"] for r in ledger], ["pass"])
+        self.assertEqual(self.quick_count(), 1)
+        self.assertIn("offload handback b", "\n".join(out.lines))     # next item is a checkpoint
+
+    def test_next_task_is_started_next(self):
+        self.started(TODO.replace("- [ ] Checkpoint 1", "- [ ] Task 3：做接口\n- [ ] Checkpoint 1"))
+        out = self.codex()
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertIn("offload start b", "\n".join(out.lines))
+
+    def assert_stopped(self, out, words: str):
+        self.assertEqual(out.code, 5, out.lines)
+        self.assertIn(words, "\n".join(out.lines))
+        rec = self.rec()
+        self.assertEqual(rec["state"], "stopped")
+        self.assertIn(words, rec["runs"][-1]["reason"])
+        draft = "\n".join(out.lines[out.lines.index("【等待用户】"):])
+        from module_crew import protocol
+        msg = protocol.parse(draft)
+        self.assertEqual(msg.kind, "wait-user", msg)
+        self.assertFalse(msg.problems, msg.problems)
+
+    def test_outside_file(self):
+        self.started(TODO)
+        before = self.head()
+        out = self.codex({"src/page.py": "PAGE = 1\n", "README.md": "changed\n"})
+        self.assert_stopped(out, "README.md")
+        self.assertEqual(self.head(), before)
+        self.assertEqual((self.wt["b"] / "README.md").read_text(), "changed\n")
+        self.assertEqual(self.quick_count(), 0)
+
+    def test_deletion_is_outside(self):
+        (self.wt["b"] / "src").mkdir(exist_ok=True)
+        (self.wt["b"] / "src" / "old.py").write_text("OLD = 1\n")
+        git(self.wt["b"], "add", "-A")
+        git(self.wt["b"], "commit", "-qm", "b: old")
+        self.started(TODO)
+        before = self.head()
+        out = self.codex({"src/old.py": None})
+        self.assert_stopped(out, "src/old.py")
+        self.assertEqual(self.head(), before)
+
+    def test_not_ticked(self):
+        self.started(TODO)
+        out = self.codex(tick=())
+        self.assert_stopped(out, "没勾")
+
+    def test_ticked_other_item(self):
+        self.started(TODO)
+        out = self.codex(tick=("Task 2", "Checkpoint 1"))
+        self.assert_stopped(out, "Checkpoint 1")
+
+    def test_quick_check_fails(self):
+        self.started(TODO)
+        before = self.head()
+        out = self.codex({"src/page.py": "PAGE = 1\n", "src/BROKEN.py": "x\n"})
+        self.assert_stopped(out, "快检查")
+        self.assertEqual(self.head(), before)
+        self.assertTrue((self.wt["b"] / "src" / "BROKEN.py").exists())
+
+    def test_declared_file_is_inside(self):
+        root = Path(self.plugins.entries["spec-guard@m"][-1]["installPath"])
+        doc = json.loads((root / "interface.json").read_text())
+        doc["declaredScope"] = {"command": ["python3", "-B", "hooks/module_scope.py", "declared", "--project",
+                                            "<project-root>", "--module", "<module-id>"]}
+        (root / "interface.json").write_text(json.dumps(doc))
+        os.environ["FAKE_DECLARED_JSON"] = json.dumps({"module": "b", "planApproved": True, "approvedCommit": "abc",
+                                                       "declared": True, "publicPaths": ["config/app.json"],
+                                                       "dependencies": [], "configs": [], "patches": []})
+        self.set_cfg(declaredScope="on")
+        self.started(TODO)
+        out = self.codex({"src/page.py": "PAGE = 1\n", "config/app.json": "{}\n"})
+        self.assertEqual(out.code, 0, out.lines)
+
+    def test_scope_check_unusable(self):
+        self.started(TODO)
+        os.environ["FAKE_SCOPE_CODE"] = "4"
+        out = self.codex()
+        self.assert_stopped(out, "scopeCheck")
+
+    def test_not_running(self):
+        self.switch_on()
+        self.approve_b(TODO)
+        out = self.tmp / "delegate.out"
+        out.write_text(DONE)
+        res = offload.settle(self.repo, "b", out, 0)
+        self.assertEqual(res.code, 3)
+
+    def test_cli(self):
+        self.started(TODO)
+        (self.wt["b"] / "src").mkdir(exist_ok=True)
+        (self.wt["b"] / "src" / "page.py").write_text("PAGE = 1\n")
+        todo = self.wt["b"] / "tasks" / "b" / "todo.md"
+        todo.write_text(todo.read_text().replace("- [ ] Task 2", "- [x] Task 2"))
+        out = self.tmp / "delegate.out"
+        out.write_text(DONE)
+        res = self.run_cli("offload", "settle", "b", "--output", str(out), "--exit", "0")
+        self.assertEqual(res.returncode, 0, res.stderr + res.stdout)
+
 
 
 if __name__ == "__main__":

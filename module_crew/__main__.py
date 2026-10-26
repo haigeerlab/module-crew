@@ -440,6 +440,8 @@ def _offload(args) -> int:
             return 3
         out = offload.start(Path.cwd(), args.module, again=args.again,
                             answer={"original": original, **store.source_field()} if args.again else None)
+    elif args.action == "settle":
+        out = offload.settle(Path.cwd(), args.module, args.output, args.exit_code)
     else:
         print(f"❌ offload {args.action} 还没实现", file=sys.stderr)
         return 2

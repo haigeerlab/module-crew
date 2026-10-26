@@ -8,6 +8,7 @@ module-crew never runs delegate itself (its scripts are not an interface): `star
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -286,3 +287,167 @@ def start(project: str | os.PathLike, module: str, again: bool = False, answer: 
         f'  /delegate:run --write --resumable -- "$(cat {brief})"',
         f"跑完：module-crew offload settle {module} --output {out} --exit <退出码>",
     ])
+
+
+# ------------------------------------------------------------------ settle (decisions 6 to 9)
+
+def _coordinator_name(db: store.Store) -> str:
+    return next((n for n, r in store.records(db, "session").items()
+                 if r.get("role") == "coordinator" and r.get("status") == "active"), "模块协调")
+
+
+def draft(db: store.Store, module: str, decide: str, happened: str, options: list[tuple[str, str, str]]) -> list[str]:
+    """A 【等待用户】 (v2.3 卡住选做法) for the coordinator to send on; options are (label, text, effect), first recommended."""
+    lines = ["【等待用户】", "结束：无", f"来自：{_coordinator_name(db)}", f"要你决定：{decide}", "要点：",
+             f"出了什么事：{happened}", f"模块：{module}", "类型：卡住选做法", "选项与我的建议："]
+    for i, (label, text, effect) in enumerate(options):
+        lines += [f"{'推荐 ' if i == 0 else ''}{label}：{text}", f"  选了会怎样：{effect}"]
+    lines += [f"你该回：{options[0][0]}", "是否完全停住：是"]
+    return lines
+
+
+AGAIN = ("A", "重派：在现有改动上让 Codex 接着做这一项", "用户答复后运行 offload start <模块> --again --original-file <答复>，再执行它给出的 /delegate:run")
+BACK = ("B", "交还模块会话自己做", "运行 offload handback <模块>，模块会话按 Plan 接着做，之后不再外包这个模块")
+HOLD = ("C", "先停，我自己看", "什么都不动，改动留在模块 worktree")
+
+
+def _options(module: str, *opts: tuple[str, str, str]) -> list[tuple[str, str, str]]:
+    return [(a, b, c.replace("<模块>", module)) for a, b, c in opts]
+
+
+def _finish(db: store.Store, module: str, state: str, **run: object) -> dict:
+    with db.transaction(actor="coordinator") as tx:
+        rec = dict(tx.get("offload", module))
+        runs = list(rec.get("runs") or [])
+        runs[-1] = {**runs[-1], "settledAt": _now(), **run}
+        rec.update(state=state, runs=runs)
+        tx.put("offload", module, rec, action="settled", data={"state": state})
+    return rec
+
+
+def _stop(db: store.Store, module: str, task: str, reason: str, detail: list[str], **run: object) -> Outcome:
+    _finish(db, module, "stopped", reason=reason, **run)
+    head = [f"外包停下，没有提交、没有回滚（改动原样留在模块 worktree）：{reason}"] + detail
+    return Outcome(5, head + ["", "把下面这份【等待用户】交用户决定（有决策收件箱就照现有规则转给它）：", ""]
+                   + draft(db, module, f"{module} 的外包停在 {task}，下一步怎么办", f"{reason}"
+                           + ("（" + "；".join(x.strip() for x in detail if x.strip())[:300] + "）" if detail else ""),
+                           _options(module, AGAIN, BACK, HOLD)))
+
+
+def _tick_problem(base_todo: str, now_todo: str, task: str) -> str | None:
+    """Decision 6 ①: this Task ticked and no other item's state changed; item texts may change."""
+    before, after = items(base_todo), items(now_todo)
+    if len(before) != len(after):
+        return f"todo 的条目数变了（{len(before)} → {len(after)}），认不出做完了哪一项"
+    for (was, text), (now, _) in zip(before, after):
+        if text == task:
+            if not now:
+                return f"todo 里 {task} 没勾，没认出做完（可能漏写了 NEED_USER:）"
+        elif was != now:
+            return f"todo 里别的条目的勾选变了：{text}"
+    return None
+
+
+def _scope(db: store.Store, project: Path, worktree: Path, module: str, base: str) -> tuple[list[str], list[str]] | str:
+    """Decision 6 ②: (changed files, files outside the module's scope), or why scopeCheck could not tell."""
+    got = _spec_guard(project)
+    if isinstance(got, str):
+        return got
+    found, doc = got
+    cmd = probe.safe_command(found.root, doc, "scopeCheck", {"<project-root>": str(worktree), "<module-id>": module,
+                                                             "<base-ref>": base})
+    if isinstance(cmd, str):
+        return cmd
+    try:
+        ran = subprocess.run(cmd, cwd=found.root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT * 3)
+        result = json.loads(ran.stdout) if ran.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+        return f"scopeCheck 没跑成（{exc}）"
+    if not isinstance(result, dict) or not isinstance(result.get("files"), list):
+        return f"scopeCheck 退出码 {ran.returncode}：{(ran.stderr or ran.stdout).strip()[:200]}"
+    decl = None
+    from module_crew import declared
+    if declared.enabled(db):
+        decl = declared.read(project, module)
+    changed, outside = [], []
+    for f in result["files"]:
+        path, status, scope = f.get("path"), f.get("status"), f.get("scope")
+        changed.append(path)
+        if status == "D":
+            outside.append(f"{path}（删除）")
+        elif scope not in ("exclusive", "own") and not (decl is not None and decl.inside(path)):
+            outside.append(path)
+    return changed, outside
+
+
+def _settle_done(db: store.Store, project: Path, rec: dict, result: Result, exit_code: int) -> Outcome:
+    module, task, worktree, base = rec["module"], rec["task"], Path(rec["worktree"]), rec["base"]
+    run = {"exit": exit_code, "status": result.status, "runId": result.run_id}
+    rel = f"tasks/{module}/todo.md"
+    base_todo = _git(worktree, "show", f"{base}:{rel}").stdout
+    try:
+        now_todo = (worktree / rel).read_text(encoding="utf-8")
+    except OSError as exc:
+        return _stop(db, module, task, f"读不出 {rel}：{exc}", [], **run)
+    why = _tick_problem(base_todo, now_todo, task)
+    if why:
+        return _stop(db, module, task, why, [], **run)
+    scoped = _scope(db, project, worktree, module, base)
+    if isinstance(scoped, str):
+        return _stop(db, module, task, f"核对不了改动范围（scopeCheck）：{scoped}", [], **run)
+    changed, outside = scoped
+    if outside:
+        return _stop(db, module, task, "有越界文件：" + "、".join(outside), [], **run)
+    add = _git(worktree, "add", "-A", "--", *changed)
+    if add.returncode != 0:
+        return _stop(db, module, task, f"git add 失败：{add.stderr.strip()[:200]}", [], **run)
+    tree = _git(worktree, "write-tree").stdout.strip()
+    cfg = store.get(db, "config", "main") or {}
+    check = checks.check_tree(db, cfg, "quick", tree, worktree, "offload", None)
+    if check.code != 0:
+        return _stop(db, module, task, "快检查没通过" if check.code == 5 else "快检查没跑成", check.lines, **run)
+    from module_crew import commits, merge
+    number = task.split("：", 1)[0]
+    msg = commits.message(f"Codex 外包 {module} {number}（delegate run {result.run_id}）", commits.prefix_of(db))
+    try:
+        done = subprocess.run(["git", "-C", str(worktree), "commit", "-q", "-m", msg], capture_output=True, text=True,
+                              timeout=merge.commit_timeout(cfg))
+    except subprocess.TimeoutExpired as exc:
+        return _stop(db, module, task, probe.timed_out("代提交", exc), [], **run)
+    if done.returncode != 0:
+        return _stop(db, module, task, commits.failure(worktree, done, "代提交失败"), [], **run)
+    commit = _git(worktree, "rev-parse", "HEAD").stdout.strip()
+    _finish(db, module, "idle", commit=commit, **run)
+    nxt = next_item((worktree / rel).read_text(encoding="utf-8"))
+    step = ("下一步：module-crew offload start " + module if nxt and nxt[1] else
+            f"下一项不是 Task（{nxt[0] if nxt else '已全部勾完'}）：module-crew offload handback {module} 交还模块会话")
+    return Outcome(0, [f"已代提交 {commit[:7]}：{msg}", *check.lines, *commits.hook_lines(worktree, done), step])
+
+
+def settle(project: str | os.PathLike, module: str, output: str | os.PathLike, exit_code: int) -> Outcome:
+    """Read what /delegate:run printed and sort it (assumption 6); never runs delegate itself."""
+    project = Path(project)
+    db = store.open_store(project)
+    if not enabled(db):
+        return Outcome(3, ["项目开关 codexOffload 没打开"])
+    rec = store.get(db, "offload", module)
+    if not rec or rec.get("state") != "running":
+        return Outcome(3, [f"{module} 没有正在跑的外包（状态 {(rec or {}).get('state') or '无'}）：先 offload start"])
+    try:
+        text = Path(output).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return _unknown(db, rec, f"delegate 的输出文件读不出：{exc}", "", exit_code)
+    result = parse_result(text, exit_code, delegate_interface(project).resume_timeout)
+    if result.kind == "done":
+        return _settle_done(db, project, rec, result, exit_code)
+    return _unknown(db, rec, f"认不出 delegate 的结束状态：{result.reason or result.kind}", text, exit_code,
+                    runId=result.run_id, status=result.status)
+
+
+TAIL = 20
+
+
+def _unknown(db: store.Store, rec: dict, reason: str, text: str, exit_code: int, **run: object) -> Outcome:
+    tail = [x for x in text.splitlines() if x.strip()][-TAIL:]
+    return _stop(db, rec["module"], rec["task"], reason, ["delegate 输出最后几行："] + [f"  {x}" for x in tail] if tail else [],
+                 exit=exit_code, **run)
