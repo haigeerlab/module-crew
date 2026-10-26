@@ -345,8 +345,9 @@ def suggestion(db: store.Store, eff: Effective, rows: list[dict]) -> str | None:
     return _higher(eff.value)
 
 
-def suggestion_line(db: store.Store, project: str | os.PathLike) -> str | None:
-    """The advice line for `tier`, `status` and a merge; the first time for a start it is also recorded, once."""
+def suggestion_line(db: store.Store, project: str | os.PathLike, once: bool = False) -> str | None:
+    """The advice line for `tier`, `status` and a merge; the first time for a start it is also recorded, once.
+    `once` (a merge pushing it unasked): only that first time, so advice the user let pass is not repeated."""
     eff = effective(db, project)
     rows = evidence(db)
     up = suggestion(db, eff, rows)
@@ -356,6 +357,8 @@ def suggestion_line(db: store.Store, project: str | os.PathLike) -> str | None:
     how = "用户确认后用 module-crew tier restore（要原话）" if eff.cap else \
         "用户确认后先 module-crew tier --preflight，再引用原话用 /spec-guard:config"
     since = _start(db)
+    if once and state(db).get("suggestedFor") == since:
+        return None
     try:
         if state(db).get("suggestedFor") != since:
             with db.transaction(actor="autonomy") as tx:

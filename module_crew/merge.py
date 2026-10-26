@@ -539,7 +539,7 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
         from module_crew import unqueued
         unqueued.mark(db, checkout, "merge-run")
         from module_crew import autonomy          # crew-autonomy-tier decision 7: advice only, never a step up
-        advice = autonomy.suggestion_line(db, project)
+        advice = autonomy.suggestion_line(db, project, once=True)
         result.lines += [advice] if advice else []
     return result
 
