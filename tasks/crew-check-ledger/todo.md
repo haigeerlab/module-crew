@@ -12,6 +12,6 @@
 - [x] Task 7：最终验收附检查账（Spec 验收 11）——测试先红后绿；模块与轻任务的交审事项记 `checks`，`review show`／`review batch` 多一行「检查账」，查不到只提醒
 - [x] Task 8：`status` 的检查账（Spec 验收 12）——测试先红后绿；开关关着时 `checks` 为 null、文本不变
 - [x] Checkpoint 2（report）：命令与记账全部就位——本模块 40 个测试与各任务的回归测试通过，全量测试在 Task 9 跑
-- [ ] Task 9：skill、README、`module-crew sync` 后全量测试（Spec 验收 13、14、1）
+- [x] Task 9：skill、README、`module-crew sync` 后全量测试（Spec 验收 13、14、1）——四份 skill 各加「检查记账」一节、README 加一节与命令；sync 到 04d0d73 后全量测试 938 个查出一处旧称「集成基线」（test_glossary），改为「集成分支」后再跑 938 个全过
 - [ ] Checkpoint 3（gate）：最终验收
 - [ ] 回告：完成情况经模块协调转告 ecosystem-lead
