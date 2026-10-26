@@ -54,6 +54,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         return Outcome(msg.kind, 3, lines=["消息不合格，请退回：" + "、".join(msg.problems)])
     doc = msg.contract()
     req_files = doc["changeRequest"]["files"]
+    scope = _declared_scope(db, sender)          # crew-declared-scope: a subprocess, so outside the transaction
     with db.transaction(actor=sender) as tx:
         out = Outcome(msg.kind, 0)
         if any(e["actor"] == sender and e["data"].get("relayId") == relay_id for e in store.events(db)):
@@ -68,6 +69,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
                     and set(req_files) & set(v["files"])}
         open_reqs = {k: v for k, v in open_reqs.items() if k not in replaced}
         hints = hints_for(req_files, {k: v["files"] for k, v in open_reqs.items()})
+        inside = [f for f in req_files if scope is not None and scope.inside(f)]
+        early = bool(inside) and len(inside) == len(req_files) and not any(h.startswith("conflict:") for h in hints)
         ticket = None
         if doc["fullyStopped"]:
             coord = next((k for k, v in tx.records("session").items()
@@ -91,6 +94,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             "what": msg.fields.get("改什么", ""), "why": msg.fields.get("为什么", ""),
             "fullyStopped": doc["fullyStopped"], "hints": hints, "ticket": ticket,
             "closedReason": None, "commit": None, "answer": None,
+            **({"declared": early} if scope is not None else {}),
+            **({"declaredCommit": scope.approved_commit} if early else {}),
         }, action="created", data={"relayId": relay_id})
         out.number = n
         out.lines.append(f"已记为公共变更请求 C{n}" + (f"，等待记录 W{ticket}" if ticket else ""))
@@ -100,8 +105,31 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
                              + f"：以新请求 C{n} 为准")
         if hints:
             out.lines.append("提示：" + "、".join(hints))
-        out.lines.append("要问用户" if _asks_user(hints) else "可由模块协调判断是否在已批准 Spec 范围内直接办")
+        if scope is not None and not scope.usable:
+            out.lines.append(f"声明不可用：{scope.reason}，照今天处理")
+        elif inside and not early and len(inside) < len(req_files):
+            out.lines.append(f"名单内：{'、'.join(inside)}；有名单外的文件，整条照今天处理")
+        elif inside and not early:
+            out.lines.append("名单内，但和别的请求改同一个文件：照今天处理")
+        if early:
+            out.lines.append(f"名单内：提前落地，不用问用户；用 change land C{n} --from-module")
+        else:
+            out.lines.append("要问用户" if _asks_user(hints) else "可由模块协调判断是否在已批准 Spec 范围内直接办")
         return out
+
+
+def _declared_scope(db: store.Store, sender: str):
+    """crew-declared-scope decision 3: the sender module's declaration, read in the integration checkout, or None
+    when the switch is off."""
+    from module_crew import declared
+    if not declared.enabled(db):
+        return None
+    module = _module_of(store.records(db, "session"), sender)
+    branch = (store.get(db, "config", "main") or {}).get("integrationBranch", "")
+    checkout = probe._checkout_of(db.path.parent, branch) if branch else None
+    if checkout is None:
+        return declared.Declared(module, reason="找不到集成分支所在的 checkout")
+    return declared.read(checkout, module)
 
 
 def pending(db: store.Store) -> list[tuple[int, dict]]:

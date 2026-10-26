@@ -4,7 +4,7 @@
 
 - [x] Task 1：`declared.py`（`enabled`、`read`、`inside`）与 `config set --declared-scope`（Spec 验收 1；验收 3 的四种不可用在 `read` 层）——测试先红后绿（移走 declared.py 时导入失败）；test_declared_scope 11 个通过，test_commit_prefix_config、test_commit_timeout 照常通过；另加 `interface_reason` 给 config set 打开时的警告用
 - [x] Task 2：`module-crew scope` 子命令与开工说明「全局约束」一行（Spec 验收 3、4）——测试先红后绿（3 失败 1 错误）；`declared.scope` 用 `hooks.detect` 认模块、在 worktree 顶层读；开关关时不调 spec-guard；不带文件时多列一行名单；开工说明那一行抽成 `start._constraint_line`，开关关时逐字不变（test_start_prepare 等照常通过）
-- [ ] Task 3：`change add` 分类——名单内、混合、冲突、不可用、开关关（Spec 验收 5）
+- [x] Task 3：`change add` 分类——名单内、混合、冲突、不可用、开关关（Spec 验收 5）——测试先红后绿（4 错误）；声明在事务外读（`changes._declared_scope`，集成 checkout 由 `probe._checkout_of(db.path.parent, …)` 找）；全在名单内但有冲突时多一行「名单内，但和别的请求改同一个文件：照今天处理」；test_changes、test_change_partial、test_change_supersede、test_review_display 照常通过
 - [ ] Task 4：`change land --from-module`——成功路径与四种拒绝（Spec 验收 6、7）
 - [ ] Task 5：`change landed` 与 `--mark-told`（Spec 验收 8）
 - [ ] Checkpoint 1（report）：公共变更这一路做完，test_declared_scope 与 test_changes、test_change_partial、test_change_supersede 通过

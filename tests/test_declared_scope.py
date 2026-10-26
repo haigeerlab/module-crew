@@ -224,5 +224,63 @@ class KickoffTest(DeclaredMixin, StartCase):
         self.assertIn(self.OLD, self.kickoff("d"))
 
 
+def request(files, what="改配置", why="别的模块马上要用", stopped="否"):
+    lines = "\n".join(files)
+    return (f"【公共变更请求】\n结束：无\n来自：b\n文件：\n{lines}\n改什么：{what}\n为什么：{why}\n"
+            f"是否完全停住：{stopped}\n")
+
+
+class ChangeAddTest(DeclaredMixin, ReviewCase):
+    """Acceptance 5."""
+
+    def setUp(self):
+        super().setUp()
+        self.with_declared({"b": usable(configs=["package.json"]), "c": usable(paths=["shared/"])})
+        self.db = self.switch("on")
+
+    def add(self, files, sender="shop-b", rid=1):
+        from module_crew import changes
+        out = changes.add(self.db, request(files), sender, rid)
+        self.assertEqual(out.code, 0, out.lines)
+        return out, store.get(self.db, "request", str(out.number))
+
+    def test_all_inside(self):
+        out, rec = self.add(["config/app.json", "package.json"])
+        self.assertIs(rec["declared"], True)
+        self.assertEqual(rec["declaredCommit"], "abc123")
+        self.assertIn("dependency", rec["hints"])                       # still recorded ...
+        text = "\n".join(out.lines)
+        self.assertIn(f"名单内：提前落地，不用问用户；用 change land C{out.number} --from-module", text)
+        self.assertNotIn("要问用户", text.replace("不用问用户", ""))   # ... but no longer asks the user
+        call = json.loads(self.args_log.read_text().splitlines()[-1])
+        self.assertEqual(Path(call[call.index("--project") + 1]).resolve(), self.repo.resolve())   # assumption 3
+
+    def test_mixed(self):
+        out, rec = self.add(["config/app.json", "tsconfig.base.json"])
+        self.assertIs(rec["declared"], False)
+        self.assertNotIn("declaredCommit", rec)
+        self.assertIn("名单内：config/app.json；有名单外的文件，整条照今天处理", out.lines)
+
+    def test_conflict_with_another_request(self):
+        self.add(["shared/x.ts"], sender="shop-c", rid=1)
+        out, rec = self.add(["shared/x.ts"], sender="shop-b", rid=2)
+        self.assertIs(rec["declared"], False)
+        self.assertIn("要问用户", out.lines)
+        self.assertTrue(any("名单内，但和别的请求改同一个文件" in x for x in out.lines), out.lines)
+
+    def test_unusable(self):
+        self.with_declared({"b": {"code": 4, "out": {"error": "bad-path"}}})
+        out, rec = self.add(["config/app.json"])
+        self.assertIs(rec["declared"], False)
+        self.assertTrue(any(x.startswith("声明不可用：") and x.endswith("照今天处理") for x in out.lines), out.lines)
+
+    def test_off_writes_nothing_new(self):
+        self.switch("off")
+        out, rec = self.add(["config/app.json"])
+        self.assertNotIn("declared", rec)
+        self.assertFalse(self.args_log.exists())
+        self.assertEqual(out.lines[-1], "可由模块协调判断是否在已批准 Spec 范围内直接办")
+
+
 if __name__ == "__main__":
     unittest.main()
