@@ -236,7 +236,8 @@ def _now() -> str:
 
 
 def start(project: str | os.PathLike, module: str, again: bool = False, answer: dict | None = None) -> Outcome:
-    """Decision 5: hand the module's next Task to Codex; prints what the coordinator runs."""
+    """Decision 5: hand the module's next Task to Codex; prints what the coordinator runs.
+    `again` (the user's yes) re-sends after a timeout, an unknown end or a failed check, on top of what is left."""
     project = Path(project)
     db = store.open_store(project)
     if not enabled(db):
@@ -252,39 +253,88 @@ def start(project: str | os.PathLike, module: str, again: bool = False, answer: 
     if approval is None:
         return Outcome(3, [f"{module} 的 Spec 与 Plan 还没都批准，不能外包"])
     rec = store.get(db, "offload", module) or {}
-    if rec.get("state") in PENDING and not again:
-        return Outcome(3, [f"{module} 已有待处理的外包（{rec['state']}）：先按 offload show {module} 处理"])
-    if rec.get("state") == "handed-back" and not again:
+    state = rec.get("state")
+    if state == "running":
+        return Outcome(3, [f"{module} 的外包正在跑（running）：跑完先 offload settle {module}"])
+    if state == "needs-input":
+        return Outcome(3, [f"{module} 的外包在等用户回答 Codex 的问题：答复到了用 offload resume {module}"])
+    if state in PENDING and not again:
+        return Outcome(3, [f"{module} 的外包停着（{state}）：要用户答复后再 offload start {module} --again，或 offload handback {module}"])
+    if state == "handed-back" and not again:
         return Outcome(3, [f"{module} 已交还模块会话：要重新外包须用户同意后用 offload start {module} --again"])
-    if not again and _git(worktree, "status", "--porcelain").stdout.strip():
+    dirty = bool(_git(worktree, "status", "--porcelain").stdout.strip())
+    if dirty and not (again and state in ("timeout", "stopped")):
         return Outcome(3, [f"{module} 的 worktree 不干净（有未提交的改动）：外包要从干净的工作区开始"])
     if approval[1] and _git(worktree, "merge-base", "--is-ancestor", approval[1], "HEAD").returncode != 0:
         return Outcome(3, [f"{module} 的分支还没包含批准提交 {approval[1][:7]}：等模块会话 module-crew sync 后发来【等待其他会话】再派"])
-    try:
-        todo = (worktree / "tasks" / module / "todo.md").read_text(encoding="utf-8")
-    except OSError as exc:
-        return Outcome(3, [f"读不出 tasks/{module}/todo.md：{exc}"])
-    item = next_item(todo)
-    if item is None:
-        return Outcome(3, [f"{module} 的 todo 已全部勾完，没有可外包的 Task"])
-    if not item[1]:
-        return Outcome(3, [f"{module} 的下一项不是 Task（{item[0]}）：不交给 Codex，用 offload handback {module} 交还模块会话"])
     head = _git(worktree, "rev-parse", "HEAD").stdout.strip()
+    if dirty or (again and state == "stopped" and rec.get("base") == head):
+        task, base = rec["task"], rec["base"]          # pick up the same Task on top of what was left
+    else:
+        try:
+            todo = (worktree / "tasks" / module / "todo.md").read_text(encoding="utf-8")
+        except OSError as exc:
+            return Outcome(3, [f"读不出 tasks/{module}/todo.md：{exc}"])
+        item = next_item(todo)
+        if item is None:
+            return Outcome(3, [f"{module} 的 todo 已全部勾完，没有可外包的 Task"])
+        if not item[1]:
+            return Outcome(3, [f"{module} 的下一项不是 Task（{item[0]}）：不交给 Codex，用 offload handback {module} 交还模块会话"])
+        task, base = item[0], head
+    text = render_brief(module, task) + (LEFT_OVER if dirty else "")
     with db.transaction(actor="coordinator") as tx:
         n = tx.allocate_number()
-        meta = tx.write_body(n, render_brief(module, item[0]))
+        meta = tx.write_body(n, text)
         brief = str(db.path / meta["path"])
-        out = str(db.path / "tmp" / f"offload-{module}-{n}.out")
+        out = _output_path(db, module, n)
         runs = list(rec.get("runs") or [])
-        runs.append({"n": n, "task": item[0], "startedAt": _now(), "brief": brief, "output": out,
+        runs.append({"n": n, "task": task, "startedAt": _now(), "brief": brief, "output": out,
                      **({"again": answer} if again and answer else {})})
-        tx.put("offload", module, {"module": module, "state": "running", "approval": approval[0], "task": item[0],
-                                   "base": rec.get("base") if again and rec.get("base") else head,
-                                   "worktree": str(worktree), "runs": runs}, action="started")
+        tx.put("offload", module, {"module": module, "state": "running", "approval": approval[0], "task": task,
+                                   "base": base, "worktree": str(worktree), "runs": runs}, action="started")
     return Outcome(0, [
-        f"外包 {module}：{item[0]}（批准事项 C{approval[0]}，基线 {head[:7]}）",
+        f"外包 {module}：{task}（批准事项 C{approval[0]}，基线 {base[:7]}）" + ("，接着上次留下的改动" if dirty else ""),
         f"在模块 worktree {worktree} 里执行（Bash 后台运行，timeout 600000，标准输出存到 {out}，记下退出码）：",
         f'  /delegate:run --write --resumable -- "$(cat {brief})"',
+        f"跑完：module-crew offload settle {module} --output {out} --exit <退出码>",
+    ])
+
+
+LEFT_OVER = "工作区里有上次留下的改动（超时或停下时没提交）：先看懂这些改动，再接着把这一项做完。\n"
+
+
+def _output_path(db: store.Store, module: str, n: int) -> str:
+    return str(db.path / "tmp" / f"offload-{module}-{n}.out")
+
+
+def resume(project: str | os.PathLike, module: str, answer: dict) -> Outcome:
+    """Decisions 7, 8: carry the user's answer back to the same Codex run (needs-input; a delegate >= 1.2 timeout)."""
+    project = Path(project)
+    db = store.open_store(project)
+    if not enabled(db):
+        return Outcome(3, ["项目开关 codexOffload 没打开"])
+    if not (answer.get("original") or "").strip():
+        return Outcome(3, ["续跑要用户的答复原话（--original 或 --original-file）"])
+    rec = store.get(db, "offload", module) or {}
+    last = (rec.get("runs") or [{}])[-1]
+    if rec.get("state") == "timeout" and not last.get("runId"):
+        return Outcome(3, [f"这次超时没有 runId（delegate 1.1 超时不能续跑）：用户同意后用 offload start {module} --again 重派"])
+    if rec.get("state") not in ("needs-input", "timeout") or not last.get("runId"):
+        return Outcome(3, [f"{module} 没有可续跑的外包（状态 {rec.get('state') or '无'}）：只有在等答复或 delegate ≥ 1.2 超时时才续跑"])
+    if rec["state"] == "timeout" and not delegate_interface(project).resume_timeout:
+        return Outcome(3, [f"装的 delegate 不支持超时续跑：用户同意后用 offload start {module} --again 重派"])
+    with db.transaction(actor="coordinator") as tx:
+        n = tx.allocate_number()
+        meta = tx.write_body(n, answer["original"])
+        file = str(db.path / meta["path"])
+        out = _output_path(db, module, n)
+        runs = list(rec["runs"]) + [{"n": n, "task": rec["task"], "startedAt": _now(), "resumeOf": last["runId"],
+                                     "answer": answer, "answerFile": file, "output": out}]
+        tx.put("offload", module, {**rec, "state": "running", "runs": runs}, action="resumed")
+    return Outcome(0, [
+        f"续跑 {module}：{rec['task']}（delegate run {last['runId']}，带用户的答复）",
+        f"在模块 worktree {rec['worktree']} 里执行（Bash 后台运行，timeout 600000，标准输出存到 {out}，记下退出码）：",
+        f'  /delegate:run --resume {last["runId"]} --write -- "$(cat {file})"',
         f"跑完：module-crew offload settle {module} --output {out} --exit <退出码>",
     ])
 
@@ -440,6 +490,10 @@ def settle(project: str | os.PathLike, module: str, output: str | os.PathLike, e
     result = parse_result(text, exit_code, delegate_interface(project).resume_timeout)
     if result.kind == "done":
         return _settle_done(db, project, rec, result, exit_code)
+    if result.kind == "needs-input":
+        return _needs_input(db, rec, result, exit_code)
+    if result.kind == "timeout":
+        return _timeout(db, rec, result, text, exit_code)
     return _unknown(db, rec, f"认不出 delegate 的结束状态：{result.reason or result.kind}", text, exit_code,
                     runId=result.run_id, status=result.status)
 
@@ -451,3 +505,50 @@ def _unknown(db: store.Store, rec: dict, reason: str, text: str, exit_code: int,
     tail = [x for x in text.splitlines() if x.strip()][-TAIL:]
     return _stop(db, rec["module"], rec["task"], reason, ["delegate 输出最后几行："] + [f"  {x}" for x in tail] if tail else [],
                  exit=exit_code, **run)
+
+
+def _needs_input(db: store.Store, rec: dict, result: Result, exit_code: int) -> Outcome:
+    """Decision 7: the question goes to the user word for word; the coordinator never answers it."""
+    module, task = rec["module"], rec["task"]
+    _finish(db, module, "needs-input", exit=exit_code, status=result.status, runId=result.run_id, question=result.question)
+    return Outcome(5, [
+        f"Codex 做 {task} 时停下来问用户（delegate run {result.run_id}）；没有提交，改动留在模块 worktree。",
+        "问题原文：", result.question, "",
+        "把下面这份【等待用户】交用户决定（有决策收件箱就照现有规则转给它）；不要替用户回答：", "",
+        *draft(db, module, f"回答 Codex 在 {module} {task} 上的问题",
+               f"Codex 做 {task} 时停下来问：\n{result.question}",
+               _options(module, ("A", "回答这个问题，Codex 带着答复接着做",
+                                 "你的答复原话交给 offload resume <模块> --original-file <答复>，再执行它给出的 /delegate:run --resume"),
+                        BACK, HOLD)),
+    ])
+
+
+def _progress(worktree: Path, base: str) -> list[str]:
+    status = _git(worktree, "status", "--short").stdout.rstrip().splitlines()
+    stat = _git(worktree, "diff", "--stat", base).stdout.rstrip().splitlines()
+    return (["工作区（git status --short）："] + [f"  {x}" for x in status or ["（没有改动）"]]
+            + [f"相对派出时 {base[:7]} 的改动（git diff --stat）："] + [f"  {x}" for x in stat or ["（没有已跟踪文件的改动）"]])
+
+
+def _timeout(db: store.Store, rec: dict, result: Result, text: str, exit_code: int) -> Outcome:
+    """Decision 8: no quick check, no commit; the progress goes to the user, who decides whether to go on."""
+    module, task = rec["module"], rec["task"]
+    _finish(db, module, "timeout", exit=exit_code, status=result.status or "timeout", runId=result.run_id)
+    progress = _progress(Path(rec["worktree"]), rec["base"])
+    note = []
+    if result.run_id:                              # delegate >= 1.2: its progress note, passed on as written
+        raw = text.rstrip()
+        body = raw[:raw.rfind("delegate: run_id=")].strip()
+        note = ["delegate 的进度说明（原样）："] + [f"  {x}" for x in body.splitlines()]
+        go_on = ("A", "续跑：Codex 接着这次超时的进度做", "你的答复原话交给 offload resume <模块> --original-file <答复>，再执行它给出的 /delegate:run --resume")
+    else:
+        go_on = ("A", "重派：在已有改动上让 Codex 从头接着做这一项（delegate 1.1 超时后不能续跑）",
+                 "用户答复后运行 offload start <模块> --again --original-file <答复>，再执行它给出的 /delegate:run")
+    return Outcome(5, [
+        f"Codex 做 {task} 超时（退出码 {exit_code}）：没有跑快检查、没有提交，改到一半的文件留在模块 worktree。",
+        *progress, *note, "",
+        "把下面这份【等待用户】交用户决定；续跑要用户点头，不自动续跑：", "",
+        *draft(db, module, f"{module} 的外包在 {task} 超时，下一步怎么办",
+               f"Codex 做 {task} 超时；" + "；".join(x.strip() for x in progress[1:4] if x.strip())[:200],
+               _options(module, go_on, BACK, HOLD)),
+    ])

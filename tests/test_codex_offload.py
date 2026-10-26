@@ -504,5 +504,160 @@ class DoneTest(SettleCase):
 
 
 
+NEEDS = "先做了不受影响的部分\nNEED_USER: 金额用分还是元？\n分：精确；元：好读\ndelegate: run_id=r7 status=needs-input resumable=true\n"
+
+
+class StopsTest(SettleCase):
+    """Acceptance 7 (first half), 8 and 9."""
+
+    def parse_draft(self, out):
+        from module_crew import protocol
+        draft = "\n".join(out.lines[out.lines.index("【等待用户】"):])
+        msg = protocol.parse(draft)
+        self.assertEqual(msg.kind, "wait-user", msg)
+        self.assertFalse(msg.problems, msg.problems)
+        return draft
+
+    def test_needs_input(self):
+        self.started(TODO)
+        before = self.head()
+        out = self.codex(tick=(), output=NEEDS)
+        self.assertEqual(out.code, 5, out.lines)
+        rec = self.rec()
+        self.assertEqual(rec["state"], "needs-input")
+        self.assertEqual(rec["runs"][-1]["runId"], "r7")
+        self.assertEqual(rec["runs"][-1]["question"], "金额用分还是元？\n分：精确；元：好读")
+        draft = self.parse_draft(out)
+        self.assertIn("金额用分还是元？\n分：精确；元：好读", draft)
+        self.assertIn("offload resume b", draft)
+        self.assertEqual(self.head(), before)
+        self.assertEqual(self.quick_count(), 0)
+
+    def test_timeout_11(self):
+        self.started(TODO)
+        before = self.head()
+        out = self.codex({"src/page.py": "PAGE = 1\n", "spec/b.md": "# 改到一半\n"}, tick=(), output="做到一半\n", code=124)
+        self.assertEqual(out.code, 5, out.lines)
+        text = "\n".join(out.lines)
+        self.assertEqual(self.rec()["state"], "timeout")
+        self.assertEqual(self.quick_count(), 0)
+        self.assertEqual(self.head(), before)
+        self.assertIn("?? src/", text)                       # git status --short
+        self.assertIn("1 file changed", text)                # git diff --stat: spec/b.md
+        draft = self.parse_draft(out)
+        self.assertIn("offload start b --again", draft)
+        self.assertNotIn("offload resume", draft)
+
+    def test_timeout_12(self):
+        from test_codex_offload import DELEGATE_12
+        (self.delegate / "interface.json").write_text(json.dumps(DELEGATE_12))
+        self.started(TODO)
+        out = self.codex(tick=(), output="进度：页面骨架写好，接口还没接\ndelegate: run_id=r9 status=timeout resumable=true\n", code=124)
+        self.assertEqual(out.code, 5, out.lines)
+        rec = self.rec()
+        self.assertEqual((rec["state"], rec["runs"][-1]["runId"]), ("timeout", "r9"))
+        self.assertIn("进度：页面骨架写好，接口还没接", "\n".join(out.lines))
+        draft = self.parse_draft(out)
+        self.assertIn("offload resume b", draft)
+
+    def test_unknown_kinds(self):
+        self.started(TODO)
+        for text, code in (("拒绝\n", 64), ("坏了\n", 2), ("没结果行\n", 0),
+                           ("x\ndelegate: run_id=r4 status=weird resumable=true\n", 0)):
+            with self.subTest(code=code, text=text):
+                if self.rec()["state"] != "running":
+                    self.assertEqual(offload.start(self.repo, "b", again=True).code, 0)
+                out = self.codex(files={}, tick=(), output=text, code=code)
+                self.assertEqual(out.code, 5, out.lines)
+                self.assertEqual(self.rec()["state"], "stopped")
+                self.assertIn("认不出", self.rec()["runs"][-1]["reason"])
+                self.assertIn(text.strip().splitlines()[-1], "\n".join(out.lines))
+                draft = self.parse_draft(out)
+                self.assertNotIn("offload resume", draft)
+
+    def test_unreadable_output(self):
+        self.started(TODO)
+        res = offload.settle(self.repo, "b", self.tmp / "missing.out", 0)
+        self.assertEqual(res.code, 5)
+        self.assertEqual(self.rec()["state"], "stopped")
+
+
+
+class ResumeTest(SettleCase):
+    """Acceptance 7 (second half) and 8 (second half)."""
+
+    def test_resume_needs_input(self):
+        self.started(TODO)
+        self.codex(tick=(), output=NEEDS)
+        out = self.run_cli("offload", "resume", "b", "--original", "用分")
+        self.assertEqual(out.returncode, 0, out.stderr + out.stdout)
+        self.assertIn("/delegate:run --resume r7 --write", out.stdout)
+        rec = self.rec()
+        self.assertEqual(rec["state"], "running")
+        run = rec["runs"][-1]
+        self.assertEqual((run["resumeOf"], run["answer"]["original"]), ("r7", "用分"))
+        self.assertEqual(Path(run["answerFile"]).read_text(encoding="utf-8"), "用分")
+        self.assertIn(run["answerFile"], out.stdout)
+        done = self.codex(output=DONE.replace("r1", "r8"))
+        self.assertEqual(done.code, 0, done.lines)
+
+    def test_resume_needs_words(self):
+        self.started(TODO)
+        self.codex(tick=(), output=NEEDS)
+        out = self.run_cli("offload", "resume", "b", "--original", "  ")
+        self.assertEqual(out.returncode, 3)
+        self.assertEqual(self.rec()["state"], "needs-input")
+
+    def test_resume_wrong_state(self):
+        self.started(TODO)
+        res = offload.resume(self.repo, "b", {"original": "用分"})
+        self.assertEqual(res.code, 3)
+        self.codex(tick=(), output="做到一半\n", code=124)          # 1.1 timeout: no run id
+        res = offload.resume(self.repo, "b", {"original": "接着做"})
+        self.assertEqual(res.code, 3)
+        self.assertIn("--again", "\n".join(res.lines))
+
+    def test_resume_timeout_12(self):
+        (self.delegate / "interface.json").write_text(json.dumps(DELEGATE_12))
+        self.started(TODO)
+        self.codex(tick=(), output="进度\ndelegate: run_id=r9 status=timeout resumable=true\n", code=124)
+        res = offload.resume(self.repo, "b", {"original": "接着做"})
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertIn("--resume r9", "\n".join(res.lines))
+
+    def test_again_needs_words(self):
+        self.started(TODO)
+        self.codex(tick=(), output="做到一半\n", code=124)
+        out = self.run_cli("offload", "start", "b", "--again")
+        self.assertEqual(out.returncode, 3)
+        self.assertEqual(self.rec()["state"], "timeout")
+
+    def test_again_after_timeout_keeps_task_and_base(self):
+        self.started(TODO)
+        base = self.rec()["base"]
+        self.codex({"src/page.py": "PAGE = 0\n"}, tick=(), output="做到一半\n", code=124)
+        out = self.run_cli("offload", "start", "b", "--again", "--original", "接着做")
+        self.assertEqual(out.returncode, 0, out.stderr + out.stdout)
+        rec = self.rec()
+        self.assertEqual((rec["state"], rec["base"], rec["task"]), ("running", base, "Task 2：做页面"))
+        self.assertEqual(rec["runs"][-1]["again"]["original"], "接着做")
+        brief = Path(rec["runs"][-1]["brief"]).read_text(encoding="utf-8")
+        self.assertIn("上次留下的改动", brief)
+
+    def test_again_after_stop_with_ticked_item_keeps_task(self):
+        self.started(TODO)
+        self.codex({"src/page.py": "PAGE = 1\n", "README.md": "越界\n"})      # ticked, but outside → stopped
+        self.assertEqual(offload.start(self.repo, "b", again=True).code, 0)
+        self.assertEqual(self.rec()["task"], "Task 2：做页面")
+
+    def test_again_refused_while_waiting(self):
+        self.started(TODO)
+        self.assertEqual(offload.start(self.repo, "b", again=True).code, 3)       # running
+        self.codex(tick=(), output=NEEDS)
+        res = offload.start(self.repo, "b", again=True)
+        self.assertEqual(res.code, 3)
+        self.assertIn("offload resume", "\n".join(res.lines))
+
+
 if __name__ == "__main__":
     unittest.main()
