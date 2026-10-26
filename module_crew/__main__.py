@@ -387,6 +387,10 @@ def _start_plan(as_json: bool) -> int:
             except store.StoreError:
                 db = None
             print(present.card_text(present.start_card(Path("."), db, p.modules, p.conflicts)))
+            if p.reasons:                       # crew-declared-scope: related to a module in use
+                print("暂不提议：")
+                for r in p.reasons:
+                    print(f"  {r['module']}：{r['reason']}")
         elif not p.blockers:
             print("没有可开的模块：" if p.reasons else "没有可开的模块（能力图上的模块都已完成）")
             for r in p.reasons:
@@ -425,8 +429,8 @@ def _original(original: str | None, original_file: str | None) -> str | None:
 def _config_set(args) -> int:
     """S23: change `commitPrefix` (T136: or `checkTimeout`) on a project already started, without start prepare;
     needs the user's words."""
-    if args.commit_prefix is None and args.check_timeout is None:
-        print("❌ 至少给一项：--commit-prefix 或 --check-timeout", file=sys.stderr)
+    if args.commit_prefix is None and args.check_timeout is None and args.declared_scope is None:
+        print("❌ 至少给一项：--commit-prefix、--check-timeout 或 --declared-scope", file=sys.stderr)
         return 2
     if args.check_timeout is not None and args.check_timeout < 1:
         print("❌ --check-timeout 要是正整数（秒）", file=sys.stderr)
@@ -437,7 +441,8 @@ def _config_set(args) -> int:
     if not original.strip():
         print("❌ 用户原话不能为空：只记用户在本会话亲手输入的话", file=sys.stderr)
         return 3
-    changed = {k: v for k, v in (("commitPrefix", args.commit_prefix), ("checkTimeout", args.check_timeout)) if v is not None}
+    changed = {k: v for k, v in (("commitPrefix", args.commit_prefix), ("checkTimeout", args.check_timeout),
+                                 ("declaredScope", args.declared_scope)) if v is not None}
     db = store.open_store()
     with db.transaction(actor="coordinator") as tx:
         tx.put("config", "main", {**(tx.get("config", "main") or {}), **changed}, action="set",
@@ -446,6 +451,13 @@ def _config_set(args) -> int:
         print(f"已改提交前缀：{args.commit_prefix!r}" + ("（不加前缀）" if args.commit_prefix == "" else ""))
     if args.check_timeout is not None:
         print(f"已改检查时限：{args.check_timeout} 秒（完整检查、提交与推送都用它）")
+    if args.declared_scope is not None:
+        from module_crew import declared
+        print("已打开声明范围：Plan「预先声明」名单内的公共文件由模块直接改，名单外照旧发【公共变更请求】"
+              if args.declared_scope == "on" else "已关闭声明范围：公共文件一律发【公共变更请求】")
+        why = declared.interface_reason(Path.cwd()) if args.declared_scope == "on" else None
+        if why:
+            print(f"⚠️ {why}；读不到声明，打开后仍照今天的做法")
     return 0
 
 
@@ -633,7 +645,8 @@ def _change(args) -> int:
         print(f"类型：{out.kind}")
         for line in out.lines:
             print(line)
-        if out.code == 0 and out.number is not None:        # crew-review-display: the card the user is asked with
+        early = out.number is not None and (store.get(db, "request", str(out.number)) or {}).get("declared") is True
+        if out.code == 0 and out.number is not None and not early:   # crew-review-display: the card the user is asked with
             from module_crew import present
             print(present.card_text(present.change_card(db, out.number)))
         return out.code
@@ -657,6 +670,24 @@ def _change(args) -> int:
         by = f"，由 C{args.by} 取代" if args.by is not None else ""
         print(f"公共变更请求 C{args.number} 已记为被取代{by}；不发回复，需要时告诉 {rec['from']}：旧请求不再处理")
         return 0
+    if args.action == "landed":
+        if args.mark_told:
+            try:
+                changes.mark_told(db, args.mark_told)
+            except changes.AnswerRefused as exc:
+                print(f"❌ {exc}", file=sys.stderr)
+                return 3
+            print("已记为汇总给用户：" + "、".join(f"C{n}" for n in args.mark_told))
+            return 0
+        rows = changes.landed_rows(db)
+        if args.json:
+            print(json.dumps(rows, ensure_ascii=False, indent=2))
+        elif rows:
+            print("名单内提前落地、还没汇总给用户的（写进下一条给用户的消息，再 --mark-told）：")
+            print("\n".join("  " + x for x in changes.landed_summary(rows)))
+        else:
+            print("没有待汇总的提前落地")
+        return 0 if rows else 3
     original = _original(args.original, args.original_file)
     if args.action == "answer":
         if original is None:
@@ -674,7 +705,8 @@ def _change(args) -> int:
         return 0
     if args.original_file is not None and original is None:
         return 2
-    res = changes.land(".", args.number, original, partial=getattr(args, "partial", False))
+    res = changes.land(".", args.number, original, partial=getattr(args, "partial", False),
+                       from_module=getattr(args, "from_module", False))
     for line in res.lines:
         print(line)
     for x in res.sends:
@@ -846,7 +878,7 @@ _LOCKED = {("change", "land"), ("review", "approve"), ("merge", "tick"), ("merge
 # command is the coordinator's and is refused (exit 7) when it comes from a conversation that is not the bound one.
 # (group, action); action None = the whole group.
 _ANY_SESSION = {("status", None), ("sessions", None), ("protocol", None), ("hook", None), ("bind", None), ("sync", None),
-                ("host-check", None), ("store", "check"), ("start", "plan"), ("review", "batch"), ("review", "show"),
+                ("host-check", None), ("scope", None), ("store", "check"), ("start", "plan"), ("review", "batch"), ("review", "show"),
                 ("change", "list"), ("merge", "queue"), ("merge", "push-plan"), ("source", "list"), ("source", "map"),
                 ("task", "list"), ("task", "show"), ("task", "next"), ("permissions", "plan"), ("coordinator", "up")}
 
@@ -983,6 +1015,8 @@ def _main(argv: list[str] | None = None) -> int:
     cfset = cfs.add_parser("set")
     cfset.add_argument("--commit-prefix", help="module-crew 提交信息的前缀；空字符串表示不加")
     cfset.add_argument("--check-timeout", type=int, help="完整检查与提交钩子的时限（秒，正整数）")
+    cfset.add_argument("--declared-scope", choices=("on", "off"),
+                       help="Plan「预先声明」名单内的公共文件由模块直接改（crew-declared-scope）")
     cfg = cfset.add_mutually_exclusive_group(required=True)
     cfg.add_argument("--original")
     cfg.add_argument("--original-file")
@@ -1023,6 +1057,9 @@ def _main(argv: list[str] | None = None) -> int:
     ca.add_argument("--relay-id", type=int, required=True)
     cl = chs.add_parser("list")
     cl.add_argument("--json", action="store_true")
+    cld = chs.add_parser("landed", help="名单内提前落地、还没汇总给用户的（crew-declared-scope）")
+    cld.add_argument("--json", action="store_true")
+    cld.add_argument("--mark-told", nargs="+", type=refs.parse, metavar="编号", help="记为已汇总给用户（只是记账，不是批准）")
     for name in ("land", "answer"):
         c = chs.add_parser(name)
         c.add_argument("number", type=refs.parse)
@@ -1034,6 +1071,8 @@ def _main(argv: list[str] | None = None) -> int:
             c.add_argument("--by", type=refs.parse, help="取代它的新请求编号（配合 --reason superseded）")
         if name == "land":
             c.add_argument("--partial", action="store_true", help="清单里还有文件没改时，先落地已改的部分（要用户原话），请求保持打开")
+            c.add_argument("--from-module", action="store_true",
+                           help="名单内的提前落地：从请求方模块分支取清单文件再提交（crew-declared-scope）")
     mg = sub.add_parser("merge", help="本地合并、收尾与远端 PR")
     mgs = mg.add_subparsers(dest="action", required=True)
     for name in ("queue", "push-plan"):
@@ -1189,6 +1228,9 @@ def _main(argv: list[str] | None = None) -> int:
         pg.add_argument("--original")
         pg.add_argument("--original-file")
     sub.add_parser("host-check", help="在模块 worktree 里预检宿主能否完成工作（Codex 必跑）").add_argument("--json", action="store_true")
+    scp = sub.add_parser("scope", help="在模块 worktree 里查文件在不在 Plan「预先声明」的名单里（只读）")
+    scp.add_argument("files", nargs="*")
+    scp.add_argument("--json", action="store_true")
     sub.add_parser("sync", help="在模块 worktree 里把集成分支合进模块分支（本模块 Spec、tasks 冲突取集成分支版本）")
     sub.add_parser("resume-kit", help="生成换会话恢复说明").add_argument("module")
     se = sub.add_parser("serial", help="退回串行／恢复并行")
@@ -1288,6 +1330,14 @@ def _run(args) -> int:
             return 2
     if args.group == "permissions":
         return _permissions(args)
+    if args.group == "scope":
+        from module_crew import declared
+        code, lines, data = declared.scope(".", args.files)
+        if args.json and code == 0:
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+        else:
+            print("\n".join(lines), file=sys.stderr if code else sys.stdout)
+        return code
     if args.group == "sync":
         from module_crew import sync
         res = sync.run(".")
