@@ -1,6 +1,6 @@
 # Spec: crew-declared-scope
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved e5b1cec77663 -->
 
 > 能力图模块 `crew-declared-scope`（第十版第 1 个）。需求来源：接缝 S32（并入 S29），已批方案 plugin-ecosystem `proposals/2026-10-24-S32-并行流畅与额度外包.md`（612634c，用户 2026-10-24「按推荐批准」）
 > 第二节 module-crew 第 1、2 条：声明目录内的公共文件模块直接改、默认合并时才进集成分支、名单内确需提前进的自动落地事后汇总、有依赖关系的模块不同时开；第三节守门：开关默认关、凭用户原话开，读不到新接口照今天问用户。
