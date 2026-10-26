@@ -1,6 +1,6 @@
 # Spec: crew-autonomy-tier
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 14e853135b51 -->
 
 > 能力图模块 `crew-autonomy-tier`（第十版第 3 个）。需求来源：接缝 S32，已批方案 plugin-ecosystem `proposals/2026-10-24-S32-并行流畅与额度外包.md`（612634c，用户 2026-10-24「按推荐批准」）
 > 第二节 module-crew 第 5 条（自治档位、升档建议、出事降档）与 spec-guard 第 2、3 条（`autonomyTier` 配置项、底线）；第三节守门：开关默认关、凭用户原话开，读不到新接口照今天问用户。开会话依据：用户批准事项 C230。

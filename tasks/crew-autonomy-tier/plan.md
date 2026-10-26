@@ -1,6 +1,6 @@
 # Implementation Plan: crew-autonomy-tier
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-autonomy-tier.md`（用户 2026-10-26 批准，事项 C234「C234 A」）。任务清单：`tasks/crew-autonomy-tier/todo.md`。
 
