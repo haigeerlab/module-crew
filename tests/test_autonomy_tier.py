@@ -161,5 +161,33 @@ class ReadTest(TierMixin, ReviewCase):
         self.assertIn("config.tier-cap-cleared", [e["type"] for e in autonomy.marks(db)])
 
 
+class PreflightTest(TierMixin, ReviewCase):
+    def test_085_passes(self):
+        self.with_tier()
+        code, out = self.cli("tier", "--preflight")
+        self.assertEqual(code, 0, out)
+        self.assertIn("可以写 autonomyTier", out)
+
+    def test_older_version_or_interface_refused(self):
+        self.with_tier(plugin_version="0.84.2")
+        code, out = self.cli("tier", "--preflight")
+        self.assertEqual(code, 3)
+        self.assertIn("0.84.2 低于 0.85.0", out)
+        self.with_tier(version="1.10")
+        code, out = self.cli("tier", "--preflight")
+        self.assertEqual(code, 3)
+        self.assertIn("没有 autonomyTier", out)
+
+    def test_codex_session_adds_a_reminder(self):
+        self.with_tier()
+        db = self.db()
+        with db.transaction(actor="test") as tx:
+            tx.put("session", "shop-x", {"role": "dev", "host": "codex-desktop", "status": "active", "module": "x",
+                                         "worktree": "/tmp/wx"}, action="registered")
+        code, out = self.cli("tier", "--preflight")
+        self.assertEqual(code, 0)
+        self.assertIn("Codex 那边的 spec-guard 版本 module-crew 查不到", out)
+
+
 if __name__ == "__main__":
     unittest.main()

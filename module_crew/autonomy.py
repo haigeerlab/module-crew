@@ -200,3 +200,36 @@ def report(db: store.Store, project: str | os.PathLike) -> tuple[dict, list[str]
            "explicit": eff.explicit, "cap": eff.cap, "effective": eff.value, "cadence": None, "cadenceHint": None,
            "evidence": [], "suggest": None}
     return doc, [describe(eff)]
+
+
+def _version(text: str | None) -> tuple[int, ...] | None:
+    try:
+        return tuple(int(x) for x in (text or "").split("."))
+    except ValueError:
+        return None
+
+
+def preflight(db: store.Store, project: str | os.PathLike) -> tuple[int, list[str]]:
+    """Decision 2: before /spec-guard:config writes autonomyTier — 0.67.1 and older would call the whole file invalid."""
+    checkout = integration_checkout(db, project)
+    reasons = []
+    found = probe.find_plugin("spec-guard", checkout)
+    if isinstance(found, str):
+        reasons.append(f"找不到 spec-guard（{found}）")
+    else:
+        got = _version(found.version)
+        if got is None or got < MIN_VERSION:
+            reasons.append(f"本机 spec-guard {found.version or '版本读不出'} 低于 0.85.0："
+                           "0.68.0～0.84.2 会忽略这个键，0.67.1 及更早会把整份配置判无效；先升级")
+        got = _interface(checkout)
+        if isinstance(got, str):
+            reasons.append(got)
+    codex = sorted(n for n, s in store.records(db, "session").items()
+                   if s.get("host") == "codex-desktop" and s.get("status") == "active")
+    note = ([f"Codex 那边的 spec-guard 版本 module-crew 查不到（登记的 Codex 会话：{'、'.join(codex)}）："
+             "0.67.1 及更早会把整份配置判无效，请用户确认 Codex 也装了 0.85.0 以上"] if codex else [])
+    if reasons:
+        return 3, ["不能写 autonomyTier：", *(f"- {r}" for r in reasons), *note]
+    return 0, [f"可以写 autonomyTier：本机 spec-guard {found.version}，接口有 autonomyTier。"
+               "引用用户原话后用 /spec-guard:config 写入；要设 standard 或 relaxed 时同一句原话里一并设 reviewCadence=combined，"
+               "写完把 .agent/config.json 单独提交", *note]

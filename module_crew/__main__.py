@@ -980,6 +980,10 @@ def _tier(args) -> int:
     from module_crew import autonomy
     try:
         db = store.open_store()
+        if args.preflight:
+            code, lines = autonomy.preflight(db, ".")
+            print("\n".join(lines))
+            return code
         doc, lines = autonomy.report(db, ".")
     except store.StoreError as exc:
         print(f"❌ {exc}", file=sys.stderr)
