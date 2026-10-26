@@ -74,9 +74,11 @@ bin/module-crew status
    - 用户批准后 `module-crew review approve <编号>… --original-file <原话文件>`：在集成分支记批准标记，生成【用户答复】与开工通知。
    - 模块会话单独执行 `module-crew sync` 把集成分支合进自己的分支（Spec／Plan 冲突自动取集成分支版本）后开始构建；写 Plan 前可用 `module-crew review show C<号>` 读审查原文。
 4. **公共文件**：模块会话不改公共文件，发【公共变更请求】；模块协调 `change add` → 在集成 checkout 改 → `change land`，其他模块收到同步基线通知。
+   - **声明范围开关 `declaredScope`**（默认关，`module-crew config set --declared-scope on --original-file <原话文件>` 凭用户原话打开）：Plan「预先声明」名单内的公共文件模块直接在自己分支改（`module-crew scope <文件>` 可查），最终验收单列「声明内公共文件」一节一并审，默认合并时才进集成分支。确实要提前进集成分支时模块照旧发请求，名单内的由模块协调 `module-crew change land <编号> --from-module` 从模块分支取文件落地、不问用户，`change landed` 汇总给用户；名单外照旧。开关打开时，有依赖关系的模块不同时开工。读不到 spec-guard 1.11 的 `declaredScope` 时一切照旧。
 5. **合并**
    - 模块做完发最终验收【交审】，用户批准后 `module-crew merge approve <交审编号> --original-file <原话文件>`。
      提请批准时按 spec-guard 的最终验收小项排：做了什么、验收结果、改了哪些文件（文档表、代码文件表——新增／修改／删除与行数，超出 Plan 的标出——、提交表、新增依赖表），以及 Spec 中途改过吗（改过就附差异）；这几张表由 module-crew 从版本库算出，不用模块自己报。
+     声明范围开关打开时，「代码」表之后多一节「声明内公共文件」（提前落地过的标出请求号与提交），新增依赖表里没声明过的标「（未声明）」。
    - `module-crew merge run`（第一次带 `--check-command "<完整检查命令>"`）：按 Build order 一次只合一个，`--no-ff` 合入本地集成分支后跑完整检查；
      不过就把集成分支重置回合并前（模块分支原样保留）并退回该模块，冲突就中止并退回。
    - 合并成功：该模块收到收尾通知，其他在用模块收到同步基线通知。
@@ -226,12 +228,14 @@ module-crew protocol check <文件>                消息自检
 module-crew inbox add <文件> --from --relay-id   收件记账
 module-crew answer <编号> --original(-file)      转达「你的答复」
 module-crew start plan|prepare                   开工
-module-crew config set [--commit-prefix <值>] [--check-timeout <秒>] --original(-file)  已开工项目改提交信息前缀（空字符串表示不加）或提交与检查的时限
+module-crew config set [--commit-prefix <值>] [--check-timeout <秒>] [--declared-scope on|off] --original(-file)  已开工项目改提交信息前缀（空字符串表示不加）、提交与检查的时限或声明范围开关
 module-crew config set --quick-check-command "<命令>" | --check-ledger on|off --original(-file)  快检查命令与检查记账开关（默认关）
 module-crew check quick|baseline [--rerun]       检查记账：模块 worktree 里跑快检查／模块协调对集成分支跑一次完整检查（放后台），同一棵树不重跑
 module-crew check show [<提交>]|list [--json]    检查账（只读）：一个提交的树跑过哪些检查／最近的记录
 module-crew review add|batch|approve|answer      交审与批量批准
 module-crew change add|list|land|answer [--reason superseded]  公共变更请求（被取代的可直接关；检查记账打开时 land 先跑快检查，--skip-quick-check 要原话）
+module-crew change land <编号> --from-module / change landed [--mark-told <编号>…]  名单内提前落地（从模块分支取文件）／待汇总给用户的提前落地
+module-crew scope [<文件>…] [--json]             模块 worktree 里查文件在不在 Plan「预先声明」名单内（只读）
 module-crew merge approve|revoke|queue|run|cleanup|push-plan|push
 module-crew merge record C<号> --original(-file)  合并收尾超时、状态库没记下合并时补记
 module-crew merge run --detach / merge result [C<号>] [--wait <分钟>]   后台合并（Codex 上的模块协调用）／取它的结果（第一次取到时记进状态库）

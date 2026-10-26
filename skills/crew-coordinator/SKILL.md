@@ -151,6 +151,11 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 5. `change land` 退出码 3：清单外有改动或没有改动，什么都没提交——把多余的改动挪走，或让请求方补一条请求。
    清单里还有文件没改也是退出码 3（输出列出它们）：改完再 land；用户同意先落地已改的部分时加 `--partial --original-file <原话文件>`，请求保持打开，改完剩下的再 land 才关闭。
 6. 改动影响已批准的 Spec 时，按 spec-guard 规则在那份 Spec 末尾「变更记录」追加一行，复审时一并呈现。
+7. **声明范围开关 `declaredScope`**（默认关；开关都要用户原话：`module-crew config set --declared-scope on|off --original-file <原话文件>`）打开后：
+   - 模块会话对 Plan「预先声明」名单内的公共文件直接在自己分支改，不发请求；最终验收的「声明内公共文件」一节把它们和模块代码一起交用户审，默认合并时才进集成分支。
+   - `change add` 输出「名单内：提前落地，不用问用户」的请求：不问用户，也不在集成 checkout 手改，直接 `module-crew change land <编号> --from-module`（从请求方模块分支取清单文件、单独提交），按输出发通知；它拒绝（退出码 3）时按它写的原因照 1～6 处理。输出「声明不可用」或名单外、混合、冲突的请求，照 1～6 处理。
+   - 给用户发批量交审或最终验收之前先 `module-crew change landed`：有待汇总的提前落地，就把它给的汇总正文写进那条消息，再 `module-crew change landed --mark-told <编号>…`（只是记账，不是批准）。
+   - `start plan` 不提议、`start prepare` 拒绝和在用模块有依赖关系的模块（输出写「和在用的 <模块> 有依赖关系」），等那个模块合入再开。
 
 ## 审查就近（登记了审查者时）
 
