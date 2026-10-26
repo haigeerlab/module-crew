@@ -396,3 +396,31 @@ def review_line(ch: dict) -> str:
     if not covered(ch):
         parts.insert(0, "这棵树没跑过快检查")
     return f"检查账：{'；'.join(parts)}（树 {ch['tree'][:7]}）"
+
+
+def status(db: store.Store, project: Path) -> dict | None:
+    """`status`: the switch and the integration head's full check (None with the switch off); read only."""
+    cfg = store.get(db, "config", "main") or {}
+    if not enabled(cfg):
+        return None
+    branch = cfg.get("integrationBranch")
+    head = _git(project, "rev-parse", f"refs/heads/{branch}").stdout.strip() if branch else ""
+    tree = _git(project, "rev-parse", f"{head}^{{tree}}").stdout.strip() if head else ""
+    rec = lookup(db, tree, "full", cfg["checkCommand"]) if tree else None
+    return {"ledger": "on", "quickCheckCommand": cfg[QUICK],
+            "baseline": {"commit": head or None, "tree": tree or None, "full": rec["result"] if rec else None,
+                         "inherited": bool(rec and rec.get("inheritedFrom"))},
+            "baselineTask": open_fix_task(db)}
+
+
+def status_lines(doc: dict | None) -> list[str]:
+    if not doc:
+        return []
+    b = doc["baseline"]
+    short = (b["commit"] or "?")[:7]
+    if b["full"] is None:
+        state = "完整检查没跑过：放后台跑 module-crew check baseline"
+    else:
+        state = f"完整检查{RESULT_NAMES[b['full']]}" + ("（继承自合并时的检查）" if b["inherited"] else "")
+    task = f"；修基线任务 T{doc['baselineTask']}" if doc.get("baselineTask") else ""
+    return [f"  检查记账：开（快检查 {doc['quickCheckCommand']}）；集成基线 {short}：{state}{task}"]

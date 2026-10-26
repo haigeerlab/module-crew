@@ -10,8 +10,8 @@
 - [x] Task 5：`check baseline`、锁互挡、修基线任务、基线红提示（Spec 验收 7、8、9）——测试先红后绿；合并锁的描述在基线检查时写「基线检查（集成分支 <短哈希>）」，合并的原措辞不变
 - [x] Task 6：`change land` 提交前快检查（Spec 验收 10）——测试先红后绿；取暂存区的树（`git write-tree`）跑快检查，跳过要原话并记进请求的 `quickCheckSkipped`
 - [x] Task 7：最终验收附检查账（Spec 验收 11）——测试先红后绿；模块与轻任务的交审事项记 `checks`，`review show`／`review batch` 多一行「检查账」，查不到只提醒
-- [ ] Task 8：`status` 的检查账（Spec 验收 12）
-- [ ] Checkpoint 2（report）：命令与记账全部就位
+- [x] Task 8：`status` 的检查账（Spec 验收 12）——测试先红后绿；开关关着时 `checks` 为 null、文本不变
+- [x] Checkpoint 2（report）：命令与记账全部就位——本模块 40 个测试与各任务的回归测试通过，全量测试在 Task 9 跑
 - [ ] Task 9：skill、README、`module-crew sync` 后全量测试（Spec 验收 13、14、1）
 - [ ] Checkpoint 3（gate）：最终验收
 - [ ] 回告：完成情况经模块协调转告 ecosystem-lead

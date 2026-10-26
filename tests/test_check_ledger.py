@@ -573,5 +573,44 @@ class FinalReviewTest(LedgerCase):
         self.assertFalse(any("检查账" in line for line in out.lines))
 
 
+class StatusTest(LedgerCase):
+    """Task 8 (Spec AC 12): status shows the switch and the integration baseline's full check."""
+
+    def setUp(self):
+        super().setUp()
+        from module_crew import hooks
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+
+    def status(self):
+        import json
+        out = self.run_cli("status", "--json", cwd=self.repo)
+        return json.loads(out.stdout)["store"]["checks"], self.run_cli("status", cwd=self.repo).stdout
+
+    def test_off(self):
+        doc, text = self.status()
+        self.assertIsNone(doc)
+        self.assertNotIn("检查记账", text)
+
+    def test_baseline_states(self):
+        self.switch_on(full=self.counting_script("full", fail_if="fail.flag"))
+        doc, text = self.status()
+        head = git(self.repo, "rev-parse", "HEAD").strip()
+        self.assertEqual((doc["ledger"], doc["baseline"]["commit"], doc["baseline"]["full"]), ("on", head, None))
+        self.assertIn(f"集成基线 {head[:7]}：完整检查没跑过", text)
+        self.assertIn("check baseline", text)
+        self.run_cli("check", "baseline", cwd=self.repo)
+        doc, text = self.status()
+        self.assertEqual(doc["baseline"]["full"], "pass")
+        self.assertIn("完整检查通过", text)
+        (self.repo / "fail.flag").write_text("", encoding="utf-8")
+        git(self.repo, "add", "fail.flag")
+        git(self.repo, "commit", "-q", "-m", "red")
+        self.run_cli("check", "baseline", cwd=self.repo)
+        doc, text = self.status()
+        self.assertEqual(doc["baseline"]["full"], "fail")
+        self.assertIsNotNone(doc["baselineTask"])
+        self.assertIn(f"修基线任务 T{doc['baselineTask']}", text)
+
+
 if __name__ == "__main__":
     unittest.main()

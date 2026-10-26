@@ -141,6 +141,9 @@ def _status(as_json: bool) -> int:
         from module_crew import mergelock
         print(f"  {mergelock.what(lock)}" + ("的锁已失效（进程不在了；下一个写命令会在集成 checkout 干净时清掉）"
               if lock["stale"] else f"正在后台跑（{took}）：别的写命令会被挡住，等它结束"))
+    from module_crew import checks          # crew-check-ledger
+    for line in checks.status_lines((report.store or {}).get("checks")):
+        print(line)
     unq = (report.store or {}).get("unqueued")
     if unq and unq["missingSeen"]:
         print("  集成分支：还没有记下认得的顶端（下次 merge run 或 module-crew unqueued 时记下）")
