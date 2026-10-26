@@ -418,3 +418,17 @@ def digest(db: store.Store, project: str | os.PathLike, mark_told: bool = False)
                  {"toldSeq": last})
         lines.append("已记为汇总给用户（只是记账，不是批准）")
     return 0, doc, lines
+
+
+def status(db: store.Store, project: str | os.PathLike) -> dict | None:
+    """Decision 9: `status --json` store.autonomy; None while the tier is unset and nothing is capped."""
+    eff = effective(db, project)
+    if not eff.active:
+        return None
+    doc, lines = report(db, project)
+    return {"configured": doc["configured"]["value"], "source": doc["configured"]["source"], "cap": doc["cap"],
+            "effective": doc["effective"], "suggest": doc["suggest"], "evidence": doc["evidence"], "lines": lines}
+
+
+def status_lines(doc: dict | None) -> list[str]:
+    return [f"  {line}" for line in (doc or {}).get("lines") or []]

@@ -466,5 +466,60 @@ class DigestTest(IncidentBase):
         self.assertEqual(code, 3, out)
 
 
+class StatusTest(TierMixin, ReviewCase):
+    """Decision 9."""
+
+    def test_unset_shows_nothing(self):
+        self.with_tier()
+        code, out = self.cli("status")
+        self.assertNotIn("自治档位", out)
+        self.assertNotIn("档位", out)
+        code, out = self.cli("status", "--json")
+        self.assertIsNone(json.loads(out)["store"]["autonomy"])
+
+    def test_set_tier_and_cap(self):
+        self.with_tier()
+        self.set_tier("relaxed", "combined")
+        code, out = self.cli("status")
+        self.assertIn("自治档位：设的 relaxed（.agent/config.json），生效 relaxed", out)
+        cap(self.db(), "standard", "relaxed")
+        code, out = self.cli("status", "--json")
+        doc = json.loads(out)["store"]["autonomy"]
+        self.assertEqual((doc["configured"], doc["cap"], doc["effective"]), ("relaxed", "standard", "standard"))
+        code, out = self.cli("status")
+        self.assertIn("生效 standard", out)
+        self.assertIn("恢复要用户原话", out)
+
+
+class FloorTest(TierMixin, MergeCase):
+    """Acceptance 9: no tier goes below the floor."""
+
+    def setUp(self):
+        super().setUp()
+        self.with_tier()
+        self.set_tier("relaxed", "combined")
+        git(self.repo, "commit", "-qam", "tier relaxed")
+        self.db = store.open_store(self.repo)
+        self.assertEqual(autonomy.effective(self.db, self.repo).value, "relaxed")
+
+    def test_spec_approval_still_needs_words(self):
+        n = review.add(self.db, self.spec_review("b"), "shop-b", 1).number
+        res = review.approve(self.repo, [n], " ")
+        self.assertEqual(res.code, 3)
+        self.assertIn("用户原话不能为空", "\n".join(res.lines))
+
+    def test_final_acceptance_still_needs_an_answer(self):
+        out = review.add(self.db, self.finish("b"), "shop-b", 2)
+        res = review.approve(self.repo, [out.number], "批")
+        self.assertEqual(res.code, 3)
+        self.assertIn("最终验收：用 review answer 答复", "\n".join(res.lines))
+
+    def test_kickoff_still_waits_for_the_start_notice(self):
+        res = start.prepare(self.repo, ["d"], "开 d", short="shop", max_modules=3)
+        self.assertEqual(res.code, 0, res.lines)
+        text = store.read_body(self.db, res.prepared[0]["kickoff"])
+        self.assertIn("收到开工类【协调通知】之前不要开始构建", text)
+
+
 if __name__ == "__main__":
     unittest.main()

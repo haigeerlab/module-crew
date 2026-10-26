@@ -144,6 +144,9 @@ def _status(as_json: bool) -> int:
     from module_crew import checks          # crew-check-ledger
     for line in checks.status_lines((report.store or {}).get("checks")):
         print(line)
+    from module_crew import autonomy        # crew-autonomy-tier
+    for line in autonomy.status_lines((report.store or {}).get("autonomy")):
+        print(line)
     unq = (report.store or {}).get("unqueued")
     if unq and unq["missingSeen"]:
         print("  集成分支：还没有记下认得的顶端（下次 merge run 或 module-crew unqueued 时记下）")
