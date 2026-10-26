@@ -549,5 +549,35 @@ class DependencyTest(DeclaredMixin, StartCase):
             self.assertFalse(any("依赖关系" in r for r in self.validate(["b"])))
 
 
+ROOT = Path(__file__).resolve().parent.parent
+
+
+class DocsTest(unittest.TestCase):
+    """Acceptance 11 and the README."""
+
+    def read(self, rel):
+        return (ROOT / rel).read_text(encoding="utf-8")
+
+    def test_dev_skills(self):
+        for rel in ("skills/crew-dev/SKILL.md", "codex-skills/crew-dev/SKILL.md"):
+            text = self.read(rel)
+            for words in ("declaredScope", "module-crew scope <文件>", "名单内", "直接在本分支改", "名单外",
+                          "确实要提前进集成分支"):
+                self.assertIn(words, text, rel)
+
+    def test_coordinator_skills(self):
+        for rel in ("skills/crew-coordinator/SKILL.md", "codex-skills/crew-coordinator/SKILL.md"):
+            text = self.read(rel)
+            for words in ("config set --declared-scope", "change land <编号> --from-module", "不问用户", "change landed",
+                          "--mark-told", "声明内公共文件", "有依赖关系"):
+                self.assertIn(words, text, rel)
+
+    def test_readme(self):
+        text = self.read("README.md")
+        for words in ("declaredScope", "change land <编号> --from-module", "change landed", "module-crew scope",
+                      "声明内公共文件", "--declared-scope"):
+            self.assertIn(words, text)
+
+
 if __name__ == "__main__":
     unittest.main()
