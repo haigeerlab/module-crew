@@ -596,7 +596,7 @@ class StatusTest(LedgerCase):
         doc, text = self.status()
         head = git(self.repo, "rev-parse", "HEAD").strip()
         self.assertEqual((doc["ledger"], doc["baseline"]["commit"], doc["baseline"]["full"]), ("on", head, None))
-        self.assertIn(f"集成基线 {head[:7]}：完整检查没跑过", text)
+        self.assertIn(f"集成分支 {head[:7]}：完整检查没跑过", text)
         self.assertIn("check baseline", text)
         self.run_cli("check", "baseline", cwd=self.repo)
         doc, text = self.status()

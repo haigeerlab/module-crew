@@ -216,7 +216,7 @@ def baseline_hint(db: store.Store, cfg: dict, cwd: Path) -> list[str]:
     if rec is None or rec["result"] != "fail":
         return []
     task = open_fix_task(db)
-    return [f"集成基线 {tree[:7]} 的完整检查也是红的" + (f"（修基线任务 T{task}）" if task else "")
+    return [f"集成分支 {tree[:7]} 的完整检查也是红的" + (f"（修基线任务 T{task}）" if task else "")
             + "：先看失败是不是来自基线，是就不用另记、照常继续"]
 
 
@@ -290,7 +290,7 @@ def baseline(cwd: str | os.PathLike, rerun: bool = False) -> Outcome:
         return Outcome(3, ["检查记账没打开（项目开关 checkLedger）：照今天的做法，完整检查只在 merge run 里跑"])
     role = hooks.detect(cwd)
     if role is None or role.kind != "coordinator":
-        return Outcome(3, ["check baseline 只在模块协调会话里跑（集成 checkout）"])
+        return Outcome(3, ["check baseline 只在模块协调里跑（集成 checkout）"])
     project = cwd
     checkout = probe._checkout_of(project, cfg.get("integrationBranch", ""))
     tree = clean_tree(checkout) if checkout else None
@@ -423,4 +423,4 @@ def status_lines(doc: dict | None) -> list[str]:
     else:
         state = f"完整检查{RESULT_NAMES[b['full']]}" + ("（继承自合并时的检查）" if b["inherited"] else "")
     task = f"；修基线任务 T{doc['baselineTask']}" if doc.get("baselineTask") else ""
-    return [f"  检查记账：开（快检查 {doc['quickCheckCommand']}）；集成基线 {short}：{state}{task}"]
+    return [f"  检查记账：开（快检查 {doc['quickCheckCommand']}）；集成分支 {short}：{state}{task}"]

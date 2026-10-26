@@ -201,7 +201,7 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 - **开关默认关，凭用户原话开关**：先 `module-crew config set --quick-check-command "<项目的快检查脚本>" --original-file <原话文件>`（不经 shell，含 `&&`、`|` 等会被拒，改写成项目脚本），
   再 `module-crew config set --check-ledger on --original-file <原话文件>`（要先有完整检查命令 `checkCommand`）。关掉同样要原话；检查账保留。
 - **打开后**：通知里的「跑完整检查」都变成「跑 `module-crew check quick`」；`merge run` 照旧每次跑完整检查，结果自动记账，合入后的勾选提交继承它；最终验收交审带「检查账」一行，`review batch` 里照给用户看，没跑过快检查只提醒模块补跑、不拒收。
-- **基线检查**：`status` 显示「集成基线 <短哈希>：完整检查没跑过」时（公共变更落地、不经队列的提交、刚开工之后），把 `module-crew check baseline` 放后台跑；同一棵树只跑一次。它和 `merge run` 共用合并锁，互相挡（退出码 6），等它结束再合并。
+- **基线检查**：`status` 显示「集成分支 <短哈希>：完整检查没跑过」时（公共变更落地、不经队列的提交、刚开工之后），把 `module-crew check baseline` 放后台跑；同一棵树只跑一次。它和 `merge run` 共用合并锁，互相挡（退出码 6），等它结束再合并。
 - **基线红了**：输出「已建修基线任务 T<号>」就告诉用户一次，照轻任务流程派出（`task dispatch` 照常）；已有没结束的修基线任务时不会再建。「没有可比的绿基线」时请用户说明要修哪些文件再 `task add`。模块报来同一基线的失败不另记。
 - **公共变更落地**：开关打开时 `change land` 提交前先对暂存的文件跑快检查；失败退出码 5、不提交、文件保持暂存、请求仍开着，交用户：修好再落地，或用户同意后加 `--skip-quick-check --original-file <原话文件>`。
 

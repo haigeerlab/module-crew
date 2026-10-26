@@ -228,7 +228,7 @@ module-crew answer <编号> --original(-file)      转达「你的答复」
 module-crew start plan|prepare                   开工
 module-crew config set [--commit-prefix <值>] [--check-timeout <秒>] --original(-file)  已开工项目改提交信息前缀（空字符串表示不加）或提交与检查的时限
 module-crew config set --quick-check-command "<命令>" | --check-ledger on|off --original(-file)  快检查命令与检查记账开关（默认关）
-module-crew check quick|baseline [--rerun]       检查记账：模块 worktree 里跑快检查／模块协调对集成基线跑一次完整检查（放后台），同一棵树不重跑
+module-crew check quick|baseline [--rerun]       检查记账：模块 worktree 里跑快检查／模块协调对集成分支跑一次完整检查（放后台），同一棵树不重跑
 module-crew check show [<提交>]|list [--json]    检查账（只读）：一个提交的树跑过哪些检查／最近的记录
 module-crew review add|batch|approve|answer      交审与批量批准
 module-crew change add|list|land|answer [--reason superseded]  公共变更请求（被取代的可直接关；检查记账打开时 land 先跑快检查，--skip-quick-check 要原话）
