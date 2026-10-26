@@ -457,5 +457,64 @@ class BaselineTest(LedgerCase):
         self.assertIn(f"修基线任务 T{n}", out.stdout)
 
 
+class LandTest(LedgerCase):
+    """Task 6 (Spec AC 10): change land runs the quick check on the staged tree before it commits."""
+
+    def setUp(self):
+        super().setUp()
+        from module_crew import changes
+        from test_changes import request
+        self.changes = changes
+        self.n = changes.add(self.db, request(["a.json"]), "shop-b", 5003).number
+        self.head = git(self.repo, "rev-parse", "HEAD").strip()
+
+    def edit(self, text="{}\n"):
+        (self.repo / "a.json").write_text(text, encoding="utf-8")
+
+    def test_pass_commits_and_records(self):
+        self.switch_on()
+        self.edit()
+        tree = None
+        res = self.changes.land(self.repo, self.n)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(self.calls("quick"), 1)
+        tree = git(self.repo, "rev-parse", "HEAD^{tree}").strip()
+        rec = store.get(self.db, "check", f"{tree}.quick")
+        self.assertEqual((rec["result"], rec["by"], rec["commit"]), ("pass", "change-land", None))
+
+    def test_fail_keeps_staged(self):
+        self.switch_on(quick=self.counting_script("quick", fail_if="a.json"))
+        self.edit()
+        res = self.changes.land(self.repo, self.n)
+        self.assertEqual(res.code, 5, res.lines)
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD").strip(), self.head)
+        self.assertIn("A  a.json", git(self.repo, "status", "--porcelain"))
+        self.assertEqual(store.get(self.db, "request", str(self.n))["state"], "open")
+        self.assertEqual(res.sends, [])
+
+    def test_skip_needs_words(self):
+        self.switch_on(quick=self.counting_script("quick", fail_if="a.json"))
+        self.edit()
+        res = self.changes.land(self.repo, self.n, skip_quick=True)
+        self.assertEqual(res.code, 3, res.lines)
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD").strip(), self.head)
+        res = self.changes.land(self.repo, self.n, "这次先落地，快检查的问题另修", skip_quick=True)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(self.calls("quick"), 0)
+        rec = store.get(self.db, "request", str(self.n))
+        self.assertEqual(rec["quickCheckSkipped"]["original"], "这次先落地，快检查的问题另修")
+
+    def test_cli_flag(self):
+        self.switch_on()
+        self.edit()
+        out = self.run_cli("change", "land", f"C{self.n}", "--skip-quick-check", cwd=self.repo)
+        self.assertEqual(out.returncode, 3, out.stdout + out.stderr)
+
+    def test_off_unchanged(self):
+        self.edit()
+        self.assertEqual(self.changes.land(self.repo, self.n).code, 0)
+        self.assertEqual(store.records(self.db, "check"), {})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -183,7 +183,8 @@ def _changed_paths(checkout: Path) -> list[str]:
     return paths
 
 
-def land(project: str | os.PathLike, number: int, original: str | None = None, partial: bool = False) -> LandResult:
+def land(project: str | os.PathLike, number: int, original: str | None = None, partial: bool = False,
+         skip_quick: bool = False) -> LandResult:
     """Commit the coordinator's edits for one request on the integration baseline and prepare the notices."""
     project = Path(project)
     db = store.open_store(project)
@@ -209,7 +210,17 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
                               "全部改完再 change land；确实要先落地已改的部分，请用户同意后加 --partial --original-file <原话文件>"])
     if left and not (original and original.strip()):
         return LandResult(3, ["部分落地要用户原话：请用户同意后加 --original-file <原话文件>"])
+    from module_crew import checks
+    quick = checks.enabled(cfg)
+    if quick and skip_quick and not (original and original.strip()):
+        return LandResult(3, ["跳过快检查要用户原话：请用户同意后加 --original-file <原话文件>"])
     probe._git(checkout, "add", "-A", "--", *changed)
+    if quick and not skip_quick:     # crew-check-ledger decision 9: the staged tree passes the quick check first
+        tree = probe._git(checkout, "write-tree").stdout.strip()
+        out = checks.check_tree(db, cfg, "quick", tree, checkout, "change-land", None)
+        if out.code != 0:
+            return LandResult(out.code, out.lines + [f"没有提交，清单文件保持暂存，请求 C{number} 仍开着：修好后再 change land，"
+                                                     "或请用户同意后加 --skip-quick-check --original-file <原话文件>"])
     from module_crew import merge
     try:
         done = probe._git(checkout, "commit", "-q", "-m",
@@ -239,12 +250,14 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
     todo = f"{sync.STEP}，{checks.after_sync(cfg)}后继续"
     with db.transaction(actor="coordinator") as tx:
         answer_rec = {"original": original, "answeredAt": store.now(), **store.source_field()} if original is not None else None
+        skipped = {"quickCheckSkipped": {"original": original, "at": store.now()}} if quick and skip_quick else {}
         if left:
             parts = list(rec.get("partial") or []) + [{"commit": commit, "files": changed, "answer": answer_rec}]
-            tx.put("request", str(number), dict(rec, partial=parts), action="partly-landed",
+            tx.put("request", str(number), dict(rec, partial=parts, **skipped), action="partly-landed",
                    data={"commit": commit, "left": left})
         else:
-            tx.put("request", str(number), dict(rec, state="closed", closedReason="landed", commit=commit, answer=answer_rec),
+            tx.put("request", str(number), dict(rec, state="closed", closedReason="landed", commit=commit, answer=answer_rec,
+                                                **skipped),
                    action="landed", data={"commit": commit})
             _close_ticket(tx, rec)
         skip = merge.no_sync(tx)               # same rule as merge run (0.9.3); the requester still gets its reply

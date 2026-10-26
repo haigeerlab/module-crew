@@ -705,7 +705,8 @@ def _change(args) -> int:
         return 0
     if args.original_file is not None and original is None:
         return 2
-    res = changes.land(".", args.number, original, partial=getattr(args, "partial", False))
+    res = changes.land(".", args.number, original, partial=getattr(args, "partial", False),
+                       skip_quick=getattr(args, "skip_quick_check", False))
     for line in res.lines:
         print(line)
     for x in res.sends:
@@ -1067,6 +1068,7 @@ def _main(argv: list[str] | None = None) -> int:
             c.add_argument("--by", type=refs.parse, help="取代它的新请求编号（配合 --reason superseded）")
         if name == "land":
             c.add_argument("--partial", action="store_true", help="清单里还有文件没改时，先落地已改的部分（要用户原话），请求保持打开")
+            c.add_argument("--skip-quick-check", action="store_true", help="检查记账打开时跳过提交前的快检查（要用户原话）")
     mg = sub.add_parser("merge", help="本地合并、收尾与远端 PR")
     mgs = mg.add_subparsers(dest="action", required=True)
     for name in ("queue", "push-plan"):
