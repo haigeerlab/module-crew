@@ -6,7 +6,7 @@ import os
 import unittest
 from pathlib import Path
 
-from helpers import MergeCase, ReviewCase, StartCase, git
+from helpers import START_MAP, MergeCase, ReviewCase, StartCase, git
 
 from module_crew import declared, protocol, review, store
 from test_review_display import FinalTablesCase
@@ -477,6 +477,76 @@ class FinalSectionTest(DeclaredMixin, FinalTablesCase):
             self.assertEqual(t["declared"]["state"], "off")
             self.assertIn("package.json", {r["path"] for r in t["code"]})
             self.assertFalse(any("声明内公共文件" in x for x in self.points()))
+
+
+class DependencyTest(DeclaredMixin, StartCase):
+    """Acceptance 10: b and c depend on a; a is reopened and has a module session in use."""
+
+    def setUp(self):
+        super().setUp()
+        from module_crew import start
+        assert start.prepare(self.repo, ["d"], "开 d", short="shop", max_modules=4).code == 0
+        self.db = store.open_store(self.repo)
+        with self.db.transaction(actor="test") as tx:
+            tx.put("session", "shop-a-r2", {"role": "dev", "host": "claude-desktop", "status": "active", "module": "a",
+                                           "worktree": str(self.tmp / "wa")}, action="registered")
+
+    def plan(self):
+        from module_crew import start
+        return start.plan(self.repo)
+
+    def validate(self, modules):
+        from module_crew import start
+        return start.validate(self.repo, modules, "开", None, None)[0]
+
+    WHY = "和在用的 a 有依赖关系，等它合入再开"
+
+    def test_on_holds_both_sides(self):
+        self.switch("on")
+        p = self.plan()
+        self.assertEqual(p.modules, [])
+        reasons = {r["module"]: r["reason"] for r in p.reasons}
+        self.assertEqual((reasons["b"], reasons["c"]), (self.WHY, self.WHY))
+        out = self.run_cli("start", "plan")
+        self.assertIn(f"  b：{self.WHY}", out.stdout)
+        before = (store.records(self.db, "session"), git(self.repo, "branch", "--list"))
+        res = self.run_cli("start", "prepare", "b", "--original", "开 b")
+        self.assertEqual(res.returncode, 3, res.stdout + res.stderr)
+        self.assertIn("b 和在用的 a 有依赖关系", res.stdout + res.stderr)
+        self.assertEqual(before, (store.records(self.db, "session"), git(self.repo, "branch", "--list")))
+
+    def test_held_ones_listed_when_others_are_proposed(self):
+        self.set_map(dict(START_MAP, startable={"modules": ["b", "c", "f"], "conflicts": []},
+                          modules=START_MAP["modules"] + [{"id": "f", "responsibility": "独立页", "dependsOn": [],
+                                                           "status": "ready"}]))
+        self.switch("on")
+        p = self.plan()
+        self.assertEqual([m["id"] for m in p.modules], ["f"])
+        out = self.run_cli("start", "plan").stdout
+        self.assertIn("暂不提议：", out)
+        self.assertIn(f"  b：{self.WHY}", out)
+
+    def test_merged_upstream_no_longer_holds(self):
+        with self.db.transaction(actor="test") as tx:
+            n = tx.allocate_number()
+            tx.put("item", str(n), {"state": "closed", "kind": "merge-approval", "module": "a", "closedReason": "merged"},
+                   action="closed")
+        self.switch("on")
+        self.assertEqual([m["id"] for m in self.plan().modules], ["b", "c"])
+        self.assertFalse(any("依赖关系" in r for r in self.validate(["b"])))
+
+    def test_same_batch(self):
+        with self.db.transaction(actor="test") as tx:
+            tx.put("session", "shop-a-r2", dict(tx.get("session", "shop-a-r2"), status="retired"), action="retired")
+        self.set_map(dict(START_MAP, startable={"modules": ["b", "e"], "conflicts": []}))
+        self.switch("on")
+        self.assertIn("同一次要开的 b 和 e 有依赖关系，不能同时开", self.validate(["b", "e"]))
+
+    def test_off(self):
+        for value in (None, "off"):
+            self.switch(value)
+            self.assertEqual([m["id"] for m in self.plan().modules], ["b", "c"])
+            self.assertFalse(any("依赖关系" in r for r in self.validate(["b"])))
 
 
 if __name__ == "__main__":

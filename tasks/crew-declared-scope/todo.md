@@ -9,7 +9,7 @@
 - [x] Task 5：`change landed` 与 `--mark-told`（Spec 验收 8）——测试先红后绿；`changes.landed`／`landed_rows`／`landed_summary`／`mark_told`，`--mark-told` 先全部校验再写；另：`change add` 对名单内的提前落地请求不再打印「给用户看的正文」卡片（不问用户），加了测试
 - [x] Checkpoint 1（report）：公共变更这一路做完，test_declared_scope 与 test_changes、test_change_partial、test_change_supersede 通过——test_declared_scope 29 个，test_changes、test_change_partial、test_change_supersede、test_review_display、test_session_handover 通过
 - [x] Task 6：最终验收「声明内公共文件」一节、提前落地标注、未声明依赖、`display.declared`（Spec 验收 9）——测试先红后绿（4 错误）；`present._declared_section` 在 `final_tables` 末尾按开关挪行、`_declared_lines` 在「代码」与「提交」之间输出；挪进这一节的行不带「超出 Plan」标记；`review.py` 没改；test_review_display、test_hub_output、test_card_fields、test_contract_v26 照常通过
-- [ ] Task 7：有依赖关系的模块不同时开——`plan`、`prepare`、`_why_not`，含重开的上游、已合入不挡、同批互依赖（Spec 验收 10）
+- [x] Task 7：有依赖关系的模块不同时开——`plan`、`prepare`、`_why_not`，含重开的上游、已合入不挡、同批互依赖（Spec 验收 10）——测试先红后绿（3 失败）；`start._related`（上下游闭包）、`_held`（开关开时与在用未合入模块相关的）；`plan` 不提议被挡的，有别的可提议时把它们放进 `reasons`、`start plan` 多一段「暂不提议：」，没有可提议时原因优先用这一条（没有另改 `_why_not`）；`validate` 加在用与同批两种拒绝；test_start_plan、test_start_prepare、test_reopen_module、test_light_task、test_failure 照常通过
 - [ ] Task 8：开关没设与 `off` 时各命令输出与改前逐字相同的集中对照（Spec 验收 2）
 - [ ] Checkpoint 2（report）：命令层做完，全量测试通过
 - [ ] Task 9：skill 四份与 README（Spec 验收 11）

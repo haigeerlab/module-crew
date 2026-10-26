@@ -387,6 +387,10 @@ def _start_plan(as_json: bool) -> int:
             except store.StoreError:
                 db = None
             print(present.card_text(present.start_card(Path("."), db, p.modules, p.conflicts)))
+            if p.reasons:                       # crew-declared-scope: related to a module in use
+                print("暂不提议：")
+                for r in p.reasons:
+                    print(f"  {r['module']}：{r['reason']}")
         elif not p.blockers:
             print("没有可开的模块：" if p.reasons else "没有可开的模块（能力图上的模块都已完成）")
             for r in p.reasons:
