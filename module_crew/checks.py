@@ -13,6 +13,7 @@ import shlex
 import subprocess
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 from module_crew import store
@@ -228,3 +229,36 @@ def listing(db: store.Store, limit: int = 20) -> list[dict]:
 
 def baseline(project: str | os.PathLike, rerun: bool = False) -> Outcome:
     return Outcome(3, ["基线检查还没实现"])
+
+
+def note_full(db: store.Store, cfg: dict, checkout: Path, exit_code: int, tail: str, started: str) -> None:
+    """merge run's full check (decision 4): recorded with the switch on, never used to skip the check."""
+    if not enabled(cfg):
+        return
+    tree = _git(checkout, "rev-parse", "HEAD^{tree}").stdout.strip()
+    commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
+    seconds = int((datetime.fromisoformat(store.now()) - datetime.fromisoformat(started)).total_seconds())
+    record(db, {"tree": tree, "kind": "full", "command": cfg["checkCommand"], "result": "pass" if exit_code == 0 else "fail",
+                "exitCode": exit_code, "tail": tail, "commit": commit, "where": str(checkout), "by": "merge-run",
+                "startedAt": started, "seconds": seconds, "inheritedFrom": None})
+
+
+def inherit(db: store.Store, cfg: dict, checkout: Path, merge_commit: str, module: str) -> dict | None:
+    """Decision 5: when everything after the merge commit only ticked the module's todo or marked its Spec, the
+    integration head's tree gets the merge tree's passing full check, noted as inherited."""
+    if not enabled(cfg):
+        return None
+    head = _git(checkout, "rev-parse", "HEAD").stdout.strip()
+    if head == merge_commit:
+        return None
+    changed = set(_git(checkout, "diff", "--name-only", merge_commit, head).stdout.split())
+    if not changed or not changed <= {f"tasks/{module}/todo.md", f"spec/{module}.md"}:
+        return None
+    merged = _git(checkout, "rev-parse", f"{merge_commit}^{{tree}}").stdout.strip()
+    source = lookup(db, merged, "full", cfg["checkCommand"])
+    if source is None or source["result"] != "pass":
+        return None
+    tree = _git(checkout, "rev-parse", "HEAD^{tree}").stdout.strip()
+    entry = {**source, "tree": tree, "commit": head, "inheritedFrom": merged}
+    record(db, entry)
+    return entry

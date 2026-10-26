@@ -3,7 +3,7 @@ import unittest
 
 from helpers import MergeCase, git
 
-from module_crew import checks, store
+from module_crew import checks, merge, store
 
 
 class LedgerCase(MergeCase):
@@ -209,6 +209,63 @@ class QuickTest(LedgerCase):
         out = self.run_cli("check", "show", cwd=self.wt["c"])
         self.assertEqual(out.returncode, 0)
         self.assertIn("没有检查记录", out.stdout)
+
+
+class MergeLedgerTest(LedgerCase):
+    """Task 3 (Spec AC 5): merge run always runs the full check; with the switch on the result is recorded and the
+    tick commit's tree inherits it."""
+
+    def todo(self, m):
+        path = self.wt[m] / "tasks" / m / "todo.md"
+        path.write_text(f"# Todo: {m}\n\n- [x] Task 1\n- [ ] 最终验收（gate）\n", encoding="utf-8")
+
+    def test_recorded_and_inherited(self):
+        self.switch_on()
+        self.todo("b")
+        self.approve_final("b", 1)
+        res = merge.run(self.repo)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(self.calls("full"), 1)
+        merged_tree = git(self.repo, "rev-parse", f"{res.merge_commit}^{{tree}}").strip()
+        rec = store.get(self.db, "check", f"{merged_tree}.full")
+        self.assertEqual((rec["result"], rec["by"], rec["commit"]), ("pass", "merge-run", res.merge_commit))
+        head = git(self.repo, "rev-parse", "HEAD").strip()
+        self.assertNotEqual(head, res.merge_commit)            # the tick commit
+        top = store.get(self.db, "check", f"{git(self.repo, 'rev-parse', 'HEAD^{tree}').strip()}.full")
+        self.assertEqual((top["result"], top["inheritedFrom"], top["commit"]), ("pass", merged_tree, head))
+
+    def test_full_check_runs_even_when_recorded(self):
+        self.switch_on()
+        self.approve_final("b", 1)
+        merge.run(self.repo)
+        self.approve_final("c", 2)
+        merge.run(self.repo)
+        self.assertEqual(self.calls("full"), 2)
+
+    def test_failure_recorded(self):
+        self.switch_on(full=self.counting_script("full", fail_if="fail.flag"))
+        self.approve_final("b", 1, path="fail.flag", content="")
+        res = merge.run(self.repo)
+        self.assertEqual(res.code, 5, res.lines)
+        merged_tree = git(self.repo, "rev-parse", f"{res.merge_commit}^{{tree}}").strip()
+        self.assertEqual(store.get(self.db, "check", f"{merged_tree}.full")["result"], "fail")
+
+    def test_other_changes_not_inherited(self):
+        self.switch_on()
+        self.approve_final("b", 1)
+        res = merge.run(self.repo)
+        (self.repo / "other.txt").write_text("x\n", encoding="utf-8")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "other")
+        self.assertIsNone(checks.inherit(self.db, self.cfg(), self.repo, res.merge_commit, "b"))
+        top = git(self.repo, "rev-parse", "HEAD^{tree}").strip()
+        self.assertIsNone(store.get(self.db, "check", f"{top}.full"))
+
+    def test_off_nothing_recorded(self):
+        self.approve_final("b", 1)
+        self.assertEqual(merge.run(self.repo, check_command=self.counting_script("full")).code, 0)
+        self.assertEqual(self.calls("full"), 1)
+        self.assertEqual(store.records(self.db, "check"), {})
 
 
 if __name__ == "__main__":
