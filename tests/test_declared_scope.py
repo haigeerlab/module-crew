@@ -8,7 +8,8 @@ from pathlib import Path
 
 from helpers import MergeCase, ReviewCase, StartCase, git
 
-from module_crew import declared, store
+from module_crew import declared, protocol, review, store
+from test_review_display import FinalTablesCase
 
 FAKE_DECLARED = '''import json, os, sys
 args = sys.argv[1:]
@@ -401,6 +402,81 @@ class LandedTest(LandBase):
         self.assertIs(store.get(self.db, "request", str(n))["toldUser"], True)
         self.assertEqual(self.run_cli("change", "landed").returncode, 3)
         self.assertEqual(self.run_cli("change", "landed", "--mark-told", str(n)).returncode, 3)   # already told
+
+
+class FinalSectionTest(DeclaredMixin, FinalTablesCase):
+    """Acceptance 9: b also changed shared/x.ts (landed early as C<n>) and package.json, both declared."""
+
+    def finish(self, m, content=None, path=None):
+        f = self.wt[m] / "shared" / "x.ts"
+        f.parent.mkdir(exist_ok=True)
+        f.write_text("export const X = 1\n", encoding="utf-8")
+        return super().finish(m, content, path)
+
+    def setUp(self):
+        super().setUp()
+        self.with_declared({"b": usable(paths=["shared/"], configs=["package.json"], deps=[("zod", "^3")])})
+        with self.db.transaction(actor="test") as tx:
+            self.early = tx.allocate_number()
+            tx.put("request", str(self.early), {"state": "closed", "from": "shop-b", "files": ["shared/x.ts"],
+                                                "closedReason": "landed", "commit": "1234567890abcdef",
+                                                "fromModule": {"commit": "f" * 40}, "toldUser": True}, action="landed")
+
+    def display(self):
+        return next(i for i in review.batch(self.repo)["items"] if i["number"] == self.n)["display"]
+
+    def points(self):
+        [(n, path, text)] = review.for_hub(self.repo)
+        return protocol.parse(text).fields["要点"].splitlines()
+
+    def test_on(self):
+        self.switch("on")
+        t = self.display()
+        self.assertEqual(t["declared"]["state"], "ok")
+        files = {r["path"]: r for r in t["declared"]["files"]}
+        self.assertEqual(set(files), {"shared/x.ts", "package.json"})
+        self.assertEqual(files["shared/x.ts"]["landed"], {"request": self.early, "commit": "1234567"})
+        self.assertNotIn("landed", files["package.json"])
+        self.assertEqual({r["path"] for r in t["code"]}, {"src/a.py", "src/extra.py"})
+        self.assertEqual(t["dependencies"], ["left-pad 1.3.0（package.json）（未声明）"])
+        points = self.points()
+        for words in ("声明内公共文件：", f"- 新增 shared/x.ts（+1 −0，已提前落地 C{self.early}（1234567））",
+                      "- 新增 package.json（+5 −0）", "- left-pad 1.3.0（package.json）（未声明）"):
+            self.assertIn(words, points)
+        self.assertLess(points.index("代码："), points.index("声明内公共文件："))
+        self.assertLess(points.index("声明内公共文件："), points.index("提交："))
+
+    def test_declared_dependency_not_marked(self):
+        self.with_declared({"b": usable(paths=["shared/"], configs=["package.json"], deps=[("left-pad", "1.3.0")])})
+        self.switch("on")
+        self.assertEqual(self.display()["dependencies"], ["left-pad 1.3.0（package.json）"])
+
+    def test_nothing_declared_changed(self):
+        self.with_declared({"b": usable(paths=["other/"])})
+        self.switch("on")
+        t = self.display()
+        self.assertEqual((t["declared"]["state"], t["declared"]["files"]), ("ok", []))
+        points = self.points()
+        self.assertEqual(points[points.index("声明内公共文件：") + 1], "- 无")
+
+    def test_unavailable(self):
+        self.with_declared({"b": {"code": 4, "out": {"error": "bad-path"}}})
+        self.switch("on")
+        t = self.display()
+        self.assertEqual(t["declared"]["state"], "unavailable")
+        self.assertIn("bad-path", t["declared"]["reason"])
+        self.assertIn("package.json", {r["path"] for r in t["code"]})
+        self.assertEqual(t["dependencies"], ["left-pad 1.3.0（package.json）"])
+        self.assertTrue(any(x.startswith("声明内公共文件：声明不可用：") and x.endswith("名单内外没有区分")
+                            for x in self.points()))
+
+    def test_off(self):
+        for value in (None, "off"):
+            self.switch(value)
+            t = self.display()
+            self.assertEqual(t["declared"]["state"], "off")
+            self.assertIn("package.json", {r["path"] for r in t["code"]})
+            self.assertFalse(any("声明内公共文件" in x for x in self.points()))
 
 
 if __name__ == "__main__":
