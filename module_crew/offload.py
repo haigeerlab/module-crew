@@ -259,7 +259,7 @@ def start(project: str | os.PathLike, module: str, again: bool = False, answer: 
     if state == "needs-input":
         return Outcome(3, [f"{module} 的外包在等用户回答 Codex 的问题：答复到了用 offload resume {module}"])
     if state in PENDING and not again:
-        return Outcome(3, [f"{module} 的外包停着（{state}）：要用户答复后再 offload start {module} --again，或 offload handback {module}"])
+        return Outcome(3, [f"{module} 的外包停着（{state}）：等用户的答复到了再 offload start {module} --again，或 offload handback {module}"])
     if state == "handed-back" and not again:
         return Outcome(3, [f"{module} 已交还模块会话：要重新外包须用户同意后用 offload start {module} --again"])
     dirty = bool(_git(worktree, "status", "--porcelain").stdout.strip())
@@ -356,7 +356,7 @@ def draft(db: store.Store, module: str, decide: str, happened: str, options: lis
     return lines
 
 
-AGAIN = ("A", "重派：在现有改动上让 Codex 接着做这一项", "用户答复后运行 offload start <模块> --again --original-file <答复>，再执行它给出的 /delegate:run")
+AGAIN = ("A", "重派：在现有改动上让 Codex 接着做这一项", "用户的答复到了再运行 offload start <模块> --again --original-file <答复>，再执行它给出的 /delegate:run")
 BACK = ("B", "交还模块会话自己做", "运行 offload handback <模块>，模块会话按 Plan 接着做，之后不再外包这个模块")
 HOLD = ("C", "先停，我自己看", "什么都不动，改动留在模块 worktree")
 
@@ -543,7 +543,7 @@ def _timeout(db: store.Store, rec: dict, result: Result, text: str, exit_code: i
         go_on = ("A", "续跑：Codex 接着这次超时的进度做", "你的答复原话交给 offload resume <模块> --original-file <答复>，再执行它给出的 /delegate:run --resume")
     else:
         go_on = ("A", "重派：在已有改动上让 Codex 从头接着做这一项（delegate 1.1 超时后不能续跑）",
-                 "用户答复后运行 offload start <模块> --again --original-file <答复>，再执行它给出的 /delegate:run")
+                 "用户的答复到了再运行 offload start <模块> --again --original-file <答复>，再执行它给出的 /delegate:run")
     return Outcome(5, [
         f"Codex 做 {task} 超时（退出码 {exit_code}）：没有跑快检查、没有提交，改到一半的文件留在模块 worktree。",
         *progress, *note, "",
