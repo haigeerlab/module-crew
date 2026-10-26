@@ -1,5 +1,7 @@
 # Spec: crew-codex-offload
 
+<!-- spec-guard: review approved cf600bf50726 -->
+
 > 能力图模块 `crew-codex-offload`（第十版第 4 个）。需求来源：接缝 S32，已批方案 plugin-ecosystem `proposals/2026-10-24-S32-并行流畅与额度外包.md`（612634c，用户 2026-10-24「按推荐批准」）
 > 第二节 module-crew 第 6 条与文末补记（2026-10-25：提交走兜底，由协调会话代提交，这一轮不写前缀放行规则）；第三节守门。开会话依据：用户批准事项 C230。
 > 依赖 `crew-declared-scope`（`module_crew/declared.py`：名单内判据）、`crew-check-ledger`（`module_crew/checks.py`：快检查与检查账）；上游 delegate 0.6.0（interface 1.1 的 `run.resume`）、spec-guard 0.85.0（interface 1.11 的 `scopeCheck`）。
