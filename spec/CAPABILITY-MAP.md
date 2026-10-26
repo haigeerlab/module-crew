@@ -11,6 +11,7 @@
 第六版起协调会话管项目里所有派活：用户明说才升级、一个仓库只一个；单个需求与 bug 走轻流程（不写 Spec、各自 worktree），
 和模块一样只从合并队列进集成分支；没升级的会话一切照常。
 第七版补上换手与呈现：命令入口跟着安装的插件走（Codex 用固定启动脚本），会话重开与接管有明确做法、只认登记的会话；契约钉到 session-protocol v2.6，审批消息按 spec-guard 的格式呈现。
+第十版让并行更顺、可外包额度：Plan 声明过的公共文件模块直接改、快检查与完整检查分开并由工具记账、按项目设自治档位、实现可交给 Codex 后台跑；每项都是项目开关，默认关，凭用户原话打开。
 
 <!-- 这一段是 Proposal 评审的目标指纹底本（`spec-digest.py` 计算）。
      改写目标会让已发布的 Proposal 被判为过期，所以改了先人工评审；追加模块不需要改这里。
@@ -52,8 +53,12 @@
 | crew-host-handover | 第八版：空档整体换宿主——一批模块收尾后提示可换宿主，coordinator handover --to codex／claude 核对收尾条件、改模块协调登记的宿主、按新宿主写集成 checkout 的权限规则、生成逐步交接说明，之后开工与派任务的宿主跟随模块协调 | crew-codex-host, crew-host-permissions, crew-light-task, crew-session-handover |
 | crew-codex-coordinator | 第八版：模块协调在 Codex 上运行——Codex 版 crew-coordinator skill、放开协调只许 claude-desktop、无钩子时醒来先跑 status、Codex 侧定位插件、模块会话由用户手动开的指引、合并长检查与写 .git 提权方案、handover --to codex 放开 | crew-host-handover, crew-codex-host, crew-command-entry, crew-background-checks |
 | crew-reopen-module | 第九版：重开已完成的模块做修订——start prepare 接受用户点名、/map 里进行中且没有 checkout 领走的模块，旧模块分支已合入就快进到集成分支再开、没合入就拒绝，新开会话登记与带后缀的新邮箱名，开工说明写明只做新加的未勾项 | crew-start, crew-light-task, crew-session-handover |
+| crew-declared-scope | 第十版：Plan 声明过的公共文件模块直接改——项目开关打开后读 spec-guard declaredScope，名单内的公共文件不再发公共变更请求、最终验收单列一节一并审，确需提前进集成分支的名单内文件自动落地并事后汇总，名单外照旧发请求；有依赖关系的模块不同时开工；读不到接口时照旧问用户 | crew-merge, crew-review-display, crew-start |
+| crew-check-ledger | 第十版：两种检查分开与检查记账——项目开关打开后新增快检查命令（项目脚本，只跑受影响部分），用于同步后、提前落地前与平时自测，完整检查只在合并队列里跑；按树哈希记下每棵树跑过哪条检查与结果、同一棵树不重跑、模型不再写证据文件；基线在后台只跑一次完整检查，红了自动建修基线的 bug 任务 | crew-merge, crew-background-checks, crew-light-task |
+| crew-autonomy-tier | 第十版：自治档位——读 spec-guard autonomyTier（写入前确认 spec-guard ≥ 0.85.0、要用户原话），strict 照旧、standard 把 reviewCadence 设成 combined 并按声明范围处理公共文件、relaxed 再把同步／快检查／记账类通知改为收尾汇总；按状态库证据建议升档、用户确认才切换，出事自动降一档并通知；不低于共享检查点规则的底线 | crew-declared-scope, crew-check-ledger |
+| crew-codex-offload | 第十版：额度外包——项目开关 codexOffload 打开后，Spec、Plan 批准完由模块协调经 delegate 带 --resumable 把实现交给 Codex 后台跑，Codex 只改文件不提交，模块协调核对改动在本模块范围内、跑过快检查后代为提交；结束状态按 done／needs-input／timeout 分别处理，认不出的一律停下问用户、不自动重派；needs-input 把问题转给用户、带答复续跑，timeout 不代提交、先把进度交用户，续跑要用户点头；delegate 1.2 作可选依赖 | crew-declared-scope, crew-check-ledger |
 
-Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby → crew-stall-signals → crew-host-permissions → crew-glossary-rename → crew-pilot-fixes → crew-hub-card-fields → crew-stage-c-fixes → crew-routing-fixes → crew-coordinator-switch → crew-task-ledger → crew-light-task → crew-unqueued-commits → crew-background-checks → crew-command-entry → crew-session-handover → crew-contract-v26 → crew-review-display → crew-host-handover → crew-codex-coordinator → crew-reopen-module
+Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → crew-start → crew-review-batch, crew-shared-changes → crew-merge → crew-recovery-hooks → crew-failure → crew-hub-bridge → crew-codex-host → crew-review-nearby → crew-stall-signals → crew-host-permissions → crew-glossary-rename → crew-pilot-fixes → crew-hub-card-fields → crew-stage-c-fixes → crew-routing-fixes → crew-coordinator-switch → crew-task-ledger → crew-light-task → crew-unqueued-commits → crew-background-checks → crew-command-entry → crew-session-handover → crew-contract-v26 → crew-review-display → crew-host-handover → crew-codex-coordinator → crew-reopen-module → crew-declared-scope → crew-check-ledger → crew-autonomy-tier → crew-codex-offload
 
 <!-- Spec Guard 按严格串行推进。为兼容上游格式，逗号分组会按左到右顺序展开为单模块步骤，不代表并行授权。 -->
 
@@ -96,3 +101,4 @@ Build order: crew-store, crew-protocol → crew-probe → crew-onboarding → cr
 - 2026-10-23：插入第八版模块 crew-host-handover（依赖 crew-codex-host、crew-host-permissions、crew-light-task、crew-session-handover，排在最后）。原因：接缝 S13 修订版需求——一批模块收尾后的空档里，模块协调与模块会话整体在 Claude Code 与 Codex 之间来回切换（不做模块中途换宿主；协调在 Codex 上运行另作模块，待阶段 0 实测与 spec-guard 答复后由用户定）；来源：用户在 ecosystem-lead 会话确认修订版需求，2026-10-23 在 mc-coord 会话批准插入（「批准插入 crew-host-handover」）。
 - 2026-10-23：插入第八版模块 crew-codex-coordinator（依赖 crew-host-handover、crew-codex-host、crew-command-entry、crew-background-checks，排在最后）。原因：接缝 S13 的模块 B——模块协调能在 Codex 上运行，配合 crew-host-handover 完成空档整体来回换宿主；依据阶段 0 实测（Codex 沙箱里固定入口可用、写 .git 要提权）、sg-coord #10512、agent-relay #10548；来源：用户在 ecosystem-lead 会话同意开工模块 B，2026-10-23 在 mc-coord 会话批准插入（「批准插入 crew-codex-coordinator」）。
 - 2026-10-24：插入第九版模块 crew-reopen-module（依赖 crew-start、crew-light-task、crew-session-handover，排在最后）。原因：接缝 S18——LIVE-SAAS 后台要修订两个已完成模块，spec-guard 按「返工与小模块」原地重开后 /map 记为进行中，module-crew 的 start prepare 只收 startable、同名分支已存在也拒绝，没有重开入口；sg-coord 确认不改 spec-guard 接口，由 module-crew 认 /map 现有字段；来源：用户在 ecosystem-lead 会话定「S18、S19+S21、S20、S22 都做」，2026-10-24 在 mc-coord 会话批准插入并开工写 Spec。
+- 2026-10-26：「目标」一节追加第十版范围；插入第十版四个模块 crew-declared-scope、crew-check-ledger、crew-autonomy-tier、crew-codex-offload，依次排在最后。原因：接缝 S32（并入 S29）——多模块并行时同步、核验类提交与审批过多，额度要能外包给 Codex；依据已批方案 plugin-ecosystem proposals/2026-10-24-S32-并行流畅与额度外包.md（612634c）、spec-guard 0.85.0（interface 1.11 的 declaredScope、autonomyTier）、delegate 0.6.0（interface 1.1 的 --resumable、--resume），以及「额度外包从一开始按还会有 timeout 状态设计」（ecosystem-lead #11616）；来源：用户 2026-10-26 在 mc-coord 会话确认需求与四个模块的拆法（「需求就是这些。按上面拆成四个模块插进能力图，前提假设全按推荐」），并确认写入改过的四行（「确认：按改过的四行依次写进能力图」）。
