@@ -2,8 +2,8 @@
 
 > 依据 `tasks/crew-check-ledger/plan.md`。
 
-- [ ] Task 1：检查账打底——记录种类、读写与开关、`config set` 两个新参数（Spec 验收 2）
-- [ ] Task 2：`check quick`、`check show`、`check list`（Spec 验收 3、4、12）
+- [x] Task 1：检查账打底——记录种类、读写与开关、`config set` 两个新参数（Spec 验收 2）——测试先红（没有 checks 模块）后绿
+- [x] Task 2：`check quick`、`check show`、`check list`（Spec 验收 3、4、12）——测试先红（没有 check 子命令）后绿；`check baseline` 先占位退出码 3，Task 5 实现
 - [ ] Task 3：`merge run` 记账与继承记录（Spec 验收 5）
 - [ ] Checkpoint 1（report）：检查账与快检查就位
 - [ ] Task 4：六处通知措辞跟着开关走（Spec 验收 6、1）

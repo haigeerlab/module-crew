@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 VERSION = 1
-KINDS = ("config", "session", "item", "request", "ticket", "body", "sighting", "handover", "task")
+KINDS = ("config", "session", "item", "request", "ticket", "body", "sighting", "handover", "task", "check")
 NUMBERED = ("item", "request", "ticket", "body", "task")
 ROLES = ("coordinator", "dev", "task")   # task: a light task's session (crew-light-task)
 HOSTS = ("claude-desktop", "codex-desktop")   # a Codex coordinator only through a handover (crew-host-handover)
