@@ -1,6 +1,6 @@
 # Implementation Plan: crew-declared-scope
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-declared-scope.md`（用户 2026-10-26 批准，「C207 A」；集成分支 e27d3fe）。任务清单：`tasks/crew-declared-scope/todo.md`。
 
