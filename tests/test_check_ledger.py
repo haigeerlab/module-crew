@@ -268,5 +268,66 @@ class MergeLedgerTest(LedgerCase):
         self.assertEqual(store.records(self.db, "check"), {})
 
 
+class WordingTest(LedgerCase):
+    """Task 4 (Spec AC 6, 1): every "sync, then check" sentence follows the switch."""
+
+    QUICK = "跑 `module-crew check quick`（快检查）"
+
+    def setUp(self):
+        super().setUp()
+        from module_crew import hooks
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+
+    def texts(self) -> dict[str, str]:
+        from module_crew import changes, failure, hooks, protocol, tasks, unqueued
+        from test_changes import request
+        out = {}
+        failure.suspend(self.db, "c", "等设计稿", "先挂起 c")
+        self.approve_final("b", 1)
+        res = merge.run(self.repo, check_command=None if self.cfg().get("checkCommand") else "python3 -c pass")
+        n = tasks.add(self.db, self.repo, "feature", "改文档", "补说明", ["docs/x.md"], "写好", "加说明").number
+        d = tasks.dispatch(self.db, self.repo, n)
+        out["kickoff"] = store.read_body(self.db, d.kickoff)
+        hooks.bind(self.db, d.relay, "sid-t", d.worktree)
+        out["resume"] = protocol.parse(store.read_body(self.db, failure.resume(self.db, "c", "恢复 c").sends[0]["body"])).fields["要你做什么"]
+        r = changes.add(self.db, request(["a.json"]), "shop-c", 5003).number
+        (self.repo / "a.json").write_text("{}\n", encoding="utf-8")
+        land = changes.land(self.repo, r)
+        self.assertEqual(land.code, 0, land.lines)
+        out["land"] = protocol.parse(store.read_body(self.db, land.sends[0]["body"])).fields["要你做什么"]
+        (self.repo / "manual.txt").write_text("x\n", encoding="utf-8")
+        git(self.repo, "add", "manual.txt")
+        git(self.repo, "commit", "-q", "-m", "手动提交")
+        sends = unqueued.notify(self.db, self.repo)
+        self.assertTrue(sends)
+        for x in sends:
+            self.assertTrue(protocol.parse(store.read_body(self.db, x["body"])).ok)
+        out["unqueued"] = protocol.parse(store.read_body(self.db, sends[0]["body"])).fields["要你做什么"]
+        sync = self.run_cli("sync", cwd=self.wt["c"])
+        self.assertEqual(sync.returncode, 0, sync.stdout + sync.stderr)
+        out["sync"] = sync.stdout
+        self.approve_final("c", 2)
+        res = merge.run(self.repo, check_command=None if self.cfg().get("checkCommand") else "python3 -c pass")
+        self.assertEqual(res.code, 0, res.lines)
+        [note] = [x for x in res.sends if x["kind"] == "sync-baseline"]
+        msg = protocol.parse(store.read_body(self.db, note["body"]))
+        self.assertTrue(msg.ok, msg.problems)
+        out["merge"] = msg.fields["要你做什么"]
+        return out
+
+    def test_switch_on(self):
+        self.switch_on()
+        for name, text in self.texts().items():
+            with self.subTest(name=name):
+                self.assertIn("module-crew check quick", text)
+                self.assertNotIn("跑完整检查", text)
+
+    def test_switch_off_unchanged(self):
+        for name, text in self.texts().items():
+            with self.subTest(name=name):
+                self.assertIn("完整检查", text)
+                self.assertNotIn("check quick", text)
+
+
 if __name__ == "__main__":
     unittest.main()

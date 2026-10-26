@@ -97,7 +97,8 @@ def resume(db: store.Store, module: str, original: str) -> Changed:
                                                 for k, r in merged))
             if landed:      # crew-routing-fixes: change land skipped this module while it was suspended
                 parts.append("落地了公共变更 " + "、".join(f"C{k}（{c[:7]}）" for k, c in landed))
-            todo = f"集成分支在挂起期间{'，'.join(parts)}：先{sync.STEP}、跑完整检查，再{RESUME_TODO}"
+            from module_crew import checks
+            todo = f"集成分支在挂起期间{'，'.join(parts)}：先{sync.STEP}、{checks.after_sync(tx.get('config', 'main'))}，再{RESUME_TODO}"
         _send(tx, db, sends, name, "resume", protocol.render_coordination_notice(kind="resume", basis=basis, todo=todo))
     return Changed(name, sends)
 

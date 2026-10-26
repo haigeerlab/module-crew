@@ -94,7 +94,7 @@ def describe(found: Found) -> str:
 
 def notify(db: store.Store, project: str | os.PathLike) -> list[dict]:
     """Sync-baseline notices for in-use modules and working tasks (merge's skip rules), then move the remembered head."""
-    from module_crew import merge, sync
+    from module_crew import checks, merge, sync
     found = find(db, project)
     if found.missing_seen:
         mark_integration(db, project, "unqueued")
@@ -105,7 +105,8 @@ def notify(db: store.Store, project: str | os.PathLike) -> list[dict]:
     result = merge.RunResult(0)
     with db.transaction(actor="coordinator") as tx:
         for name, task in merge.sync_targets(tx):
-            merge._notice(tx, db, result, name, "sync-baseline", basis=basis, todo=f"{sync.STEP}，跑完整检查后继续",
+            merge._notice(tx, db, result, name, "sync-baseline", basis=basis,
+                          todo=f"{sync.STEP}，{checks.after_sync(tx.get('config', 'main'))}后继续",
                           task=task)
     mark_integration(db, project, "unqueued")
     return result.sends

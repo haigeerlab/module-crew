@@ -262,3 +262,12 @@ def inherit(db: store.Store, cfg: dict, checkout: Path, merge_commit: str, modul
     entry = {**source, "tree": tree, "commit": head, "inheritedFrom": merged}
     record(db, entry)
     return entry
+
+
+QUICK_STEP = "跑 `module-crew check quick`（快检查）"
+FULL_STEP = "跑完整检查"
+
+
+def after_sync(cfg: dict | None) -> str:
+    """Decision 8: what a session runs after `module-crew sync`; unchanged while the switch is off."""
+    return QUICK_STEP if enabled(cfg) else FULL_STEP

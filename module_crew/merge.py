@@ -543,10 +543,11 @@ def _close_merged(tx, db: store.Store, result: RunResult, n: int, rec: dict, uni
             basis=f"最终验收的合并批准事项 C{n}；已合入集成分支 {short}",
             todo="停止在本 worktree 开发，等模块协调收回 worktree", task=task)
     what = f"轻任务 {unit}" if task else f"模块 {unit}"
+    from module_crew import checks
     for name, target_task in sync_targets(tx, exclude=rec["from"]):
         _notice(tx, db, result, name, "sync-baseline",
                 basis=f"{what} 已合入集成分支 {short}（合并批准记录 C{n}）",
-                todo=f"{sync.STEP}，跑完整检查后继续", task=target_task)
+                todo=f"{sync.STEP}，{checks.after_sync(tx.get('config', 'main'))}后继续", task=target_task)
 
 
 def record(project: str | os.PathLike, approval: int, original: str) -> RunResult:

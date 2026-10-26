@@ -235,7 +235,8 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
         result.lines.append("提醒：这条请求带「要问用户」提示，但没有记下用户原话")
     basis = (f"公共变更请求 C{number} 部分落地 {commit[:7]}（还剩 {'、'.join(left)}）" if left
              else f"公共变更请求 C{number} 已在集成分支提交 {commit[:7]}")
-    todo = f"{sync.STEP}，跑完整检查后继续"
+    from module_crew import checks
+    todo = f"{sync.STEP}，{checks.after_sync(cfg)}后继续"
     with db.transaction(actor="coordinator") as tx:
         answer_rec = {"original": original, "answeredAt": store.now(), **store.source_field()} if original is not None else None
         if left:

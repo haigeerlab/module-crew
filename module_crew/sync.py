@@ -12,7 +12,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from module_crew import hooks, store
+from module_crew import checks, hooks, store
 
 # The one wording every start / sync-baseline / resume notice uses for "merge the integration branch in".
 STEP = "跑 `module-crew sync` 把集成分支合进你的模块分支（单独执行，不和别的命令连写）"
@@ -56,7 +56,7 @@ def run(cwd: str | Path) -> SyncResult:
     count = _git(top, "rev-list", "--count", f"HEAD..{target}").stdout.strip() or "?"
     merged = _git(top, "merge", "--no-edit", branch)
     if merged.returncode == 0:
-        return _done(top, branch, target, count)
+        return _done(top, branch, target, count, db)
     conflicts = [p for p in _git(top, "diff", "--name-only", "--diff-filter=U").stdout.splitlines() if p]
     if not conflicts:
         _git(top, "merge", "--abort")
@@ -76,14 +76,14 @@ def run(cwd: str | Path) -> SyncResult:
     done = _git(top, "commit", "--no-edit")
     if done.returncode != 0:
         return SyncResult(3, lines + [f"完成合并提交失败：{(done.stderr or done.stdout).strip()[:300]}"])
-    result = _done(top, branch, target, count)
+    result = _done(top, branch, target, count, db)
     result.lines[:0] = lines
     return result
 
 
-def _done(top: Path, branch: str, target: str, count: str) -> SyncResult:
+def _done(top: Path, branch: str, target: str, count: str, db: store.Store) -> SyncResult:
     head = _git(top, "rev-parse", "--short", "HEAD").stdout.strip()
     if _git(top, "merge-base", "--is-ancestor", target, "HEAD").returncode != 0:
         return SyncResult(3, [f"合并后 HEAD {head} 仍不包含集成分支 {branch} {target[:7]}"])
     return SyncResult(0, [f"已合入集成分支 {branch} {target[:7]}：合入 {count} 个提交，HEAD {head}",
-                          "接着跑完整检查再继续"])
+                          f"接着{checks.after_sync(store.get(db, 'config', 'main'))}再继续"])
