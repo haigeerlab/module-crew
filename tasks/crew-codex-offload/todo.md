@@ -11,6 +11,6 @@
 - [x] Task 6：开工通知分叉 `review._start_todo`、`offload decline`、`offload handback`（Spec 验收 4、10、2）——实现与测试同步写，没有先看到红；6 个测试通过；关着时开工通知逐字不变（`review.start_todo_today` 原文抽出），decline 记为 handed-back 并带用户原话
 - [x] Task 7：`offload show` 与 `--json`（Spec 验收 11）——实现与测试同步写；2 个测试通过；只读，任何会话都能跑
 - [x] Checkpoint 2（report）：命令全部就位——本模块 65 个与术语表测试通过；review、approve、start prepare、skill、文档相关回归 147 个通过
-- [ ] Task 8：四份 skill、README；`module-crew sync` 后后台跑全量测试；本机 delegate 0.6.0 实测一次（Spec 验收 12、13）
+- [x] Task 8：四份 skill、README；`module-crew sync` 后后台跑全量测试；本机 delegate 0.6.0 实测一次（Spec 验收 12、13）——sync 已是最新（main 6878f41）；全量 1045 个在 68c660c 通过；delegate 0.6.0（接口 1.1）在临时仓库实测一次：退出码 0、结果行 status=done、Codex 只改两个文件未提交，真实输出喂给 settle 判为 done 并代提交；1.2 的 timeout 续跑只用夹具测过
 - [ ] Checkpoint 3（gate）：最终验收
 - [ ] 回告：完成情况经模块协调转告 ecosystem-lead
