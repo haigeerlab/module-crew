@@ -372,3 +372,27 @@ def fix_task(db: store.Store, project: Path, cfg: dict, checkout: Path, entry: d
                action="baseline-noted")
     return [f"已建修基线任务 T{added.number}（{'可开' if added.state == 'ready' else '排队'}；预计改 {'、'.join(files)}），"
             "照轻任务流程派出；告诉用户一次，不用各模块另记"]
+
+
+def attach(db: store.Store, worktree: Path, commit: str) -> dict | None:
+    """Decision 10: the ledger entries of a final acceptance's tree, kept on the review item (None with the switch off)."""
+    cfg = store.get(db, "config", "main") or {}
+    if not enabled(cfg):
+        return None
+    tree = _git(worktree, "rev-parse", f"{commit}^{{tree}}").stdout.strip()
+
+    def brief(kind: str, command: str) -> dict | None:
+        rec = lookup(db, tree, kind, command)
+        return {k: rec.get(k) for k in ("result", "by", "startedAt", "inheritedFrom")} if rec else None
+    return {"tree": tree, "quick": brief("quick", cfg[QUICK]), "full": brief("full", cfg["checkCommand"])}
+
+
+def covered(ch: dict) -> bool:
+    return bool(ch.get("quick") or (ch.get("full") and ch["full"]["result"] == "pass"))
+
+
+def review_line(ch: dict) -> str:
+    parts = [f"{NAMES[k]} {RESULT_NAMES[ch[k]['result']]}" for k in KINDS if ch.get(k)]
+    if not covered(ch):
+        parts.insert(0, "这棵树没跑过快检查")
+    return f"检查账：{'；'.join(parts)}（树 {ch['tree'][:7]}）"

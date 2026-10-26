@@ -516,5 +516,62 @@ class LandTest(LedgerCase):
         self.assertEqual(store.records(self.db, "check"), {})
 
 
+class FinalReviewTest(LedgerCase):
+    """Task 7 (Spec AC 11): a final acceptance carries the ledger entries of its tree; a missing one only warns."""
+
+    def setUp(self):
+        super().setUp()
+        from module_crew import hooks
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+
+    def test_module_final_with_quick(self):
+        from module_crew import review
+        self.switch_on()
+        text = self.finish("b")
+        self.assertEqual(self.run_cli("check", "quick", cwd=self.wt["b"]).returncode, 0)
+        out = review.add(self.db, text, "shop-b", 801)
+        self.assertEqual(out.code, 0, out.lines)
+        rec = store.get(self.db, "item", str(out.number))
+        tree = git(self.wt["b"], "rev-parse", "HEAD^{tree}").strip()
+        self.assertEqual((rec["checks"]["tree"], rec["checks"]["quick"]["result"]), (tree, "pass"))
+        self.assertIsNone(rec["checks"]["full"])
+        shown = "\n".join(review.show(self.db, out.number))
+        self.assertIn("检查账：快检查 通过", shown)
+        batch = self.run_cli("review", "batch", cwd=self.repo)
+        self.assertIn("检查账：快检查 通过", batch.stdout)
+
+    def test_missing_only_warns(self):
+        from module_crew import review
+        self.switch_on()
+        out = review.add(self.db, self.finish("b"), "shop-b", 802)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertTrue(any("没跑过快检查" in line for line in out.lines), out.lines)
+        self.assertIn("没跑过快检查", "\n".join(review.show(self.db, out.number)))
+
+    def test_light_task_final(self):
+        from module_crew import hooks, review, tasks
+        from test_light_task import hand_back
+        self.switch_on()
+        n = tasks.add(self.db, self.repo, "feature", "改文档", "补一段说明", ["docs/t.md"], "说明写好", "加一段说明").number
+        d = tasks.dispatch(self.db, self.repo, n)
+        hooks.bind(self.db, d.relay, f"sid-t{n}", d.worktree)
+        from pathlib import Path
+        wt = Path(d.worktree)
+        (wt / "docs").mkdir(exist_ok=True)
+        (wt / "docs" / "t.md").write_text("x\n", encoding="utf-8")
+        git(wt, "add", "-A")
+        git(wt, "commit", "-q", "-m", f"T{n}")
+        self.assertEqual(self.run_cli("check", "quick", cwd=wt).returncode, 0)
+        out = review.add(self.db, hand_back(n, d.worktree, ["docs/t.md"]), d.relay, 803)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertEqual(store.get(self.db, "item", str(out.number))["checks"]["quick"]["result"], "pass")
+
+    def test_off_no_checks(self):
+        from module_crew import review
+        out = review.add(self.db, self.finish("b"), "shop-b", 804)
+        self.assertNotIn("checks", store.get(self.db, "item", str(out.number)))
+        self.assertFalse(any("检查账" in line for line in out.lines))
+
+
 if __name__ == "__main__":
     unittest.main()

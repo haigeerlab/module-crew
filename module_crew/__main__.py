@@ -598,6 +598,9 @@ def _review(args) -> int:
                 print(f"C{i['number']} {i['module']} 的 {review.NODE_NAME.get(i['node'], i['node'])}（{i['from']}）："
                       + "、".join(f["path"] for f in i["files"]))
                 print("  要点：" + i["points"].replace("\n", "\n        "))
+                if i.get("checks"):             # crew-check-ledger
+                    from module_crew import checks
+                    print("  " + checks.review_line(i["checks"]))
                 if i.get("display"):            # crew-review-display: the final-acceptance tables, from git
                     from module_crew import present
                     print("\n".join("  " + x for x in present.table_lines(i["display"])))
