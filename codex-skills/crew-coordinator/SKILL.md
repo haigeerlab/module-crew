@@ -231,6 +231,19 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 - **公共变更落地**：开关打开时 `change land` 提交前先对暂存的文件跑快检查；失败退出码 5、不提交、文件保持暂存、请求仍开着，交用户：修好再落地，或用户同意后加 `--skip-quick-check --original-file <原话文件>`。
 - Codex 上 `check baseline` 没有 `--detach`，前台运行，申请在沙箱外运行（写状态库）；`config set` 照旧申请。
 
+## 自治档位（spec-guard autonomyTier，第十版）
+
+- **档位存在 spec-guard 的 `.agent/config.json`**：`strict`（默认，等于今天）、`standard`、`relaxed`。没设时 module-crew 一切照今天，连升档建议都不给；`module-crew tier` 看设的档位、来源、降档上限和生效档位。
+- **设或改档位要用户原话**：先 `module-crew tier --preflight`（退出码 3 就把原因告诉用户、不写）；通过后在回复里引用用户原话，在集成 checkout 用 `/spec-guard:config` 写 `autonomyTier`。
+  要设成 `standard` 或 `relaxed` 时，同一句原话里一并设 `reviewCadence=combined`（spec-guard 不联动它）；写完立刻把 `.agent/config.json` 单独提交，按不经队列的提交通知各模块同步。module-crew 自己不写这个文件。
+- **standard**：Spec 与 Plan 一起交审；`declaredScope` 没设过时按声明范围处理公共文件（用户显式设过的开关优先）。`tier` 或 `status` 提示「reviewCadence 是 separate」时转告用户，用户同意再改。
+- **relaxed**：同步通知、快检查与检查账、不经队列的提交、提前落地这几类不再逐条告诉用户；**给用户发批量交审、最终验收，或 `merge cleanup` 本批收尾时**，先 `module-crew tier digest`，把正文写进那条消息，再 `module-crew tier digest --mark-told`（只是记账）。
+  降档通知、【等待用户】、修基线任务、权限弹窗和任何要用户决定的事不进汇总，照常立刻告诉用户。
+- **出事自动降一档**：输出里出现「自治档位已从 X 降到 Y」（合并因模块原因退回、撤销合并批准、返工满 3 次、基线新跑出失败）就马上告诉用户，在哪个档位都一样。
+  恢复要用户原话：`module-crew tier restore --original-file <原话文件>`，一次抬一档。
+- **升档只建议**：`tier`、`status` 或 `merge run` 输出「可以建议升到 X」时转告用户；用户一句话确认后，有降档上限的用 `tier restore`，没有的照上面设档位的步骤写 spec-guard。不要自己升。
+- **底线**：任何档位下能力图、Spec（可以和 Plan 一起批）、最终验收都要用户批；测试改不红、Spec 没覆盖的决策、高风险不可逆改动三种情况必停；合并队列里照样跑完整检查。
+
 ## 出状况时
 
 - **集成分支上有不经合并队列的提交**（`status` 显示数量，或 `merge run` 输出里列出）：把这一行告诉用户一次（哪几个提交、谁提交的），
