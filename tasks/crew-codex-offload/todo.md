@@ -2,7 +2,7 @@
 
 > 依据 `tasks/crew-codex-offload/plan.md`。
 
-- [ ] Task 1：打底——`store.KINDS` 加 `offload`、开关 `codexOffload` 与 `config set --codex-offload`、`ready` 六项条件（Spec 验收 1、3）——测试先红后绿
+- [x] Task 1：打底——`store.KINDS` 加 `offload`、开关 `codexOffload` 与 `config set --codex-offload`、`ready` 六项条件（Spec 验收 1、3）——测试先红（没有 offload 模块）后绿；本模块 17 个、状态库与配置回归 39 个通过；`problems` 逐条列出不满足的条件供打开开关时警告
 - [ ] Task 2：`offload start` 与任务说明、`parse_result`（Spec 验收 5、2）——测试先红后绿
 - [ ] Task 3：`settle` 的 done 分支：勾选核对、范围核对、暂存区快检查、代提交（Spec 验收 6）——测试先红后绿
 - [ ] Checkpoint 1（report）：派出与 done 代提交就位——本模块测试与相关回归测试通过
