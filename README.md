@@ -101,6 +101,17 @@ bin/module-crew status
 
 开关关着时一切照旧。
 
+## 自治档位（第十版，spec-guard autonomyTier，默认 strict）
+
+档位存在 spec-guard 的 `.agent/config.json`，设或改都要用户原话：模块协调先跑 `module-crew tier --preflight` 确认本机 spec-guard ≥ 0.85.0，再引用原话用 `/spec-guard:config` 写入并单独提交。
+
+- `strict`（默认）：和今天一样。没设档位时 module-crew 什么都不变，也不给升档建议。
+- `standard`：Spec 与 Plan 一起交审（同一句原话里另设 `reviewCadence=combined`，spec-guard 不联动它）；`declaredScope` 没设过时按 Plan「预先声明」处理公共文件。
+- `relaxed`：再把同步、快检查与检查账、不经队列的提交、提前落地这几类消息改为收尾时一次汇总（`module-crew tier digest`）。
+- **升档只建议**：当前档位开始后连续 3 个合入的模块合并退回 0、撤销 0、返工 ≤ 1、用户退回 0，`tier`、`status`、`merge run` 提示可以升一档，用户确认才升。
+- **出事自动降一档**：合并因模块原因退回、撤销合并批准、返工满 3 次、基线新跑出失败，生效档位立刻降一档并告诉用户；恢复用 `module-crew tier restore`，要原话。
+- **底线**：任何档位都不低于 spec-guard 共享检查点规则「自治档位与底线」——能力图、Spec（可以和 Plan 一起批）、最终验收要用户批，三种情况必停，合并队列里照样跑完整检查。
+
 ## 轻任务（单个需求或 bug，第六版）
 
 不值得开模块的活走轻流程，不写 Spec、不调 spec-guard，但和模块一样只从合并队列进集成分支：
@@ -232,6 +243,9 @@ module-crew config set [--commit-prefix <值>] [--check-timeout <秒>] [--declar
 module-crew config set --quick-check-command "<命令>" | --check-ledger on|off --original(-file)  快检查命令与检查记账开关（默认关）
 module-crew check quick|baseline [--rerun]       检查记账：模块 worktree 里跑快检查／模块协调对集成分支跑一次完整检查（放后台），同一棵树不重跑
 module-crew check show [<提交>]|list [--json]    检查账（只读）：一个提交的树跑过哪些检查／最近的记录
+module-crew tier [--json] | tier --preflight      自治档位（只读）：设的档位、降档上限、生效档位、证据与升档建议／写 autonomyTier 前核对 spec-guard
+module-crew tier restore --original(-file)       降档后恢复一档（要用户原话）
+module-crew tier digest [--json] [--mark-told]   relaxed 档的收尾汇总；--mark-told 记为已汇总（只是记账）
 module-crew review add|batch|approve|answer      交审与批量批准
 module-crew change add|list|land|answer [--reason superseded]  公共变更请求（被取代的可直接关；检查记账打开时 land 先跑快检查，--skip-quick-check 要原话）
 module-crew change land <编号> --from-module / change landed [--mark-told <编号>…]  名单内提前落地（从模块分支取文件）／待汇总给用户的提前落地

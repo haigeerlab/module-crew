@@ -521,5 +521,20 @@ class FloorTest(TierMixin, MergeCase):
         self.assertIn("收到开工类【协调通知】之前不要开始构建", text)
 
 
+class SkillTest(unittest.TestCase):
+    """Acceptance 10."""
+    ROOT = Path(__file__).resolve().parent.parent
+
+    def test_coordinator_and_dev_skills(self):
+        for d in ("skills", "codex-skills"):
+            coord = (self.ROOT / d / "crew-coordinator" / "SKILL.md").read_text(encoding="utf-8")
+            for words in ("module-crew tier --preflight", "reviewCadence=combined", "/spec-guard:config",
+                          "module-crew tier digest", "马上告诉用户", "不要自己升", "tier restore --original-file"):
+                self.assertIn(words, coord, (d, words))
+            dev = (self.ROOT / d / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
+            self.assertIn("不改变你的停点", dev)
+            self.assertIn("gate", dev)
+
+
 if __name__ == "__main__":
     unittest.main()
