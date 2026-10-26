@@ -255,6 +255,14 @@ class ChangeAddTest(DeclaredMixin, ReviewCase):
         call = json.loads(self.args_log.read_text().splitlines()[-1])
         self.assertEqual(Path(call[call.index("--project") + 1]).resolve(), self.repo.resolve())   # assumption 3
 
+    def test_cli_card_only_when_the_user_is_asked(self):
+        for rid, files in ((7, ["config/app.json"]), (8, ["tsconfig.base.json"])):
+            path = self.tmp / f"req{rid}.txt"
+            path.write_text(request(files), encoding="utf-8")
+            out = self.run_cli("change", "add", str(path), "--from", "shop-b", "--relay-id", str(rid))
+            self.assertEqual(out.returncode, 0, out.stderr)
+            self.assertEqual("给用户看的正文" in out.stdout, rid == 8, out.stdout)
+
     def test_mixed(self):
         out, rec = self.add(["config/app.json", "tsconfig.base.json"])
         self.assertIs(rec["declared"], False)
@@ -282,8 +290,8 @@ class ChangeAddTest(DeclaredMixin, ReviewCase):
         self.assertEqual(out.lines[-1], "可由模块协调判断是否在已批准 Spec 范围内直接办")
 
 
-class LandFromModuleTest(DeclaredMixin, ReviewCase):
-    """Acceptance 6 and 7."""
+class LandBase(DeclaredMixin, ReviewCase):
+    """Module b has committed a declared public file, shared/x.ts."""
 
     def setUp(self):
         super().setUp()
@@ -304,6 +312,11 @@ class LandFromModuleTest(DeclaredMixin, ReviewCase):
 
     def land(self, n, *extra):
         return self.run_cli("change", "land", str(n), "--from-module", *extra)
+
+
+
+class LandFromModuleTest(LandBase):
+    """Acceptance 6 and 7."""
 
     def test_lands_from_the_module_branch(self):
         from module_crew import protocol
@@ -363,6 +376,31 @@ class LandFromModuleTest(DeclaredMixin, ReviewCase):
     def test_scope_is_open_to_module_sessions(self):
         from module_crew import __main__ as cli
         self.assertIn(("scope", None), cli._ANY_SESSION)
+
+
+class LandedTest(LandBase):
+    """Acceptance 8."""
+
+    def test_list_and_mark_told(self):
+        self.assertEqual(self.run_cli("change", "landed").returncode, 3)
+        n = self.add()
+        self.assertEqual(self.land(n).returncode, 0)
+        out = self.run_cli("change", "landed")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        commit = store.get(self.db, "request", str(n))["commit"]
+        self.assertIn(f"C{n} b：shared/x.ts 已提前进集成分支（{commit[:7]}，", out.stdout)
+        self.assertIn("名单内、没问用户", out.stdout)
+        data = json.loads(self.run_cli("change", "landed", "--json").stdout)
+        self.assertEqual([(d["request"], d["module"], d["files"], d["commit"]) for d in data],
+                         [(n, "b", ["shared/x.ts"], commit)])
+        bad = self.run_cli("change", "landed", "--mark-told", str(n), "999")
+        self.assertEqual(bad.returncode, 3)
+        self.assertIs(store.get(self.db, "request", str(n))["toldUser"], False)
+        ok = self.run_cli("change", "landed", "--mark-told", f"C{n}")
+        self.assertEqual(ok.returncode, 0, ok.stderr)
+        self.assertIs(store.get(self.db, "request", str(n))["toldUser"], True)
+        self.assertEqual(self.run_cli("change", "landed").returncode, 3)
+        self.assertEqual(self.run_cli("change", "landed", "--mark-told", str(n)).returncode, 3)   # already told
 
 
 if __name__ == "__main__":

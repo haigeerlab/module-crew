@@ -6,8 +6,8 @@
 - [x] Task 2：`module-crew scope` 子命令与开工说明「全局约束」一行（Spec 验收 3、4）——测试先红后绿（3 失败 1 错误）；`declared.scope` 用 `hooks.detect` 认模块、在 worktree 顶层读；开关关时不调 spec-guard；不带文件时多列一行名单；开工说明那一行抽成 `start._constraint_line`，开关关时逐字不变（test_start_prepare 等照常通过）
 - [x] Task 3：`change add` 分类——名单内、混合、冲突、不可用、开关关（Spec 验收 5）——测试先红后绿（4 错误）；声明在事务外读（`changes._declared_scope`，集成 checkout 由 `probe._checkout_of(db.path.parent, …)` 找）；全在名单内但有冲突时多一行「名单内，但和别的请求改同一个文件：照今天处理」；test_changes、test_change_partial、test_change_supersede、test_review_display 照常通过
 - [x] Task 4：`change land --from-module`——成功路径与四种拒绝（Spec 验收 6、7）——测试先红后绿（6 失败）；校验全在 `changes._from_module` 里、过了才 `git checkout <模块提交> -- <文件>`；另拒两种：模块分支上的文件和集成分支一样（否则取完会留下没提交的改动）、与 `--partial` 同用；`scope` 加进 `_ANY_SESSION`（模块会话要能跑）；test_changes 等照常通过
-- [ ] Task 5：`change landed` 与 `--mark-told`（Spec 验收 8）
-- [ ] Checkpoint 1（report）：公共变更这一路做完，test_declared_scope 与 test_changes、test_change_partial、test_change_supersede 通过
+- [x] Task 5：`change landed` 与 `--mark-told`（Spec 验收 8）——测试先红后绿；`changes.landed`／`landed_rows`／`landed_summary`／`mark_told`，`--mark-told` 先全部校验再写；另：`change add` 对名单内的提前落地请求不再打印「给用户看的正文」卡片（不问用户），加了测试
+- [x] Checkpoint 1（report）：公共变更这一路做完，test_declared_scope 与 test_changes、test_change_partial、test_change_supersede 通过——test_declared_scope 29 个，test_changes、test_change_partial、test_change_supersede、test_review_display、test_session_handover 通过
 - [ ] Task 6：最终验收「声明内公共文件」一节、提前落地标注、未声明依赖、`display.declared`（Spec 验收 9）
 - [ ] Task 7：有依赖关系的模块不同时开——`plan`、`prepare`、`_why_not`，含重开的上游、已合入不挡、同批互依赖（Spec 验收 10）
 - [ ] Task 8：开关没设与 `off` 时各命令输出与改前逐字相同的集中对照（Spec 验收 2）

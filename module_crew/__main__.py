@@ -641,7 +641,8 @@ def _change(args) -> int:
         print(f"类型：{out.kind}")
         for line in out.lines:
             print(line)
-        if out.code == 0 and out.number is not None:        # crew-review-display: the card the user is asked with
+        early = out.number is not None and (store.get(db, "request", str(out.number)) or {}).get("declared") is True
+        if out.code == 0 and out.number is not None and not early:   # crew-review-display: the card the user is asked with
             from module_crew import present
             print(present.card_text(present.change_card(db, out.number)))
         return out.code
@@ -665,6 +666,24 @@ def _change(args) -> int:
         by = f"，由 C{args.by} 取代" if args.by is not None else ""
         print(f"公共变更请求 C{args.number} 已记为被取代{by}；不发回复，需要时告诉 {rec['from']}：旧请求不再处理")
         return 0
+    if args.action == "landed":
+        if args.mark_told:
+            try:
+                changes.mark_told(db, args.mark_told)
+            except changes.AnswerRefused as exc:
+                print(f"❌ {exc}", file=sys.stderr)
+                return 3
+            print("已记为汇总给用户：" + "、".join(f"C{n}" for n in args.mark_told))
+            return 0
+        rows = changes.landed_rows(db)
+        if args.json:
+            print(json.dumps(rows, ensure_ascii=False, indent=2))
+        elif rows:
+            print("名单内提前落地、还没汇总给用户的（写进下一条给用户的消息，再 --mark-told）：")
+            print("\n".join("  " + x for x in changes.landed_summary(rows)))
+        else:
+            print("没有待汇总的提前落地")
+        return 0 if rows else 3
     original = _original(args.original, args.original_file)
     if args.action == "answer":
         if original is None:
@@ -1034,6 +1053,9 @@ def _main(argv: list[str] | None = None) -> int:
     ca.add_argument("--relay-id", type=int, required=True)
     cl = chs.add_parser("list")
     cl.add_argument("--json", action="store_true")
+    cld = chs.add_parser("landed", help="名单内提前落地、还没汇总给用户的（crew-declared-scope）")
+    cld.add_argument("--json", action="store_true")
+    cld.add_argument("--mark-told", nargs="+", type=refs.parse, metavar="编号", help="记为已汇总给用户（只是记账，不是批准）")
     for name in ("land", "answer"):
         c = chs.add_parser(name)
         c.add_argument("number", type=refs.parse)

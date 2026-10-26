@@ -336,3 +336,39 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
             meta = tx.write_body(body, text)
             result.sends.append({"to": name, "replyTo": reply_to, "body": body, "path": db.path / meta["path"]})
     return result
+
+
+def landed(db: store.Store) -> list[tuple[int, dict]]:
+    """crew-declared-scope decision 5: early landings of declared files not yet summarised to the user, in order."""
+    return sorted(((int(k), v) for k, v in store.records(db, "request").items()
+                   if v.get("closedReason") == "landed" and v.get("fromModule") and v.get("toldUser") is False),
+                  key=lambda kv: kv[0])
+
+
+def landed_rows(db: store.Store) -> list[dict]:
+    sessions = store.records(db, "session")
+    rows = []
+    for n, rec in landed(db):
+        when = next((e["at"] for e in store.events(db, key=str(n), kind="request") if e["type"] == "request.landed"), None)
+        rows.append({"request": n, "module": _module_of(sessions, rec["from"]), "files": rec["files"],
+                     "commit": rec["commit"], "at": when})
+    return rows
+
+
+def landed_summary(rows: list[dict]) -> list[str]:
+    """The text the coordinator puts in its next message to the user."""
+    return [f"C{r['request']} {r['module']}：{'、'.join(r['files'])} 已提前进集成分支（{r['commit'][:7]}，{r['at'] or '时间未知'}），"
+            "名单内、没问用户" for r in rows]
+
+
+def mark_told(db: store.Store, numbers: list[int]) -> None:
+    """Record that these early landings were summarised to the user: bookkeeping, not an approval."""
+    with db.transaction(actor="coordinator") as tx:
+        waiting = {int(k) for k, v in tx.records("request").items()
+                   if v.get("closedReason") == "landed" and v.get("fromModule") and v.get("toldUser") is False}
+        bad = [n for n in numbers if n not in waiting]
+        if bad:
+            raise AnswerRefused("不是待汇总的提前落地：" + "、".join(f"C{n}" for n in bad))
+        for n in numbers:
+            tx.put("request", str(n), dict(tx.get("request", str(n)), toldUser=True), action="told-user", data={})
+
