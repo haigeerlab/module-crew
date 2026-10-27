@@ -425,6 +425,9 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             result.lines.append(f"{m}：建 worktree 失败，已停下（{added.stderr.strip()[:200]}）"
                                 + ("；git 已留下分支 " + m + "，请决定是否删除" if left else ""))
             break
+        copied = copy_ignored_config(probe._checkout_of(project, cfg["integrationBranch"]) or project, path)
+        if copied:
+            result.lines.append(f"{m}：{copied}")
         relay = f"{short}-{m}" + (f"-r{reopen['round']}" if reopen else "")
         text = render_kickoff(m, info.get(m, {}), path, {**cfg, "reviewCadence": proposal.cadence}, relay, coord,
                               approval, host_id, reopen=reopen)
@@ -467,6 +470,19 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
         if not (store.get(db, "session", coord) or {}).get("hostSession"):
             result.lines.append(f"模块协调还没登记身份：请用户在本会话同意后运行 module-crew bind {coord} --original-file <原话文件>，钩子才认本会话")
     return result
+
+
+def copy_ignored_config(checkout: Path, worktree: Path) -> str | None:
+    """S40 follow-up (LIVE-SAAS): spec-guard reads .agent/config.json in the new worktree (checkout role, /map);
+    a project that git-ignores it has none there. Copy the integration checkout's and say so; None when not needed."""
+    src, dst = Path(checkout) / ".agent" / "config.json", Path(worktree) / ".agent" / "config.json"
+    if not src.is_file() or dst.exists():
+        return None
+    if _git(Path(checkout), "check-ignore", "-q", ".agent/config.json").returncode != 0:   # tracked or not ignored
+        return None
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_bytes(src.read_bytes())
+    return f"已把集成 checkout 的 .agent/config.json 复制到 {worktree}（它被 git 忽略，新 worktree 里没有；不会被提交）"
 
 
 def _role_commands(project: Path) -> tuple[Path, dict] | str:
@@ -543,7 +559,20 @@ def _first_step(module: str, cadence: str) -> str:
             f"Spec 批准的【用户答复】到了再写 tasks/{module}/plan.md、todo.md 交审（节点 Plan）。项目评审节奏：separate。")
 
 
-def _reopen_lines(module: str, reopen: dict, integration: str, cadence: str) -> list[str]:
+_TODO_OPEN = re.compile(r"^\s*[-*]\s+\[ \]\s+(.+?)\s*$")
+_SPEC_REVISION = re.compile(r"REV-SPEC|修订\s*Spec|Spec\s*修订", re.IGNORECASE)
+
+
+def _first_open_item(worktree: Path, module: str) -> str | None:
+    """The first unticked item of tasks/<module>/todo.md, None when there is none or no todo."""
+    try:
+        text = (Path(worktree) / "tasks" / module / "todo.md").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    return next((m.group(1) for m in map(_TODO_OPEN.match, text.splitlines()) if m), None)
+
+
+def _reopen_lines(module: str, reopen: dict, integration: str, cadence: str, worktree: Path | None = None) -> list[str]:
     """crew-reopen-module decision 5: the revision paragraph and the first step, chosen by the review state at reopen."""
     branch = (f"旧的模块分支已快进到集成分支 {integration}" if reopen["branch"] == "fast-forward"
               else f"旧的模块分支不在了，已从集成分支 {integration} 新切")
@@ -551,6 +580,11 @@ def _reopen_lines(module: str, reopen: dict, integration: str, cadence: str) -> 
              f"只做 tasks/{module}/todo.md 里新加的未勾项，已勾的不要重做；",
              f"plan.md 里新补的一节说明这次为什么返工。{branch}，旧一轮的邮箱名已退役，不要用。"]
     spec, plan = reopen["review"]["spec"], reopen["review"]["plan"]
+    first = _first_open_item(worktree, module) if worktree else None
+    if spec == "approved" and first and _SPEC_REVISION.search(first):
+        # S45 (LIVE-SAAS backoffice-auth r2): the Spec is still approved, but the new work starts by revising it
+        return lines + [f"tasks/{module}/todo.md 新加的第一个未勾项是 Spec 修订（{first}）：先改 spec/{module}.md，交 Spec 节点。",
+                        _first_step(module, cadence), "收到开工类【协调通知】之前不要开始构建。"]
     if spec == "approved" and plan == "approved":   # in-scope rework: naming the module to reopen is the go-ahead (Q2)
         return lines + [f"Spec 与 Plan 仍是批准状态（范围内返工）。先 module-crew sync，再从 tasks/{module}/todo.md 第一个未勾项开始构建，"
                         "不用等开工通知；做完发最终验收【交审】。"]
@@ -595,7 +629,8 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
         f"开会话依据：用户批准事项 C{approval}",
         "",
         *install_line(worktree),
-        *(_reopen_lines(module, reopen, cfg["integrationBranch"], cfg.get("reviewCadence", "separate")) if reopen else
+        *(_reopen_lines(module, reopen, cfg["integrationBranch"], cfg.get("reviewCadence", "separate"),
+                         worktree) if reopen else
           [_first_step(module, cfg.get("reviewCadence", "separate")), "收到开工类【协调通知】之前不要开始构建。"]),
         "",
         f"接口：\n{deps}",

@@ -229,3 +229,39 @@ class PrepareCliTest(StartCase):
         r = self.run_cli("start", "prepare", "e", "--original", "开 e")
         self.assertEqual(r.returncode, 3)
         self.assertEqual(self.run_cli("start", "prepare", "b").returncode, 2)
+
+
+class IgnoredConfigTest(StartCase):
+    """S40 follow-up (LIVE-SAAS): spec-guard reads .agent/config.json in the new worktree to write the checkout role;
+    a project that git-ignores it has none there, so prepare copies it over."""
+
+    def ignore_config(self):
+        (self.repo / ".gitignore").write_text(".agent/config.json\n", encoding="utf-8")
+        git(self.repo, "rm", "-q", "--cached", ".agent/config.json")
+        git(self.repo, "add", ".gitignore")
+        git(self.repo, "commit", "-q", "-m", "ignore config")
+
+    def test_ignored_config_copied(self):
+        self.ignore_config()
+        res = start.prepare(self.repo, ["b"], "开 b", short="shop")
+        self.assertEqual(res.code, 0, res.lines)
+        copied = res.prepared[0]["worktree"] / ".agent" / "config.json"
+        self.assertEqual(copied.read_bytes(), (self.repo / ".agent" / "config.json").read_bytes())
+        self.assertIn(f"b：已把集成 checkout 的 .agent/config.json 复制到 {res.prepared[0]['worktree']}"
+                      "（它被 git 忽略，新 worktree 里没有；不会被提交）", res.lines)
+        self.assertEqual(git(res.prepared[0]["worktree"], "status", "--porcelain").strip(), "")
+
+    def test_tracked_config_untouched(self):
+        res = start.prepare(self.repo, ["b"], "开 b", short="shop")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertFalse(any(".agent/config.json" in l for l in res.lines), res.lines)
+        self.assertEqual(git(res.prepared[0]["worktree"], "status", "--porcelain").strip(), "")
+
+    def test_nothing_to_copy(self):
+        # prepare refuses a project without the config, so the helper is checked on its own
+        self.ignore_config()
+        (self.repo / ".agent" / "config.json").unlink()
+        wt = self.tmp / "wt"
+        git(self.repo, "worktree", "add", "-q", "-b", "x", str(wt))
+        self.assertIsNone(start.copy_ignored_config(self.repo, wt))
+        self.assertFalse((wt / ".agent" / "config.json").exists())

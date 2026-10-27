@@ -196,6 +196,35 @@ class KickoffReopenTest(ReopenCase):
         self.assertIn("收到开工类【协调通知】之前不要开始构建。", lines)
         self.assertTrue(any(l.startswith("这是重开修订") for l in lines))
 
+    def write_todo(self, *items):
+        (self.repo / "tasks" / "a").mkdir(parents=True, exist_ok=True)
+        (self.repo / "tasks" / "a" / "todo.md").write_text("# a\n\n- [x] T1：旧的一项\n" + "".join(f"{i}\n" for i in items),
+                                                           encoding="utf-8")
+        git(self.repo, "add", "tasks")
+        git(self.repo, "commit", "-q", "-m", "reopen a")
+
+    def test_first_new_item_revises_spec(self):
+        # S45 (LIVE-SAAS backoffice-auth r2): Spec still approved, but the first new item is a Spec revision
+        self.write_todo("- [ ] REV-SPEC：Spec 补登录失败锁定", "- [ ] T5：实现锁定")
+        for review in (("approved", "pending"), ("approved", "approved")):
+            lines = self.kickoff(review)
+            self.assertNotIn("这一步只做：把 tasks/a/plan.md、todo.md 发【交审】（节点 Plan）；Plan 批准后收到开工类【协调通知】再构建。",
+                             lines, review)
+            self.assertFalse(any(l.startswith("Spec 与 Plan 仍是批准状态") for l in lines), review)
+            self.assertIn("tasks/a/todo.md 新加的第一个未勾项是 Spec 修订（REV-SPEC：Spec 补登录失败锁定）："
+                          "先改 spec/a.md，交 Spec 节点。", lines)
+            self.assertIn(start._first_step("a", "separate"), lines)
+            self.assertIn("收到开工类【协调通知】之前不要开始构建。", lines)
+            git(self.repo, "worktree", "remove", "--force", str(self.tmp / "repo-crew" / "a"))
+            with self.db.transaction(actor="t") as tx:
+                tx.put("session", "shop-a-r2", dev("a", str(self.tmp / "repo-crew" / "a"), status="retired"),
+                       action="retired")
+
+    def test_first_new_item_not_spec(self):
+        self.write_todo("- [ ] T5：实现锁定", "- [ ] REV-SPEC：之后再补 Spec")
+        lines = self.kickoff(("approved", "pending"))
+        self.assertIn("这一步只做：把 tasks/a/plan.md、todo.md 发【交审】（节点 Plan）；Plan 批准后收到开工类【协调通知】再构建。", lines)
+
     def test_created_branch_wording(self):
         git(self.repo, "branch", "-D", "a")
         lines = self.kickoff(("approved", "approved"))
