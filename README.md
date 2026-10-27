@@ -129,10 +129,12 @@ bin/module-crew status
 不值得开模块的活走轻流程，不写 Spec、不调 spec-guard，但和模块一样只从合并队列进集成分支：
 
 1. **记任务**（模块协调）：用户明说要做后 `module-crew task add --type feature|bug --title … --what … --expect <预计文件> --done <完成标准> --original-file <原话文件>`。
-   预计文件和在做的任务或模块分支已改的文件重叠就排队，`task next` 按 bug 在前提为可开。
+   预计文件和在做的任务或模块分支已改的文件重叠就排队，`task next` 按 bug 在前提为可开。预计文件里的目录（如 `tests/`）只和别人写的同一目录或嵌套目录算重叠，不和点名的文件算；
+   在做的任务凭用户原话可以用 `task scope` 收窄预计文件，再 `task next` 放行排队的任务。
 2. **派出**：`module-crew task dispatch T<号>` 建 `task/t<号>` 分支与 worktree、登记轻任务会话（不占多模块名额）、生成开工说明；模块协调用桌面版开会话，第一条消息用开工说明全文。
 3. **做与交回**（轻任务会话，`crew-dev` skill 的「轻任务」一节）：bug 先补复现测试；完整检查通过后发最终验收【交审】（`模块：无`，带「任务：T<号>」）。
    `review add` 会比对实际改动和任务单，多改的文件和越界重叠写进交审。
+   交回后分支又多了提交（如同步）时重新发最终验收【交审】，旧交审与合并批准作废，用户重新批准。
 4. **批准与合并**：用户点一次批准，`merge approve` → `merge run`。队列顺序：bug 任务、模块（Build order）、需求任务。合入后在用的模块和在做的任务收到同步通知；`merge cleanup T<号>` 收回 worktree（分支保留）。
 5. **做大了**：轻任务会话停下发升格请求（【等待用户】「卡住选做法」），用户选 A 升格（`/spec-guard:add-module`）、B 缩小（`task scope`）或 C 取消。
 
@@ -245,7 +247,7 @@ module-crew coordinator up|down --original(-file)  把本会话升级为模块�
 module-crew coordinator handover --check|--to     空档换宿主：核对收尾条件（只读）／换到 codex 或 claude 并生成交接说明
 module-crew task add|list|show|next|cancel       轻任务记录（单个需求或 bug，T 编号）：预计文件和在做的活重叠就排队，bug 在前
 module-crew unqueued [--notify] [--json]         集成分支上不经合并队列的提交：列出／通知各模块同步
-module-crew task dispatch|scope                  派出可开的轻任务（worktree、登记、开工说明）／升格请求选缩小后改任务单
+module-crew task dispatch|scope                  派出可开的轻任务（worktree、登记、开工说明）／升格请求选缩小后改任务单、在做的任务收窄预计文件
 module-crew store init|check                     状态库
 module-crew protocol check <文件>                消息自检
 module-crew inbox add <文件> --from --relay-id   收件记账
