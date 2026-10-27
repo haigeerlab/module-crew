@@ -335,3 +335,59 @@ class BatchLandTest(ReviewCase):
             rec = store.get(self.db, "request", str(n))
             self.assertEqual(rec["checkSkipped"]["original"], "这批先不检查")
             self.assertEqual(rec["answer"]["original"], "这批先不检查")
+
+
+class ProtectedFilesTest(ReviewCase):
+    """0.17.0 (Spec decision 8, AC 15): a lock file change points at the project's registered protected files."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+
+    def cfg(self):
+        return store.get(self.db, "config", "main") or {}
+
+    def register(self, *args, original="锁文件变了要连带改这两个"):
+        return self.run_cli("config", "set", *args, "--original", original)
+
+    def test_pure(self):
+        self.assertEqual(changes.protected_lines(["src/a.py"], {"protectedFiles": ["a.sha256"]}), [])
+        self.assertEqual(changes.protected_lines(["web/pnpm-lock.yaml", "a.sha256"], {"protectedFiles": ["a.sha256"]}), [])
+        line, = changes.protected_lines(["uv.lock"], {})
+        self.assertIn("没登记保护文件", line)
+        self.assertIn("dependency", changes.hints_for(["uv.lock"], {}))
+
+    def test_register_and_hint(self):
+        r = self.register("--protected-file", "a.sha256", "--protected-file", "policy.json")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.cfg()["protectedFiles"], ["a.sha256", "policy.json"])
+        ev = [e for e in store.events(self.db, kind="config") if "protectedFiles" in (e["data"] or {})]
+        self.assertEqual(ev[-1]["data"]["original"], "锁文件变了要连带改这两个")
+        out = changes.add(self.db, request(["pnpm-lock.yaml", "policy.json"]), "shop-b", 1)
+        hint = [x for x in out.lines if x.startswith("锁文件改动")]
+        self.assertEqual(len(hint), 1, out.lines)
+        self.assertIn("a.sha256", hint[0])
+        self.assertNotIn("policy.json", hint[0])
+        self.assertIn("要问用户", out.lines)
+        both = changes.add(self.db, request(["pnpm-lock.yaml", "a.sha256", "policy.json"]), "shop-c", 2)
+        self.assertFalse([x for x in both.lines if x.startswith("锁文件改动")])
+        plain = changes.add(self.db, request(["tsconfig.base.json"]), "shop-c", 3)
+        self.assertFalse([x for x in plain.lines if x.startswith("锁文件改动")])
+
+    def test_unregistered_generic(self):
+        out = changes.add(self.db, request(["package-lock.json"]), "shop-b", 1)
+        hint = [x for x in out.lines if x.startswith("锁文件改动")]
+        self.assertEqual(len(hint), 1, out.lines)
+        self.assertIn("config set --protected-file", hint[0])
+
+    def test_refused_paths_and_clear(self):
+        self.register("--protected-file", "a.sha256")
+        for bad in ("../x", "/etc/passwd", "a/../../b"):
+            with self.subTest(bad):
+                r = self.register("--protected-file", bad)
+                self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+                self.assertEqual(self.cfg()["protectedFiles"], ["a.sha256"])
+        r = self.register("--clear-protected-files")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.cfg()["protectedFiles"], [])
+        self.assertEqual(self.register("--clear-protected-files", "--protected-file", "a").returncode, 2)

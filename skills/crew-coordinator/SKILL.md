@@ -140,6 +140,8 @@ module-crew review answer <交审事项编号> --original-file <原话文件>   
 1. 收到【公共变更请求】：`module-crew change add <文件> --from <发件人> --relay-id <号>`；`change list` 按到达顺序看未处理的。
 2. 输出「要问用户」（新增依赖、改 CI、迁移、和别的请求冲突），或改动超出已批准 Spec 的范围：先在本会话问用户；范围内的直接办。
    只带 `dependency` 提示时先对照已批 Plan：请求的依赖全在已批 Plan 里列出的，按范围内直接办、不问用户（`change land` 不带原话，它提醒「没有记下用户原话」照实略过），在事后汇总里列给用户；有超出 Plan 的才问。
+   `change add` 输出「锁文件改动」时：列出的保护文件可能要连带改，问请求方要不要另发请求、和这条一起落地。保护文件名单只按用户原话登记：
+   `module-crew config set --protected-file <路径> [--protected-file <路径> ...] --original-file <原话文件>`（整份替换；`--clear-protected-files` 清空），不自己猜名单。
 3. 在集成分支所在的 checkout 里只改请求列出的文件，然后：
 
 ```bash

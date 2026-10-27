@@ -108,6 +108,13 @@ class SkillsTest(unittest.TestCase):
         for words in ("change land <编号> <编号>", "整批", "--skip-check", "alsoAnswers"):
             self.assertIn(words, section)
 
+    def test_coordinator_protected_files(self):
+        """0.17.0 (Spec decision 8, AC 16): protected files are registered from the user's words, never guessed."""
+        _, text = read("crew-coordinator")
+        section = text.split("## 公共变更请求", 1)[1].split("\n## ", 1)[0]
+        for words in ("config set --protected-file", "锁文件改动", "用户原话"):
+            self.assertIn(words, section)
+
     def test_coordinator_merge_section(self):
         _, text = read("crew-coordinator")
         section = text.split("## 合并与收尾", 1)[1].split("\n## ", 1)[0]

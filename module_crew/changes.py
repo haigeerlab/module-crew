@@ -12,9 +12,39 @@ from module_crew.inbox import AnswerRefused, Outcome, Reply
 
 # Routing hints (spec decision 4); only ever added to.
 DEPENDENCY_FILES = {"package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "pyproject.toml", "poetry.lock",
-                    "Cargo.toml", "Cargo.lock", "go.mod", "go.sum", "Gemfile", "Gemfile.lock"}
+                    "Cargo.toml", "Cargo.lock", "go.mod", "go.sum", "Gemfile", "Gemfile.lock", "uv.lock"}
 CI_PREFIXES = (".github/", ".gitlab-ci.yml", ".circleci/")
 ASK_USER = ("dependency", "ci", "migration", "conflict:")
+# 0.17.0 (spec decision 8): lock files whose change may drag the project's registered protected files along
+LOCK_FILES = {"pnpm-lock.yaml", "package-lock.json", "yarn.lock", "poetry.lock", "uv.lock", "Cargo.lock", "go.sum",
+              "Gemfile.lock"}
+PROTECTED = "protectedFiles"
+
+
+def protected_lines(files: list[str], cfg: dict) -> list[str]:
+    """The lock-file hint for one request: the registered protected files it leaves out, or a generic line when
+    the project registered none. Never guesses."""
+    locks = [f for f in files if PurePosixPath(f).name in LOCK_FILES]
+    if not locks:
+        return []
+    shown = "、".join(locks)
+    registered = cfg.get(PROTECTED)
+    if not registered:
+        return [f"锁文件改动（{shown}）：项目没登记保护文件（config set --protected-file）；如果有随锁文件校验的文件"
+                "（哈希、审批清单等），问请求方要不要连带改"]
+    missing = [f for f in registered if f not in files]
+    if not missing:
+        return []
+    return [f"锁文件改动（{shown}）：项目登记的保护文件可能要连带改：{'、'.join(missing)}；"
+            "要改就请请求方另发请求，和这条一起 change land"]
+
+
+def protected_problem(path: str) -> str | None:
+    """A protected file is a repository-relative path without `..`; existence is not checked."""
+    p = PurePosixPath(path)
+    if not path.strip() or p.is_absolute() or ".." in p.parts:
+        return f"保护文件要写仓库里的相对路径、不含 ..：{path!r}"
+    return None
 
 
 def hints_for(files: list[str], others: dict[str, list[str]]) -> list[str]:
@@ -105,6 +135,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
                              + f"：以新请求 C{n} 为准")
         if hints:
             out.lines.append("提示：" + "、".join(hints))
+        out.lines += protected_lines(req_files, tx.get("config", "main") or {})
         if scope is not None and not scope.usable:
             out.lines.append(f"声明不可用：{scope.reason}，照今天处理")
         elif inside and not early and len(inside) < len(req_files):

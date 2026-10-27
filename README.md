@@ -76,6 +76,7 @@ bin/module-crew status
    - 模块会话单独执行 `module-crew sync` 把集成分支合进自己的分支（Spec／Plan 冲突自动取集成分支版本）后开始构建；写 Plan 前可用 `module-crew review show C<号>` 读审查原文。
 4. **公共文件**：模块会话不改公共文件，发【公共变更请求】；模块协调 `change add` → 在集成 checkout 改 → `change land`，其他模块收到同步基线通知。
    几条已批请求要一起进集成分支时 `change land <编号> <编号> ...` 合成一个提交：先跑检查，任一条不满足或检查不过就整批不提交。
+   随锁文件校验的保护文件（哈希、审批清单等）凭用户原话用 `config set --protected-file <路径>` 登记；请求改到锁文件时 `change add` 会提示它们可能要连带改。
    - **声明范围开关 `declaredScope`**（默认关，`module-crew config set --declared-scope on --original-file <原话文件>` 凭用户原话打开）：Plan「预先声明」名单内的公共文件模块直接在自己分支改（`module-crew scope <文件>` 可查），最终验收单列「声明内公共文件」一节一并审，默认合并时才进集成分支。确实要提前进集成分支时模块照旧发请求，名单内的由模块协调 `module-crew change land <编号> --from-module` 从模块分支取文件落地、不问用户，`change landed` 汇总给用户；名单外照旧。开关打开时，有依赖关系的模块不同时开工。读不到 spec-guard 1.11 的 `declaredScope` 时一切照旧。
 5. **合并**
    - 模块做完发最终验收【交审】，用户批准后 `module-crew merge approve <交审编号> --original-file <原话文件>`。

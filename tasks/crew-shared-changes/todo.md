@@ -45,7 +45,7 @@
   - 验收：Spec 验收 16 前半
   - 验证：`python3 -m unittest tests.test_changes tests.test_skills -v`
   - 文件：`module_crew/__main__.py`、`skills/crew-coordinator/SKILL.md`、`README.md`、`tests/test_changes.py`、`tests/test_skills.py`
-- [ ] Task 7：`change add` 认出请求里有锁文件改动时，提示项目登记的保护文件可能要连带改（名单凭用户原话 `config set --protected-file` 写进运行配置；没登记只给通用提示，不猜）
+- [x] Task 7：`change add` 认出请求里有锁文件改动时，提示项目登记的保护文件可能要连带改（名单凭用户原话 `config set --protected-file` 写进运行配置；没登记只给通用提示，不猜）
   - 验收：Spec 验收 15、16 后半
   - 验证：同上
   - 文件：`module_crew/changes.py`、`module_crew/__main__.py`、`skills/crew-coordinator/SKILL.md`、`README.md`、`tests/test_changes.py`、`tests/test_skills.py`
