@@ -3,20 +3,18 @@
 让多个 Claude 或 Codex 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.16.1。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.17.0。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
-## 0.16.1 的变化（热修：LIVE-SAAS 现场问题）
+## 0.17.0 的变化（公共变更一次落地、轻任务并行更顺）
 
-只修缺陷，不加开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.6），状态库不用迁移。
+不加项目开关，单个编号的 `change land` 与原有轻任务流程照旧；接口与契约不变（`interface.json` 1.0、session-protocol v2.6），状态库不用迁移（只增 `config/main` 的 `protectedFiles` 与几种事件）。
 
-- **写类 git 命令按 checkTimeout 限时**（S39）：收回 worktree、开模块与派轻任务建 worktree、合并失败后的 `merge --abort`／`reset --hard`、`sync` 的合并与提交，原来分别用只读的 30 秒、60 秒或没有期限，现在都用项目的 `checkTimeout`。超时不再抛 Python 调用栈：退出码 4，写明「删了一半（或建了一半）、状态库没动」和恢复步骤。
-- **`merge cleanup` 能收完删了一半的 worktree**（S39）：worktree 里只剩已跟踪文件被删、没有改过／暂存／未跟踪的文件、已合入集成分支（已取消、已升格的轻任务不查这一条）、会话登记仍是这个模块或任务时，先说明再 `git worktree remove --force` 续做；目录已不在而 git 仍登记时先 `git worktree prune`；其他情况照旧拒绝并给出 `git checkout -- .` 后重跑的办法。
-- **模块协调不在集成 checkout 时有提示**（S40）：换宿主的交接说明写明新开会话不要用 worktree；`bind`、`status` 发现模块协调的当前目录不是集成 checkout 时提示一行；`.agent/config.json` 被 git 忽略、当前 worktree 里没有时，spec-guard 两项体检按集成 checkout 判断，不再误报。
-- **新 worktree 补上被忽略的 `.agent/config.json`**：`start prepare`、`task dispatch` 建 worktree 后，集成 checkout 里这个文件被 git 忽略、新 worktree 里没有时复制过去（不会被提交），spec-guard 写 checkout 角色时读得到 `moduleConcurrency`。
-- **模块会话能跑 `check quick`**（S42）：`check quick`、`check show`、`check list` 不再被当成模块协调专用命令拦下（打开 `checkLedger` 后原先所有模块的快检查都跑不了）；`check baseline` 仍只有模块协调能跑。
-- **提交标题只取第一行**（S44）：「改什么」里有换行时，`change land` 等拼出的提交标题不再把正文带进去（commitlint `body-leading-blank`）。
-- **重开模块先交 Spec 修订**（S45）：Spec 仍是批准状态、但 todo 新加的第一个未勾项是 Spec 修订（REV-SPEC、修订 Spec）时，开工说明写先改 Spec、交 Spec 节点，不再写「只交 Plan」。
-- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对，不要接着装。
+- **几条已批的公共变更请求一次落地**（S43）：`change land C96 C99` 先逐条核对（都开着、清单文件都改了、没有清单外改动），再暂存并跑检查——`checkLedger` 开着跑快检查并记账，没开跑完整检查 `checkCommand`，两者都没有时要用户原话加 `--skip-check`——任一条不满足或检查不过整批不提交；通过就合成一个提交，各请求记同一提交号与 `batch`，每个请求方一条带回复行的同步通知（同一请求方的多条用 `alsoAnswers` 一并关掉）。批量不和 `--partial`、`--from-module` 一起用。`--skip-quick-check` 改名 `--skip-check`，旧名仍认。
+- **锁文件连带保护文件的提示**：凭用户原话用 `config set --protected-file <路径>`（可重复，整份替换）登记保护文件、`--clear-protected-files` 清空；`change add` 认出请求里有锁文件改动时，列出名单里不在本请求清单内的保护文件，没登记只给一行通用提示，不猜。
+- **轻任务重叠判断更细**：两个点名的文件相同才算重叠，两个目录相同或嵌套才算，目录不再和点名的文件判重叠（`tests/` 与 `tests/a.py` 不算）；交回时的「任务单以外多改了」口径不变，撞上别的任务点名的同一文件照旧标越界重叠。`spec/crew-task-ledger.md` 决策 4 随之修订。
+- **在做的轻任务可以收窄预计文件**：「已派出」「在做」的任务凭用户原话 `task scope <号> --expect … --done … --original-file …` 收窄，新列表必须落在原范围里，状态不变；之后 `task next` 放行不再重叠的排队任务。
+- **轻任务交回后可以重新交审**（S33）：交回后分支又多了提交时，新的最终验收【交审】照常 `review add`，旧的交审与合并批准记为被取代，再走一次批准；分支顶端没变或正在合并时拒收。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。
 
