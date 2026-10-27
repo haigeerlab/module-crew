@@ -3,20 +3,20 @@
 让多个 Claude 或 Codex 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.15.0。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.16.0。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
-## 0.15.0 的变化（重开已完成模块与 LIVE-SAAS 修复）
+## 0.16.0 的变化（第十版：并行更顺、可外包额度）
 
-- 已合入的模块可以原地重开：在 spec-guard 里追加未勾任务后，`start prepare <模块 id> --original-file <原话文件>` 把旧模块分支快进到集成分支再开 worktree，新邮箱名带轮次后缀（`-r2`），开工说明写明只做 todo 新加的未勾项；Claude 与 Codex 两份 crew-dev skill 都写了做法（见「修订已完成的模块」，S18）。
-- 公共变更请求：「文件：」下有不像路径的行时，`protocol check` 与 `change add` 直接退回（问题码 `bad-file-line`）；同一模块的新请求和它未落地的旧请求文件重叠时，旧请求记为被取代（`closedReason=superseded`）；`change answer <号> --reason superseded` 可手工关掉被取代的请求（S27）。
-- 体检的「集成 checkout 干净」只看已跟踪的改动，未跟踪文件只提示、不再算作不干净（S26）。
-- 完整检查命令：`merge run --check-command` 写入新命令时，拒收含 shell 运算符（`&&`、`|`、`;`、`>`、`$(` 等）的命令（module-crew 不经 shell 执行，改写成项目脚本或 `/bin/sh -c '…'`），已存的命令不受影响；命令本身跑不起来（找不到、没有执行权限）时撤销这次合并、不退回模块，合并批准仍开着，提示「完整检查跑不起来」并附实际执行的参数（S30）。
-- 提交超时的后续（S28）：新增 `merge record C<号> --original-file <原话文件>`，合并收尾超时、状态库没记下合并时，核对合并提交确实在集成分支上再补记；`config set --check-timeout <秒>` 改提交与完整检查的时限；git 进程组结束后最多再等 10 秒输出，常驻进程占着管道也不卡；`change land`、`review approve` 输出提交用时，超时提示带实际用时。
-- 只有 `requirements*.txt` 的项目，worktree 里还没有 `.venv` 时，开工说明先给 `python3 -m venv .venv`，权限规则也放行它。
-- `host-check` 读固定入口时不再往状态库写字节码缓存（`bin/__pycache__`），在没设 `PYTHONDONTWRITEBYTECODE` 的环境里也保持只读。
-- crew-coordinator skill（两份）：Codex 版清单补上 `config set` 与 `review batch --for-hub`（后者限「接了决策收件箱时」），依赖类提示先对照已批 Plan 再决定问不问用户（S19）；最终验收退回后重新交审时，产品文件逐个与原批准一致的可沿用原批准，有任何差异就要用户给新原话；Codex 版写明调用 module-crew 一律用固定入口的绝对路径。
-- 接口不变（`interface.json` 1.0），契约仍钉 session-protocol v2.6，公共变更请求多了问题码 `bad-file-line`；状态库只增字段，不用迁移。
-- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。钩子很慢的项目，由模块协调凭用户原话跑 `config set --check-timeout`。
+四个新能力都是项目开关，默认关，凭用户原话打开；不打开时一切和 0.15.0 一样（S32，并入 S29）。
+
+- **Plan 声明过的公共文件模块直接改**（`declaredScope`）：读 spec-guard 0.85.0 的 `declaredScope`，名单内的公共文件模块在自己分支改、不发公共变更请求，最终验收单列「声明内公共文件」一节一并审；确需提前进集成分支的，`change land --from-module` 从模块分支取文件落地、`change landed` 事后汇总；有依赖关系的模块不同时开工。见「一次完整流程」第 4、5 步。
+- **快检查与完整检查分开、检查记账**（`checkLedger` + `quickCheckCommand`）：平时跑项目的快检查 `check quick`，完整检查只在合并队列与一次性的 `check baseline` 里跑；按树哈希记账、同一棵树不重跑；基线红了只建一个修基线 bug 任务；`change land` 提交前先跑快检查；最终验收自动附检查账。见「检查记账」。
+- **自治档位**（spec-guard `autonomyTier`）：strict 照旧；standard 让 Spec 与 Plan 一起审、声明范围跟着档位开；relaxed 再把同步、检查账这类消息改为收尾汇总（`tier digest`）；升档只建议、用户确认才升，出事自动降一档并马上告诉用户（`tier restore` 恢复要原话）；任何档位不低于共享检查点规则的底线。见「自治档位」。
+- **额度外包给 Codex**（`codexOffload`，要先开 `checkLedger`）：Spec、Plan 批完后由模块协调经 delegate（`/delegate:run --write --resumable`）把 todo 里的 Task 一个一个交给 Codex 在模块 worktree 跑；Codex 只改不提交，模块协调核对范围、跑快检查后代提交；done／needs-input／timeout 分别处理，认不出的停下问用户。见「额度外包」。
+- 新命令：`config set` 的 `--declared-scope`、`--quick-check-command`、`--check-ledger`、`--codex-offload`；`scope`；`change land --from-module`、`change landed`；`check quick|baseline|show|list`；`tier [--preflight]|restore|digest`；`offload start|settle|resume|handback|decline|show`。
+- 依赖：这几个开关要 spec-guard 0.85.0（interface 1.11）；额度外包要 delegate 0.6.0 起（interface 1.1），读到 delegate 1.2 时 timeout 可续跑。读不到新接口时一律照 0.15.0 的做法问用户。
+- 接口与契约不变（`interface.json` 1.0、session-protocol v2.6）；状态库只增记录种类（`check`、`offload`）与 `config/main` 的字段，不用迁移。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。全量测试慢的项目（本仓库约 2000 秒）先由模块协调凭用户原话 `config set --check-timeout` 调大时限。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -26,8 +26,9 @@
 |---|---|
 | 宿主 | 模块协调：平时在 Claude 桌面版（Code 标签），一批收尾后可用 `coordinator handover` 整体换到 Codex 桌面版（见「换宿主」）；模块会话：Claude 桌面版或 Codex 桌面版。都在同一台 Mac 上 |
 | agent-relay | **必需**，接口主版本 2。会话之间用它收发消息（`bridge_send` 的 `bodyFile`、`replyTo`、`expectsReply`） |
-| spec-guard | 项目已启用本地多 Spec 约定（`spec/CAPABILITY-MAP.md`）。开工、批量批准、合并依赖 spec-guard 0.68.0（`interface.json` 1.1、`/map --json` 的 `moduleConcurrency`、`startable`） |
+| spec-guard | 项目已启用本地多 Spec 约定（`spec/CAPABILITY-MAP.md`）。开工、批量批准、合并依赖 spec-guard 0.68.0（`interface.json` 1.1、`/map --json` 的 `moduleConcurrency`、`startable`）；第十版的声明范围、自治档位、额度外包的范围核对要 0.85.0（interface 1.11） |
 | 项目 | git 仓库，能建 worktree；有一条能在本地跑完的完整检查命令，合并后用它判断集成是否通过 |
+| delegate | 可选，只有打开额度外包（`codexOffload`）时才要：0.6.0 起（interface 1.1）；1.2 起超时也能续跑 |
 | 运行环境 | Python 3（只用标准库） |
 
 消息格式以 [session-protocol](../session-protocol) 契约为准（现钉住 v2.6）。
@@ -317,4 +318,5 @@ spec-guard 的命令入口路径带版本号，暂不放进放行清单。细节
 - 0.9.0 起的钩子按会话认身份：只用钩子事件数据做过测试，没在真实桌面会话里看过注入出来的文字。
 - 桌面版整个退出重开后会话 id 是否不变：压缩、`claude --resume` 接上都实测不变，退出整个桌面版这一种没测。
 - 0.12.0 的 Codex 固定入口：2026-10-23 在真实 Codex 沙箱里跑过 `status`（读得到 Claude 的安装记录）与 `host-check`（写 `.git` 要提权，提权后能提交）；登记过的 Codex 模块会话完整走一遍 bind、交审还没测。
+- 第十版四个开关：都只用测试和本机接口实测验证过，还没在真实项目上打开试跑（留给 LIVE-SAAS 下一轮，量同步与核验类提交占比、每个模块的批准次数等四个数）。额度外包对 delegate 0.6.0 真跑过一次（done），1.2 的 timeout 续跑只用夹具测过；多个 Task、needs-input 续跑的整轮外包没实跑。自治档位的升档门槛与收尾汇总时机是先定的，等试点数据再调。
 - 第八版的模块协调在 Codex 上：只用测试验证过。`merge run --detach` 的后台进程能否活过 Codex 的一轮、提权是否随之继承，单次工具调用最长能等多久，一次提权批准能覆盖多少条命令，都还没在真实 Codex 线程里试过。
