@@ -184,8 +184,8 @@ class PrepareResult:
     prepared: list[dict] = field(default_factory=list)   # {"id", "worktree", "branch", "relayName", "kickoff"}
 
 
-def _git(cwd: Path, *args: str):
-    return probe._git(cwd, *args)
+def _git(cwd: Path, *args: str, timeout: float = probe.GIT_TIMEOUT):
+    return probe._git(cwd, *args, timeout=timeout)
 
 
 def _toplevel(project: Path) -> Path:
@@ -402,13 +402,23 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             result.lines.append(f"{m}：worktree 目录在校验之后被占用（{path}），已停下")
             break
         reopen = proposal.reopen.get(m)
-        if reopen and reopen["branch"] == "fast-forward":
-            # the old branch is an ancestor of the integration branch: moving it there loses no commit
-            added = _git(project, "branch", "-f", m, cfg["integrationBranch"])
-            if added.returncode == 0:
-                added = _git(project, "worktree", "add", str(path), m)
-        else:
-            added = _git(project, "worktree", "add", "-b", m, str(path), cfg["integrationBranch"])
+        from module_crew import merge
+        limit = merge.commit_timeout(cfg)      # S39: worktree add runs the project's post-checkout hooks
+        try:
+            if reopen and reopen["branch"] == "fast-forward":
+                # the old branch is an ancestor of the integration branch: moving it there loses no commit
+                added = _git(project, "branch", "-f", m, cfg["integrationBranch"], timeout=limit)
+                if added.returncode == 0:
+                    added = _git(project, "worktree", "add", str(path), m, timeout=limit)
+            else:
+                added = _git(project, "worktree", "add", "-b", m, str(path), cfg["integrationBranch"], timeout=limit)
+        except subprocess.TimeoutExpired as exc:
+            result.code = 4
+            result.lines += [f"{m}：" + probe.write_timed_out("建 worktree ", exc, f"worktree {path} 建了一半",
+                                                         "状态库没动这个模块（没有登记会话）"),
+                             f"恢复：start prepare 不收已存在的目录，请用户同意后 git worktree remove --force {path}"
+                             f"（git 已留下分支 {m} 就再 git branch -D {m}），再重跑 start prepare"]
+            break
         if added.returncode != 0:
             result.code = 4
             left = _git(project, "rev-parse", "--verify", "--quiet", f"refs/heads/{m}").returncode == 0
