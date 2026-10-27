@@ -49,5 +49,6 @@
   - 验收：Spec 验收 15、16 后半
   - 验证：同上
   - 文件：`module_crew/changes.py`、`module_crew/__main__.py`、`skills/crew-coordinator/SKILL.md`、`README.md`、`tests/test_changes.py`、`tests/test_skills.py`
-- [ ] Checkpoint（report）：完整检查 `python3 -m unittest discover -s tests` 后台跑全绿，记下用时与测试数后继续
+- [x] Checkpoint（report）：完整检查 `python3 -m unittest discover -s tests` 后台跑全绿，记下用时与测试数后继续
+  - 记录：同步后基线 5b420e8：1113 个测试 1828 秒 OK；57388f1：1127 个 1 失败（test_glossary 旧称「审批」），b635829 修正；b635829：1127 个测试 1401 秒 OK（2026-10-27）；fd46f94 只改 Spec 措辞，未重跑
 - [ ] Checkpoint（gate）：最终验收
