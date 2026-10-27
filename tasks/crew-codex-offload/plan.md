@@ -1,6 +1,6 @@
 # Implementation Plan: crew-codex-offload
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-codex-offload.md`（用户 2026-10-26 批准，事项 C233「C233 A」，集成分支提交 f8fbc4e）。任务清单：`tasks/crew-codex-offload/todo.md`。
 
