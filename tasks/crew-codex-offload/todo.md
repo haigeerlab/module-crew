@@ -14,3 +14,8 @@
 - [x] Task 8：四份 skill、README；`module-crew sync` 后后台跑全量测试；本机 delegate 0.6.0 实测一次（Spec 验收 12、13）——sync 已是最新（main 6878f41）；全量 1045 个在 68c660c 通过；delegate 0.6.0（接口 1.1）在临时仓库实测一次：退出码 0、结果行 status=done、Codex 只改两个文件未提交，真实输出喂给 settle 判为 done 并代提交；1.2 的 timeout 续跑只用夹具测过
 - [x] Checkpoint 3（gate）：最终验收
 - [x] 回告：完成情况经模块协调转告 ecosystem-lead——已经 mc-coord 回告（2026-10-27）
+
+## 第 2 轮修订（2026-10-28 重开，见 plan.md「修订（第 2 轮）」）
+
+- [ ] 修订 Spec 交审：按 `docs/intent/codex-offload-native.md` 与 delegate 接口 1.3 改写，Spec 末尾加「变更记录」
+- [ ] Spec 批准后重写 Plan 第 2 轮任务交审

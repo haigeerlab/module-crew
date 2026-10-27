@@ -1,6 +1,6 @@
 # Implementation Plan: crew-codex-offload
 
-<!-- spec-guard: review approved -->
+<!-- spec-guard: review pending -->
 
 > 依据：`spec/crew-codex-offload.md`（用户 2026-10-26 批准，事项 C233「C233 A」，集成分支提交 f8fbc4e）。任务清单：`tasks/crew-codex-offload/todo.md`。
 
@@ -57,3 +57,13 @@
 ### Checkpoint 3（gate）：最终验收
 
 - [ ] 回告：完成情况经模块协调转告 ecosystem-lead（S32 第二节 module-crew 第 6 条已实现）
+
+## 修订（第 2 轮，2026-10-28 重开）
+
+改什么：按意图 `docs/intent/codex-offload-native.md`（2026-10-27 用户确认，S38）改写外包做法——由模块会话自己调用 delegate、同一个 Codex 会话从第一个 Task 做到最后一个（`--resumable` 续跑），模块协调不再代调用、代提交；接入 delegate v0.8.0（接口 1.3）的 run.continue、run.longRun、run.result、run.check、run.writeAuthorization；退出码 125 归为失败；needs-input 问题正文截取时去掉可能出现的 `delegate: result=<路径>` 行；新结束状态 unmarked／failed／interrupted／unreaped／empty 逐个定处理；带 `--resumable` 的长期限中止后收尾轮、长期限下回收不了（125）两项列为已知未验证。
+
+为什么：S38 已批（2026-10-27），delegate v0.8.0 已发布（标签 v0.8.0 → 16290d0），超 540 秒实测已满足。这是改方向，超出原批准范围：Spec 先修订交审，本 Plan 改回待批准，Spec 批准后重写本节以下的任务再交审。
+
+## 变更记录
+
+- 2026-10-28：重开模块，Plan 改回待批准，追加第 2 轮修订一节与 todo 未勾项。原因：外包做法按 S38 意图改方向、接入 delegate 接口 1.3。来源：用户本人在 mc-coord 会话（原话「开工 crew-codex-offload 修订，重开模块写 Spec 交审」）。
