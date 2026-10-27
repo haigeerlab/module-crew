@@ -204,9 +204,17 @@ def _add_task(db: store.Store, msg, text: str, sender: str, relay_id: int) -> Ou
     if sub["node"] != "final":
         return Outcome(msg.kind, 3, lines=["轻任务只交最终验收（节点：最终验收）"])
     t = store.get(db, "task", str(n)) or {}
-    if t.get("state") != "working":
+    if t.get("state") not in ("working", "returned"):
         return Outcome(msg.kind, 3, lines=[f"T{n} 现在是「{tasks.STATE_NAMES.get(t.get('state'), '?')}」，不在做，拒收"])
     worktree = Path(session["worktree"])
+    resubmit = t["state"] == "returned"         # 0.17.0 (S33): the branch moved after the hand-back
+    if resubmit:
+        last = (t.get("result") or {}).get("commit")
+        if _git(worktree, "rev-parse", "HEAD").stdout.strip() == last:
+            return Outcome(msg.kind, 3, lines=[f"T{n} 已交回，分支顶端和上次交审的提交相同（{(last or '')[:7]}），不用重新交审"])
+        from module_crew import mergelock
+        if mergelock.locked(db) and (mergelock.read(db) or {}).get("unit") == f"T{n}":
+            return Outcome(msg.kind, 3, lines=[f"T{n} 正在合并，等合并结束再交审"])
     reasons = _check_files(worktree, sub["files"])
     if reasons:
         return Outcome(msg.kind, 3, lines=["拒收，请退回："] + reasons)
@@ -214,7 +222,7 @@ def _add_task(db: store.Store, msg, text: str, sender: str, relay_id: int) -> Ou
         return Outcome(msg.kind, 0, lines=[f"已记过：{sender} 的邮箱消息 #{relay_id}，没有重复记账"])
     branch = (store.get(db, "config", "main") or {}).get("integrationBranch")
     changed = [l for l in _git(worktree, "diff", "--name-only", f"{branch}...HEAD").stdout.splitlines() if l.strip()]
-    extra = sorted(f for f in changed if not any(tasks.clash(f, e) for e in t["expectedFiles"]))
+    extra = sorted(f for f in changed if not any(tasks.covers(e, f) for e in t["expectedFiles"]))
     clashes, _ = tasks.overlaps(db, worktree, extra, exclude=n) if extra else ([], [])   # any checkout of the repo
     commit = _git(worktree, "rev-parse", "HEAD").stdout.strip()
     from module_crew import checks
@@ -233,7 +241,13 @@ def _add_task(db: store.Store, msg, text: str, sender: str, relay_id: int) -> Ou
             "extraFiles": extra, "overlapExtra": clashes, "closedReason": None, "answer": None,
             **({"checks": ledger} if ledger is not None else {})},
             action="created", data={"relayId": relay_id})
-    tasks.advance(db, n, "returned", result={**(t.get("result") or {}), "files": changed, "commit": commit})
+    result = {**(t.get("result") or {}), "files": changed, "commit": commit}
+    if resubmit:
+        with db.transaction(actor=sender) as tx:
+            tx.put("task", str(n), {**tx.get("task", str(n)), "result": result}, action="resubmitted",
+                   data={"review": number})
+    else:
+        tasks.advance(db, n, "returned", result=result)
     out.number = number
     out.lines.append(f"已记为交审事项 C{number}（轻任务 T{n} 的最终验收）；实际改了 {len(changed)} 个文件")
     if extra:
@@ -244,6 +258,8 @@ def _add_task(db: store.Store, msg, text: str, sender: str, relay_id: int) -> Ou
         out.lines.append("提示：这是 bug，「要点」里没写复现测试；问做事的会话补没补能复现问题的测试")
     if out.closed:
         out.lines.append("取代了 " + "、".join(f"C{k}" for k in out.closed))
+    if resubmit:
+        out.lines.append(f"这是 T{n} 交回后的重新交审：旧的交审与合并批准已作废，需要重新提请用户批准")
     out.lines += _ledger_lines(ledger)
     return out
 

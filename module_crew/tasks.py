@@ -53,10 +53,18 @@ GIT_TIMEOUT = 20
 
 
 def clash(a: str, b: str) -> bool:
-    """Same path, or one is a directory (trailing /) holding the other."""
-    if a == b:
-        return True
-    return (a.endswith("/") and b.startswith(a)) or (b.endswith("/") and a.startswith(b))
+    """Two named files clash when equal; two directories (trailing /) when equal or nested.
+    A directory never clashes with a named file: it stands for files not named yet (0.17.0)."""
+    if a.endswith("/") != b.endswith("/"):
+        return False
+    if a.endswith("/"):
+        return a.startswith(b) or b.startswith(a)
+    return a == b
+
+
+def covers(entry: str, path: str) -> bool:
+    """`path` is `entry` itself or lies inside the directory `entry`."""
+    return path == entry or (entry.endswith("/") and path.startswith(entry))
 
 
 def _module_files(db: store.Store, project: Path) -> tuple[dict[str, list[str]], list[str]]:
@@ -316,20 +324,34 @@ class Scoped:
 
 
 def scope(db: store.Store, number: int, expect: list[str], done: str, original: str) -> Scoped:
-    """After an escalation answered 「缩小」: rewrite the task card and send it back to work."""
+    """After an escalation answered 「缩小」: rewrite the task card and send it back to work.
+    A dispatched or working task may only narrow its expected files (0.17.0); its state stays."""
     t = store.get(db, "task", str(number))
-    if t is None or t.get("state") != "escalated":
-        raise TaskRefused(f"{label(number)} 不在等升格决定，不能缩小")
+    if t is None or t.get("state") not in ("escalated", "dispatched", "working"):
+        now = STATE_NAMES.get((t or {}).get("state"), "?") if t else "不存在"
+        raise TaskRefused(f"{label(number)} 现在是「{now}」，不能缩小或收窄")
     original, done = _clean(original, "用户原话"), _clean(done, "完成标准")
     files = [f.strip() for f in expect or [] if f.strip()]
     if not files or not all(store.task_path_ok(f) for f in files):
         raise TaskRefused("预计文件要写仓库内的相对路径（不含 ..），不能为空")
-    text = "\n".join([f"轻任务 {label(number)} 已按用户的决定缩小，新的任务单：",
-                      f"- 做什么：{t['what']}", f"- 预计改的文件：{'、'.join(files)}", f"- 做到什么程度算完：{done}",
-                      "超出这份任务单的改动不要再做，做完按原来的写法交回最终验收【交审】。"]) + "\n"
+    narrowing = t["state"] != "escalated"
+    if narrowing:
+        old = list(t.get("expectedFiles") or [])
+        outside = [f for f in files if not any(covers(o, f) for o in old)]
+        if outside:
+            raise TaskRefused("这不是收窄：" + "、".join(outside) + " 不在原来的预计文件里，加文件请走升格")
+        if sorted(set(files)) == sorted(set(old)):
+            raise TaskRefused("新的预计文件和原来一样，没有收窄")
+    head = (f"轻任务 {label(number)} 的预计文件已按用户的决定收窄，新的任务单：" if narrowing
+            else f"轻任务 {label(number)} 已按用户的决定缩小，新的任务单：")
+    tail = ("超出这份任务单的改动不要做；要碰别的文件，先停下发升格请求。" if narrowing
+            else "超出这份任务单的改动不要再做，做完按原来的写法交回最终验收【交审】。")
+    text = "\n".join([head, f"- 做什么：{t['what']}", f"- 预计改的文件：{'、'.join(files)}", f"- 做到什么程度算完：{done}",
+                      tail]) + "\n"
     with db.transaction(actor="coordinator") as tx:
-        tx.put("task", str(number), {**t, "expectedFiles": files, "done": done, "state": "working"},
-               action="scoped", data={"original": original})
+        tx.put("task", str(number), {**t, "expectedFiles": files, "done": done,
+                                     "state": t["state"] if narrowing else "working"},
+               action="narrowed" if narrowing else "scoped", data={"original": original})
         body = tx.allocate_number()
         meta = tx.write_body(body, text)
     return Scoped(number, body, str(db.path / meta["path"]))

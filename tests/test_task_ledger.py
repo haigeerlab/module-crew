@@ -97,12 +97,15 @@ class OverlapTest(ReviewCase):
         self.assertEqual(store.get(self.db, "task", str(second.number))["state"], "queued")
 
     def test_directory_contains(self):
+        # crew-light-task 0.17.0: a directory clashes only with a directory (same or nested), never with a named file
         first = add(self.db, self.repo, expect=("src/",))
-        self.assertEqual(add(self.db, self.repo, expect=("src/x.py",)).state, "queued")   # ready holds its files
+        self.assertEqual(add(self.db, self.repo, expect=("src/x.py",)).state, "ready")
+        self.assertEqual(add(self.db, self.repo, expect=("src/",)).state, "queued")       # ready holds its files
+        self.assertEqual(add(self.db, self.repo, expect=("src/sub/",)).state, "queued")
         set_state(self.db, first.number, "cancelled")
         third = add(self.db, self.repo, expect=("lib/y.py",))
         self.assertEqual(third.state, "ready")
-        self.assertEqual(add(self.db, self.repo, expect=("lib/",)).state, "queued")
+        self.assertEqual(add(self.db, self.repo, expect=("lib/",)).state, "ready")
 
     def test_returned_actual_files_count(self):
         first = add(self.db, self.repo, expect=("src/a.py",))
@@ -130,7 +133,7 @@ class QueueTest(CoordCase):
     """Acceptance 4, 5, 6."""
 
     def test_next_bug_first_and_one_of_two(self):
-        holder = add(self.db, self.repo, expect=("src/",))
+        holder = add(self.db, self.repo, expect=("src/a.py", "src/b.py"))
         set_state(self.db, holder.number, "working")
         feat = add(self.db, self.repo, expect=("src/a.py",))
         bug = add(self.db, self.repo, kind="bug", expect=("src/a.py",))
@@ -243,7 +246,7 @@ class StatusTest(CoordCase):
     def test_status_sections(self):
         a = add(self.db, self.repo, expect=("src/",))
         tasks.advance(self.db, a.number, "dispatched", assignee="shop-t1")
-        b = add(self.db, self.repo, kind="bug", expect=("src/x.py",))
+        b = add(self.db, self.repo, kind="bug", expect=("src/x/",))
         c = add(self.db, self.repo, expect=("docs/c.md",))
         tasks.cancel(self.db, c.number, "不做")
         before = store.records(self.db, "task")
@@ -251,7 +254,7 @@ class StatusTest(CoordCase):
         self.assertIn("任务", out)
         self.assertIn(f"T{a.number}（需求）导出按钮：已派出，派给 shop-t1", out)
         self.assertIn(f"T{b.number}（bug）导出按钮：排队", out)
-        self.assertIn(f"T{a.number}：src/x.py", out)
+        self.assertIn(f"T{a.number}：src/x/", out)
         self.assertIn(f"T{c.number}", out)
         doc = json.loads(self.run_cli("status", "--json").stdout)["store"]["tasks"]
         self.assertEqual([t["number"] for t in doc["active"]], [a.number])
