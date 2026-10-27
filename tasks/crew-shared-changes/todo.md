@@ -37,7 +37,7 @@
 
 - [x] REV-SPEC：修订 spec/crew-shared-changes.md，加入一次落地多个请求与锁文件连带保护文件提示，Spec 评审标记改为 pending 交审
   - 记录：Spec 修订 141e8fb，用户 2026-10-27 批准（C280）
-- [ ] Task 5：一次落地多个公共变更请求 `land_batch`：`change land C96 C99` 把几个已批请求的文件合成一个提交；落地前先跑检查（`checkLedger` 开着跑快检查，没开跑完整检查 `checkCommand`）；任一请求不满足或检查不过就整批不提交（S43，LIVE-SAAS C96/C99）
+- [x] Task 5：一次落地多个公共变更请求 `land_batch`：`change land C96 C99` 把几个已批请求的文件合成一个提交；落地前先跑检查（`checkLedger` 开着跑快检查，没开跑完整检查 `checkCommand`）；任一请求不满足或检查不过就整批不提交（S43，LIVE-SAAS C96/C99）
   - 验收：Spec 验收 10、11、12、13、14
   - 验证：`python3 -m unittest tests.test_changes -v`
   - 文件：`module_crew/changes.py`、`tests/test_changes.py`

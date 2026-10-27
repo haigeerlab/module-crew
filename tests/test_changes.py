@@ -173,3 +173,147 @@ class CliTest(ReviewCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(r.stdout.count("发送 【协调通知】"), 2)
         self.assertEqual(self.run_cli("change", "list").returncode, 3)
+
+
+class BatchLandTest(ReviewCase):
+    """0.17.0 (S43, Spec AC 10-13): several approved requests in one commit, checked first, all or nothing."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        self.a = changes.add(self.db, request(["upstream-policy.json"], stopped="是"), "shop-b", 96).number
+        self.b = changes.add(self.db, request(["foundation-approval.sha256"]), "shop-c", 99).number
+        self.head = git(self.repo, "rev-parse", "HEAD").strip()
+        self.calls = self.tmp / "calls"
+
+    def config(self, **kv):
+        with self.db.transaction(actor="t") as tx:
+            cfg = dict(tx.get("config", "main") or {})
+            for k, v in kv.items():
+                if v is None:
+                    cfg.pop(k, None)
+                else:
+                    cfg[k] = v
+            tx.put("config", "main", cfg, action="set")
+
+    def script(self, fail_if=None):
+        """A check command that counts its runs and fails while `fail_if` exists in the checkout."""
+        path = self.tmp / "check.py"
+        path.write_text("import os, sys\n"
+                        f"open({str(self.calls)!r}, 'a').write('x')\n"
+                        f"sys.exit(1 if {fail_if!r} and os.path.exists({fail_if!r}) else 0)\n", encoding="utf-8")
+        return f"python3 {path}"
+
+    def ran(self):
+        return len(self.calls.read_text()) if self.calls.exists() else 0
+
+    def edit(self, *names):
+        for name in names or ("upstream-policy.json", "foundation-approval.sha256"):
+            (self.repo / name).write_text("v2\n", encoding="utf-8")
+
+    def snapshot(self):
+        return (git(self.repo, "rev-parse", "HEAD"), git(self.repo, "diff", "--cached", "--name-only"), files(self.db))
+
+    def test_one_commit_two_requests(self):
+        self.config(checkCommand=self.script())
+        self.edit()
+        res = changes.land_batch(self.repo, [self.a, self.b])
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(self.ran(), 1)
+        log = git(self.repo, "log", "--format=%s", f"{self.head}..HEAD").strip().splitlines()
+        self.assertEqual(len(log), 1)
+        self.assertIn(f"C{self.a}、C{self.b}", log[0])
+        self.assertEqual(sorted(git(self.repo, "diff", "--name-only", self.head, "HEAD").split()),
+                         ["foundation-approval.sha256", "upstream-policy.json"])
+        for n in (self.a, self.b):
+            rec = store.get(self.db, "request", str(n))
+            self.assertEqual((rec["state"], rec["closedReason"], rec["commit"], rec["batch"]),
+                             ("closed", "landed", res.commit, [self.a, self.b]))
+        ticket = store.get(self.db, "request", str(self.a))["ticket"]
+        self.assertEqual(store.get(self.db, "ticket", str(ticket))["closedReason"], 3)
+        by_to = {x["to"]: x for x in res.sends}
+        self.assertEqual(sorted(by_to), ["shop-b", "shop-c"])
+        for name, relay in (("shop-b", 96), ("shop-c", 99)):
+            msg = protocol.parse(store.read_body(self.db, by_to[name]["body"]))
+            self.assertTrue(msg.ok, msg.problems)
+            self.assertEqual((msg.reply_to, by_to[name]["replyTo"], by_to[name]["alsoAnswers"]), (relay, relay, []))
+            self.assertIn(f"公共变更请求 C{self.a}、C{self.b}", msg.fields["依据"])
+        self.assertEqual(store.records(self.db, "check"), {})          # ledger off: the full check is not recorded
+
+    def test_same_requester_one_notice(self):
+        c = changes.add(self.db, request(["tsconfig.base.json"]), "shop-b", 101).number
+        self.config(checkCommand=self.script())
+        self.edit("upstream-policy.json", "tsconfig.base.json")
+        res = changes.land_batch(self.repo, [c, self.a])
+        self.assertEqual(res.code, 0, res.lines)
+        mine = [x for x in res.sends if x["to"] == "shop-b"]
+        self.assertEqual(len(mine), 1)
+        self.assertEqual((mine[0]["replyTo"], mine[0]["alsoAnswers"]), (96, [101]))
+        other = next(x for x in res.sends if x["to"] == "shop-c")
+        self.assertIsNone(other["replyTo"])
+        self.assertIsNone(protocol.parse(store.read_body(self.db, other["body"])).reply_to)
+
+    def test_refused_whole_batch(self):
+        self.config(checkCommand=self.script())
+        self.edit("upstream-policy.json")
+        before = self.snapshot()
+        cases = {"清单文件没改": [self.a, self.b], "不存在": [self.a, 999], "重复": [self.a, self.a]}
+        for why, numbers in cases.items():
+            with self.subTest(why):
+                self.assertEqual(changes.land_batch(self.repo, numbers).code, 3)
+                self.assertEqual(self.snapshot(), before)
+        self.edit()
+        (self.repo / "stray.txt").write_text("x")
+        res = changes.land_batch(self.repo, [self.a, self.b])
+        self.assertEqual(res.code, 3)
+        self.assertIn("stray.txt", " ".join(res.lines))
+        (self.repo / "stray.txt").unlink()
+        for kw in ({"partial": True}, {"from_module": True}):
+            with self.subTest(kw):
+                self.assertEqual(changes.land_batch(self.repo, [self.a, self.b], "好", **kw).code, 3)
+        changes.answer(self.db, self.b, "不改")
+        self.assertEqual(changes.land_batch(self.repo, [self.a, self.b]).code, 3)    # closed
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD").strip(), self.head)
+        self.assertEqual(self.ran(), 0)
+
+    def test_full_check_fails(self):
+        self.config(checkCommand=self.script(fail_if=str(self.repo / "foundation-approval.sha256")))
+        self.edit()
+        res = changes.land_batch(self.repo, [self.a, self.b])
+        self.assertEqual(res.code, 5, res.lines)
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD").strip(), self.head)
+        self.assertEqual(sorted(git(self.repo, "diff", "--cached", "--name-only").split()),
+                         ["foundation-approval.sha256", "upstream-policy.json"])
+        self.assertEqual({store.get(self.db, "request", str(n))["state"] for n in (self.a, self.b)}, {"open"})
+        self.assertEqual((res.sends, store.records(self.db, "check")), ([], {}))
+
+    def test_quick_check_with_ledger(self):
+        self.config(checkLedger="on", checkCommand=self.script(), quickCheckCommand=self.script())
+        self.edit()
+        res = changes.land_batch(self.repo, [self.a, self.b])
+        self.assertEqual(res.code, 0, res.lines)
+        tree = git(self.repo, "rev-parse", "HEAD^{tree}").strip()
+        self.assertEqual(store.get(self.db, "check", f"{tree}.quick")["by"], "change-land")
+        self.assertEqual(self.ran(), 1)
+
+    def test_quick_check_fails_with_ledger(self):
+        failing = self.script(fail_if=str(self.repo / "upstream-policy.json"))
+        self.config(checkLedger="on", checkCommand=failing, quickCheckCommand=failing)
+        self.edit()
+        res = changes.land_batch(self.repo, [self.a, self.b])
+        self.assertEqual(res.code, 5, res.lines)
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD").strip(), self.head)
+
+    def test_no_check_command(self):
+        self.config(checkCommand=None, checkLedger=None)
+        self.edit()
+        before = self.snapshot()
+        self.assertEqual(changes.land_batch(self.repo, [self.a, self.b]).code, 3)
+        self.assertEqual(changes.land_batch(self.repo, [self.a, self.b], skip_check=True).code, 3)
+        self.assertEqual(self.snapshot(), before)
+        res = changes.land_batch(self.repo, [self.a, self.b], "这批先不检查", skip_check=True)
+        self.assertEqual(res.code, 0, res.lines)
+        for n in (self.a, self.b):
+            rec = store.get(self.db, "request", str(n))
+            self.assertEqual(rec["checkSkipped"]["original"], "这批先不检查")
+            self.assertEqual(rec["answer"]["original"], "这批先不检查")

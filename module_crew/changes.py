@@ -290,18 +290,10 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
             return LandResult(out.code, out.lines + [f"没有提交，清单文件保持暂存，请求 C{number} 仍开着：修好后再 change land，"
                                                      "或请用户同意后加 --skip-quick-check --original-file <原话文件>"])
     from module_crew import merge
-    try:
-        done = probe._git(checkout, "commit", "-q", "-m",
-                          commits.message(f"公共变更请求 C{number}（{rec['from']}）{'提前落地' if module_commit else ''}："
-                                          f"{rec['what'][:40]}", commits.prefix_of(db)),
-                          timeout=merge.commit_timeout(cfg))
-    except subprocess.TimeoutExpired as exc:
-        return LandResult(4, [probe.timed_out("集成分支提交", exc), "已暂存的文件：" + "、".join(changed) + "（仍是暂存状态）",
-                              f"这次没有提交，请求 C{number} 仍开着；确认没有 .git/index.lock、钩子进程已结束、"
-                              "集成 checkout 里除清单文件外没有别的改动后，可以重试同一条 change land，不用先 unstage"])
-    if done.returncode != 0:
-        return LandResult(4, [commits.failure(checkout, done, "集成分支提交失败")] + commits.hook_lines(checkout, done)
-                          + ["已暂存的文件：" + "、".join(changed)])
+    done, refused = _commit(db, cfg, checkout, f"公共变更请求 C{number}（{rec['from']}）{'提前落地' if module_commit else ''}："
+                            f"{rec['what'][:40]}", changed, f"请求 C{number} 仍开着")
+    if refused:
+        return refused
     commit = probe._git(checkout, "rev-parse", "HEAD").stdout.strip()
     from module_crew import unqueued
     unqueued.mark(db, checkout, "change-land")       # crew-unqueued-commits: module-crew's own commit
@@ -332,21 +324,146 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
                                                 **early, **skipped),
                    action="landed", data={"commit": commit, **({"fromModule": module_commit} if module_commit else {})})
             _close_ticket(tx, rec)
-        skip = merge.no_sync(tx)               # same rule as merge run (0.9.3); the requester still gets its reply
-        for name, sess in sorted(tx.records("session").items()):
-            if sess.get("role") != "dev" or sess.get("status") != "active":
-                continue
-            if sess.get("module") in skip and name != rec["from"]:
-                continue
-            text = protocol.render_coordination_notice(kind="sync-baseline", basis=basis, todo=todo)
-            reply_to = rec["relayId"] if name == rec["from"] else None
-            if reply_to is not None:
-                text = f"回复：#{reply_to}\n" + text
-                if protocol.parse(text).reply_to != reply_to:
-                    raise ValueError("回复行没有被读回")
-            body = tx.allocate_number()
-            meta = tx.write_body(body, text)
-            result.sends.append({"to": name, "replyTo": reply_to, "body": body, "path": db.path / meta["path"]})
+        _notify(db, tx, result, basis, todo, {rec["from"]: (rec["relayId"], [])})
+    return result
+
+
+def _commit(db: store.Store, cfg: dict, checkout: Path, subject: str, changed: list[str],
+            still_open: str) -> tuple[subprocess.CompletedProcess | None, LandResult | None]:
+    """Commit what is staged in the integration checkout: (done, None), or (None, the refusal) when it failed."""
+    from module_crew import merge
+    try:
+        done = probe._git(checkout, "commit", "-q", "-m", commits.message(subject, commits.prefix_of(db)),
+                          timeout=merge.commit_timeout(cfg))
+    except subprocess.TimeoutExpired as exc:
+        return None, LandResult(4, [probe.timed_out("集成分支提交", exc), "已暂存的文件：" + "、".join(changed) + "（仍是暂存状态）",
+                                    f"这次没有提交，{still_open}；确认没有 .git/index.lock、钩子进程已结束、"
+                                    "集成 checkout 里除清单文件外没有别的改动后，可以重试同一条 change land，不用先 unstage"])
+    if done.returncode != 0:
+        return None, LandResult(4, [commits.failure(checkout, done, "集成分支提交失败")] + commits.hook_lines(checkout, done)
+                                + ["已暂存的文件：" + "、".join(changed)])
+    return done, None
+
+
+def _notify(db: store.Store, tx, result: LandResult, basis: str, todo: str, replies: dict[str, tuple[int, list[int]]]) -> None:
+    """One sync-baseline notice per active module session; a requester's opens with its reply line (`replies` maps
+    the requester to (replyTo, alsoAnswers))."""
+    from module_crew import merge
+    skip = merge.no_sync(tx)               # same rule as merge run (0.9.3); the requester still gets its reply
+    for name, sess in sorted(tx.records("session").items()):
+        if sess.get("role") != "dev" or sess.get("status") != "active":
+            continue
+        if sess.get("module") in skip and name not in replies:
+            continue
+        text = protocol.render_coordination_notice(kind="sync-baseline", basis=basis, todo=todo)
+        reply_to, also = replies.get(name, (None, []))
+        if reply_to is not None:
+            text = f"回复：#{reply_to}\n" + text
+            if protocol.parse(text).reply_to != reply_to:
+                raise ValueError("回复行没有被读回")
+        body = tx.allocate_number()
+        meta = tx.write_body(body, text)
+        result.sends.append({"to": name, "replyTo": reply_to, "alsoAnswers": also, "body": body,
+                             "path": db.path / meta["path"]})
+
+
+def land_batch(project: str | os.PathLike, numbers: list[int], original: str | None = None, skip_check: bool = False,
+               partial: bool = False, from_module: bool = False) -> LandResult:
+    """0.17.0 (S43, spec decision 7): several open requests in one commit on the integration baseline, checked first;
+    any request not ready or a failing check and nothing is committed."""
+    if partial or from_module:
+        return LandResult(3, ["批量落地不和 --partial、--from-module 一起用：要部分落地或提前落地就逐条 change land"])
+    if len(set(numbers)) != len(numbers):
+        return LandResult(3, ["编号重复：" + "、".join(f"C{n}" for n in numbers)])
+    numbers = sorted(numbers)
+    label = "、".join(f"C{n}" for n in numbers)
+    project = Path(project)
+    db = store.open_store(project)
+    recs, problems = {}, []
+    for n in numbers:
+        rec = store.get(db, "request", str(n))
+        if rec is None:
+            problems.append(f"没有公共变更请求 C{n}")
+        elif rec.get("state") != "open":
+            problems.append(f"公共变更请求 C{n} 已关闭（{rec.get('closedReason')}）")
+        else:
+            recs[n] = rec
+    cfg = store.get(db, "config", "main") or {}
+    checkout = probe._checkout_of(project, cfg.get("integrationBranch", "")) if cfg else None
+    if checkout is None:
+        return LandResult(3, ["找不到集成分支所在的 checkout"])
+    changed = _changed_paths(checkout)
+    union = list(dict.fromkeys(f for rec in recs.values() for f in rec["files"]))
+    outside = [p for p in changed if p not in union]
+    if outside:
+        problems.append("集成 checkout 里有这几条清单之外的改动：" + "、".join(outside))
+    for n, rec in recs.items():
+        left = [f for f in rec["files"] if f not in changed]
+        if left:
+            problems.append(f"C{n} 清单里还没改：{'、'.join(left)}")
+    if problems:
+        return LandResult(3, [f"整批没有提交（{label}）："] + problems)
+    from module_crew import checks
+    quick = checks.enabled(cfg)
+    full = None if quick else cfg.get("checkCommand")
+    words = bool(original and original.strip())
+    if skip_check and not words:
+        return LandResult(3, ["跳过检查要用户原话：请用户同意后加 --original-file <原话文件>"])
+    if not (quick or full or skip_check):
+        return LandResult(3, [f"整批没有提交（{label}）：检查记账没开，也没有完整检查命令 checkCommand（第一次 merge run "
+                              "--check-command 写入）", "分开逐条 change land，或请用户同意后加 --skip-check --original-file <原话文件>"])
+    probe._git(checkout, "add", "-A", "--", *changed)
+    still_open = f"请求 {label} 都还开着"
+    if not skip_check:
+        if quick:
+            tree = probe._git(checkout, "write-tree").stdout.strip()
+            out = checks.check_tree(db, cfg, "quick", tree, checkout, "change-land", None)
+            code, check_lines = out.code, out.lines
+        else:
+            result_, exit_code, tail, seconds = checks.run_command(full, checkout, checks._timeout(cfg))
+            if result_ is None:
+                code, check_lines = 4, [f"完整检查没有跑成：{tail}"]
+            elif result_ == "fail":
+                hits = checks.failed_lines(tail)
+                code, check_lines = 5, [f"完整检查不过（退出码 {exit_code}，用时 {seconds} 秒）" + (f"：{'；'.join(hits)}" if hits else "")]
+            else:
+                code, check_lines = 0, [f"完整检查通过（不记账），用时 {seconds} 秒"]
+        if code != 0:
+            return LandResult(code, check_lines + [f"没有提交，清单文件保持暂存，{still_open}：修好后再 change land，"
+                                                   "或请用户同意后加 --skip-check --original-file <原话文件>"])
+    else:
+        check_lines = ["按用户原话跳过了落地前检查"]
+    froms = list(dict.fromkeys(recs[n]["from"] for n in numbers))
+    subject = f"公共变更请求 {label}（{'、'.join(froms)}）：{'；'.join(recs[n]['what'][:40] for n in numbers)}"
+    done, refused = _commit(db, cfg, checkout, subject, changed, still_open)
+    if refused:
+        return refused
+    commit = probe._git(checkout, "rev-parse", "HEAD").stdout.strip()
+    from module_crew import merge, unqueued
+    unqueued.mark(db, checkout, "change-land")
+    result = LandResult(0, [f"公共变更请求 {label} 已在集成分支一并提交 {commit[:7]}"] + check_lines, commit=commit)
+    result.lines.append(probe.took_line(done, merge.commit_timeout(cfg)))
+    if original is None:
+        result.lines += [f"提醒：C{n} 带「要问用户」提示，但没有记下用户原话" for n in numbers
+                         if _asks_user(recs[n].get("hints", []))]
+    basis = f"公共变更请求 {label} 已在集成分支提交 {commit[:7]}"
+    todo = f"{sync.STEP}，{checks.after_sync(cfg)}后继续"
+    replies: dict[str, tuple[int, list[int]]] = {}
+    for n in numbers:                       # the requester's reply line answers its lowest-numbered request
+        who = recs[n]["from"]
+        if who in replies:
+            replies[who][1].append(recs[n]["relayId"])
+        else:
+            replies[who] = (recs[n]["relayId"], [])
+    with db.transaction(actor="coordinator") as tx:
+        answer_rec = {"original": original, "answeredAt": store.now(), **store.source_field()} if original is not None else None
+        skipped = {"checkSkipped": {"original": original, "at": store.now()}} if skip_check else {}
+        for n in numbers:
+            tx.put("request", str(n), dict(recs[n], state="closed", closedReason="landed", commit=commit, answer=answer_rec,
+                                           batch=numbers, **skipped),
+                   action="landed", data={"commit": commit, "batch": numbers})
+            _close_ticket(tx, recs[n])
+        _notify(db, tx, result, basis, todo, replies)
     return result
 
 
