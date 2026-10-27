@@ -1,6 +1,6 @@
 # Spec: crew-codex-offload
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved d94a4167b4c8 -->
 
 > 能力图模块 `crew-codex-offload`（第十版第 4 个），**第 2 轮修订**（2026-10-28 重开，用户在 mc-coord 会话原话「开工 crew-codex-offload 修订，重开模块写 Spec 交审」，开会话依据：用户批准事项 C304）。
 > 需求来源：意图 `docs/intent/codex-offload-native.md`（用户 2026-10-27 确认，S38）；已批方案 plugin-ecosystem `proposals/2026-10-27-S38-模块整体外包给Codex.md`（用户 2026-10-27「假设全部确认，五个决定点按推荐批准」），
