@@ -283,6 +283,7 @@ def dispatch(db: store.Store, project: str | os.PathLike, number: int, host: str
                           f"（git 已留下分支 {branch} 就再 git branch -D {branch}），再重跑 task dispatch") from None
     if added.returncode != 0:
         raise TaskRefused(f"建 worktree 失败：{added.stderr.strip()[:200]}")
+    copied = start.copy_ignored_config(probe._checkout_of(project, cfg["integrationBranch"]) or project, worktree)
     text = render_kickoff(number, t, worktree, branch, cfg, relay, coord[0],
                           start.codex_lines(relay, db.path) if host_id == "codex-desktop" else None)
     try:
@@ -298,6 +299,8 @@ def dispatch(db: store.Store, project: str | os.PathLike, number: int, host: str
         raise
     advance(db, number, "dispatched", assignee=relay, worktree=str(worktree), branch=branch)
     result = Dispatched(number, str(worktree), branch, relay, body, str(db.path / "bodies" / f"{body}.txt"))
+    if copied:
+        result.lines.append(copied)
     from module_crew import permissions
     line = permissions.follow(project, relay)
     if line:

@@ -102,3 +102,20 @@ class EmptyDiffApproveTest(MergeCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SubjectFirstLineTest(MergeCase):
+    """S44 (LIVE-SAAS C109): a multi-line 「改什么」 must not carry its second line into the commit subject."""
+
+    def test_message_keeps_first_line(self):
+        from module_crew import commits
+        self.assertEqual(commits.message("公共变更请求 C9（b）：改配置\n第二行补充"), "chore(crew): 公共变更请求 C9（b）：改配置")
+
+    def test_change_land_subject_is_one_line(self):
+        db = store.open_store(self.repo)
+        n = changes.add(db, request(["a.json"], what="改配置\n第二行补充说明"), "shop-b", 5003).number
+        self.assertIn("\n", store.get(db, "request", str(n))["what"])
+        (self.repo / "a.json").write_text("{}\n", encoding="utf-8")
+        self.assertEqual(changes.land(self.repo, n).code, 0)
+        body = git(self.repo, "log", "-1", "--format=%B").strip()
+        self.assertEqual(body, f"chore(crew): 公共变更请求 C{n}（shop-b）：改配置")

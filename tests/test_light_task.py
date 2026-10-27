@@ -379,3 +379,29 @@ class EndToEndTest(MergeCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DispatchIgnoredConfigTest(ReviewCase):
+    """S40 follow-up: task dispatch copies a git-ignored .agent/config.json into the new worktree too."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+
+    def test_ignored_config_copied(self):
+        (self.repo / ".gitignore").write_text(".agent/config.json\n", encoding="utf-8")
+        git(self.repo, "rm", "-q", "--cached", ".agent/config.json")
+        git(self.repo, "add", ".gitignore")
+        git(self.repo, "commit", "-q", "-m", "ignore config")
+        n = new_task(self.db, self.repo)
+        r = tasks.dispatch(self.db, self.repo, n)
+        self.assertEqual((Path(r.worktree) / ".agent" / "config.json").read_bytes(),
+                         (self.repo / ".agent" / "config.json").read_bytes())
+        self.assertIn(f"已把集成 checkout 的 .agent/config.json 复制到 {r.worktree}（它被 git 忽略，新 worktree 里没有；不会被提交）",
+                      r.lines)
+
+    def test_tracked_config_untouched(self):
+        r = tasks.dispatch(self.db, self.repo, new_task(self.db, self.repo))
+        self.assertFalse(any(".agent/config.json" in l for l in r.lines), r.lines)
+        self.assertEqual(git(Path(r.worktree), "status", "--porcelain").strip(), "")

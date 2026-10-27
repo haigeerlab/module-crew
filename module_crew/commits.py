@@ -24,8 +24,10 @@ def prefix_of(db) -> str:
 
 
 def message(text: str, prefix: str = PREFIX) -> str:
-    """The commit subject: prefix + text, at most 100 characters."""
-    head = prefix + text
+    """The commit subject: prefix + the first line of text, at most 100 characters.
+
+    S44 (LIVE-SAAS C109): a line break would start the body right after the subject (commitlint body-leading-blank)."""
+    head = prefix + (text.splitlines() or [""])[0]
     return head if len(head) <= 100 else head[:99] + "…"
 
 
