@@ -3,20 +3,20 @@
 让多个 Claude 或 Codex 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.16.0。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.16.1。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
-## 0.16.0 的变化（第十版：并行更顺、可外包额度）
+## 0.16.1 的变化（热修：LIVE-SAAS 现场问题）
 
-四个新能力都是项目开关，默认关，凭用户原话打开；不打开时一切和 0.15.0 一样（S32，并入 S29）。
+只修缺陷，不加开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.6），状态库不用迁移。
 
-- **Plan 声明过的公共文件模块直接改**（`declaredScope`）：读 spec-guard 0.85.0 的 `declaredScope`，名单内的公共文件模块在自己分支改、不发公共变更请求，最终验收单列「声明内公共文件」一节一并审；确需提前进集成分支的，`change land --from-module` 从模块分支取文件落地、`change landed` 事后汇总；有依赖关系的模块不同时开工。见「一次完整流程」第 4、5 步。
-- **快检查与完整检查分开、检查记账**（`checkLedger` + `quickCheckCommand`）：平时跑项目的快检查 `check quick`，完整检查只在合并队列与一次性的 `check baseline` 里跑；按树哈希记账、同一棵树不重跑；基线红了只建一个修基线 bug 任务；`change land` 提交前先跑快检查；最终验收自动附检查账。见「检查记账」。
-- **自治档位**（spec-guard `autonomyTier`）：strict 照旧；standard 让 Spec 与 Plan 一起审、声明范围跟着档位开；relaxed 再把同步、检查账这类消息改为收尾汇总（`tier digest`）；升档只建议、用户确认才升，出事自动降一档并马上告诉用户（`tier restore` 恢复要原话）；任何档位不低于共享检查点规则的底线。见「自治档位」。
-- **额度外包给 Codex**（`codexOffload`，要先开 `checkLedger`）：Spec、Plan 批完后由模块协调经 delegate（`/delegate:run --write --resumable`）把 todo 里的 Task 一个一个交给 Codex 在模块 worktree 跑；Codex 只改不提交，模块协调核对范围、跑快检查后代提交；done／needs-input／timeout 分别处理，认不出的停下问用户。见「额度外包」。
-- 新命令：`config set` 的 `--declared-scope`、`--quick-check-command`、`--check-ledger`、`--codex-offload`；`scope`；`change land --from-module`、`change landed`；`check quick|baseline|show|list`；`tier [--preflight]|restore|digest`；`offload start|settle|resume|handback|decline|show`。
-- 依赖：这几个开关要 spec-guard 0.85.0（interface 1.11）；额度外包要 delegate 0.6.0 起（interface 1.1），读到 delegate 1.2 时 timeout 可续跑。读不到新接口时一律照 0.15.0 的做法问用户。
-- 接口与契约不变（`interface.json` 1.0、session-protocol v2.6）；状态库只增记录种类（`check`、`offload`）与 `config/main` 的字段，不用迁移。
-- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。全量测试慢的项目（本仓库约 2000 秒）先由模块协调凭用户原话 `config set --check-timeout` 调大时限。
+- **写类 git 命令按 checkTimeout 限时**（S39）：收回 worktree、开模块与派轻任务建 worktree、合并失败后的 `merge --abort`／`reset --hard`、`sync` 的合并与提交，原来分别用只读的 30 秒、60 秒或没有期限，现在都用项目的 `checkTimeout`。超时不再抛 Python 调用栈：退出码 4，写明「删了一半（或建了一半）、状态库没动」和恢复步骤。
+- **`merge cleanup` 能收完删了一半的 worktree**（S39）：worktree 里只剩已跟踪文件被删、没有改过／暂存／未跟踪的文件、已合入集成分支（已取消、已升格的轻任务不查这一条）、会话登记仍是这个模块或任务时，先说明再 `git worktree remove --force` 续做；目录已不在而 git 仍登记时先 `git worktree prune`；其他情况照旧拒绝并给出 `git checkout -- .` 后重跑的办法。
+- **模块协调不在集成 checkout 时有提示**（S40）：换宿主的交接说明写明新开会话不要用 worktree；`bind`、`status` 发现模块协调的当前目录不是集成 checkout 时提示一行；`.agent/config.json` 被 git 忽略、当前 worktree 里没有时，spec-guard 两项体检按集成 checkout 判断，不再误报。
+- **新 worktree 补上被忽略的 `.agent/config.json`**：`start prepare`、`task dispatch` 建 worktree 后，集成 checkout 里这个文件被 git 忽略、新 worktree 里没有时复制过去（不会被提交），spec-guard 写 checkout 角色时读得到 `moduleConcurrency`。
+- **模块会话能跑 `check quick`**（S42）：`check quick`、`check show`、`check list` 不再被当成模块协调专用命令拦下（打开 `checkLedger` 后原先所有模块的快检查都跑不了）；`check baseline` 仍只有模块协调能跑。
+- **提交标题只取第一行**（S44）：「改什么」里有换行时，`change land` 等拼出的提交标题不再把正文带进去（commitlint `body-leading-blank`）。
+- **重开模块先交 Spec 修订**（S45）：Spec 仍是批准状态、但 todo 新加的第一个未勾项是 Spec 修订（REV-SPEC、修订 Spec）时，开工说明写先改 Spec、交 Spec 节点，不再写「只交 Plan」。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对，不要接着装。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。
 

@@ -2,6 +2,19 @@
 
 各版本的变化，最新的在前。README 只写最新一版。
 
+## 0.16.0 的变化（第十版：并行更顺、可外包额度）
+
+四个新能力都是项目开关，默认关，凭用户原话打开；不打开时一切和 0.15.0 一样（S32，并入 S29）。
+
+- **Plan 声明过的公共文件模块直接改**（`declaredScope`）：读 spec-guard 0.85.0 的 `declaredScope`，名单内的公共文件模块在自己分支改、不发公共变更请求，最终验收单列「声明内公共文件」一节一并审；确需提前进集成分支的，`change land --from-module` 从模块分支取文件落地、`change landed` 事后汇总；有依赖关系的模块不同时开工。见「一次完整流程」第 4、5 步。
+- **快检查与完整检查分开、检查记账**（`checkLedger` + `quickCheckCommand`）：平时跑项目的快检查 `check quick`，完整检查只在合并队列与一次性的 `check baseline` 里跑；按树哈希记账、同一棵树不重跑；基线红了只建一个修基线 bug 任务；`change land` 提交前先跑快检查；最终验收自动附检查账。见「检查记账」。
+- **自治档位**（spec-guard `autonomyTier`）：strict 照旧；standard 让 Spec 与 Plan 一起审、声明范围跟着档位开；relaxed 再把同步、检查账这类消息改为收尾汇总（`tier digest`）；升档只建议、用户确认才升，出事自动降一档并马上告诉用户（`tier restore` 恢复要原话）；任何档位不低于共享检查点规则的底线。见「自治档位」。
+- **额度外包给 Codex**（`codexOffload`，要先开 `checkLedger`）：Spec、Plan 批完后由模块协调经 delegate（`/delegate:run --write --resumable`）把 todo 里的 Task 一个一个交给 Codex 在模块 worktree 跑；Codex 只改不提交，模块协调核对范围、跑快检查后代提交；done／needs-input／timeout 分别处理，认不出的停下问用户。见「额度外包」。
+- 新命令：`config set` 的 `--declared-scope`、`--quick-check-command`、`--check-ledger`、`--codex-offload`；`scope`；`change land --from-module`、`change landed`；`check quick|baseline|show|list`；`tier [--preflight]|restore|digest`；`offload start|settle|resume|handback|decline|show`。
+- 依赖：这几个开关要 spec-guard 0.85.0（interface 1.11）；额度外包要 delegate 0.6.0 起（interface 1.1），读到 delegate 1.2 时 timeout 可续跑。读不到新接口时一律照 0.15.0 的做法问用户。
+- 接口与契约不变（`interface.json` 1.0、session-protocol v2.6）；状态库只增记录种类（`check`、`offload`）与 `config/main` 的字段，不用迁移。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。全量测试慢的项目（本仓库约 2000 秒）先由模块协调凭用户原话 `config set --check-timeout` 调大时限。
+
 ## 0.15.0 的变化（重开已完成模块与 LIVE-SAAS 修复）
 
 - 已合入的模块可以原地重开：在 spec-guard 里追加未勾任务后，`start prepare <模块 id> --original-file <原话文件>` 把旧模块分支快进到集成分支再开 worktree，新邮箱名带轮次后缀（`-r2`），开工说明写明只做 todo 新加的未勾项；Claude 与 Codex 两份 crew-dev skill 都写了做法（见「修订已完成的模块」，S18）。
