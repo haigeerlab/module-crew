@@ -13,4 +13,4 @@
 - [x] Task 7：`status` 档位一段与底线测试（Spec 验收 9）——实现先于测试，测试一次通过；档位没设时 `store.autonomy` 为 null、文本不出现档位
 - [x] Task 8：skill、README、`module-crew sync` 后全量测试、本机实测读档位（Spec 验收 10、11、1）——四份 skill 各加「自治档位」一节、README 加一节与 tier 命令；sync 后集成分支仍是 6878f41，全量测试 1012 个全过（2361 秒）；本机 spec-guard 0.85.0 实测读档位三种情况、preflight 退出码 0；中途一次批量修改误把测试内容写进 Spec，已从集成分支恢复并重做修订（f3f4cd9）
 - [x] Checkpoint 3（gate）：最终验收
-- [ ] 回告：完成情况经模块协调转告 ecosystem-lead
+- [x] 回告：完成情况经模块协调转告 ecosystem-lead——已经 mc-coord 回告（2026-10-27）
