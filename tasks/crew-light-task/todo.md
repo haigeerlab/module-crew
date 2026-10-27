@@ -26,7 +26,7 @@
 - [x] Task R1：重叠规则细化——预计文件里的目录只和对方的目录比（相同或包含才算），不再和对方点名的文件判重叠；新增 `tasks.covers`，交回比对口径不变（Spec 验收 10、11）
 - [x] Task R2：在做任务收窄预计文件——「已派出」「在做」凭用户原话收窄，状态不变；T264／T267 场景收窄后 `task next` 把排队任务提为可开（Spec 验收 10、12）
 - [x] Checkpoint R1（report）：相关测试全过，记入 todo 后继续——test_light_task、test_task_ledger 共 54 个通过（新测试先红 6 处后绿，5d86f17）；按 Q1 A 修订了 spec/crew-task-ledger.md 决策 4
-- [ ] Task R3：交回后重新交审（S33）——「交回」且分支顶端变了时 `review add` 收下新交审、旧交审与合并批准记为被取代（Spec 验收 13）
+- [x] Task R3：交回后重新交审（S33）——「交回」且分支顶端变了时 `review add` 收下新交审、旧交审与合并批准记为被取代（Spec 验收 13）
 - [ ] Task R4：skill 与 README 轻任务段，全量测试与旧称扫描（Spec 验收 14）
 - [ ] Checkpoint R2（gate）：最终验收
 - [ ] 回告：mc-coord（S33、T264／T267 场景的提出方）——随最终验收列出
