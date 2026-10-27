@@ -1076,6 +1076,27 @@ def _record_lead(db: store.Store, picked: list, original: str, reasons: list[str
     return res
 
 
+def start_todo_today(m: str) -> str:
+    """The start notice's 要你做什么 as it has always been."""
+    return (f"{sync.STEP}（spec/{m}.md、tasks/{m}/ 冲突时 sync 自动取集成分支的版本，它带批准标记），"
+            f"然后按 tasks/{m}/plan.md 开始构建；公共文件只能经【公共变更请求】改")
+
+
+def _start_todo(db: store.Store, project: Path, m: str, lines: list[str]) -> str | None:
+    """crew-codex-offload decision 4: today's text with the switch off; the offload text when Codex can take it;
+    None (no start notice) when the switch is on but offloading cannot happen, so the user decides."""
+    from module_crew import offload
+    if not offload.enabled(db):
+        return start_todo_today(m)
+    why = offload.ready(db, project)
+    if why:
+        lines.append(f"外包条件不满足（{m}）：{why}；没有发开工通知。问用户：改由模块会话自己构建"
+                     f"（offload decline {m} --original-file <原话> 发今天的开工通知），还是先补齐条件（补齐后 offload start {m}）")
+        return None
+    lines.append(f"外包（{m}）：模块会话 sync 后发来【等待其他会话】，再运行 module-crew offload start {m}")
+    return offload.start_todo_offload(m)
+
+
 def approve(project: str | os.PathLike, numbers: list[int], original: str) -> ApproveResult:
     """Read the answers to open questions first (all must be there), then approve, return or hold each review."""
     project = Path(project)
@@ -1206,13 +1227,14 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
             if not {MARK_TARGET[n] for n in nodes_now if n in MARK_TARGET} >= {"spec", "plan"}:   # interface counts as Spec
                 continue
             sender = next(rec["from"] for _, rec in picked if rec["module"] == m)
+            todo = _start_todo(db, project, m, result.lines)
+            if todo is None:                      # crew-codex-offload decision 4: held until the user decides
+                continue
             text = protocol.render_coordination_notice(
                 kind="start", basis=f"用户批准事项 C{approval}（{m} 的 Spec 与 Plan），"
                                     + (f"集成分支 {commit[:7]} 已是批准内容" if empty else f"已提交到集成分支 {commit[:7]}"),
-                todo=(f"{sync.STEP}（spec/{m}.md、tasks/{m}/ 冲突时 sync 自动取集成分支的版本，它带批准标记），"
-                      f"然后按 tasks/{m}/plan.md 开始构建；公共文件只能经【公共变更请求】改"
-                      + "".join(f"\n审查原文：module-crew review show C{k}（写 Plan、构建时吸收遗留建议）"
-                                for k, rec in picked if rec["module"] == m and rec.get("reviews"))))
+                todo=(todo + "".join(f"\n审查原文：module-crew review show C{k}（写 Plan、构建时吸收遗留建议）"
+                                     for k, rec in picked if rec["module"] == m and rec.get("reviews"))))
             body = tx.allocate_number()
             meta = tx.write_body(body, text)
             result.sends.append({"kind": "coordination-notice", "to": sender, "replyTo": None, "body": body,
