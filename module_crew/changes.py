@@ -31,7 +31,7 @@ def protected_lines(files: list[str], cfg: dict) -> list[str]:
     registered = cfg.get(PROTECTED)
     if not registered:
         return [f"锁文件改动（{shown}）：项目没登记保护文件（config set --protected-file）；如果有随锁文件校验的文件"
-                "（哈希、审批清单等），问请求方要不要连带改"]
+                "（哈希、批准清单等），问请求方要不要连带改"]
     missing = [f for f in registered if f not in files]
     if not missing:
         return []
