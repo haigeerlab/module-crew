@@ -1,6 +1,6 @@
 # Spec: crew-light-task
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved c5ea301d02de -->
 
 > 能力图模块 `crew-light-task`（第六版第 3 个）。需求来源：`docs/requirements-record.md` 第 14 节第 3、4、6、8、9、11 条与契约 v2.5 两段（用户 2026-10-22 确认、批准）。
 > 依赖 `crew-task-ledger`（任务记录与排队）、`crew-start`（worktree 与开工说明）、`crew-merge`（合并队列）。标「新」的是写 Spec 时补的实现取舍，请重点审。
