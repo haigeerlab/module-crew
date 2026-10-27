@@ -1,6 +1,6 @@
 # Implementation Plan: crew-light-task
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-light-task.md`（用户 2026-10-22 批准，合并顺序 bug → 模块 → 需求）。任务清单：`tasks/crew-light-task/todo.md`。
 
