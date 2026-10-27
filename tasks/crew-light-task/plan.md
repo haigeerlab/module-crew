@@ -1,6 +1,6 @@
 # Implementation Plan: crew-light-task
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-light-task.md`（用户 2026-10-22 批准，合并顺序 bug → 模块 → 需求）。任务清单：`tasks/crew-light-task/todo.md`。
 
@@ -68,6 +68,49 @@
 
 为什么返工：LIVE-SAAS 现场问题与 0.16.1 期间暴露的流程卡点，用户在 mc-coord 确认 0.17.0 做这几件（见 todo「0.17.0 修订」一节）。超出原范围，Plan 改回 pending，由模块会话按修订后的 Spec 补写本节的任务分解后交审。
 
+依据：`spec/crew-light-task.md`「0.17.0 修订（第 2 轮）」（用户 2026-10-27 批准，C281；原话「C281 A，README 与 crew-coordinator skill 两边照常各改各的段落」）。
+
+### 架构决定
+
+- **重叠规则**（决策 11）：`tasks.clash` 改成「文件对文件相同才算；目录对目录相同或包含才算；文件对目录不算」；新增 `tasks.covers(entry, path)`。
+  `review._add_task` 算多改文件改用 `covers`（口径不变）。`overlaps`／`next_ready`／`add`／`summary` 不改代码，经 `clash` 生效。
+- **收窄**（决策 12）：`tasks.scope` 按状态分两路——「升格待定」照旧（`scoped`，回到在做）；「已派出」「在做」走收窄：新列表每条都要被原列表某条 `covers`、且集合不同，
+  否则 `TaskRefused`；写 `expectedFiles`、`done`，状态不变，事件 `narrowed` 带原话，生成「已收窄」正文。命令行参数与 `__main__.py` 不变。
+- **重新交审**（决策 13）：`review._add_task` 的状态门改为「在做」或「交回」；「交回」时分支顶端等于 `result.commit` 拒收，`mergelock.locked` 且 `read()['unit'] == T<n>` 拒收；
+  其余共用现有记账与 superseded 逻辑，最后「交回」不走 `advance`，在同一事务里只更新 `result`（事件 `resubmitted`），输出加「需要重新提请用户批准」。
+- **文档**（决策 14）：两份 crew-coordinator、两份 crew-dev 只改轻任务段；README 只改「轻任务」一节与命令一览 `task scope` 一行。
+
+### 任务
+
+- [ ] Task R1：重叠规则与 `covers`（Spec 验收 10 的规则部分、11）——测试先红后绿
+- [ ] Task R2：在做任务收窄，含 T264／T267 场景（Spec 验收 10 的场景部分、12）——测试先红后绿
+- Checkpoint R1（report）：`test_light_task` 与 `test_task_ledger` 等相关测试全过，记入 todo 后继续
+- [ ] Task R3：交回后重新交审（Spec 验收 13）——测试先红后绿，含新交审批准后 `merge run` 合入
+- [ ] Task R4：skill 与 README 的轻任务段；全量测试（后台跑，约 1800～3000 秒）与旧称扫描（Spec 验收 14）
+- Checkpoint R2（gate）：最终验收
+
+### 影响面
+
+修改：`module_crew/tasks.py`、`spec/crew-task-ledger.md`（仅 Q1 选 A 时）、`module_crew/review.py`、`tests/test_light_task.py`、`tests/test_task_ledger.py`（`test_directory_contains`、`test_next_bug_first_and_one_of_two`、`test_status_sections` 三处按旧规则断言目录包含文件算重叠，按新规则改）、`skills/crew-coordinator/SKILL.md`、`codex-skills/crew-coordinator/SKILL.md`、
+`skills/crew-dev/SKILL.md`、`codex-skills/crew-dev/SKILL.md`、`README.md`。不新增依赖，不改 `__main__.py`、`merge.py`、`changes.py`、`store.py`、版本号与 CHANGELOG（随发版）。
+
+### 未决问题
+
+- Q1：`spec/crew-task-ledger.md` 决策 4 写的是「一条是另一条所在的目录（`src/` 与 `src/a.ts`）算重叠」，本轮 Spec（C281）改了这条规则。
+  A（推荐）：Task R1 里一并把它的决策 4 与验收那条改成新规则，在它的「变更记录」追加一行（来源 C281），改动差异随最终验收附上，用户批准最终验收即同时批准修订后的 crew-task-ledger Spec，再用 `review-mark` 重新记 approved；
+  B：不动它，只在本模块 Spec 写明取代——两份 Spec 会长期说法不一。
+
+### 风险
+
+| 风险 | 影响 | 缓解 |
+|---|---|---|
+| 和已批准的 `spec/crew-task-ledger.md` 决策 4（「目录包含文件算重叠」）及验收「目录包含」矛盾 | 两份 Spec 说法不一 | 未决问题 Q1：推荐改 crew-task-ledger 决策 4 与那条验收并追加变更记录，差异随最终验收附上、一并批准后用 review-mark 重新记 approved |
+| 放宽目录规则后漏判重叠 | 两个任务改到同一文件 | 交回时按实际文件比对仍标越界重叠（验收 11）；skill 提示预计文件尽量写到具体文件 |
+| 旧测试按旧规则断言目录重叠 | 全量测试红 | R1 先跑 `grep clash\|overlaps tests/` 找出旧断言，按新规则改并在交审里列出 |
+| 重新交审把正在合并的批准作废 | 合并中途状态错乱 | 合并锁被该任务占着时拒收（验收 13） |
+| 与 crew-shared-changes 同改 README、crew-coordinator skill | 合并冲突 | 只改轻任务段；后合入的一方 `module-crew sync` 解冲突（用户 C281 同意） |
+
 ## 变更记录
 
 - 2026-10-27：追加「0.17.0 返工说明」，评审标记 approved 改回 pending；原因：0.17.0 修订超出原范围；来源：用户在 mc-coord 原话「0.17.0 需求就是这四件，前提假设 A1～A5 全按推荐」
+- 2026-10-27：「0.17.0 返工说明」补任务分解（Task R1～R4、两个检查点、影响面、风险），todo 同步细化并勾 REV-SPEC；原因：Spec 修订已获批；来源：用户在 mc-coord 原话「C281 A，README 与 crew-coordinator skill 两边照常各改各的段落」

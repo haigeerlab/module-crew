@@ -1,4 +1,5 @@
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
+
 # Implementation Plan: crew-shared-changes
 
 > 依据：`spec/crew-shared-changes.md`（已批准）。任务清单：`tasks/crew-shared-changes/todo.md`。
