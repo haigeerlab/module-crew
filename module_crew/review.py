@@ -1098,18 +1098,24 @@ def start_todo_today(m: str) -> str:
             f"然后按 tasks/{m}/plan.md 开始构建；公共文件只能经【公共变更请求】改")
 
 
-def _start_todo(db: store.Store, project: Path, m: str, lines: list[str]) -> str | None:
-    """crew-codex-offload decision 4: today's text with the switch off; the offload text when Codex can take it;
-    None (no start notice) when the switch is on but offloading cannot happen, so the user decides."""
+def _start_todo(tx, db: store.Store, project: Path, m: str, approval: int, lines: list[str]) -> str | None:
+    """crew-codex-offload decisions 3, 4: today's text with the switch off or a module session in Codex; the offload
+    text (the module marked for Codex, its grant written) when Codex can take it; None (no start notice) when the
+    switch is on but offloading cannot happen, so the user decides."""
     from module_crew import offload
     if not offload.enabled(db):
         return start_todo_today(m)
-    why = offload.ready(db, project)
+    host = offload.module_host(db, m)
+    if host is not None and host != "claude-desktop":
+        lines.append(f"外包（{m}）：模块会话在 Codex，本模块不外包")
+        return start_todo_today(m)
+    why = offload.ready(db, project, m)
     if why:
         lines.append(f"外包条件不满足（{m}）：{why}；没有发开工通知。问用户：改由模块会话自己构建"
-                     f"（offload decline {m} --original-file <原话> 发今天的开工通知），还是先补齐条件（补齐后 offload start {m}）")
+                     f"（offload decline {m} --original-file <原话> 发今天的开工通知），还是先补齐条件（补齐后重新 review approve）")
         return None
-    lines.append(f"外包（{m}）：模块会话 sync 后发来【等待其他会话】，再运行 module-crew offload start {m}")
+    grant = offload.assign(tx, db, m, approval)
+    lines.append(f"外包：{m} 交给 Codex，授权文件 {grant}")
     return offload.start_todo_offload(m)
 
 
@@ -1243,7 +1249,7 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
             if not {MARK_TARGET[n] for n in nodes_now if n in MARK_TARGET} >= {"spec", "plan"}:   # interface counts as Spec
                 continue
             sender = next(rec["from"] for _, rec in picked if rec["module"] == m)
-            todo = _start_todo(db, project, m, result.lines)
+            todo = _start_todo(tx, db, project, m, approval, result.lines)
             if todo is None:                      # crew-codex-offload decision 4: held until the user decides
                 continue
             text = protocol.render_coordination_notice(
