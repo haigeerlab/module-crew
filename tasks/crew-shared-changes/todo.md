@@ -35,7 +35,19 @@
 
 ## 0.17.0 修订（2026-10-27 追加，S43；用户原话「0.17.0 需求就是这四件，前提假设 A1～A5 全按推荐」）
 
-- [ ] REV-SPEC：修订 spec/crew-shared-changes.md，加入一次落地多个请求与锁文件连带保护文件提示，Spec 评审标记改为 pending 交审
-- [ ] 一次落地多个公共变更请求：`change land C96 C99` 把几个已批请求的文件合成一个提交；落地前先跑检查（`checkLedger` 开着跑快检查，没开跑完整检查 `checkCommand`）；任一请求不满足或检查不过就整批不提交（S43，LIVE-SAAS C96/C99）
-- [ ] `change add` 认出请求里有锁文件改动时，提示项目登记的保护文件可能要连带改（名单凭用户原话写进运行配置；没登记只给通用提示，不猜）
+- [x] REV-SPEC：修订 spec/crew-shared-changes.md，加入一次落地多个请求与锁文件连带保护文件提示，Spec 评审标记改为 pending 交审
+  - 记录：Spec 修订 141e8fb，用户 2026-10-27 批准（C280）
+- [ ] Task 5：一次落地多个公共变更请求 `land_batch`：`change land C96 C99` 把几个已批请求的文件合成一个提交；落地前先跑检查（`checkLedger` 开着跑快检查，没开跑完整检查 `checkCommand`）；任一请求不满足或检查不过就整批不提交（S43，LIVE-SAAS C96/C99）
+  - 验收：Spec 验收 10、11、12、13、14
+  - 验证：`python3 -m unittest tests.test_changes -v`
+  - 文件：`module_crew/changes.py`、`tests/test_changes.py`
+- [ ] Task 6：命令行 `change land <编号>...`、`--skip-check`、`alsoAnswers` 输出；协调会话 skill 与 README 补批量落地
+  - 验收：Spec 验收 16 前半
+  - 验证：`python3 -m unittest tests.test_changes tests.test_skills -v`
+  - 文件：`module_crew/__main__.py`、`skills/crew-coordinator/SKILL.md`、`README.md`、`tests/test_changes.py`、`tests/test_skills.py`
+- [ ] Task 7：`change add` 认出请求里有锁文件改动时，提示项目登记的保护文件可能要连带改（名单凭用户原话 `config set --protected-file` 写进运行配置；没登记只给通用提示，不猜）
+  - 验收：Spec 验收 15、16 后半
+  - 验证：同上
+  - 文件：`module_crew/changes.py`、`module_crew/__main__.py`、`skills/crew-coordinator/SKILL.md`、`README.md`、`tests/test_changes.py`、`tests/test_skills.py`
+- [ ] Checkpoint（report）：完整检查 `python3 -m unittest discover -s tests` 后台跑全绿，记下用时与测试数后继续
 - [ ] Checkpoint（gate）：最终验收
