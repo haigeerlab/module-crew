@@ -489,10 +489,11 @@ def _check(args) -> int:
 def _config_set(args) -> int:
     """S23: change `commitPrefix` (T136: or `checkTimeout`) on a project already started, without start prepare;
     needs the user's words."""
+    protected = [] if args.clear_protected_files else args.protected_file     # 0.17.0: None when not given
     if all(v is None for v in (args.commit_prefix, args.check_timeout, args.declared_scope, args.quick_check_command,
-                               args.check_ledger, args.codex_offload)):
+                               args.check_ledger, args.codex_offload, protected)):
         print("❌ 至少给一项：--commit-prefix、--check-timeout、--declared-scope、--quick-check-command、--check-ledger"
-              " 或 --codex-offload", file=sys.stderr)
+              "、--codex-offload、--protected-file 或 --clear-protected-files", file=sys.stderr)
         return 2
     if args.check_timeout is not None and args.check_timeout < 1:
         print("❌ --check-timeout 要是正整数（秒）", file=sys.stderr)
@@ -502,6 +503,10 @@ def _config_set(args) -> int:
         return 2
     if not original.strip():
         print("❌ 用户原话不能为空：只记用户在本会话亲手输入的话", file=sys.stderr)
+        return 3
+    bad = next((p for f in protected or [] if (p := changes.protected_problem(f))), None)
+    if bad:
+        print(f"❌ {bad}", file=sys.stderr)
         return 3
     db = store.open_store()
     if args.quick_check_command is not None or args.check_ledger is not None:     # crew-check-ledger
@@ -519,7 +524,7 @@ def _config_set(args) -> int:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
     changed = {k: v for k, v in (("commitPrefix", args.commit_prefix), ("checkTimeout", args.check_timeout),
-                                 ("declaredScope", args.declared_scope)) if v is not None}
+                                 ("declaredScope", args.declared_scope), (changes.PROTECTED, protected)) if v is not None}
     if not changed:
         return 0
     with db.transaction(actor="coordinator") as tx:
@@ -529,6 +534,8 @@ def _config_set(args) -> int:
         print(f"已改提交前缀：{args.commit_prefix!r}" + ("（不加前缀）" if args.commit_prefix == "" else ""))
     if args.check_timeout is not None:
         print(f"已改检查时限：{args.check_timeout} 秒（完整检查、提交与推送都用它）")
+    if protected is not None:
+        print("已登记保护文件：" + "、".join(protected) if protected else "已清空保护文件名单")
     if args.declared_scope is not None:
         from module_crew import declared
         print("已打开声明范围：Plan「预先声明」名单内的公共文件由模块直接改，名单外照旧发【公共变更请求】"
@@ -786,14 +793,18 @@ def _change(args) -> int:
         return 0
     if args.original_file is not None and original is None:
         return 2
-    res = changes.land(".", args.number, original, partial=getattr(args, "partial", False),
-                       from_module=getattr(args, "from_module", False),
-                       skip_quick=getattr(args, "skip_quick_check", False))
+    if len(args.number) > 1:            # 0.17.0 (S43): several requests in one commit
+        res = changes.land_batch(".", args.number, original, skip_check=args.skip_quick_check, partial=args.partial,
+                                 from_module=args.from_module)
+    else:
+        res = changes.land(".", args.number[0], original, partial=args.partial, from_module=args.from_module,
+                           skip_quick=args.skip_quick_check)
     for line in res.lines:
         print(line)
     for x in res.sends:
         reply_to = f"，replyTo：{x['replyTo']}" if x["replyTo"] is not None else ""
-        print(f"发送 【协调通知】 → {x['to']}{reply_to}，正文文件：{x['path']}")
+        also = f"，alsoAnswers：{'、'.join(map(str, x['alsoAnswers']))}" if x.get("alsoAnswers") else ""
+        print(f"发送 【协调通知】 → {x['to']}{reply_to}{also}，正文文件：{x['path']}")
         _sent(x['to'])
     return res.code
 
@@ -1137,6 +1148,10 @@ def _main(argv: list[str] | None = None) -> int:
     cfset.add_argument("--quick-check-command", help="快检查命令（项目脚本，只跑受影响部分；不经 shell）")
     cfset.add_argument("--check-ledger", choices=("on", "off"), help="检查记账开关：平时快检查、完整检查只在合并队列与基线检查里跑")
     cfset.add_argument("--codex-offload", choices=("on", "off"), help="额度外包开关：Spec、Plan 批准后把 Task 经 delegate 交给 Codex")
+    cfp = cfset.add_mutually_exclusive_group()
+    cfp.add_argument("--protected-file", action="append", metavar="路径",
+                     help="随锁文件校验的保护文件（可重复，整份替换）：change add 遇到锁文件改动时提示要不要连带改")
+    cfp.add_argument("--clear-protected-files", action="store_true", help="清空保护文件名单")
     cfg = cfset.add_mutually_exclusive_group(required=True)
     cfg.add_argument("--original")
     cfg.add_argument("--original-file")
@@ -1182,7 +1197,8 @@ def _main(argv: list[str] | None = None) -> int:
     cld.add_argument("--mark-told", nargs="+", type=refs.parse, metavar="编号", help="记为已汇总给用户（只是记账，不是批准）")
     for name in ("land", "answer"):
         c = chs.add_parser(name)
-        c.add_argument("number", type=refs.parse)
+        c.add_argument("number", type=refs.parse, nargs="+" if name == "land" else None,
+                       help="两个及以上编号时整批落地成一个提交（先检查，整批成败）" if name == "land" else None)
         g = c.add_mutually_exclusive_group()
         g.add_argument("--original")
         g.add_argument("--original-file")
@@ -1193,7 +1209,8 @@ def _main(argv: list[str] | None = None) -> int:
             c.add_argument("--partial", action="store_true", help="清单里还有文件没改时，先落地已改的部分（要用户原话），请求保持打开")
             c.add_argument("--from-module", action="store_true",
                            help="名单内的提前落地：从请求方模块分支取清单文件再提交（crew-declared-scope）")
-            c.add_argument("--skip-quick-check", action="store_true", help="检查记账打开时跳过提交前的快检查（要用户原话）")
+            c.add_argument("--skip-check", "--skip-quick-check", dest="skip_quick_check", action="store_true",
+                           help="跳过提交前的检查（要用户原话）：单个编号是检查记账打开时的快检查，批量是落地前检查")
     mg = sub.add_parser("merge", help="本地合并、收尾与远端 PR")
     mgs = mg.add_subparsers(dest="action", required=True)
     for name in ("queue", "push-plan"):
