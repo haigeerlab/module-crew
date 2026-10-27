@@ -246,10 +246,10 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 - **升档只建议**：`tier`、`status` 或 `merge run` 输出「可以建议升到 X」时转告用户；用户一句话确认后，有降档上限的用 `tier restore`，没有的照上面设档位的步骤写 spec-guard。不要自己升。
 - **底线**：任何档位下能力图、Spec（可以和 Plan 一起批）、最终验收都要用户批；测试改不红、Spec 没覆盖的决策、高风险不可逆改动三种情况必停；合并队列里照样跑完整检查。
 
-## 额度外包（项目开关 codexOffload，第十版）
+## 额度外包（项目开关 codexOffload，第十版第 2 轮）
 
-- delegate 是 Claude Code 插件：模块协调在 Codex 上时**不外包**。开关打开时 `review approve` 会输出「外包条件不满足：模块协调在 Codex…」并扣下开工通知；把这句交用户，用户选由模块会话自己构建就 `offload decline <模块> --original-file <原话文件>` 发今天的开工通知，或换回 Claude 后再外包。
-- `offload show` 只读，可以照常看。
+- 外包由 Claude 模块会话自己经 delegate 调 Codex，模块协调在 Codex 上也照样：开关、开工、转达答复的做法同 Claude 版（开关凭用户原话；条件不满足时 `review approve` 扣下开工通知，用户选由模块会话自己构建就 `offload decline <模块> --original-file <原话文件>`）。
+- 你不调 Codex、不替模块会话提交；转达 Codex 的问题时不替用户回答。`offload show` 只读，可以照常看。
 
 ## 出状况时
 

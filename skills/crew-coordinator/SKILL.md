@@ -231,17 +231,15 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 - **升档只建议**：`tier`、`status` 或 `merge run` 输出「可以建议升到 X」时转告用户；用户一句话确认后，有降档上限的用 `tier restore`，没有的照上面设档位的步骤写 spec-guard。不要自己升。
 - **底线**：任何档位下能力图、Spec（可以和 Plan 一起批）、最终验收都要用户批；测试改不红、Spec 没覆盖的决策、高风险不可逆改动三种情况必停；合并队列里照样跑完整检查。
 
-## 额度外包（项目开关 codexOffload，第十版）
+## 额度外包（项目开关 codexOffload，第十版第 2 轮）
 
-- **开关默认关，凭用户原话开关**：先开检查记账，再 `module-crew config set --codex-offload on --original-file <原话文件>`；输出带 ⚠️ 的条件（delegate ≥ 1.1、spec-guard 的 scopeCheck 与 moduleConcurrency、模块协调在 Claude Code、Codex 没把项目标为不信任）不满足时不外包。打开开关的原话加上该模块 Spec、Plan 的批准，就是交给 Codex 写文件的授权，每个 Task 不再单独问。
-- **开工**：`review approve` 批齐 Spec 与 Plan 时，开工通知改成外包写法（模块会话 sync 后发【等待其他会话】停下）；输出「外包条件不满足」时**没发开工通知**，把原因交用户：改由模块会话自己构建就 `offload decline <模块> --original-file <原话文件>`，或先补齐条件。
-- **派出（一次一个 Task）**：模块会话的等待到了后 `module-crew offload start <模块>`，照输出在模块 worktree 里执行 `/delegate:run --write --resumable -- "$(cat <任务说明文件>)"`，Bash 后台运行、timeout 600000，标准输出存到它给的文件、记下退出码。不要改任务说明、不要加 `--model`。
-- **收结果**：跑完 `module-crew offload settle <模块> --output <文件> --exit <退出码>`，退出码：
-  - `0`：Codex 做完，已核对范围、跑过快检查、在模块分支代提交；照输出下一步：还是 Task 就再 `offload start`，是检查点或最终验收就 `offload handback <模块>`。
-  - `5`：停下了，输出末尾是一份【等待用户】草稿，照现有规则交用户（接了决策收件箱就转给它）：needs-input 是 Codex 要问用户的问题，**原样转、不替用户回答**，答复到了 `offload resume <模块> --original-file <答复>` 再执行它给的 `/delegate:run --resume`；
-    超时不提交、不跑快检查，把进度交用户，续跑或重派（`offload start <模块> --again --original-file <答复>`）都要用户点头；越界、没勾、快检查不过和认不出的结束状态同样停下问用户，**不自动重派**。
-- **交还**：`offload handback <模块>` 生成给模块会话的恢复通知（检查点、最终验收，或用户选交还）；用户选交还后不再外包这个模块，除非用户说重新开始（`--again`）。`offload show [<模块>]` 只读看各模块的外包状态。
-- 改动文件原样留在模块 worktree，不回滚、不删除；Codex 不提交，提交只经 `offload settle`。
+- **开关凭用户原话**：先开检查记账，再 `module-crew config set --codex-offload on --original-file <原话文件>`；用户口头说「下一个模块交给 Codex」也用这句原话执行同一条命令，用户说关再 `--codex-offload off`。
+  输出带 ⚠️ 的条件（delegate 接口 ≥ 1.3 的接续、长期限、结果文件与写入授权，spec-guard 的 scopeCheck 与 moduleConcurrency，Codex 没把项目标为不信任）不满足时不外包。开关只影响之后开工的模块：已经交给 Codex 的照旧做完，已经开工的照旧由 Claude 做完。
+- **开工时三种情形**（`review approve` 批齐 Spec 与 Plan 时）：条件满足就把模块记为交给 Codex、写好授权文件，开工通知改成外包写法，照常发出；模块会话在 Codex 时照今天发通知、不外包；
+  输出「外包条件不满足」时**没发开工通知**，把原因交用户：改由模块会话自己构建就 `offload decline <模块> --original-file <原话文件>`，或补齐条件后重新批准。
+- **之后由模块会话自己做**：派出、收结果、提交都在模块会话；你**不调 Codex、不替它提交**，`offload start／settle／resume／takeover` 在你这里跑会被拒。
+- **转达**：模块会话发来的【等待用户】（Codex 的问题、超时、认不出等）照现有规则交用户，答复原样转回；**不替用户回答** Codex 的问题。模块会话的 Task 改由 Claude 写时只告知、不问用户，它会写进最终验收。
+- `offload show [<模块>]` 只读看各模块的外包状态、链上的 run、退回 Claude 的 Task。
 
 ## 出状况时
 
