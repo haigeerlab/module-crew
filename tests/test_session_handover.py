@@ -134,6 +134,17 @@ class GuardTest(HandoverCase):
             with self.subTest(args=args[:2]):
                 self.assertNotEqual(self.cli(args, "sid-other").returncode, 7)
 
+    def test_check_ledger_module_side_pass(self):
+        # S42: check quick / show / list are the module side of crew-check-ledger; check baseline stays the coordinator's
+        for args in (("check", "quick"), ("check", "show"), ("check", "list")):
+            with self.subTest(args=args):
+                r = self.cli(args, "sid-other")
+                self.assertNotEqual(r.returncode, 7, (r.stdout, r.stderr))
+                self.assertNotIn("本会话不是登记的模块协调", r.stderr)
+        r = self.cli(("check", "baseline"), "sid-other")
+        self.assertEqual(r.returncode, 7, (r.stdout, r.stderr))
+        self.assertIn("本会话不是登记的模块协调 shop-coord", r.stderr)
+
     def test_bound_session_and_terminal_pass(self):
         for sid in ("sid-coord", None):
             with self.subTest(sid=sid):
