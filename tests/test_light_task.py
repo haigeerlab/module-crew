@@ -362,6 +362,46 @@ class TaskMergeTest(MergeCase):
         self.assertEqual(res.code, 0, res.lines)
         self.assertIn((od.relay, "sync-baseline"), {(x["to"], x["kind"]) for x in res.sends})
 
+    def test_resubmit_after_return(self):
+        """0.17.0 acceptance 13 (S33): new commits after the hand-back are submitted again and replace the old review."""
+        from module_crew import merge, review
+        n, d, approval = self.approve_task()
+        wt = Path(d.worktree)
+        (wt / "docs" / "t.md").write_text("docs/t.md\nmore\n", encoding="utf-8")
+        git(wt, "commit", "-qam", "after hand-back")
+        self.assertEqual(merge.run(self.repo, check_command=self.check).code, 3)      # stale approval refused
+        out = review.add(self.db, hand_back(n, d.worktree, ["docs/t.md"]), d.relay, 630)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertEqual(out.closed, [approval])                 # the old review closed when it was approved
+        self.assertEqual(store.get(self.db, "item", str(approval))["closedReason"], "superseded")
+        head = git(wt, "rev-parse", "HEAD").strip()
+        t = store.get(self.db, "task", str(n))
+        self.assertEqual((t["state"], t["result"]["commit"]), ("returned", head))
+        self.assertEqual(store.events(self.db, key=str(n), kind="task")[-1]["type"], "task.resubmitted")
+        self.assertTrue(any("重新提请" in l for l in out.lines), out.lines)
+        merge.approve(self.db, out.number, f"T{n} 重新验收通过")
+        res = merge.run(self.repo, check_command=self.check)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(store.get(self.db, "task", str(n))["state"], "merged")
+
+    def test_resubmit_refused_same_head_or_merging(self):
+        from module_crew import mergelock, review
+        n, d, approval = self.approve_task()
+        out = review.add(self.db, hand_back(n, d.worktree, ["docs/t.md"]), d.relay, 631)
+        self.assertEqual(out.code, 3, out.lines)
+        self.assertTrue(any("不用重新交审" in l for l in out.lines), out.lines)
+        wt = Path(d.worktree)
+        (wt / "docs" / "t.md").write_text("changed\n", encoding="utf-8")
+        git(wt, "commit", "-qam", "after hand-back")
+        lock = mergelock.acquire(self.db, approval, f"T{n}")
+        try:
+            out = review.add(self.db, hand_back(n, d.worktree, ["docs/t.md"]), d.relay, 632)
+        finally:
+            mergelock.release(self.db, lock)
+        self.assertEqual(out.code, 3, out.lines)
+        self.assertTrue(any("正在合并" in l for l in out.lines), out.lines)
+        self.assertEqual(store.get(self.db, "item", str(approval))["state"], "open")
+
     def test_cleanup_needs_merged(self):
         from module_crew import merge
         n, d = self.start_task()
