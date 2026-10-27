@@ -1,6 +1,6 @@
 # Spec: crew-task-ledger
 
-<!-- spec-guard: review approved 8f7a86542d4a -->
+<!-- spec-guard: review approved aeafbb7b63b7 -->
 
 > 能力图模块 `crew-task-ledger`（第六版第 2 个）。需求来源：`docs/requirements-record.md` 第 14 节第 3、6、8 条与「这一版不做」（用户 2026-10-22 确认）。
 > 依赖 `crew-store`、`crew-coordinator-switch`（有在用的模块协调才能记任务）。标「新」的是写 Spec 时补的实现取舍，请重点审。
