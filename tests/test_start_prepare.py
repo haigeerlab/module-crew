@@ -187,11 +187,11 @@ class PartialTest(StartCase):
     def test_stop_part_way_then_rerun(self):
         real = start._git
 
-        def flaky(cwd, *args):
+        def flaky(cwd, *args, **kw):
             if args[:4] == ("worktree", "add", "-b", "b"):   # c's directory appears after validation passed
                 (self.tmp / "repo-crew" / "c").mkdir(parents=True)
                 (self.tmp / "repo-crew" / "c" / "x").write_text("x")
-            return real(cwd, *args)
+            return real(cwd, *args, **kw)
 
         start._git = flaky
         try:
