@@ -1,6 +1,6 @@
 # Implementation Plan: crew-codex-offload
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-codex-offload.md`（用户 2026-10-26 批准，事项 C233「C233 A」，集成分支提交 f8fbc4e）。任务清单：`tasks/crew-codex-offload/todo.md`。
 
@@ -60,10 +60,60 @@
 
 ## 修订（第 2 轮，2026-10-28 重开）
 
-改什么：按意图 `docs/intent/codex-offload-native.md`（2026-10-27 用户确认，S38）改写外包做法——由模块会话自己调用 delegate、同一个 Codex 会话从第一个 Task 做到最后一个（`--resumable` 续跑），模块协调不再代调用、代提交；接入 delegate v0.8.0（接口 1.3）的 run.continue、run.longRun、run.result、run.check、run.writeAuthorization；退出码 125 归为失败；needs-input 问题正文截取时去掉可能出现的 `delegate: result=<路径>` 行；新结束状态 unmarked／failed／interrupted／unreaped／empty 逐个定处理；带 `--resumable` 的长期限中止后收尾轮、长期限下回收不了（125）两项列为已知未验证。
+改什么：按意图 `docs/intent/codex-offload-native.md`（2026-10-27 用户确认，S38）改写外包做法——由模块会话自己调用 delegate、同一个 Codex 会话从第一个 Task 做到最后一个（`--resumable` 起头、`--continue` 接续），模块协调不再代调用、代提交；接入 delegate v0.8.0（接口 1.3）的 run.continue、run.longRun、run.result、run.writeAuthorization；退出码 125 归为回收不了；needs-input 问题正文截取时去掉可能出现的 `delegate: result=<路径>` 行；新结束状态 unmarked／failed／interrupted／unreaped／empty 逐个定处理；带 `--resumable` 的长期限中止后收尾轮、长期限下回收不了（125）两项列为已知未验证。
 
 为什么：S38 已批（2026-10-27），delegate v0.8.0 已发布（标签 v0.8.0 → 16290d0），超 540 秒实测已满足。这是改方向，超出原批准范围：Spec 先修订交审，本 Plan 改回待批准，Spec 批准后重写本节以下的任务再交审。
+
+依据：修订后的 `spec/crew-codex-offload.md`（用户 2026-10-28 批准，事项 C306「C306 A」，集成分支提交 6a0aa58，指纹 d94a4167b4c8）。第 1 轮的 Task 1～8 已勾，不重做；下面是第 2 轮的任务（编号 R1～R8，对应 todo「第 2 轮修订」一节）。
+
+### 第 2 轮架构决定
+
+- **仍集中在 `module_crew/offload.py`**，在第 1 轮代码上改，不另起文件：`delegate_interface` 改读 1.3 的五项能力标记；新增 `assign`（开工时写 v2 记录与授权文件）、`classify`（归类表）、`takeover`；`start`／`settle`／`resume` 改为只在模块会话的 worktree 里跑；删掉 `handback` 与 `start_todo_offload` 的旧文案。
+- **授权文件放状态库正文目录**：用 `tx.write_body` 写一次（普通文件、0600），记录里存路径与 sha256；`start`／`resume` 每次先核对 sha256，变了就拒绝。
+- **身份判断**：`start`／`settle`／`resume`／`takeover` 用 `module-crew bind` 登记的当前会话（与 `review add` 相同的取法）核对是不是该模块的模块会话，`cwd` 须在它的 worktree 里。
+- **结果解析分两层**：`read_outputs(stdout, stderr)` 只取结果行、`delegate: result=` 行、`NEED_USER:`／`TIME_UP:` 之后的原文；`classify(exit, line, result_file)` 按 Spec 决策 7 的表给出归类，表外一律「认不出」。结果文件只读顶层 `status`、`exitCode`、`runId`、`authorization`。
+- **失败计数放记录的 `failures`**（键是 Task 原文），通过一次清空该键；第 2 次（除 125）直接记入 `claudeTasks`。自动重来的命令由 `settle` 输出，模块会话照着执行，不再经 `start`（`start` 只派下一个未勾的 Task）。
+- **done 的核对与提交**沿用第 1 轮 `_settle_done` 的四步，只改提交信息与结果后的去向（记 `head`、清计数）。
+- **review.py 只动 `_start_todo`**：开关关着逐字不变；开着时按 Spec 决策 3 分三种情形，条件满足时在同一事务里调 `offload.assign`。
+- **测试**：在 `tests/test_codex_offload.py` 上改写；delegate 夹具加 1.3 的 interface.json（完整、各缺一项）与结果文件；第 1 轮专测 handback、1.1 超时的用例删掉或改写。
+
+### 第 2 轮任务
+
+- [ ] R1：`ready` 改读 delegate 1.3 能力标记；条件⑤改为「该模块会话在 Claude Code」（Spec 验收 1）
+  - 验证：1.2、1.3 各缺一项（`run.continue`、`run.longRun` 或 `maxSeconds < 1800`、`run.result`、`run.writeAuthorization`、`run.resume` 没有 `timeout`）各给对应原因；spec-guard、信任两项照旧；全满足通过
+- [ ] R2：开工交接——`offload.assign`、授权文件、`review._start_todo` 三种情形与新文案；读到第 1 轮旧记录时的处理（Spec 验收 2、3，验收 10 前半）
+  - 验证：开关关时 `approve` 输出与开工通知逐字不变（改前输出对照）；条件满足时写 `assigned`、`version: 2` 与授权文件（含原话、模块、批准号，sha256 入记录），开工通知 `protocol.parse` 合格；模块会话在 Codex 照旧发通知并多「不外包」一行；其余不满足扣下通知；`decline` 照旧；旧记录 `start` 退出码 3
+- [ ] R3：`offload start` 改由模块会话跑：首次 `--resumable`、之后 `--continue <runId>`，固定 `--strict --timeout 1800 --authorized-by`，后台运行写法；任务说明加 `DONE:` 与接续句（Spec 验收 4）
+  - 验证：两种写法各一；非 Task、已退回 Claude、开工时没交给 Codex、不在模块会话、授权 sha256 变、worktree 不干净、没包含批准提交时退出码 3 且不写
+
+#### Checkpoint R-1（report）：交接与派出就位，本模块测试与 review 相关回归通过，记入 todo 后继续
+
+- [ ] R4：`settle` 解析与归类——结果行、`delegate: result=` 行（stdout 或 stderr）、结果文件、授权核对、归类表；needs-input 问题正文截取；timeout 分支（Spec 验收 6 前半、7、8）
+  - 验证：归类表每一行与「认不出」四种情形各一个用例；问题正文有无 `delegate: result=` 行都逐字正确；超时不调快检查脚本、不提交、给进度与 ABC、退出码 5
+- [ ] R5：done 核对后的去向、失败计数、自动重来命令、退回 Claude、`takeover`、`resume` 新写法（Spec 验收 5、6 后半、9）
+  - 验证：done 全过提交并记 `head`；核对不过退出码 4 给 `--continue` 重来命令（任务说明含核对结果）；unmarked／failed／empty 第 1 次给另起链命令；第 2 次记入 `claudeTasks`、之后该 Task 拒派、下一个照常；125 第 2 次仍退出码 5；`takeover`、`resume` 没原话退出码 3
+- [ ] R6：命令行——`settle --stderr` 必填、加 `takeover`、去掉 `handback`；`offload show` 与 `--json` 加链上 runId、退回 Claude 的 Task、旧版记录标注（Spec 验收 10 后半、11）
+  - 验证：`handback` 参数错退出码 2；`show` 各列齐全
+
+#### Checkpoint R-2（report）：命令全部就位，本模块测试与相关回归通过，记入 todo 后继续
+
+- [ ] R7：四份 skill 的「额度外包」一节重写、README（命令一览、流程一段、「尚未验证」补两项）（Spec 验收 12）
+  - 验证：skill 相关测试通过；四份内容与 Spec 决策一致
+- [ ] R8：`module-crew sync` 后跑快检查与全量测试（后台）；本机 delegate 0.8.0 在临时仓库实测 `--resumable` 一个小 Task + `--continue` 第二个（Spec 验收 13）
+  - 验证：全量通过；两次的结果行、结果文件状态与 `settle` 输出写进最终验收，测不成照实写原因
+
+#### Checkpoint R-3（gate）：最终验收
+
+- [ ] 回告：完成情况经模块协调转告 ecosystem-lead（S38 第五节第 3 步）
+
+### 第 2 轮风险
+
+- delegate 结果文件只用 README 列名的顶层字段；`failed`、`empty` 的退出码文档没写明，按「非 0 + 结果文件状态」判，实测时核对。
+- 真实 delegate 运行要花 Codex 额度（R8 两次小运行）；测不成照实写，不阻塞最终验收。
+- `handback` 去掉、`settle` 多必填参数是不兼容改动；按 Spec 假设 10 第 1 轮从没真开过。
+- 决策 15 两项（`--resumable` 长期限中止后收尾轮、长期限下 125）只用夹具测，写进 README「尚未验证」。
 
 ## 变更记录
 
 - 2026-10-28：重开模块，Plan 改回待批准，追加第 2 轮修订一节与 todo 未勾项。原因：外包做法按 S38 意图改方向、接入 delegate 接口 1.3。来源：用户本人在 mc-coord 会话（原话「开工 crew-codex-offload 修订，重开模块写 Spec 交审」）。
+- 2026-10-28：Spec 修订获批（C306）后重写「修订（第 2 轮）」一节：补第 2 轮架构决定、任务 R1～R8 与三个检查点、风险。原因：按修订后的 Spec 拆任务。来源：用户本人经 mc-coord 答复「C306 A」。

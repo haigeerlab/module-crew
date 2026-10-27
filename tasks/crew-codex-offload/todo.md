@@ -17,5 +17,17 @@
 
 ## 第 2 轮修订（2026-10-28 重开，见 plan.md「修订（第 2 轮）」）
 
-- [ ] 修订 Spec 交审：按 `docs/intent/codex-offload-native.md` 与 delegate 接口 1.3 改写，Spec 末尾加「变更记录」
+- [x] 修订 Spec 交审：按 `docs/intent/codex-offload-native.md` 与 delegate 接口 1.3 改写，Spec 末尾加「变更记录」——用户 2026-10-28 批准（C306「C306 A」，集成分支 6a0aa58）
 - [ ] Spec 批准后重写 Plan 第 2 轮任务交审
+- [ ] R1：`ready` 改读 delegate 1.3 能力标记，条件⑤改为该模块会话在 Claude Code（Spec 验收 1）
+- [ ] R2：开工交接——`offload.assign`、授权文件、`review._start_todo` 三种情形与新文案、旧记录处理（Spec 验收 2、3、10 前半）
+- [ ] R3：`offload start` 由模块会话跑，`--resumable`／`--continue` 两种写法与任务说明（Spec 验收 4）
+- [ ] Checkpoint R-1（report）：交接与派出就位
+- [ ] R4：`settle` 解析与归类、needs-input 问题正文、timeout 分支（Spec 验收 6 前半、7、8）
+- [ ] R5：done 去向、失败计数、自动重来、退回 Claude、`takeover`、`resume` 新写法（Spec 验收 5、6 后半、9）
+- [ ] R6：命令行 `settle --stderr`、`takeover`、去 `handback`；`offload show` 加列（Spec 验收 10 后半、11）
+- [ ] Checkpoint R-2（report）：命令全部就位
+- [ ] R7：四份 skill「额度外包」一节重写、README（Spec 验收 12）
+- [ ] R8：sync 后快检查与全量测试；本机 delegate 0.8.0 实测 `--resumable` + `--continue`（Spec 验收 13）
+- [ ] Checkpoint R-3（gate）：最终验收
+- [ ] 回告：完成情况经模块协调转告 ecosystem-lead
