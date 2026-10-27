@@ -188,8 +188,8 @@ class RunResult:
     sends: list[dict] = field(default_factory=list)    # {"to", "kind", "body", "path"}
 
 
-def _git(cwd: Path, *args: str):
-    return probe._git(cwd, *args)
+def _git(cwd: Path, *args: str, timeout: float = probe.GIT_TIMEOUT):
+    return probe._git(cwd, *args, timeout=timeout)
 
 
 def _clean(path: Path) -> bool:
@@ -454,14 +454,23 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
     except subprocess.TimeoutExpired as exc:
         # killed in pre-merge-commit, git has staged the merge but written no MERGE_HEAD yet: --abort has nothing to
         # abort, so reset --merge drops the staged result (the checkout was clean before, see the checklist above)
-        if _git(checkout, "merge", "--abort").returncode != 0:
-            _git(checkout, "reset", "-q", "--merge")
+        try:
+            if _git(checkout, "merge", "--abort", timeout=commit_timeout(cfg)).returncode != 0:
+                _git(checkout, "reset", "-q", "--merge", timeout=commit_timeout(cfg))
+        except subprocess.TimeoutExpired as again:
+            return RunResult(4, [probe.timed_out(f"C{n}（{m}）的合并提交", exc),
+                                 probe.write_timed_out("中止合并", again, "合并中止了一半"),
+                                 "集成 checkout 状态未知，交用户决定"], approval=n)
         return RunResult(4, [probe.timed_out(f"C{n}（{m}）的合并提交", exc),
                              "已中止合并，集成分支未变；合并批准仍开着，交用户决定"], approval=n)
     reset_to = None
     if merged.returncode != 0:
         conflicted = _git(checkout, "diff", "--name-only", "--diff-filter=U").stdout.split()
-        _git(checkout, "merge", "--abort")
+        try:
+            _git(checkout, "merge", "--abort", timeout=commit_timeout(cfg))
+        except subprocess.TimeoutExpired as exc:
+            return RunResult(4, [probe.write_timed_out(f"C{n}（{m}）中止合并", exc, "合并中止了一半"),
+                                 "集成 checkout 状态未知，交用户决定"], approval=n)
         if not conflicted:
             # No conflicted file: the merge commit itself was refused (usually a commit hook). Not the module's
             # fault, so nothing is sent back and the approval stays open for the user to decide.
@@ -481,7 +490,12 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
                 return RunResult(4, [f"C{n}（{m}）{first}；集成分支顶端已不是本次合并提交 {result.merge_commit[:7]}，没有撤销",
                                      "交用户决定"], approval=n, merge_commit=result.merge_commit)
             reset_to = _git(checkout, "rev-parse", f"{result.merge_commit}^1").stdout.strip()
-            undo = _git(checkout, "reset", "-q", "--hard", reset_to)
+            try:
+                undo = _git(checkout, "reset", "-q", "--hard", reset_to, timeout=commit_timeout(cfg))
+            except subprocess.TimeoutExpired as exc:
+                return RunResult(4, [f"C{n}（{m}）{first}",
+                                     probe.write_timed_out("撤销合并（reset --hard）", exc, "撤销做了一半"),
+                                     "集成 checkout 状态未知，交用户决定"], approval=n, merge_commit=result.merge_commit)
             if undo.returncode != 0:
                 return RunResult(4, [f"C{n}（{m}）{first}；撤销合并失败：{undo.stderr.strip()[:200]}",
                                      "集成 checkout 状态未知，交用户决定"], approval=n, merge_commit=result.merge_commit)
@@ -796,23 +810,81 @@ def _cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
                          (None, None))
     if session is None:
         return Simple(3, [f"模块 {module} 没有在用的会话登记"])
+    taken = _take_back(project, db, Path(session["worktree"]), name, check_merged=True)
+    if isinstance(taken, Simple):
+        return taken
     worktree = Path(session["worktree"])
-    if not worktree.is_dir() or not _clean(worktree):
-        return Simple(3, [f"{worktree} 不存在或不干净，没有收回"])
-    removed = _git(project, "worktree", "remove", str(worktree))
-    if removed.returncode != 0:
-        return Simple(3, [f"git worktree remove 失败：{removed.stderr.strip()[:200]}"])
     with db.transaction(actor="coordinator") as tx:
         tx.put("session", name, dict(session, status="retired"), action="retired",
                data={"original": original, "reason": "merged"})
         tickets = sorted(int(k) for k, v in tx.records("ticket").items() if v.get("from") == name and v.get("state") == "open")
-    lines = [f"已收回 {worktree}（分支 {module} 保留），会话 {name} 改为退役",
+    lines = taken + [f"已收回 {worktree}（分支 {module} 保留），会话 {name} 改为退役",
              f"待退役的邮箱名：{name}（列给用户确认；用户同意后由用户在 Claude Code 里用 /agent-relay:collaboration 退役，"
              "一次一个名字，有未确认的消息时会被拒绝）"]
     if tickets:
         lines.append("这个模块还开着的等待记录：" + "、".join(f"W{n}" for n in tickets)
                      + "（它已不能再发已结项（契约标签【已恢复】）：所等的事已办好就 ticket close --reason happened，用户说关就 --reason user）")
     return Simple(0, lines)
+
+
+RESTORE_STEP = "恢复：在该 worktree 里运行 git checkout -- . 把被删的已跟踪文件取回，再重跑 merge cleanup"
+
+
+def _registered(project: Path, worktree: Path) -> bool:
+    listed = _git(project, "worktree", "list", "--porcelain").stdout.splitlines()
+    want = os.path.realpath(worktree)
+    return any(os.path.realpath(l[len("worktree "):]) == want for l in listed if l.startswith("worktree "))
+
+
+def _resume_refusal(project: Path, db: store.Store, worktree: Path, name: str, status: list[str],
+                    check_merged: bool) -> str | None:
+    """S39: why a dirty worktree may not be finished with `worktree remove --force`; None when all four hold."""
+    others = [l for l in status if not l.startswith(" D")]
+    if others:          # 1 and 2: only deleted tracked files; nothing modified, staged or untracked (ignored ones are not listed)
+        return "除了已跟踪文件被删，还有已修改、已暂存或未跟踪的文件：" + "、".join(l[3:] for l in others[:5])
+    if check_merged:    # 3: nothing on the branch is missing from the integration branch
+        branch = (store.get(db, "config", "main") or {}).get("integrationBranch") or ""
+        head = _git(worktree, "rev-parse", "HEAD").stdout.strip()
+        if not head or _git(project, "merge-base", "--is-ancestor", head, f"refs/heads/{branch}").returncode != 0:
+            return f"worktree 的 HEAD {head[:7] or '?'} 不在集成分支 {branch} 上（有没合入的提交）"
+    from module_crew import hooks
+    role = hooks.detect(worktree)       # 4: the worktree still belongs to this registration
+    if role is None or role.name != name:
+        return f"这个 worktree 现在不归 {name}（归 {role.name if role else 'module-crew 登记以外'}）"
+    return None
+
+
+def _take_back(project: Path, db: store.Store, worktree: Path, name: str, check_merged: bool) -> list[str] | Simple:
+    """Remove a finished worktree; the lines to show, or the refusal. S39: waits as long as checkTimeout, and finishes
+    what an interrupted remove left (only deleted tracked files, or a directory git still lists)."""
+    limit = commit_timeout(store.get(db, "config", "main") or {})
+    if not worktree.is_dir():
+        if os.path.lexists(worktree) or not _registered(project, worktree):
+            return Simple(3, [f"{worktree} 不存在或不是目录，没有收回"])
+        try:
+            pruned = _git(project, "worktree", "prune", timeout=limit)
+        except subprocess.TimeoutExpired as exc:
+            return Simple(4, [probe.write_timed_out("git worktree prune ", exc, "登记没清掉"), "重跑 merge cleanup"])
+        if pruned.returncode != 0 or _registered(project, worktree):
+            return Simple(3, [f"{worktree} 目录已不在，git worktree prune 没清掉登记：{pruned.stderr.strip()[:200]}"])
+        return [f"{worktree} 目录已不在、git 仍登记着：已先 git worktree prune 清掉登记"]
+    status = [l for l in _git(worktree, "--no-optional-locks", "status", "--porcelain").stdout.splitlines() if l]
+    force, notes = False, []
+    if status:
+        refusal = _resume_refusal(project, db, worktree, name, status, check_merged)
+        if refusal:
+            return Simple(3, [f"{worktree} 不干净，没有收回：{refusal}", RESTORE_STEP])
+        force = True
+        notes.append(f"{worktree} 里只有已跟踪文件被删（{len(status)} 个，像上次 worktree remove 删了一半），"
+                     "没有改过的、没有未跟踪的：用 git worktree remove --force 续做")
+    try:
+        removed = _git(project, "worktree", "remove", *(["--force"] if force else []), str(worktree), timeout=limit)
+    except subprocess.TimeoutExpired as exc:
+        return Simple(4, [probe.write_timed_out(f"git worktree remove {worktree} ", exc, "worktree 删了一半"),
+                          RESTORE_STEP + "（只剩已跟踪文件被删时也可以直接重跑，cleanup 会说明后用 --force 续做）"])
+    if removed.returncode != 0:
+        return Simple(3, [f"git worktree remove 失败：{removed.stderr.strip()[:200]}"])
+    return notes
 
 
 def _cleanup_task(project: Path, db: store.Store, n: int, original: str) -> Simple:
@@ -825,15 +897,14 @@ def _cleanup_task(project: Path, db: store.Store, n: int, original: str) -> Simp
     if session is None:
         return Simple(3, [f"T{n} 没有在用的会话登记"])
     worktree = Path(session["worktree"])
-    if not worktree.is_dir() or not _clean(worktree):
-        return Simple(3, [f"{worktree} 不存在或不干净，没有收回"])
-    removed = _git(project, "worktree", "remove", str(worktree))
-    if removed.returncode != 0:
-        return Simple(3, [f"git worktree remove 失败：{removed.stderr.strip()[:200]}"])
+    # a cancelled or promoted task's branch is kept unmerged on purpose: its commits are not lost, so no ancestor check
+    taken = _take_back(project, db, worktree, name, check_merged=t["state"] == "merged")
+    if isinstance(taken, Simple):
+        return taken
     with db.transaction(actor="coordinator") as tx:
         tx.put("session", name, dict(session, status="retired"), action="retired",
                data={"original": original, "reason": t["state"]})
-    return Simple(0, [f"已收回 {worktree}（分支 {t.get('branch')} 保留），会话 {name} 改为退役",
+    return Simple(0, taken + [f"已收回 {worktree}（分支 {t.get('branch')} 保留），会话 {name} 改为退役",
                       f"待退役的邮箱名：{name}（列给用户确认；用户同意后由用户在 Claude Code 里用 /agent-relay:collaboration 退役）"])
 
 

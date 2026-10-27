@@ -124,6 +124,8 @@ def check(project: str | os.PathLike, to: str | None = None) -> tuple[int, dict,
 
 
 GUIDE_DIR = "handover-guide"
+# S40: the desktop app opens new sessions in a worktree by default; the coordinator's commands and commits are not
+IN_WORKTREE = "发现自己在 worktree 里时，module-crew 命令和提交一律在集成 checkout 做。"
 
 
 def _step(n: int, where: str, what: str, done: str) -> list[str]:
@@ -151,13 +153,14 @@ def guide(to: str, name: str, entry: str, integration: str, original_file: str, 
                    "（takeover 与 wake 都要带：只带 host 时唤醒仍绑在旧的 Claude 会话上；被拒 holder-still-running 就请用户先归档原 Claude 会话）；"
                    f"② 运行 {bind}（写 .git 会弹提权，请用户在本线程批准）；"
                    f"③ 运行 `{entry} host-check`，有 ❌ 按「怎么办」做（crew-codex-coordinator）；④ 加载 Codex 版 crew-coordinator skill；"
-                   f"⑤ 运行 `{entry} status`。之后每轮开头三步（Codex 版 crew-coordinator）：重新 bridge_register（不带 takeover）→ 运行 status → 读收件箱，"
+                   f"⑤ 运行 `{entry} status`。{IN_WORKTREE}之后每轮开头三步（Codex 版 crew-coordinator）：重新 bridge_register（不带 takeover）→ 运行 status → 读收件箱，"
                    f'注册写法 {{agent:"{name}", wake:{{app:"codex", sessionId:<CODEX_THREAD_ID>}}}}：Codex 每轮重启 MCP。')
         lines += _step(1, f"Claude 上原来的模块协调 {name}（那个会话）", "让它停手，不再运行 module-crew 命令；然后在 Claude 桌面版侧栏归档这个会话",
                        "侧栏里这个会话已归档（agent-relay 才允许新线程接管邮箱名）")
         lines += _step(2, "Codex（ChatGPT 应用）", "在 Codex 里信任这个项目（项目的 .codex/rules 规则只在受信任时生效；module-crew 不替你改全局配置）",
                        "项目显示为受信任")
-        lines += _step(3, "Codex（ChatGPT 应用）", f"新建任务，工作目录选集成 checkout `{integration}`，把下面「开场文字」整段贴进去发出",
+        lines += _step(3, "Codex（ChatGPT 应用）", f"新建任务时不要用 worktree，工作目录选集成 checkout `{integration}`，"
+                       "把下面「开场文字」整段贴进去发出",
                        "新任务开始按开场文字做事")
         lines += _step(4, "刚开的 Codex 任务", "它运行 bind 时会弹提权：点「批准（Approve）」；能选本会话一直允许就选",
                        f"它报「已接管：本会话就是模块协调 {name}」，status 显示模块协调在 Codex")
@@ -170,10 +173,11 @@ def guide(to: str, name: str, entry: str, integration: str, original_file: str, 
     else:
         opening = (f"你是 module-crew 的模块协调 {name}，从 Codex 接手。依次：① 调 agent-relay 的 bridge_register："
                    f'{{agent:"{name}", takeover:true, wake:"auto"}}（返回里会提示「无法确认之前的 Codex 会话是否已停」，用户已确认停了就继续）；'
-                   f"② 运行 {bind}；③ 加载 crew-coordinator skill；④ 运行 `{entry} status`。")
+                   f"② 运行 {bind}；③ 加载 crew-coordinator skill；④ 运行 `{entry} status`。{IN_WORKTREE}")
         lines += _step(1, f"原 Codex 模块协调任务（{name}）", "让它停手，不再运行 module-crew 命令；之后不要再在那个任务里发话，确认它已停",
                        "你确认那个 Codex 任务已停（agent-relay 判断不了，它被接走后也收不到通知）")
-        lines += _step(2, "Claude 桌面版", f"新开会话，目录选集成 checkout `{integration}`，把下面「开场文字」整段贴进去发出",
+        lines += _step(2, "Claude 桌面版", f"新开会话时不要用 worktree，目录选集成 checkout `{integration}`，"
+                       "把下面「开场文字」整段贴进去发出",
                        "新会话开始按开场文字做事")
         lines += _step(3, "刚开的 Claude 会话", "等它跑完接管与 bind；弹权限确认就点「允许（Yes）」，不要选本会话都允许",
                        f"它报「已接管：本会话就是模块协调 {name}」，status 显示模块协调在 Claude Code")

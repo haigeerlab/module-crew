@@ -12,7 +12,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from module_crew import checks, hooks, store
+from module_crew import checks, hooks, probe, store
 
 # The one wording every start / sync-baseline / resume notice uses for "merge the integration branch in".
 STEP = "跑 `module-crew sync` 把集成分支合进你的模块分支（单独执行，不和别的命令连写）"
@@ -20,7 +20,7 @@ STEP = "跑 `module-crew sync` 把集成分支合进你的模块分支（单独�
 
 @dataclass
 class SyncResult:
-    code: int                       # 0 done or up to date / 2 conflicts left for the module / 3 refused
+    code: int                       # 0 done or up to date / 2 conflicts left for the module / 3 refused / 4 timed out
     lines: list[str] = field(default_factory=list)
 
 
@@ -54,7 +54,11 @@ def run(cwd: str | Path) -> SyncResult:
     if _git(top, "merge-base", "--is-ancestor", target, "HEAD").returncode == 0:
         return SyncResult(0, [f"已是最新：已包含集成分支 {branch} {target[:7]}"])
     count = _git(top, "rev-list", "--count", f"HEAD..{target}").stdout.strip() or "?"
-    merged = _git(top, "merge", "--no-edit", branch)
+    limit = _limit(db)
+    try:
+        merged = probe._git(top, "merge", "--no-edit", branch, timeout=limit)
+    except subprocess.TimeoutExpired as exc:
+        return _timed_out(top, exc, limit)
     if merged.returncode == 0:
         return _done(top, branch, target, count, db)
     conflicts = [p for p in _git(top, "diff", "--name-only", "--diff-filter=U").stdout.splitlines() if p]
@@ -73,12 +77,33 @@ def run(cwd: str | Path) -> SyncResult:
         return SyncResult(2, lines + [
             f"其他冲突（{len(others)} 个，合并没有中止）：", *[f"  {p}" for p in others],
             "用编辑工具解决后 git add 这些文件、git commit --no-edit，再跑一次 module-crew sync 确认"])
-    done = _git(top, "commit", "--no-edit")
+    try:
+        done = probe._git(top, "commit", "--no-edit", timeout=limit)
+    except subprocess.TimeoutExpired as exc:
+        return _timed_out(top, exc, limit)
     if done.returncode != 0:
         return SyncResult(3, lines + [f"完成合并提交失败：{(done.stderr or done.stdout).strip()[:300]}"])
     result = _done(top, branch, target, count, db)
     result.lines[:0] = lines
     return result
+
+
+def _limit(db: store.Store) -> int:
+    """S39: the merge commit runs the project's commit hooks; it gets checkTimeout like every commit-class call."""
+    from module_crew import merge
+    return merge.commit_timeout(store.get(db, "config", "main") or {})
+
+
+def _timed_out(top: Path, exc: subprocess.TimeoutExpired, limit: int) -> SyncResult:
+    """Killed mid-merge: abort it (reset --merge when git wrote no MERGE_HEAD yet), the branch stays where it was."""
+    lines = [probe.timed_out("同步的合并提交", exc)]
+    try:
+        if probe._git(top, "merge", "--abort", timeout=limit).returncode != 0:
+            probe._git(top, "reset", "-q", "--merge", timeout=limit)
+    except subprocess.TimeoutExpired as again:
+        return SyncResult(4, lines + [probe.write_timed_out("中止合并", again, "合并中止了一半"),
+                                      "工作区状态未知：发【等待其他会话】交模块协调"])
+    return SyncResult(4, lines + ["已中止合并，分支未变；调大 checkTimeout 或等钩子变快后重跑 module-crew sync"])
 
 
 def _done(top: Path, branch: str, target: str, count: str, db: store.Store) -> SyncResult:

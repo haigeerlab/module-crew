@@ -19,6 +19,10 @@ class TaskRefused(Exception):
     """The task cannot be recorded or changed; nothing was written."""
 
 
+class TaskStopped(TaskRefused):
+    """S39: git stopped part-way (a timeout); the store was not written, but the disk may hold a half-built worktree."""
+
+
 @dataclass
 class AddResult:
     number: int
@@ -268,8 +272,15 @@ def dispatch(db: store.Store, project: str | os.PathLike, number: int, host: str
     worktree = Path(cfg["crewDir"]) / f"task-t{number}"
     if worktree.exists():
         raise TaskRefused(f"worktree 目录已存在：{worktree}")
-    added = subprocess.run(["git", "-C", str(project), "worktree", "add", "-q", "-b", branch, str(worktree),
-                            cfg["integrationBranch"]], capture_output=True, text=True, timeout=60)
+    from module_crew import merge, probe
+    try:        # S39: worktree add runs the project's post-checkout hooks, so it waits as long as a commit
+        added = probe._git(project, "worktree", "add", "-q", "-b", branch, str(worktree), cfg["integrationBranch"],
+                           timeout=merge.commit_timeout(cfg))
+    except subprocess.TimeoutExpired as exc:
+        raise TaskStopped(probe.write_timed_out("建 worktree ", exc, f"worktree {worktree} 建了一半",
+                                                f"状态库没动（{label(number)} 仍是「可开」）")
+                          + f"；恢复：task dispatch 不收已存在的目录，请用户同意后 git worktree remove --force {worktree}"
+                          f"（git 已留下分支 {branch} 就再 git branch -D {branch}），再重跑 task dispatch") from None
     if added.returncode != 0:
         raise TaskRefused(f"建 worktree 失败：{added.stderr.strip()[:200]}")
     text = render_kickoff(number, t, worktree, branch, cfg, relay, coord[0],

@@ -84,6 +84,9 @@ def _status(as_json: bool) -> int:
     if me:
         print(f"本会话是模块协调 {me['name']}（Codex）：没有钩子，以下按状态库为准" if me["registered"]
               else "本线程不是登记的模块协调，不要按模块协调行事")
+    stray = hooks.stray_worktree_line(os.getcwd())      # S40
+    if stray:
+        print(stray)
     print("体检")
     for c in report.checks.values():
         line = f"  {_STATE_ICON[c.state]} {c.id}：{c.reason}"
@@ -284,7 +287,7 @@ def _task(args) -> int:
             return 0
     except tasks.TaskRefused as exc:
         print(f"❌ {exc}", file=sys.stderr)
-        return 3
+        return 4 if isinstance(exc, tasks.TaskStopped) else 3
     records = {int(k): v for k, v in store.records(db, "task").items()}
     if args.action == "show":
         t = records.get(args.number)
@@ -1507,7 +1510,7 @@ def _run(args) -> int:
     if args.group == "sync":
         from module_crew import sync
         res = sync.run(".")
-        print("\n".join(res.lines), file=sys.stderr if res.code == 3 else sys.stdout)
+        print("\n".join(res.lines), file=sys.stderr if res.code in (3, 4) else sys.stdout)
         return res.code
     if args.group == "host-check":
         from module_crew import hostcheck
@@ -1647,14 +1650,21 @@ def _run(args) -> int:
         return code
     if args.group == "bind":
         try:
-            original = None
+            original, hint = None, None
             if args.original is not None or args.original_file is not None:
                 original = _original(args.original, args.original_file)
                 if original is None:
                     return 2
-            print(hooks.bind(store.open_store(), args.name, hooks.own_session_id(), os.getcwd(), original, takeover=args.takeover))
+            db = store.open_store()
+            hint = hooks.stray_worktree_line(os.getcwd()) \
+                if (store.get(db, "session", args.name) or {}).get("role") == "coordinator" else None
+            print(hooks.bind(db, args.name, hooks.own_session_id(), os.getcwd(), original, takeover=args.takeover))
+            if hint:
+                print(hint)
         except hooks.BindRefused as exc:
             print(f"❌ {exc}", file=sys.stderr)
+            if hint:
+                print(hint, file=sys.stderr)
             return 3
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)

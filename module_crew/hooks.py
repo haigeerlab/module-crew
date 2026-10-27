@@ -87,6 +87,36 @@ def detect(cwd: str | os.PathLike) -> Role | None:
     return None
 
 
+def integration_checkout(cwd: str | os.PathLike) -> Path | None:
+    """The checkout that has the project's integration branch checked out, or None."""
+    try:
+        db = store.open_store(cwd)
+    except store.StoreError:
+        return None
+    branch = (store.get(db, "config", "main") or {}).get("integrationBranch")
+    return _checkout_of(db.path.parent, branch) if branch else None
+
+
+def stray_worktree(cwd: str | os.PathLike) -> tuple[Path, Path] | None:
+    """S40: (this checkout, the integration checkout) when cwd is a git worktree of the project that is neither the
+    integration checkout nor a registered module or task worktree, e.g. one the desktop app made for a new session."""
+    checkout = integration_checkout(cwd)
+    root = marker.checkout_root(cwd)
+    if checkout is None or root is None or os.path.realpath(root) == os.path.realpath(checkout):
+        return None
+    role = detect(cwd)
+    if role is not None and role.kind in ("dev", "task"):
+        return None
+    return Path(root), Path(checkout)
+
+
+def stray_worktree_line(cwd: str | os.PathLike) -> str | None:
+    found = stray_worktree(cwd)
+    if found is None:
+        return None
+    return f"本会话在 worktree {found[0]} 里，模块协调要在集成 checkout {found[1]} 运行命令、提交"
+
+
 CLEAR_NOTE = "刚清空过：先跑 `module-crew status`、读未完成的事项，以状态库为准，不按清空前的印象重做已经做过的事。"
 HOOK_WAIT = 2.0          # seconds a hook may wait for the store lock before staying silent
 CLEAR_WINDOW = 30        # SessionStart(clear) must follow SessionEnd(clear) within this many seconds

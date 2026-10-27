@@ -278,7 +278,7 @@ def plugin_missing(reason: str) -> str:
     return f"{reason}；{CODEX_PLUGIN_HINT}" if _in_codex() else reason
 
 
-GIT_TIMEOUT = 30            # read-only git calls; commit-class calls pass the project's checkTimeout (S28)
+GIT_TIMEOUT = 30            # read-only git calls; commit- and write-class calls pass the project's checkTimeout (S28, S39)
 KILL_GRACE = 5              # seconds between SIGTERM (git removes its lock files) and SIGKILL
 OUTPUT_WAIT = 10            # T136: seconds to read what is left once the group is ended; a daemon may hold the pipe
 
@@ -309,6 +309,15 @@ def timed_out(what: str, exc: subprocess.TimeoutExpired) -> str:
     return (f"{what}超时（{exc.timeout:g} 秒）" + (f"，实际用时 {took:.1f} 秒" if took is not None else "")
             + "：项目的提交钩子没在时限内跑完，git 和它启动的钩子进程已结束；"
             "钩子确实要这么久就把 checkTimeout 调大（module-crew config set --check-timeout <秒>）")
+
+
+def write_timed_out(what: str, exc: subprocess.TimeoutExpired, left: str, kept: str = "状态库没动") -> str:
+    """S39: a write-class git call (worktree add/remove, merge, reset) ended at checkTimeout; `left` says what is
+    half done. The store is written only after git succeeds, so it never changed."""
+    took = getattr(exc, "elapsed", None)
+    return (f"{what}超时（{exc.timeout:g} 秒）" + (f"，实际用时 {took:.1f} 秒" if took is not None else "")
+            + f"：git 和它启动的钩子进程已结束，{left}、{kept}；"
+            "确实要这么久就把 checkTimeout 调大（module-crew config set --check-timeout <秒>）")
 
 
 def took_line(out: subprocess.CompletedProcess, limit: float) -> str:
@@ -579,8 +588,13 @@ def run(project: str | os.PathLike | None = None, timeout: float = MAP_TIMEOUT) 
     git_check = check_git(project)
     root = Path(_git(project, "rev-parse", "--show-toplevel").stdout.strip() or project)
     relay = check_relay(root)
-    sg, planning, map_doc = check_spec_guard(root, timeout)
-    enabled = check_enabled(root)
+    from module_crew import hooks
+    stray = hooks.stray_worktree(root)  # S40: spec-guard is read where the coordinator works, not in a stray worktree
+    home = stray[1] if stray else root
+    if not (Path(home) / ".agent" / "config.json").is_file():   # e.g. an ignored config a module worktree lacks
+        home = hooks.integration_checkout(root) or home
+    sg, planning, map_doc = check_spec_guard(home, timeout)
+    enabled = check_enabled(home)
     baseline = check_baseline(root) if git_check.state == "ok" else Check("baseline", "blocker", "git 不可用")
     store_check, summary = summarize_store(root)
     checks = {c.id: c for c in (git_check, relay, sg, enabled, planning, baseline, store_check, check_self(root))}
