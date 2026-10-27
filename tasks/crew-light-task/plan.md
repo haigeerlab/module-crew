@@ -1,6 +1,6 @@
 # Implementation Plan: crew-light-task
 
-<!-- spec-guard: review approved -->
+<!-- spec-guard: review pending -->
 
 > 依据：`spec/crew-light-task.md`（用户 2026-10-22 批准，合并顺序 bug → 模块 → 需求）。任务清单：`tasks/crew-light-task/todo.md`。
 
@@ -63,3 +63,11 @@
 | 合并队列加入任务后排序变化 | 模块合并顺序被打乱 | 模块之间仍按 Build order；单测锁住三段顺序 |
 | 任务角色进钩子分流 | 模块或协调被误判为任务 | `detect` 先按 worktree 路径精确匹配；回归 test_hooks、test_routing、test_coordinator_switch |
 | 改动面大、上下文长 | 漏改 | 每个任务单独提交，检查点各跑一次相关测试，最后全量 |
+
+## 0.17.0 返工说明（2026-10-27）
+
+为什么返工：LIVE-SAAS 现场问题与 0.16.1 期间暴露的流程卡点，用户在 mc-coord 确认 0.17.0 做这几件（见 todo「0.17.0 修订」一节）。超出原范围，Plan 改回 pending，由模块会话按修订后的 Spec 补写本节的任务分解后交审。
+
+## 变更记录
+
+- 2026-10-27：追加「0.17.0 返工说明」，评审标记 approved 改回 pending；原因：0.17.0 修订超出原范围；来源：用户在 mc-coord 原话「0.17.0 需求就是这四件，前提假设 A1～A5 全按推荐」

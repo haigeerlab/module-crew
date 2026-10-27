@@ -32,3 +32,10 @@
 
 - 2026-10-18 spec-guard 负责人通知 map-startable 已实现并验收（0.68.0 发版），输出与夹具一致；细节：Build order 第一个未完成模块算 in_progress，不进 startable.modules；`paths` 取较具体路径，`apps/bill/` 与 `apps/billing/` 不算重叠。
 - [x] 修订（2026-10-22 追加，职责边界审查第 1 条）：提交前缀改为项目配置 `commitPrefix`，默认 `chore(crew): `，`start prepare --commit-prefix` 设定（三类提交共用 `commits.message`）——`CommitPrefixTest` 3 个（默认、空串、命令行设自定义）
+
+## 0.17.0 修订（2026-10-27 追加，S43；用户原话「0.17.0 需求就是这四件，前提假设 A1～A5 全按推荐」）
+
+- [ ] REV-SPEC：修订 spec/crew-shared-changes.md，加入一次落地多个请求与锁文件连带保护文件提示，Spec 评审标记改为 pending 交审
+- [ ] 一次落地多个公共变更请求：`change land C96 C99` 把几个已批请求的文件合成一个提交；落地前先跑检查（`checkLedger` 开着跑快检查，没开跑完整检查 `checkCommand`）；任一请求不满足或检查不过就整批不提交（S43，LIVE-SAAS C96/C99）
+- [ ] `change add` 认出请求里有锁文件改动时，提示项目登记的保护文件可能要连带改（名单凭用户原话写进运行配置；没登记只给通用提示，不猜）
+- [ ] Checkpoint（gate）：最终验收

@@ -1,4 +1,4 @@
-<!-- spec-guard: review approved -->
+<!-- spec-guard: review pending -->
 # Implementation Plan: crew-shared-changes
 
 > 依据：`spec/crew-shared-changes.md`（已批准）。任务清单：`tasks/crew-shared-changes/todo.md`。
@@ -51,3 +51,11 @@
 |---|---|---|
 | `git status --porcelain` 的改名、带空格路径解析错 | 中 | 用 `-z` 输出解析；测试含改名与带空格路径 |
 | 分流规则漏掉某种锁文件 | 低 | 只是提示，最终由协调会话判断；规则只增不改，漏了补 |
+
+## 0.17.0 返工说明（2026-10-27）
+
+为什么返工：LIVE-SAAS 现场问题与 0.16.1 期间暴露的流程卡点，用户在 mc-coord 确认 0.17.0 做这几件（见 todo「0.17.0 修订」一节）。超出原范围，Plan 改回 pending，由模块会话按修订后的 Spec 补写本节的任务分解后交审。
+
+## 变更记录
+
+- 2026-10-27：追加「0.17.0 返工说明」，评审标记 approved 改回 pending；原因：0.17.0 修订超出原范围；来源：用户在 mc-coord 原话「0.17.0 需求就是这四件，前提假设 A1～A5 全按推荐」
