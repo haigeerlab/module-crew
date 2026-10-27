@@ -91,13 +91,20 @@
 
 ### 影响面
 
-修改：`module_crew/tasks.py`、`module_crew/review.py`、`tests/test_light_task.py`、`skills/crew-coordinator/SKILL.md`、`codex-skills/crew-coordinator/SKILL.md`、
+修改：`module_crew/tasks.py`、`spec/crew-task-ledger.md`（仅 Q1 选 A 时）、`module_crew/review.py`、`tests/test_light_task.py`、`tests/test_task_ledger.py`（`test_directory_contains`、`test_next_bug_first_and_one_of_two`、`test_status_sections` 三处按旧规则断言目录包含文件算重叠，按新规则改）、`skills/crew-coordinator/SKILL.md`、`codex-skills/crew-coordinator/SKILL.md`、
 `skills/crew-dev/SKILL.md`、`codex-skills/crew-dev/SKILL.md`、`README.md`。不新增依赖，不改 `__main__.py`、`merge.py`、`changes.py`、`store.py`、版本号与 CHANGELOG（随发版）。
+
+### 未决问题
+
+- Q1：`spec/crew-task-ledger.md` 决策 4 写的是「一条是另一条所在的目录（`src/` 与 `src/a.ts`）算重叠」，本轮 Spec（C281）改了这条规则。
+  A（推荐）：Task R1 里一并把它的决策 4 与验收那条改成新规则，在它的「变更记录」追加一行（来源 C281），改动差异随最终验收附上，用户批准最终验收即同时批准修订后的 crew-task-ledger Spec，再用 `review-mark` 重新记 approved；
+  B：不动它，只在本模块 Spec 写明取代——两份 Spec 会长期说法不一。
 
 ### 风险
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
+| 和已批准的 `spec/crew-task-ledger.md` 决策 4（「目录包含文件算重叠」）及验收「目录包含」矛盾 | 两份 Spec 说法不一 | 未决问题 Q1：推荐改 crew-task-ledger 决策 4 与那条验收并追加变更记录，差异随最终验收附上、一并批准后用 review-mark 重新记 approved |
 | 放宽目录规则后漏判重叠 | 两个任务改到同一文件 | 交回时按实际文件比对仍标越界重叠（验收 11）；skill 提示预计文件尽量写到具体文件 |
 | 旧测试按旧规则断言目录重叠 | 全量测试红 | R1 先跑 `grep clash\|overlaps tests/` 找出旧断言，按新规则改并在交审里列出 |
 | 重新交审把正在合并的批准作废 | 合并中途状态错乱 | 合并锁被该任务占着时拒收（验收 13） |
