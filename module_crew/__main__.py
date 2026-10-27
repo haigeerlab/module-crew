@@ -786,14 +786,18 @@ def _change(args) -> int:
         return 0
     if args.original_file is not None and original is None:
         return 2
-    res = changes.land(".", args.number, original, partial=getattr(args, "partial", False),
-                       from_module=getattr(args, "from_module", False),
-                       skip_quick=getattr(args, "skip_quick_check", False))
+    if len(args.number) > 1:            # 0.17.0 (S43): several requests in one commit
+        res = changes.land_batch(".", args.number, original, skip_check=args.skip_quick_check, partial=args.partial,
+                                 from_module=args.from_module)
+    else:
+        res = changes.land(".", args.number[0], original, partial=args.partial, from_module=args.from_module,
+                           skip_quick=args.skip_quick_check)
     for line in res.lines:
         print(line)
     for x in res.sends:
         reply_to = f"，replyTo：{x['replyTo']}" if x["replyTo"] is not None else ""
-        print(f"发送 【协调通知】 → {x['to']}{reply_to}，正文文件：{x['path']}")
+        also = f"，alsoAnswers：{'、'.join(map(str, x['alsoAnswers']))}" if x.get("alsoAnswers") else ""
+        print(f"发送 【协调通知】 → {x['to']}{reply_to}{also}，正文文件：{x['path']}")
         _sent(x['to'])
     return res.code
 
@@ -1182,7 +1186,8 @@ def _main(argv: list[str] | None = None) -> int:
     cld.add_argument("--mark-told", nargs="+", type=refs.parse, metavar="编号", help="记为已汇总给用户（只是记账，不是批准）")
     for name in ("land", "answer"):
         c = chs.add_parser(name)
-        c.add_argument("number", type=refs.parse)
+        c.add_argument("number", type=refs.parse, nargs="+" if name == "land" else None,
+                       help="两个及以上编号时整批落地成一个提交（先检查，整批成败）" if name == "land" else None)
         g = c.add_mutually_exclusive_group()
         g.add_argument("--original")
         g.add_argument("--original-file")
@@ -1193,7 +1198,8 @@ def _main(argv: list[str] | None = None) -> int:
             c.add_argument("--partial", action="store_true", help="清单里还有文件没改时，先落地已改的部分（要用户原话），请求保持打开")
             c.add_argument("--from-module", action="store_true",
                            help="名单内的提前落地：从请求方模块分支取清单文件再提交（crew-declared-scope）")
-            c.add_argument("--skip-quick-check", action="store_true", help="检查记账打开时跳过提交前的快检查（要用户原话）")
+            c.add_argument("--skip-check", "--skip-quick-check", dest="skip_quick_check", action="store_true",
+                           help="跳过提交前的检查（要用户原话）：单个编号是检查记账打开时的快检查，批量是落地前检查")
     mg = sub.add_parser("merge", help="本地合并、收尾与远端 PR")
     mgs = mg.add_subparsers(dest="action", required=True)
     for name in ("queue", "push-plan"):

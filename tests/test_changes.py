@@ -174,6 +174,24 @@ class CliTest(ReviewCase):
         self.assertEqual(r.stdout.count("发送 【协调通知】"), 2)
         self.assertEqual(self.run_cli("change", "list").returncode, 3)
 
+    def test_land_batch(self):
+        """0.17.0 (S43): `change land C<a> C<b>`; one requester with two requests gets one notice with alsoAnswers."""
+        nums = []
+        for relay, name in ((7, "a.json"), (8, "b.json")):
+            f = self.tmp / f"r{relay}.txt"
+            f.write_text(request([name]), encoding="utf-8")
+            r = self.run_cli("change", "add", str(f), "--from", "shop-b", "--relay-id", str(relay))
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            nums.append(__import__("re").search(r"C(\d+)", r.stdout).group(1))
+            (self.repo / name).write_text("{}\n")
+        r = self.run_cli("change", "land", f"C{nums[0]}", f"C{nums[1]}", "--skip-check")
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        r = self.run_cli("change", "land", f"C{nums[0]}", f"C{nums[1]}", "--skip-check", "--original", "这批不检查")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("一并提交", r.stdout)
+        self.assertIn("replyTo：7，alsoAnswers：8", r.stdout)
+        self.assertEqual(r.stdout.count("发送 【协调通知】"), 2)
+
 
 class BatchLandTest(ReviewCase):
     """0.17.0 (S43, Spec AC 10-13): several approved requests in one commit, checked first, all or nothing."""

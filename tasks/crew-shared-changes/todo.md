@@ -41,7 +41,7 @@
   - 验收：Spec 验收 10、11、12、13、14
   - 验证：`python3 -m unittest tests.test_changes -v`
   - 文件：`module_crew/changes.py`、`tests/test_changes.py`
-- [ ] Task 6：命令行 `change land <编号>...`、`--skip-check`、`alsoAnswers` 输出；协调会话 skill 与 README 补批量落地
+- [x] Task 6：命令行 `change land <编号>...`、`--skip-check`、`alsoAnswers` 输出；协调会话 skill 与 README 补批量落地
   - 验收：Spec 验收 16 前半
   - 验证：`python3 -m unittest tests.test_changes tests.test_skills -v`
   - 文件：`module_crew/__main__.py`、`skills/crew-coordinator/SKILL.md`、`README.md`、`tests/test_changes.py`、`tests/test_skills.py`

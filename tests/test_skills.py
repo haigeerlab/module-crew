@@ -101,6 +101,13 @@ class SkillsTest(unittest.TestCase):
                       "变更记录"):
             self.assertIn(words, section)
 
+    def test_coordinator_change_batch(self):
+        """0.17.0 (S43, Spec AC 16): several approved requests land in one commit, checked first, all or nothing."""
+        _, text = read("crew-coordinator")
+        section = text.split("## 公共变更请求", 1)[1].split("\n## ", 1)[0]
+        for words in ("change land <编号> <编号>", "整批", "--skip-check", "alsoAnswers"):
+            self.assertIn(words, section)
+
     def test_coordinator_merge_section(self):
         _, text = read("crew-coordinator")
         section = text.split("## 合并与收尾", 1)[1].split("\n## ", 1)[0]
