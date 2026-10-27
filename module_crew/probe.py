@@ -591,6 +591,8 @@ def run(project: str | os.PathLike | None = None, timeout: float = MAP_TIMEOUT) 
     from module_crew import hooks
     stray = hooks.stray_worktree(root)  # S40: spec-guard is read where the coordinator works, not in a stray worktree
     home = stray[1] if stray else root
+    if not (Path(home) / ".agent" / "config.json").is_file():   # e.g. an ignored config a module worktree lacks
+        home = hooks.integration_checkout(root) or home
     sg, planning, map_doc = check_spec_guard(home, timeout)
     enabled = check_enabled(home)
     baseline = check_baseline(root) if git_check.state == "ok" else Check("baseline", "blocker", "git 不可用")

@@ -42,6 +42,15 @@ class StrayWorktreeTest(ReviewCase):
         self.assertIsNone(hooks.stray_worktree_line(self.wt["b"]))
         self.assertNotIn("模块协调要在集成 checkout", self.run_cli("status", cwd=self.wt["b"]).stdout)
 
+    def test_module_worktree_without_ignored_config_reads_integration_checkout(self):
+        (self.wt["b"] / ".agent" / "config.json").unlink()          # the project keeps it git-ignored (LIVE-SAAS)
+        here = probe.run(self.repo).checks
+        there = probe.run(self.wt["b"]).checks
+        for check in ("spec-guard-enabled", "spec-guard-planning"):
+            self.assertEqual(there[check].state, here[check].state, check)
+            self.assertNotEqual(there[check].state, "blocker", check)
+        self.assertNotIn("项目还没启用 spec-guard", self.run_cli("status", cwd=self.wt["b"]).stdout)
+
     def test_bind_takeover_in_worktree_prints_hint(self):
         words = self.tmp / "w.txt"
         words.write_text("你来接手模块协调", encoding="utf-8")

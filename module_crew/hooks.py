@@ -87,15 +87,20 @@ def detect(cwd: str | os.PathLike) -> Role | None:
     return None
 
 
-def stray_worktree(cwd: str | os.PathLike) -> tuple[Path, Path] | None:
-    """S40: (this checkout, the integration checkout) when cwd is a git worktree of the project that is neither the
-    integration checkout nor a registered module or task worktree, e.g. one the desktop app made for a new session."""
+def integration_checkout(cwd: str | os.PathLike) -> Path | None:
+    """The checkout that has the project's integration branch checked out, or None."""
     try:
         db = store.open_store(cwd)
     except store.StoreError:
         return None
     branch = (store.get(db, "config", "main") or {}).get("integrationBranch")
-    checkout = _checkout_of(db.path.parent, branch) if branch else None
+    return _checkout_of(db.path.parent, branch) if branch else None
+
+
+def stray_worktree(cwd: str | os.PathLike) -> tuple[Path, Path] | None:
+    """S40: (this checkout, the integration checkout) when cwd is a git worktree of the project that is neither the
+    integration checkout nor a registered module or task worktree, e.g. one the desktop app made for a new session."""
+    checkout = integration_checkout(cwd)
     root = marker.checkout_root(cwd)
     if checkout is None or root is None or os.path.realpath(root) == os.path.realpath(checkout):
         return None
