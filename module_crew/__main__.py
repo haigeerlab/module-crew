@@ -965,7 +965,7 @@ _ANY_SESSION = {("status", None), ("sessions", None), ("protocol", None), ("hook
                 ("host-check", None), ("scope", None), ("store", "check"), ("start", "plan"), ("review", "batch"), ("review", "show"),
                 ("change", "list"), ("merge", "queue"), ("merge", "push-plan"), ("source", "list"), ("source", "map"),
                 ("task", "list"), ("task", "show"), ("task", "next"), ("permissions", "plan"), ("coordinator", "up"),
-                ("offload", "show")}
+                ("offload", "show"), ("check", "quick"), ("check", "show"), ("check", "list")}
 
 
 def _session_guard(args) -> int | None:
