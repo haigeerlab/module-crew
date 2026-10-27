@@ -214,7 +214,7 @@ def _add_task(db: store.Store, msg, text: str, sender: str, relay_id: int) -> Ou
         return Outcome(msg.kind, 0, lines=[f"已记过：{sender} 的邮箱消息 #{relay_id}，没有重复记账"])
     branch = (store.get(db, "config", "main") or {}).get("integrationBranch")
     changed = [l for l in _git(worktree, "diff", "--name-only", f"{branch}...HEAD").stdout.splitlines() if l.strip()]
-    extra = sorted(f for f in changed if not any(tasks.clash(f, e) for e in t["expectedFiles"]))
+    extra = sorted(f for f in changed if not any(tasks.covers(e, f) for e in t["expectedFiles"]))
     clashes, _ = tasks.overlaps(db, worktree, extra, exclude=n) if extra else ([], [])   # any checkout of the repo
     commit = _git(worktree, "rev-parse", "HEAD").stdout.strip()
     from module_crew import checks

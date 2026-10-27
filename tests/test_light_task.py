@@ -106,7 +106,7 @@ class DispatchTest(ReviewCase):
         with self.assertRaises(tasks.TaskRefused):
             tasks.dispatch(self.db, self.repo, n)
         holder = new_task(self.db, self.repo, expect=("x/",))
-        queued = new_task(self.db, self.repo, expect=("x/a",))
+        queued = new_task(self.db, self.repo, expect=("x/",))
         self.assertEqual(store.get(self.db, "task", str(queued))["state"], "queued")
         with self.assertRaises(tasks.TaskRefused):
             tasks.dispatch(self.db, self.repo, queued)
@@ -207,6 +207,91 @@ class HandBackTest(TaskWorkCase):
         texts = [t for _, _, t in review.for_hub(self.repo) if f"任务：T{n}" in t]
         self.assertEqual(len(texts), 1)
         self.assertNotIn("模块：", texts[0])
+
+
+class OverlapRuleTest(TaskWorkCase):
+    """0.17.0 acceptance 10, 11: a directory clashes only with a directory; named files compare as before."""
+
+    def test_clash_and_covers(self):
+        self.assertFalse(tasks.clash("tests/", "tests/a.py"))
+        self.assertFalse(tasks.clash("tests/a.py", "tests/"))
+        self.assertTrue(tasks.clash("tests/", "tests/"))
+        self.assertTrue(tasks.clash("tests/", "tests/fixtures/"))
+        self.assertTrue(tasks.clash("tests/fixtures/", "tests/"))
+        self.assertTrue(tasks.clash("a.py", "a.py"))
+        self.assertFalse(tasks.clash("a.py", "b.py"))
+        self.assertTrue(tasks.covers("tests/", "tests/a.py"))
+        self.assertTrue(tasks.covers("tests/", "tests/x/"))
+        self.assertTrue(tasks.covers("a.py", "a.py"))
+        self.assertFalse(tasks.covers("tests/a.py", "tests/"))
+        self.assertFalse(tasks.covers("tests/", "lib/a.py"))
+
+    def test_t264_t267_narrowed_then_ready(self):
+        t264 = new_task(self.db, self.repo, expect=("module_crew/__main__.py", "tests/"), kind="bug")
+        tasks.advance(self.db, t264, "dispatched", assignee="shop-t264")
+        tasks.advance(self.db, t264, "working")
+        t267 = new_task(self.db, self.repo, kind="bug",
+                        expect=("module_crew/changes.py", "module_crew/start.py", "module_crew/tasks.py", "tests/"))
+        self.assertEqual(store.get(self.db, "task", str(t267))["state"], "queued")
+        tasks.scope(self.db, t264, ["module_crew/__main__.py", "tests/test_session_handover.py"], "守门放行",
+                    "T264 的测试只改 test_session_handover.py")
+        self.assertEqual(tasks.next_ready(self.db, self.repo), [t267])
+
+    def test_extra_inside_expected_dir_not_extra(self):
+        from module_crew import review
+        n, d = self.start_task(expect=("docs/",), write=("docs/t.md", "docs/sub/u.md"))
+        out = review.add(self.db, hand_back(n, d.worktree, ["docs/t.md"]), d.relay, 520)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertEqual(store.get(self.db, "item", str(out.number))["extraFiles"], [])
+
+    def test_extra_named_file_still_overlaps(self):
+        from module_crew import review
+        other = new_task(self.db, self.repo, expect=("lib/x.py",))
+        dir_holder = new_task(self.db, self.repo, expect=("pkg/",))
+        n, d = self.start_task(write=("docs/t.md", "lib/x.py", "pkg/new.py"))
+        out = review.add(self.db, hand_back(n, d.worktree, ["docs/t.md"]), d.relay, 521)
+        rec = store.get(self.db, "item", str(out.number))
+        self.assertEqual(rec["extraFiles"], ["lib/x.py", "pkg/new.py"])
+        self.assertEqual(rec["overlapExtra"], [f"T{other}：lib/x.py"])     # a named file inside pkg/ does not clash
+        self.assertNotIn(f"T{dir_holder}", " ".join(rec["overlapExtra"]))
+
+
+class NarrowTest(TaskWorkCase):
+    """0.17.0 acceptance 12: a dispatched or working task narrows its expected files on the user's words."""
+
+    def test_narrow_working_and_dispatched(self):
+        for state in ("dispatched", "working"):
+            n = new_task(self.db, self.repo, expect=(f"{state}/", f"src/{state}.py"))
+            tasks.advance(self.db, n, "dispatched", assignee=f"shop-t{n}")
+            if state == "working":
+                tasks.advance(self.db, n, "working")
+            r = tasks.scope(self.db, n, [f"{state}/t.md", f"src/{state}.py"], "说明写好", "只改 docs/t.md")
+            t = store.get(self.db, "task", str(n))
+            self.assertEqual((t["state"], t["expectedFiles"]), (state, [f"{state}/t.md", f"src/{state}.py"]))
+            self.assertIn("收窄", Path(r.path).read_text(encoding="utf-8"))
+            last = store.events(self.db, key=str(n), kind="task")[-1]
+            self.assertEqual((last["type"], last["data"]["original"]), ("task.narrowed", "只改 docs/t.md"))
+
+    def test_not_narrower_refused(self):
+        n = new_task(self.db, self.repo, expect=("docs/",))
+        tasks.advance(self.db, n, "dispatched", assignee=f"shop-t{n}")
+        tasks.advance(self.db, n, "working")
+        for files in (["docs/"], ["docs/t.md", "lib/b.py"], ["lib/"]):
+            with self.assertRaises(tasks.TaskRefused):
+                tasks.scope(self.db, n, files, "说明写好", "改一下")
+        self.assertEqual(store.get(self.db, "task", str(n))["expectedFiles"], ["docs/"])
+
+    def test_other_states_refused(self):
+        for state in ("ready", "returned", "merged"):
+            n = new_task(self.db, self.repo, expect=(f"{state}/",))
+            if state != "ready":
+                tasks.advance(self.db, n, "dispatched", assignee=f"shop-t{n}")
+                tasks.advance(self.db, n, "working")
+                tasks.advance(self.db, n, "returned")
+                if state == "merged":
+                    tasks.advance(self.db, n, "merged")
+            with self.assertRaises(tasks.TaskRefused):
+                tasks.scope(self.db, n, [f"{state}/t.md"], "说明写好", "收窄")
 
 
 class TaskMergeTest(MergeCase):
