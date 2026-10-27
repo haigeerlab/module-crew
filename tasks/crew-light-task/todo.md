@@ -28,5 +28,5 @@
 - [x] Checkpoint R1（report）：相关测试全过，记入 todo 后继续——test_light_task、test_task_ledger 共 54 个通过（新测试先红 6 处后绿，5d86f17）；按 Q1 A 修订了 spec/crew-task-ledger.md 决策 4
 - [x] Task R3：交回后重新交审（S33）——「交回」且分支顶端变了时 `review add` 收下新交审、旧交审与合并批准记为被取代（Spec 验收 13）
 - [x] Task R4：skill 与 README 轻任务段，全量测试与旧称扫描（Spec 验收 14）——全量 1122 个测试通过（1562 秒，含旧称扫描）
-- [ ] Checkpoint R2（gate）：最终验收
+- [x] Checkpoint R2（gate）：最终验收
 - [ ] 回告：mc-coord（S33、T264／T267 场景的提出方）——随最终验收列出
