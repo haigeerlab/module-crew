@@ -7,7 +7,7 @@
 - [x] Task 3：使用手册前半（术语、角色、流程、项目开关）
 - [x] Task 4：使用手册后半（轻任务、修订、Codex 与换宿主、审查与决策收件箱、权限预配、出状况、已知限制）
 - [x] Checkpoint 1（report）：命令参考与使用手册就位（`test_docs` 命令覆盖、`test_readme` 通过）
-- [ ] Task 5：架构 `docs/architecture.md`
+- [x] Task 5：架构 `docs/architecture.md`
 - [ ] Task 6：`README.md` 重写＋`CHANGELOG.md` 收下 0.18.0 一节
 - [ ] Task 7：`README.en.md`
 - [ ] Task 8：`LICENSE`（MIT）、`CONTRIBUTING.md`、`SECURITY.md`
@@ -55,3 +55,11 @@
 - Codex 固定入口：仍成立，去掉版本号保留。
 - 第十版四个开关、外包只测两种情形：仍成立，去掉「第十版」「第 2 轮」「LIVE-SAAS 下一轮」字样保留。
 - 模块协调在 Codex 上：仍成立，保留。
+
+### 架构的核对（Task 5）
+
+- 组件表：逐个读 `module_crew/` 32 个文件的模块说明与 `hooks/hooks.json`、`bin/module-crew`。
+- 状态库：记录种类对照 `store.KINDS`（11 种）、编号种类对照 `store.NUMBERED`；子目录对照实际状态库目录与代码里的路径（`originals/`、`merge-output/`、`handover-guide/`、`tmp/`、`bodies/`、`meta.json`）。
+- `sessions --json`：在本 worktree 实跑，顶层两项、每个会话 20 个字段，与文档一致。
+- 上游接口：agent-relay 主版本 2（`probe.RELAY_MAJOR`）、spec-guard 1.1 起（`probe.PLANNING_MINOR`）、delegate 1.3（`offload.py` 的版本判断）、契约 2.6（`protocol.CONTRACT_VERSION`、`interface.json`）。
+- 后续事项（不在本模块改）：`module_crew/protocol.py` 的模块说明仍写「session-protocol v2.4」，实际钉住 2.6。
