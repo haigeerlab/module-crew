@@ -108,7 +108,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 - `review note [<C号>] --from <审查者> --file <文件> [--then-batch [--for-hub]]`：记下审查者的【审查结论】（模块协调）；有须修改项时输出返工通知。
 - `review show <C号> [--submission] [--spec-diff]`：交审的审查原文全文与 sha256（只读，任何会话）；`--submission` 另附交审原文，`--spec-diff` 只出最终验收时 Spec 相对集成分支的差异。
 - `review approve <C号>… --original(-file)`：批准（模块协调）：在集成分支记批准标记，生成【用户答复】与开工通知。用户的答复没答全每个待定问题时退出码 3、什么都不做。
-- `review answer <C号> --original(-file)`：转达用户对交审的其他答复（退回、等审查等）（模块协调）。
+- `review answer <C号> --original(-file)`：转达用户对交审的其他答复（退回、等审查等）（模块协调）。对最终验收只用于要求修改（退回）；只接受验收用 `merge accept`。
 
 ### `answer`
 
@@ -144,7 +144,8 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 ### `merge`
 
-- `merge approve <交审号>… --original(-file)`：批准最终验收，排进合并队列（模块协调）。
+- `merge approve <交审号>… --original(-file)`：批准最终验收并授权合并，排进合并队列（模块协调）。也收已接受验收的交审：用户补一句授权合并即可，不用重新交审、不再问待定问题。
+- `merge accept <交审号>… --original(-file)`：只接受验收、暂不授权合并（模块协调）。交审事项记为「已接受验收、待授权合并」：不关闭、不进合并队列，集成分支不变，模块不收同步通知，`merge cleanup` 不收它。待定问题要答全（同 `merge approve`），任一编号不合格什么都不写（退出码 3）。
 - `merge revoke <交审号> --original(-file)`：合并前撤回最终验收的批准（模块协调）。
 - `merge queue [--json]`：合并队列（只读，任何会话）。顺序：bug 任务、模块（按 Build order）、需求任务。
 - `merge run [--check-command "<完整检查命令>"] [--replace-check] [--detach]`：一次合一个：`--no-ff` 合入本地集成分支后跑完整检查；不过就把集成分支重置回合并前、退回该模块，冲突就中止并退回（模块协调）。第一次要给 `--check-command`。

@@ -1,6 +1,7 @@
 """crew-final-accept-split: accepting a final acceptance without authorizing the merge (spec/crew-final-accept-split.md)."""
 
 import unittest
+from pathlib import Path
 
 from helpers import MergeCase, git
 
@@ -229,6 +230,46 @@ class HintsTest(AcceptCase):
         review.add(self.db, self.spec_review("b"), "shop-b", 1)
         [(_, _, text)] = review.for_hub(self.repo)
         self.assertNotIn("只接受验收", text)
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+class DocsTest(unittest.TestCase):
+    """AC10, AC11: the four skills and the two docs."""
+
+    def read(self, rel):
+        return (ROOT / rel).read_text(encoding="utf-8")
+
+    def test_coordinator_skills(self):
+        for rel in ("skills/crew-coordinator/SKILL.md", "codex-skills/crew-coordinator/SKILL.md"):
+            text = self.read(rel)
+            self.assertNotIn("**批准一律走 `review approve`**", text, rel)
+            self.assertNotIn("批准即授权合入", text, rel)
+            self.assertIn("Spec、Plan、接口提案的批准一律走 `review approve`", text, rel)
+            self.assertIn("module-crew merge accept <交审编号>… --original-file <原话文件>", text, rel)
+            self.assertIn("只接受验收、不批合并", text, rel)
+            self.assertIn("不往大里读", text, rel)
+            self.assertIn("不用模块重新交审", text, rel)
+            self.assertIn("对最终验收只用于要求修改", text, rel)
+
+    def test_coordinator_skills_match(self):
+        def part(rel):
+            text = self.read(rel)
+            return text[text.index("2. 按用户原话分三种"):text.index("   合入并通过检查后")]
+        self.assertEqual(part("skills/crew-coordinator/SKILL.md"), part("codex-skills/crew-coordinator/SKILL.md"))
+
+    def test_codex_sandbox_list_has_accept(self):
+        self.assertIn("merge approve|accept|run", self.read("codex-skills/crew-coordinator/SKILL.md"))
+
+    def test_dev_skills(self):
+        for rel in ("skills/crew-dev/SKILL.md", "codex-skills/crew-dev/SKILL.md"):
+            self.assertIn("只接受验收、暂不授权合并", self.read(rel), rel)
+
+    def test_docs(self):
+        self.assertIn("`merge accept <交审号>… --original(-file)`", self.read("docs/commands.md"))
+        self.assertIn("要求修改（退回）", self.read("docs/commands.md"))
+        self.assertIn("只接受验收、暂不合并", self.read("docs/guide.md"))
 
 
 if __name__ == "__main__":
