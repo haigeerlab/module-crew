@@ -1,5 +1,7 @@
 # Implementation Plan: crew-docs
 
+<!-- spec-guard: review approved -->
+
 > 依据：`spec/crew-docs.md`（用户 2026-10-28 批准，事项 C320「C320 A」，集成分支提交 a21ca10）。任务清单：`tasks/crew-docs/todo.md`。
 > 待决问题的答复（同一条答复）：D1 → MIT，版权人 haigeerlab，2026（C320-1 A）；D2 → 收 issue 和 PR，安全问题走 GitHub 私下报告（C320-2 A）；
 > D3 → module-crew 预定 `github.com/haigeerlab/module-crew`，agent-relay、spec-guard-plugin、delegate-plugin 都在 `github.com/haigeerlab/` 下，session-protocol 未公开、只写名字和版本（C320-3）。
