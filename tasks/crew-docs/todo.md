@@ -87,7 +87,7 @@
 ### 过程记录（Task 9）
 
 - 删除：`docs/kickoff-prompts.md`（52 行）、`docs/session-protocol-notes.md`（46 行）。
-- 四份加说明行（标题下一行引用块）：`requirements-record.md`、`pilot-report.md`、`capability-map-draft.md`、`spec-guard-additions.md`；`pilot-report.md` 另把两处 `/Users/vilin/Documents/haigeerlab/` 改成 `~/Documents/haigeerlab/`。`git diff --stat`：4 个文件 10 行新增、2 行删除。
+- 四份加说明行（标题下一行引用块）：`requirements-record.md`、`pilot-report.md`、`capability-map-draft.md`、`spec-guard-additions.md`；`pilot-report.md` 另把两处 `~/Documents/haigeerlab/` 改成 `~/Documents/haigeerlab/`。`git diff --stat`：4 个文件 10 行新增、2 行删除。
 - 链接核对：`git grep` 取 `spec/`、`tasks/`、`tests/`、`module_crew/`、两套 skill 里所有 `docs/…md` 路径逐个看在不在。不在的三类，都不是本模块弄断的：decision-inbox 仓库自己的 `docs/host-differences.md`（3 份 Spec 引用别的仓库）；测试与契约夹具里的假路径（`docs/x.md`、`docs/acceptance/crew-store.md` 等）；本模块自己的 Spec 与 Plan 里点名要删的两份。
 - `git grep '/Users/'` 在 `docs/`、两份 README、CONTRIBUTING、SECURITY 里没有结果。
 

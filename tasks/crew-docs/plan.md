@@ -20,7 +20,7 @@
 - **英文版**：`README.en.md` 在中文 README 定稿后写，结构逐节对应；术语首次出现给中英对照；其他文档链接指向中文文件。
 - **安装写法按 D3**：Claude Code 从 `github.com/haigeerlab/module-crew` 加插件市场（写之前用 Claude Code 官方文档核实 `claude plugin marketplace add` 对 GitHub 仓库的写法），另保留本地路径安装；依赖表里 agent-relay、spec-guard、delegate 链到 `github.com/haigeerlab/agent-relay`、`…/spec-guard-plugin`、`…/delegate-plugin`，session-protocol 只写名字与钉住的版本 v2.6，不放链接。仓库还没建（「预定」），README 不写 star、CI 之类的徽章。
 - **SECURITY 按 D2**：报告渠道写 GitHub 的私下漏洞报告（仓库 Security 页「Report a vulnerability」）；这个功能要仓库管理员在设置里打开，最终验收时作为用户要做的一步列出，本模块做不了。
-- **过程记录**：说明行统一写成引用块一行，放在标题下方；`pilot-report.md` 第 3、5 行把 `/Users/vilin/Documents/haigeerlab/` 改成 `~/…`，其余一字不改（Spec 决策 5）。
+- **过程记录**：说明行统一写成引用块一行，放在标题下方；`pilot-report.md` 第 3、5 行把带本机用户名的 `/Users/<用户名>/Documents/haigeerlab/` 改成 `~/…`，其余一字不改（Spec 决策 5）。
 
 ## 影响面
 
