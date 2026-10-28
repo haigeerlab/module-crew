@@ -14,7 +14,7 @@
 - [x] Task 9：过程记录（删两份、四份加说明行、`pilot-report.md` 路径改写）
 - [x] Checkpoint 2（report）：全部文档就位（`tests.test_docs` 6 项通过）
 - [x] Task 10：sync 后全量测试、补完核实记录、越界检查
-- [ ] Checkpoint 3（gate）：最终验收
+- [x] Checkpoint 3（gate）：最终验收
 - [ ] 回告：无外部来源；列出用户要做的一步（GitHub 打开私下漏洞报告）
 
 ## 核实记录
