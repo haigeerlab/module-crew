@@ -9,7 +9,7 @@
 - [x] Checkpoint 1（report）：命令参考与使用手册就位（`test_docs` 命令覆盖、`test_readme` 通过）
 - [x] Task 5：架构 `docs/architecture.md`
 - [x] Task 6：`README.md` 重写＋`CHANGELOG.md` 收下 0.18.0 一节
-- [ ] Task 7：`README.en.md`
+- [x] Task 7：`README.en.md`
 - [ ] Task 8：`LICENSE`（MIT）、`CONTRIBUTING.md`、`SECURITY.md`
 - [ ] Task 9：过程记录（删两份、四份加说明行、`pilot-report.md` 路径改写）
 - [ ] Checkpoint 2（report）：全部文档就位
@@ -72,3 +72,7 @@
 - 地址按 C320-3：module-crew `github.com/haigeerlab/module-crew`（预定，仓库还没建）；agent-relay、spec-guard-plugin、delegate-plugin 在 `github.com/haigeerlab/` 下；session-protocol 未公开，只写名字和 v2.6。
 - CHANGELOG：`git diff` 只删了开头说明一行、加了新说明与 0.18.0 一节（12 行新增、1 行删除），原有条目没动。
 - 后续事项（不在本模块改）：从 GitHub 装时市场名仍叫 `module-crew-local`，名字里的「local」对远端安装会让人困惑，改名要动插件清单。
+
+### README.en.md（Task 7）
+
+- 两份 README 都是 8 个二级标题、一一对应；英文版里使用手册、命令参考、架构、CHANGELOG 的链接都指向中文文件，并在开头一句说明其余文档是中文。
