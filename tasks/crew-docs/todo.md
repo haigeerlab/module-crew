@@ -10,7 +10,7 @@
 - [x] Task 5：架构 `docs/architecture.md`
 - [x] Task 6：`README.md` 重写＋`CHANGELOG.md` 收下 0.18.0 一节
 - [x] Task 7：`README.en.md`
-- [ ] Task 8：`LICENSE`（MIT）、`CONTRIBUTING.md`、`SECURITY.md`
+- [x] Task 8：`LICENSE`（MIT）、`CONTRIBUTING.md`、`SECURITY.md`
 - [ ] Task 9：过程记录（删两份、四份加说明行、`pilot-report.md` 路径改写）
 - [ ] Checkpoint 2（report）：全部文档就位
 - [ ] Task 10：sync 后全量测试、补完核实记录、越界检查
@@ -76,3 +76,10 @@
 ### README.en.md（Task 7）
 
 - 两份 README 都是 8 个二级标题、一一对应；英文版里使用手册、命令参考、架构、CHANGELOG 的链接都指向中文文件，并在开头一句说明其余文档是中文。
+
+### LICENSE、CONTRIBUTING、SECURITY（Task 8）
+
+- LICENSE：MIT 标准全文，Copyright (c) 2026 haigeerlab（C320-1）。
+- CONTRIBUTING：按 C320-2 A 收 issue 和 PR；提交前缀照本仓库最近 40 个提交的习惯（`docs`、`feat`、`fix`、`test`、`chore` 加范围）；全量测试时长按 README 原有的约 2000 秒写成「约半小时」。
+- SECURITY：渠道是 GitHub 私下漏洞报告（C320-2）；没写回复时限、支持哪些版本这类用户没定的承诺。
+- 用户要做的一步：仓库建好后在 Settings → Code security 里打开 Private vulnerability reporting，否则 Security 页没有「Report a vulnerability」按钮。
