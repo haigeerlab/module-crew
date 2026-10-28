@@ -24,6 +24,6 @@
 ### 命令（Task 2）
 
 - 对照：`bin/module-crew --help` 与每个命令组、子命令的 `--help`；谁能跑对照 `module_crew/__main__.py` 的 `_ANY_SESSION` 与 `_session_guard`；退出码对照 `__main__.py` 的返回值与 `crew-coordinator` skill 的说明。
-- 结果：31 个命令组、70 个子命令，`docs/commands.md` 每组一节（`test_docs` 的命令覆盖一项通过）。
+- 结果：31 个命令组（其中 18 组带子命令，共 65 个子命令），`docs/commands.md` 每组一节（`test_docs` 的命令覆盖一项通过）。
 - 原 README「命令一览」与实际命令的出入 11 处，都按实际命令写进参考：缺 `merge renotice`、`merge tick`、`source scope`、`review answer`、`task show`、`task cancel`；缺参数 `review show --spec-diff`、`review batch --parallel-with`、`coordinator up --short`、`permissions verify --record/--allowed/--denied`；`change land` 跳过检查的参数实际叫 `--skip-check`（README 一处仍写旧名 `--skip-quick-check`）。
 - 通用退出码表（0～7）按代码整理；1 只出现在 Codex 沙箱拒绝写状态库时。
