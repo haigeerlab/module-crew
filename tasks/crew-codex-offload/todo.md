@@ -30,4 +30,4 @@
 - [x] R7：四份 skill「额度外包」一节重写、README（Spec 验收 12）——skill、术语表、README 相关测试通过
 - [x] R8：sync 后快检查与全量测试；本机 delegate 0.8.0 实测 `--resumable` + `--continue`（Spec 验收 13）——sync 已是最新（main adc1369）；全量 1117 个在 9b6e97c 通过（比同步后基线 1136 少的是本模块改写后的用例数）；delegate 0.8.0 在临时仓库实测两轮：`--resumable --strict --timeout 600 --authorized-by` 退出 0、status=done（run 20261028012254.51304），提交后 `--continue` 退出 0、status=done（run 20261028012339.56414，parent／chainRoot 指向第一轮），两轮真实输出经 read_outputs／classify 判 done、授权 sha256 一致；完整 settle（scopeCheck、检查账、提交）只在测试夹具里跑过
 - [x] Checkpoint R-3（gate）：最终验收
-- [ ] 回告：完成情况经模块协调转告 ecosystem-lead
+- [x] 回告：完成情况经模块协调转告 ecosystem-lead——已经 mc-coord 回告（2026-10-28，邮箱消息 #12203）
