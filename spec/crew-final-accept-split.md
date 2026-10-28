@@ -1,6 +1,6 @@
 # Spec: crew-final-accept-split
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 89fb559f4808 -->
 
 > 能力图模块 `crew-final-accept-split`（排在 `crew-docs` 之后，Build order 最后一个）。开会话依据：用户批准事项 C355。
 > 需求来源：接缝 S48（plugin-ecosystem SEAMS.md；livesaas-fe-coord #12249 → ecosystem-lead #12250 → mc-coord #12260）。
