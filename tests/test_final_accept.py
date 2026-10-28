@@ -4,7 +4,7 @@ import unittest
 
 from helpers import MergeCase, git
 
-from module_crew import merge, protocol, review, store
+from module_crew import failure, hooks, merge, protocol, review, store
 
 
 class AcceptCase(MergeCase):
@@ -153,6 +153,33 @@ class ReadersTest(AcceptCase):
         rec = store.get(self.db, "item", str(n))
         self.assertEqual((rec["state"], rec["closedReason"]), ("closed", "answered"))
         self.assertEqual(reply.to, "shop-b")
+
+
+class StageTest(AcceptCase):
+    """AC6: the module's stage, the export, status and the stall facts."""
+
+    def test_stage_and_export(self):
+        n = self.final("b", 1)
+        merge.accept(self.db, n, "只验收")
+        text = hooks._stage(store.records(self.db, "item"), "b", store.records(self.db, "session"))
+        self.assertEqual(text, hooks.STAGE_ACCEPTED.format(n=n))
+        self.assertIn("不要再提交", text)
+        row = {r["module"]: r for r in failure.sessions(self.db)}["b"]
+        self.assertEqual(row["stage"], failure.stage_code(hooks.STAGE_WAIT_FINAL.format(n=n)))
+
+    def test_status_line(self):
+        n = self.final("b", 1)
+        merge.accept(self.db, n, "只验收")
+        out = self.run_cli("status")
+        self.assertIn(f"b 已接受验收、待授权合并（C{n}，接受于 ", out.stdout)
+
+    def test_stall_counts_the_acceptance_as_an_answer(self):
+        n = self.final("b", 1)
+        merge.accept(self.db, n, "只验收")
+        at = store.get(self.db, "item", str(n))["acceptance"]["answeredAt"]
+        row = {r["module"]: r for r in failure.sessions(self.db)}["b"]
+        self.assertEqual([(a["node"], a["refs"], a["lastAt"]) for a in row["asks"]], [("final", [f"C{n}"], at)])
+        self.assertIn(at, [a["at"] for a in row["answers"]])
 
 
 if __name__ == "__main__":

@@ -123,6 +123,9 @@ def _status(as_json: bool) -> int:
         for mod, r in review.progress(store.open_store()).items():
             print(f"  {mod} " + (f"返工中（审查第 {r['round']} 轮）" if r["state"] == "rework" else
                                  "审查中" + (f"（第 {r['round'] + 1} 轮）" if r["round"] else "")))
+        for n, v in review.accepted(store.open_store()):     # crew-final-accept-split
+            who = v.get("module") or f"T{v.get('task')}"
+            print(f"  {who} 已接受验收、待授权合并（C{n}，接受于 {v['acceptance']['answeredAt']}）")
     print("模块协调")
     coord = (report.store or {}).get("coordinator")
     if coord is None:

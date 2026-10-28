@@ -570,6 +570,12 @@ def progress(db: store.Store) -> dict[str, dict]:
     return out
 
 
+def accepted(db: store.Store) -> list[tuple[int, dict]]:
+    """Final acceptances the user accepted without authorizing the merge yet (crew-final-accept-split)."""
+    return sorted(((int(k), v) for k, v in store.records(db, "item").items()
+                   if v.get("kind") == "review" and v.get("state") == "accepted"), key=lambda kv: kv[0])
+
+
 def waiting(project: str | os.PathLike) -> list[str]:
     """Open reviews a batch still waits for: under review (not timed out) or in rework."""
     db = store.open_store(Path(project))

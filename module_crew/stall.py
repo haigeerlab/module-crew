@@ -135,7 +135,8 @@ def asks(events: list[dict], items: dict, module: str) -> list[dict]:
         if v.get("kind") != "review" or v.get("module") != module:
             continue
         times = [t for t in (hub.get(key), (v.get("answer") or {}).get("answeredAt")
-                             if v.get("closedReason") == "answered" else None) if t]
+                             if v.get("closedReason") == "answered" else None,
+                             (v.get("acceptance") or {}).get("answeredAt")) if t]     # crew-final-accept-split
         if times:
             seen.setdefault(v["node"], []).append((int(key), max(times)))
     out = []
@@ -210,10 +211,11 @@ def _tick_counts(path: Path, module: str, bounds: list[datetime | None]) -> dict
 def answers(items: dict, module: str, name: str, worktree: str | None, integration: str | None,
             since: str | None) -> list[dict]:
     """R21: each user answer to this module, and what moved before the next one (commits, ticked todo items)."""
-    found = sorted((datetime.fromisoformat(v["answer"]["answeredAt"]), int(k))
+    found = sorted((datetime.fromisoformat(v[part]["answeredAt"]), int(k))
                    for k, v in items.items()
                    if v.get("kind") in ANSWERED and (v.get("module") == module or v.get("from") == name)
-                   and (v.get("answer") or {}).get("answeredAt"))
+                   for part in ("acceptance", "answer")          # crew-final-accept-split: accepting is an answer too
+                   if (v.get(part) or {}).get("answeredAt"))
     path = Path(worktree) if worktree else None
     own = _own_commits(path, integration, since) if path and path.is_dir() and integration and since else None
     ends = [found[i + 1][0] if i + 1 < len(found) else None for i in range(len(found))]
