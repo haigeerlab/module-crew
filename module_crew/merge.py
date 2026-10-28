@@ -111,9 +111,10 @@ def _accept_one(tx, db: store.Store, review_no: int, original: str) -> Reply:
 
 
 def awaiting_final(tx) -> set[str]:
-    """Modules with an open final-acceptance submission: syncing now would void the approval they wait for (MC-10)."""
+    """Modules with an open or accepted final-acceptance submission: syncing now would void the approval they wait for
+    (MC-10; crew-final-accept-split: an accepted one still waits for the merge authorization)."""
     return {v.get("module") for v in tx.records("item").values()
-            if v.get("kind") == "review" and v.get("node") == "final" and v.get("state") == "open"}
+            if v.get("kind") == "review" and v.get("node") == "final" and v.get("state") in ("open", "accepted")}
 
 
 def no_sync(tx) -> set[str]:

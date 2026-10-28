@@ -89,7 +89,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             out.lines.append(f"已记过：{sender} 的邮箱消息 #{relay_id}，没有重复记账")
             return out
         for key, rec in sorted(tx.records("item").items(), key=lambda kv: int(kv[0])):
-            if (rec.get("kind") == "review" and rec.get("state") == "open" and rec.get("module") == sub["module"]
+            if (rec.get("kind") == "review" and rec.get("state") in ("open", "accepted") and rec.get("module") == sub["module"]
                     and rec.get("node") == sub["node"]):
                 tx.put("item", key, dict(rec, state="closed", closedReason="superseded"), action="superseded",
                        data={"relayId": relay_id})
@@ -231,7 +231,7 @@ def _add_task(db: store.Store, msg, text: str, sender: str, relay_id: int) -> Ou
     with db.transaction(actor=sender) as tx:
         number = tx.allocate_number()
         for key, ap in sorted(tx.records("item").items(), key=lambda kv: int(kv[0])):
-            if ap.get("kind") in ("review", "merge-approval") and ap.get("state") == "open" and ap.get("task") == n:
+            if ap.get("kind") in ("review", "merge-approval") and ap.get("state") in ("open", "accepted") and ap.get("task") == n:
                 tx.put("item", key, dict(ap, state="closed", closedReason="superseded", supersededBy=number),
                        action="superseded", data={"by": number})
                 out.closed.append(int(key))
@@ -968,12 +968,13 @@ def _reply_text(item_no: int, rec: dict, original: str, answered_at: str) -> str
 
 
 def answer(db: store.Store, number: int, original: str) -> Reply:
-    """【用户答复】 for one open review (e.g. changes required); the baseline is not touched."""
+    """【用户答复】 for one open review (e.g. changes required), or an accepted final acceptance the user now wants
+    changed (crew-final-accept-split); the baseline is not touched."""
     with db.transaction(actor="coordinator") as tx:
         rec = tx.get("item", str(number))
         if rec is None or rec.get("kind") != "review":
             raise AnswerRefused(f"没有交审事项 C{number}")
-        if rec.get("state") != "open":
+        if rec.get("state") not in ("open", "accepted"):
             raise AnswerRefused(f"交审事项 C{number} 已关闭（{rec.get('closedReason')}）")
         answered_at = store.now()
         text = _reply_text(number, rec, original, answered_at)

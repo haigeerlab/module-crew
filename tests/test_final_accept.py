@@ -120,5 +120,40 @@ class AuthorizeTest(AcceptCase):
         self.assertIn("已排入本地合并队列", out.stdout)
 
 
+class ReadersTest(AcceptCase):
+    """AC4, AC5: batch, sync, resubmission and review answer see the accepted item."""
+
+    def test_not_in_batch_or_for_hub(self):
+        n = self.final("b", 1)
+        merge.accept(self.db, n, "只验收")
+        self.assertNotIn(n, [i["number"] for i in review.batch(self.repo)["items"]])
+        self.assertEqual(review.for_hub(self.repo), [])
+
+    def test_no_sync_notice(self):
+        n = self.final("b", 1)
+        merge.accept(self.db, n, "只验收")
+        with self.db.transaction(actor="t") as tx:
+            self.assertIn("b", merge.no_sync(tx))
+            self.assertNotIn("b", [name.removeprefix("shop-") for name, _ in merge.sync_targets(tx)])
+
+    def test_resubmission_supersedes(self):
+        n = self.final("b", 1)
+        merge.accept(self.db, n, "只验收")
+        out = review.add(self.db, self.finish("b", content="VALUE = 2\n"), "shop-b", 2)
+        self.assertIn(n, out.closed)
+        rec = store.get(self.db, "item", str(n))
+        self.assertEqual((rec["state"], rec["closedReason"]), ("closed", "superseded"))
+        with self.assertRaises(merge.AnswerRefused):
+            merge.approve(self.db, n, "授权合并")
+
+    def test_review_answer_sends_back(self):
+        n = self.final("b", 1)
+        merge.accept(self.db, n, "只验收")
+        reply = review.answer(self.db, n, "还是要改：补错误提示")
+        rec = store.get(self.db, "item", str(n))
+        self.assertEqual((rec["state"], rec["closedReason"]), ("closed", "answered"))
+        self.assertEqual(reply.to, "shop-b")
+
+
 if __name__ == "__main__":
     unittest.main()
