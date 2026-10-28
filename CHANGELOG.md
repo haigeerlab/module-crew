@@ -1,6 +1,17 @@
 # 更新记录
 
-各版本的变化，最新的在前。README 只写最新一版。
+各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
+
+## 0.18.0 的变化（额度外包第 2 轮：模块会话自己交给 Codex）
+
+只改额度外包（`codexOffload`，默认关）；开关关着时一切和 0.17.0 一样。接口与契约不变（`interface.json` 1.0、session-protocol v2.6）；第 1 轮外包记录不迁移（第 1 轮从未在真实项目打开过）。
+
+- **改由模块会话自己外包**（S38）：开关打开后，开工那一刻把模块记为交给 Codex，并把用户打开开关的原话存成授权文件；模块会话自己 `offload start` 派出、执行 `/delegate:run`、`offload settle` 核对后自己提交。模块协调不再调 Codex、不代提交。
+- **同一个 Codex 会话跨 Task 续接**：第一个 Task `--resumable` 起头，之后 `--continue` 接同一条链；每次 `--write` 带 `--authorized-by`，`settle` 核对授权文件 sha256。
+- **要 delegate 接口 1.3**（delegate 0.8.0 起）：读 run.resume、run.continue、run.longRun、run.result、run.writeAuthorization 能力标记，缺哪项报哪项。
+- **结束状态归类表**：done 核对后提交；needs-input、timeout、被中止（143/130/129）、回收不了（125）、delegate 拒绝（64）停下问用户；unmarked／failed／empty 与核对不过第 1 次自动重来；同一 Task 连续 2 次没通过退回 Claude（125 例外仍问用户）；表外、结果行与结果文件不一致、读不出一律「认不出」。Codex 问题正文去掉 `delegate: result=` 行。
+- **命令不兼容改动**：去掉 `offload handback`；新增 `offload takeover`（用户选这一项改由 Claude 写）；`settle` 新增必填 `--stderr`；`start`／`settle`／`resume`／`takeover` 只能在该模块会话的 worktree 跑。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
 
 ## 0.17.0 的变化（公共变更一次落地、轻任务并行更顺）
 

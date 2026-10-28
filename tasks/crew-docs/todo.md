@@ -8,7 +8,7 @@
 - [x] Task 4：使用手册后半（轻任务、修订、Codex 与换宿主、审查与决策收件箱、权限预配、出状况、已知限制）
 - [x] Checkpoint 1（report）：命令参考与使用手册就位（`test_docs` 命令覆盖、`test_readme` 通过）
 - [x] Task 5：架构 `docs/architecture.md`
-- [ ] Task 6：`README.md` 重写＋`CHANGELOG.md` 收下 0.18.0 一节
+- [x] Task 6：`README.md` 重写＋`CHANGELOG.md` 收下 0.18.0 一节
 - [ ] Task 7：`README.en.md`
 - [ ] Task 8：`LICENSE`（MIT）、`CONTRIBUTING.md`、`SECURITY.md`
 - [ ] Task 9：过程记录（删两份、四份加说明行、`pilot-report.md` 路径改写）
@@ -63,3 +63,12 @@
 - `sessions --json`：在本 worktree 实跑，顶层两项、每个会话 20 个字段，与文档一致。
 - 上游接口：agent-relay 主版本 2（`probe.RELAY_MAJOR`）、spec-guard 1.1 起（`probe.PLANNING_MINOR`）、delegate 1.3（`offload.py` 的版本判断）、契约 2.6（`protocol.CONTRACT_VERSION`、`interface.json`）。
 - 后续事项（不在本模块改）：`module_crew/protocol.py` 的模块说明仍写「session-protocol v2.4」，实际钉住 2.6。
+
+### README 与 CHANGELOG（Task 6）
+
+- 版本行：`.claude-plugin/plugin.json`、`.codex-plugin/plugin.json`、`interface.json` 都是 0.18.0，契约 2.6。
+- 依赖版本：agent-relay 主版本 2（`probe.RELAY_MAJOR`）、spec-guard 0.68.0／接口 1.1（`probe.PLANNING_MINOR`，0.68.0 写在 probe 的提示里）与 0.85.0／接口 1.11（`autonomy.py` 的版本检查）、delegate 接口 1.3（`offload.py`）。Python：`module_crew/` 用了 `Path.is_relative_to`（3.9 起），本机测试在 3.10.7，README 写「开发与测试用 3.10」，不写没测过的最低版本。
+- 安装写法：对照 Claude Code 官方文档（code.claude.com/docs/en/plugins/install）——`claude plugin marketplace add` 接受 GitHub `owner/repo` 简写与本地路径，`claude plugin install <插件>@<市场名>`；市场名取 `.claude-plugin/marketplace.json` 的 `module-crew-local`。
+- 地址按 C320-3：module-crew `github.com/haigeerlab/module-crew`（预定，仓库还没建）；agent-relay、spec-guard-plugin、delegate-plugin 在 `github.com/haigeerlab/` 下；session-protocol 未公开，只写名字和 v2.6。
+- CHANGELOG：`git diff` 只删了开头说明一行、加了新说明与 0.18.0 一节（12 行新增、1 行删除），原有条目没动。
+- 后续事项（不在本模块改）：从 GitHub 装时市场名仍叫 `module-crew-local`，名字里的「local」对远端安装会让人困惑，改名要动插件清单。

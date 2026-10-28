@@ -54,9 +54,9 @@ class LinksTest(unittest.TestCase):
         for rel in PUBLIC:
             text = read(rel)
             with self.subTest(file=rel):
-                self.assertNotIn("/Users/", text)
+                self.assertFalse("/Users/" in text, "local absolute path")
                 if rel.count("/") == 0:
-                    self.assertNotIn("](../", text)
+                    self.assertFalse("](../" in text, "link outside the repository")
 
 
 class ReadmeTest(unittest.TestCase):
