@@ -1,5 +1,7 @@
 # Spec: crew-docs
 
+<!-- spec-guard: review approved 839b28968c5f -->
+
 > 能力图模块 `crew-docs`（排在 `crew-codex-offload` 之后，Build order 最后一个）。开会话依据：用户批准事项 C318。
 > 需求来源：用户在 mc-coord 会话里确认的需求假设（只动本仓库文档；`spec/`、`tasks/` 不算对外文档；参照开源插件的通行做法；英文版命名 `README.en.md`、中英互链、英文版里其他文档链接仍指向中文；`docs/` 下现有 7 份过程记录逐份列处理方式，用户批准后才删）。
 > 依赖 `crew-codex-offload`：文档按它合入后的 0.18.0 写。本 Spec 只定「写哪些文档、每份写什么、过程记录怎么处理、怎么核实」，正文在构建时写。
