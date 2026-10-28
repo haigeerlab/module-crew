@@ -835,7 +835,13 @@ def _cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
     import re
     if re.match(r"^[Tt][1-9]\d*$", module):
         return _cleanup_task(project, db, int(module[1:]), original)
-    merged = [v for v in store.round_items(store.records(db, "item"), store.records(db, "session"), module).values()
+    items = store.round_items(store.records(db, "item"), store.records(db, "session"), module)
+    accepted = sorted(int(k) for k, v in items.items() if v.get("kind") == "review" and v.get("module") == module
+                      and v.get("state") == "accepted")
+    if accepted:                    # crew-final-accept-split (D2 A): keep the session until the merge is authorized
+        return Simple(3, [f"模块 {module} 已接受验收、待授权合并（C{accepted[-1]}）：收回后合并要重新开会话，"
+                          "等授权合并、合入后再收"])
+    merged = [v for v in items.values()
               if v.get("kind") == "merge-approval" and v.get("module") == module and v.get("closedReason") == "merged"]
     if not merged:
         return Simple(3, [f"模块 {module} 还没有合入集成分支，不能收回"])

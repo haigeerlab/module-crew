@@ -182,5 +182,17 @@ class StageTest(AcceptCase):
         self.assertIn(at, [a["at"] for a in row["answers"]])
 
 
+class CleanupTest(AcceptCase):
+    """AC9 (D2 A): an accepted, unauthorized module keeps its worktree."""
+
+    def test_cleanup_refused(self):
+        n = self.final("b", 1)
+        merge.accept(self.db, n, "只验收")
+        res = merge.cleanup(self.repo, "b", "收回 b")
+        self.assertEqual(res.code, 3, res.lines)
+        self.assertIn(f"已接受验收、待授权合并（C{n}）", " ".join(res.lines))
+        self.assertTrue(self.wt["b"].is_dir())
+
+
 if __name__ == "__main__":
     unittest.main()
