@@ -2,7 +2,7 @@
 
 > 依据：`tasks/crew-docs/plan.md`、`spec/crew-docs.md`（C320 批准）。
 
-- [ ] Task 1：一致性测试先红（`tests/test_docs.py`；`test_readme` 改读 `docs/guide.md`）
+- [x] Task 1：一致性测试先红（`tests/test_docs.py`；`test_readme` 改读 `docs/guide.md`）
 - [ ] Task 2：命令参考 `docs/commands.md`（31 个命令组，对照 `--help` 与代码）
 - [ ] Task 3：使用手册前半（术语、角色、流程、项目开关）
 - [ ] Task 4：使用手册后半（轻任务、修订、Codex 与换宿主、审查与决策收件箱、权限预配、出状况、已知限制）

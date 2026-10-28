@@ -485,7 +485,7 @@ class DocsTest(unittest.TestCase):
     ROOT = handover.PLUGIN_ROOT
 
     def test_readme(self):
-        text = (self.ROOT / "README.md").read_text(encoding="utf-8")
+        text = (self.ROOT / "docs" / "guide.md").read_text(encoding="utf-8")
         for words in ("### 模块协调在 Codex 上", "每轮开头三步", "申请在沙箱外运行", "merge run --detach", "merge result",
                       "请用户去 Codex 新建任务", "逐个点开", "module-crew merge run --detach / merge result"):
             with self.subTest(words=words):
