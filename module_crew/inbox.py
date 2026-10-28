@@ -157,7 +157,7 @@ def _wait_user(tx, msg: protocol.Message, text: str, sender: str, relay_id: int,
         t = tx.get("task", str(number)) or {}
         if t.get("state") in ("dispatched", "working", "returned"):
             tx.put("task", str(number), {**t, "state": "escalated"}, action="escalated", data={"item": n})
-            out.lines.append(f"轻任务 {doc['task']} 停下来等升格、缩小或取消：把选项交用户决定")
+            out.lines.append(f"轻任务 {doc['task']} 停下来等升格、缩小、取消或扩项：把选项交用户决定")
     if doc.get("waitKind") == "go-to-session":
         g = doc["goToSession"]
         out.lines.append(f"这是去会话操作（契约 v2.2）：不用等答复。有决策收件箱就原样转给它；没有就直接告诉用户去「{g['session']}」"
@@ -208,11 +208,11 @@ def answer(db: store.Store, number: int, original: str, option: str | None = Non
 
 
 def _task_answer(db: store.Store, item: dict, letter: str | None) -> list[str]:
-    """An escalation answer moves the light task: A promoted, B narrowed by `task scope`, C cancelled."""
+    """An escalation answer moves the light task: A promoted, B shrunk or D expanded by `task scope`, C cancelled."""
     from module_crew import tasks
     n = item.get("task")
     t = store.get(db, "task", str(n)) if n else None
-    if not t or t.get("state") != "escalated" or letter not in ("A", "B", "C"):
+    if not t or t.get("state") != "escalated" or letter not in ("A", "B", "C", "D"):
         return []
     if letter == "A":
         tasks.advance(db, n, "promoted")
@@ -221,6 +221,9 @@ def _task_answer(db: store.Store, item: dict, letter: str | None) -> list[str]:
     if letter == "B":
         return [f"T{n} 要缩小：和用户定好新的任务单后运行 module-crew task scope T{n} --expect … --done … --original-file <原话文件>，"
                 "再把它输出的正文发给做事的会话"]
+    if letter == "D":
+        return [f"T{n} 批准扩项：和用户定好新的任务单后运行 module-crew task scope T{n} --expect … --done … [--what …] "
+                "--original-file <原话文件>（新的预计文件超出原来的就按扩项记，重叠照实报出），再把它输出的正文发给做事的会话"]
     tasks.advance(db, n, "cancelled")
     return [f"T{n} 已取消：用户同意时 module-crew merge cleanup T{n} 收回 worktree（分支保留）"]
 

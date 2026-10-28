@@ -319,10 +319,11 @@ class ScopeCliOutputTest(TaskWorkCase):
         self.assertNotIn("已缩小", text)
         self.assertNotIn("回到在做", text)
 
-    def test_shrinking_after_escalation_says_back_to_working(self):
+    def test_same_list_after_escalation_says_adjusted(self):
         n = EscalationTest.escalate(self)[0]
-        text = self.run_scope(n, ["docs/t.md"])
-        self.assertIn("已缩小，回到在做", text)
+        text = self.run_scope(n, ["docs/t.md"])      # S49: the same list is not a shrink
+        self.assertIn("已调整，回到在做", text)
+        self.assertNotIn("缩小", text)
         self.assertNotIn("收窄", text)
 
 

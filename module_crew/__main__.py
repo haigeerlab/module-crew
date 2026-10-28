@@ -255,11 +255,15 @@ def _task(args) -> int:
             print(f"已取消 T{args.number}；已派出的话，告诉做事的会话停下")
             return 0
         if args.action == "scope":
-            r = tasks.scope(db, args.number, args.expect.split(","), args.done, original)
-            if r.narrowed:
-                print(f"T{r.number} 的预计文件已收窄，状态不变；把正文发给做事的会话：{r.path}")
-            else:
-                print(f"T{r.number} 的任务单已缩小，回到在做；把正文发给做事的会话：{r.path}")
+            r = tasks.scope(db, args.number, args.expect.split(","), args.done, original,
+                            what=getattr(args, "what", None))
+            said = {"narrowed": "的预计文件已收窄，状态不变", "shrunk": "的任务单已缩小，回到在做",
+                    "expanded": "已扩项，回到在做", "adjusted": "的任务单已调整，回到在做"}[r.kind]
+            print(f"T{r.number} {said}；把正文发给做事的会话：{r.path}")
+            for c in r.clashes:
+                print(f"  重叠：{c}")
+            for note in r.notes:
+                print(f"  注意：{note}")
             return 0
         if args.action == "dispatch":
             from module_crew import handover
@@ -1321,10 +1325,11 @@ def _main(argv: list[str] | None = None) -> int:
     tash = tas.add_parser("show")
     tash.add_argument("number", type=refs.parse)
     tas.add_parser("next", help="把排队里已不重叠的提为可开（bug 在前）")
-    tsc = tas.add_parser("scope", help="升格请求选了缩小：改任务单，任务回到在做")
+    tsc = tas.add_parser("scope", help="改任务单：升格请求选了缩小或扩项（回到在做），或在做的任务收窄预计文件")
     tsc.add_argument("number", type=refs.parse)
     tsc.add_argument("--expect", required=True)
     tsc.add_argument("--done", required=True)
+    tsc.add_argument("--what", help="新的「做什么」（只在升格待定时可改；不给就不变）")
     tad = tas.add_parser("dispatch", help="派出可开的任务：建 worktree 与分支、登记轻任务会话、生成开工说明")
     tad.add_argument("number", type=refs.parse)
     tad.add_argument("--host", choices=("claude", "codex"), help="默认跟随模块协调的宿主（crew-host-handover）")

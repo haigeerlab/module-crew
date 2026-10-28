@@ -177,7 +177,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 - `task add --type feature|bug --title … --what … --expect <预计文件> --done <完成标准> [--caused-by …] --original(-file)`：记下一件事（模块协调）。预计文件逗号分隔，以 `/` 结尾表示整个目录；和在做的活重叠就排队。
 - `task list [--all]`、`task show <T号>`、`task next`：在做与排队的任务；看一件；把已不重叠的排队任务提为可开、bug 在前（只读，任何会话）。
 - `task dispatch <T号> [--host claude|codex]`：派出可开的任务：建 `task/t<号>` 分支与 worktree、登记轻任务会话（不占多模块名额）、生成开工说明（模块协调）。
-- `task scope <T号> --expect … --done … --original(-file)`：改任务单——升格请求选了缩小，或在做的任务收窄预计文件（新范围必须落在原范围里）（模块协调）。
+- `task scope <T号> --expect … --done … [--what …] --original(-file)`：改任务单（模块协调）。升格待定时回到在做：新列表比原来窄是缩小（升格请求选 B）；超出原来的是扩项（选 D「批准扩项，继续当轻任务做」，可同时改「做什么」，和别的任务、在用模块做重叠检查，重叠照实报出、不拒）；列表不变只算调整，不说「缩小」。在做（含已派出）的任务只能收窄预计文件（新范围必须落在原范围里），状态不变，不能改「做什么」。
 - `task cancel <T号> --original(-file)`：取消（模块协调）。
 
 ## 挂起、等待与换会话

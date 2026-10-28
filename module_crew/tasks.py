@@ -248,8 +248,9 @@ def render_kickoff(n: int, t: dict, worktree: Path, branch: str, cfg: dict, rela
         "越界检查：与任务单一致（预计 …）／多改了 <文件>，原因 …",
         "",
         "做到一半发现比任务单大、或要改别人正在改的文件：停下，代码留在本分支，发【等待用户】：",
-        "要你决定写「轻任务 T<号> 超出任务单，升格、缩小还是取消」，要点写「出了什么事：做了什么、还剩什么、为什么超出」，",
-        f"然后一行「任务：T{n}」、一行「类型：卡住选做法」，选项 A 升格为模块／B 缩小／C 取消，「是否完全停住：是」。",
+        "要你决定写「轻任务 T<号> 超出任务单，升格、缩小、取消还是扩项」，要点写「出了什么事：做了什么、还剩什么、为什么超出」，",
+        f"然后一行「任务：T{n}」、一行「类型：卡住选做法」，选项 A 升格为模块／B 缩小／C 取消／D 批准扩项（继续当轻任务做），"
+        "「是否完全停住：是」。",
         "只多改了没人在碰的文件，不用停，交回时在「越界检查」里写一句。",
         "",
         "全局约束：不改公共文件（要改发【公共变更请求】）；被挡住发【等待其他会话】；发出前 module-crew protocol check。",
@@ -321,41 +322,60 @@ class Scoped:
     number: int
     body: int
     path: str
-    narrowed: bool = False
+    kind: str = "shrunk"        # narrowed (in work, state stays) / shrunk / expanded / adjusted (after an escalation)
+    clashes: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
-def scope(db: store.Store, number: int, expect: list[str], done: str, original: str) -> Scoped:
-    """After an escalation answered 「缩小」: rewrite the task card and send it back to work.
-    A dispatched or working task may only narrow its expected files (0.17.0); its state stays."""
+def scope(db: store.Store, number: int, expect: list[str], done: str, original: str, what: str | None = None,
+          project: str | os.PathLike = ".") -> Scoped:
+    """Rewrite the task card on the user's words.
+    A dispatched or working task may only narrow its expected files (0.17.0); its state stays.
+    After an escalation it goes back to work: a narrower list shrinks it (answer B), files beyond the old ones
+    expand it (answer D, S49; checked for overlaps, reported not refused), the same list only adjusts it."""
     t = store.get(db, "task", str(number))
     if t is None or t.get("state") not in ("escalated", "dispatched", "working"):
         now = STATE_NAMES.get((t or {}).get("state"), "?") if t else "不存在"
-        raise TaskRefused(f"{label(number)} 现在是「{now}」，不能缩小或收窄")
+        raise TaskRefused(f"{label(number)} 现在是「{now}」，不能缩小、扩项或收窄")
     original, done = _clean(original, "用户原话"), _clean(done, "完成标准")
+    what = t["what"] if what is None else _clean(what, "做什么")
     files = [f.strip() for f in expect or [] if f.strip()]
     if not files or not all(store.task_path_ok(f) for f in files):
         raise TaskRefused("预计文件要写仓库内的相对路径（不含 ..），不能为空")
-    narrowing = t["state"] != "escalated"
-    if narrowing:
-        old = list(t.get("expectedFiles") or [])
-        outside = [f for f in files if not any(covers(o, f) for o in old)]
+    old = list(t.get("expectedFiles") or [])
+    outside = [f for f in files if not any(covers(o, f) for o in old)]
+    same = sorted(set(files)) == sorted(set(old))
+    clashes, notes = [], []
+    if t["state"] != "escalated":
+        kind = "narrowed"
+        if what != t["what"]:
+            raise TaskRefused("在做的任务只能收窄预计文件，不能改「做什么」；要改先停下发升格请求")
         if outside:
             raise TaskRefused("这不是收窄：" + "、".join(outside) + " 不在原来的预计文件里，加文件请走升格")
-        if sorted(set(files)) == sorted(set(old)):
+        if same:
             raise TaskRefused("新的预计文件和原来一样，没有收窄")
-    head = (f"轻任务 {label(number)} 的预计文件已按用户的决定收窄，新的任务单：" if narrowing
-            else f"轻任务 {label(number)} 已按用户的决定缩小，新的任务单：")
-    tail = ("超出这份任务单的改动不要做；要碰别的文件，先停下发升格请求。" if narrowing
+    elif outside:
+        kind = "expanded"
+        clashes, notes = overlaps(db, project, files, exclude=number)
+    else:
+        kind = "adjusted" if same else "shrunk"
+    head = {"narrowed": f"轻任务 {label(number)} 的预计文件已按用户的决定收窄，新的任务单：",
+            "shrunk": f"轻任务 {label(number)} 已按用户的决定缩小，新的任务单：",
+            "expanded": f"轻任务 {label(number)} 已按用户的决定扩项，继续当轻任务做，新的任务单：",
+            "adjusted": f"轻任务 {label(number)} 的任务单已按用户的决定调整，新的任务单："}[kind]
+    tail = ("超出这份任务单的改动不要做；要碰别的文件，先停下发升格请求。" if kind == "narrowed"
             else "超出这份任务单的改动不要再做，做完按原来的写法交回最终验收【交审】。")
-    text = "\n".join([head, f"- 做什么：{t['what']}", f"- 预计改的文件：{'、'.join(files)}", f"- 做到什么程度算完：{done}",
+    text = "\n".join([head, f"- 做什么：{what}", f"- 预计改的文件：{'、'.join(files)}", f"- 做到什么程度算完：{done}",
                       tail]) + "\n"
+    action = {"narrowed": "narrowed", "shrunk": "scoped", "expanded": "expanded", "adjusted": "scoped"}[kind]
+    data = {"original": original, **({"clashes": clashes} if kind == "expanded" else {})}
     with db.transaction(actor="coordinator") as tx:
-        tx.put("task", str(number), {**t, "expectedFiles": files, "done": done,
-                                     "state": t["state"] if narrowing else "working"},
-               action="narrowed" if narrowing else "scoped", data={"original": original})
+        tx.put("task", str(number), {**t, "what": what, "expectedFiles": files, "done": done,
+                                     "state": t["state"] if kind == "narrowed" else "working"},
+               action=action, data=data)
         body = tx.allocate_number()
         meta = tx.write_body(body, text)
-    return Scoped(number, body, str(db.path / meta["path"]), narrowed=narrowing)
+    return Scoped(number, body, str(db.path / meta["path"]), kind, clashes, notes)
 
 
 def bound(db: store.Store, name: str) -> None:
