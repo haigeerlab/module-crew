@@ -517,7 +517,7 @@ class FloorTest(TierMixin, MergeCase):
         out = review.add(self.db, self.finish("b"), "shop-b", 2)
         res = review.approve(self.repo, [out.number], "批")
         self.assertEqual(res.code, 3)
-        self.assertIn("最终验收：用 review answer 答复", "\n".join(res.lines))
+        self.assertIn("最终验收：批准合并用 merge approve", "\n".join(res.lines))   # crew-final-accept-split
 
     def test_kickoff_still_waits_for_the_start_notice(self):
         res = start.prepare(self.repo, ["d"], "开 d", short="shop", max_modules=3)

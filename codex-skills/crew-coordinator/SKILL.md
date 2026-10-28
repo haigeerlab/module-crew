@@ -21,7 +21,7 @@ description: 本线程是 Codex 桌面版里的 module-crew 模块协调时使�
   ③ 读 `bridge_inbox`，逐条按「收到模块会话的消息」处理，处理完 `bridge_ack`。
 - **压缩之后不抓最近一句当任务**：Codex 自动压缩后容易把最近一条人工输入当成要做的事；以 `status` 和收件箱为准，没在里面的不做，拿不准就问用户。
 - **写命令申请在沙箱外运行**：Codex 默认沙箱不让写 `.git`，而状态库、提交、合并、worktree 都在那里或在仓库外。下面这些命令一律申请在沙箱外运行（用户在本线程点「批准（Approve）」，能选本会话一直允许就选）：
-  `bind`、`takeover`、`answer`、`inbox add`、`review add|approve|answer|note`、`change add|land|answer`、`merge approve|run|cleanup|tick|revoke|renotice|push`、`start prepare`、`task add|dispatch|scope|cancel|next`、
+  `bind`、`takeover`、`answer`、`inbox add`、`review add|approve|answer|note`、`change add|land|answer`、`merge approve|accept|run|cleanup|tick|revoke|renotice|push`、`start prepare`、`task add|dispatch|scope|cancel|next`、
   `coordinator handover|down`、`permissions apply|remove`、`suspend`、`resume`、`serial`、`wait add`、`ticket close`、`source add|scope`、`config set`、`unqueued`（带不带 `--notify` 都算）、`merge result`、`review batch --for-hub`，以及 `git commit`／`git merge`／`git push`。
   后三个看着只读，其实会写状态库：`merge result` 第一次取到结果时记下「已读」，`unqueued` 第一次运行时记下集成分支顶端，`review batch --for-hub` 把交审原文写进 `<状态库>/originals/`。
   只读的在沙箱里跑：`status`、`sessions`、`review batch|show`（`review batch` 不带 `--for-hub`）、`task list|show`、`host-check`、`merge queue|push-plan`、`protocol check`、`source list|map`。
@@ -148,9 +148,11 @@ module-crew review approve <交审事项编号>… --original-file <原话文件
 module-crew review answer <交审事项编号> --original-file <原话文件>   # 要求修改，不碰集成分支
 ```
 
+   `review answer` 对最终验收只用于要求修改（退回）；最终验收的批准与只接受验收见「合并与收尾」第 2 步。
+
 4. 按输出逐条 `bridge_send`：【用户答复】带 `replyTo`，输出里有 `alsoAnswers` 就一并带上（一条答复同时答了几条交审）；【协调通知】不带；正文都用 `bodyFile`，不改一字。
 5. `review approve` 退出码 3：什么都没变，把原因告诉用户；4：中途停下，集成 checkout 里原有的文件已经还原，输出列出这次新建、没有删除的文件，交用户决定，不要自己清理；把失败原因照实告诉用户。
-6. **批准一律走 `review approve`**：失败就停下，把输出原样报给用户，不手工补提交（提交钩子、commitlint 拒了也一样）；不在集成 checkout 手工提交 Spec、Plan 或批准标记；不把提交信息或命令包装成给用户的「推荐回复」，用户照贴就绕开了批准记账（LIVE-SAAS C3 出过这事）。
+6. **Spec、Plan、接口提案的批准一律走 `review approve`**（最终验收走 `merge approve`／`merge accept`，见「合并与收尾」）：失败就停下，把输出原样报给用户，不手工补提交（提交钩子、commitlint 拒了也一样）；不在集成 checkout 手工提交 Spec、Plan 或批准标记；不把提交信息或命令包装成给用户的「推荐回复」，用户照贴就绕开了批准记账（LIVE-SAAS C3 出过这事）。
 
 ## 公共变更请求
 
@@ -184,7 +186,7 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 - **「有须修改项」的范围**：只能是偏离已批准内容、正确性缺陷或安全缺陷；改范围、换做法、产品取舍要请审查者写进【审查结论】的「待用户决定」字段（显示为待你决定）。审查者用「有须修改项」下达这类要求时，退回给审查者说明，不要转成返工。
 - **模块不同意**：模块的【交审】带「不同意」时不再返工，`review add` 会把双方意见记成待你决定的问题。
 - **审查超时**：送审 15 分钟还没结论，照常提请批准，审查行写「未审查（审查者无响应）」，并带一个「不等审查直接批／等审查结论」的问题。
-- **待决问题必须答全**：批准命令（`review approve`、`merge approve`）会核对每个待定问题都答到；没答全就退出码 3、什么都不做，把它列出的问题再问用户一次，**不要按倾向替用户填**。
+- **待决问题必须答全**：批准命令（`review approve`、`merge approve`、`merge accept`）会核对每个待定问题都答到；没答全就退出码 3、什么都不做，把它列出的问题再问用户一次，**不要按倾向替用户填**。
 - **待定问题的编号（契约 v2.6）**：审查者写的 D 由 module-crew 改编给用户看——决策收件箱登记为 2.6 及以上、或没有决策收件箱时写「C<交审号>-<序号>」（如 C15-1），登记低于 2.6 时照旧写 D 连续编号；用户用哪一套答都认。带 C 编号的卡只发给登记为 2.6 及以上的收件箱（`source list` 看登记版本）。
 - **答复块与编号**：`review batch` 末尾的「答复块」一块只答一件事（如「C16 A；C16-1 B」），每块放一个代码块给用户复制；另一种答法单独一块，退回不出占位块、改写成一句提示；推翻或重申已定决定单独一块。给用户看的话里一件事一个号，同一份交审从提请批准、批准到合入都说交审号，不说批准记录号、合并批准号；项目文档自带的编号写全称（如「决定记录 D16」）。
 
@@ -196,7 +198,11 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
    **最终验收被退回后重新交审**：提请批准之前，先把新交审提交与原批准提交按产品文件比对。产品文件口径：两个提交之间有变化的文件，去掉内容已与集成分支完全相同的（同步带进来的不算）；取法是 `git diff --name-only <原提交> <新提交>` 列出变化的文件，再逐个用 `git diff --quiet <集成分支> <新提交> -- <文件>` 去掉已与集成分支相同的。
    - 产品文件逐个无差异（去掉之后一个不剩）时，可沿用原批准原话登记：把原批准的原话文件交给命令，交审要点写「沿用原批准 C<号>，依据：产品文件无差异」，并列出比对结果（比了哪些文件、各自一致：每个变化的文件写明它与集成分支一致）。
    - 有任何差异就要用户给新原话，照常提请批准；不要拿原批准顶替。
-2. 用户批准（批准即授权合入本地集成分支）：`module-crew merge approve <交审编号>… --original-file <原话文件>`（可一次给多个编号），逐条发出输出的【用户答复】。
+2. 按用户原话分三种，拿不准原话属于哪种就回头问用户，不往大里读（只说「验收通过」「有限验收」而没说合并的，不算授权合并）：
+   - 批准并授权合并：`module-crew merge approve <交审编号>… --original-file <原话文件>`（可一次给多个编号），逐条发出输出的【用户答复】。
+   - 只接受验收、不批合并：`module-crew merge accept <交审编号>… --original-file <原话文件>`，逐条发出输出的【用户答复】；交审事项记为「已接受验收、待授权合并」，不关闭、不进合并队列，集成分支不变，模块不收同步通知，`merge cleanup` 也不收它。
+     之后用户补一句授权合并时，对同一个交审编号 `merge approve`（要这句新原话），不用模块重新交审，待定问题也不再问；用户改主意要修改就 `review answer` 退回。决策收件箱卡片上的「C：只接受验收，暂不授权合并」按这一条办。
+   - 要求修改：`module-crew review answer <交审编号> --original-file <原话文件>`。
    合入并通过检查后，`merge run` 请 spec-guard（接口 1.7 的 gateTick）在集成分支勾上这个模块的最终验收那一格，再单独提交；模块会话不再自己勾。
    spec-guard 不肯勾时（输出里带 `not-at-final-gate` 之类的短码），照实告诉用户，**不要自己去改 todo**；判断错了就报给 spec-guard 插件那边。spec-guard 低于 1.7 时不勾，升级后补勾。
    修订前合并、漏勾了的模块，或上面没勾上的：用户同意后 `module-crew merge tick <模块> --original-file <原话文件>` 补勾（早已勾过时什么都不改）。
@@ -277,7 +283,7 @@ module-crew change answer <编号> --original-file <用户原话文件>     # �
 module-crew wait add --file <正文文件> --to <收件会话名> --relay-id <发出那条的邮箱消息号> --about <#N|C<N>>
 ```
 
-  之后转达这个事项的答复时（`answer`、`review approve`、`merge approve` 都算，带不带决策收件箱来源都一样），命令输出会带一行「你开的等待记录 W<号> 等的事已发生：发送 【已恢复】 → …」，**照发**，等待记录随之关闭；
+  之后转达这个事项的答复时（`answer`、`review approve`、`merge approve`、`merge accept` 都算，带不带决策收件箱来源都一样），命令输出会带一行「你开的等待记录 W<号> 等的事已发生：发送 【已恢复】 → …」，**照发**，等待记录随之关闭；
   不记账的话没人会关它，决策收件箱会一直以为这条线停着。`module-crew sessions` 末尾列出你还开着的等待记录。
 - 模块已经收回、不能再发消息，或用户说「关掉 #编号」时，由你关：
 
