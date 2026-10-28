@@ -51,7 +51,8 @@ def strip_contract(text: str) -> str:
 
 
 def sources() -> dict[str, str]:
-    out = {"README.md": (PLUGIN_ROOT / "README.md").read_text(encoding="utf-8")}
+    out = {rel: (PLUGIN_ROOT / rel).read_text(encoding="utf-8")
+           for rel in ("README.md", "docs/guide.md", "docs/commands.md", "docs/architecture.md")}
     for p in sorted(PLUGIN_ROOT.glob("*skills/*/SKILL.md")):
         out[str(p.relative_to(PLUGIN_ROOT))] = p.read_text(encoding="utf-8")
     for p in sorted((PLUGIN_ROOT / "module_crew").glob("*.py")):

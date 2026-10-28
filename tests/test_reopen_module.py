@@ -377,8 +377,8 @@ class DocsTest(unittest.TestCase):
         self.assertIn("只做 `tasks/<模块>/todo.md` 里新加的未勾项", text)
 
     def test_readme(self):
-        text = self.read("README.md")
-        self.assertIn("## 修订已完成的模块（第九版）", text)
+        text = self.read("docs/guide.md")   # crew-docs: moved to the guide, which carries no version labels
+        self.assertIn("## 修订已完成的模块", text)
         self.assertIn("start prepare <模块 id>", text)
 
 

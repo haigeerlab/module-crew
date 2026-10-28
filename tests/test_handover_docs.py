@@ -12,7 +12,7 @@ from module_crew import handover, permissions, store
 from test_host_handover import close_batch
 from test_permissions import PermCase
 
-README = (PLUGIN_ROOT / "README.md").read_text(encoding="utf-8")
+README = (PLUGIN_ROOT / "docs" / "guide.md").read_text(encoding="utf-8")   # crew-docs: these sections moved to the guide
 
 
 def section(title: str) -> str:

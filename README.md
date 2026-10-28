@@ -8,7 +8,7 @@
 
 ## 它解决什么
 
-[spec-guard](https://github.com/haigeerlab/spec-guard-plugin) 按能力图一个模块接一个模块推进（Spec → Plan → 实现），模块多、彼此又独立时，整体进度被串行和逐个审核拖慢。
+[spec-guard](https://github.com/haigeerlab/spec-guard-plugin) 按能力图一个模块接一个模块推进（Spec → Plan → 实现），模块多、彼此又独立时，整体进度被串行和逐个审查拖慢。
 module-crew 在它之上加一层运行层：
 
 - **一个模块协调统筹**：开模块、收件记账、转达用户的决定、管集成分支与公共文件、合并。
@@ -31,7 +31,7 @@ module-crew 在它之上加一层运行层：
 
 | 依赖 | 要求 |
 |---|---|
-| 宿主 | Claude Code 桌面版（Code 标签）；模块会话也可以开在 Codex 桌面版。所有会话在同一台 Mac 上 |
+| 宿主 | Claude Code 桌面版（Code 标签）；模块会话也可以开在 Codex 桌面版，一批收尾后模块协调可用 `coordinator handover` 整体换到 Codex 桌面版。所有会话在同一台 Mac 上 |
 | [agent-relay](https://github.com/haigeerlab/agent-relay) | 必需，接口主版本 2。会话之间用它收发消息 |
 | [spec-guard](https://github.com/haigeerlab/spec-guard-plugin) | 必需，0.68.0 起（接口 1.1 的规划层）；项目已启用 spec-guard 的本地多 Spec 约定（`spec/CAPABILITY-MAP.md`）。声明范围、自治档位、额度外包要 0.85.0 起（接口 1.11） |
 | [delegate](https://github.com/haigeerlab/delegate-plugin) | 可选，只有打开额度外包时才要：0.8.0 起（接口 1.3） |

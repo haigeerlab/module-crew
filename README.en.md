@@ -33,7 +33,7 @@ There are also light tasks (轻任务: a single feature or bug that skips the Sp
 
 | Dependency | Requirement |
 |---|---|
-| Host | Claude Code desktop (Code tab); module sessions may also run in Codex desktop. All sessions on the same Mac |
+| Host | Claude Code desktop (Code tab); module sessions may also run in Codex desktop, and between batches the coordinator can move to Codex desktop with `coordinator handover`. All sessions on the same Mac |
 | [agent-relay](https://github.com/haigeerlab/agent-relay) | Required, interface major version 2. Sessions exchange messages through it |
 | [spec-guard](https://github.com/haigeerlab/spec-guard-plugin) | Required, 0.68.0 or later (planning layer, interface 1.1), with spec-guard's local multi-spec convention enabled in the project (`spec/CAPABILITY-MAP.md`). Declared scope, autonomy tiers and quota offload need 0.85.0 or later (interface 1.11) |
 | [delegate](https://github.com/haigeerlab/delegate-plugin) | Optional, only for quota offload: 0.8.0 or later (interface 1.3) |

@@ -573,7 +573,7 @@ class DocsTest(unittest.TestCase):
                 self.assertIn(words, text, rel)
 
     def test_readme(self):
-        text = self.read("README.md")
+        text = self.read("docs/guide.md")   # crew-docs: the section moved from README to the guide
         for words in ("declaredScope", "change land <编号> --from-module", "change landed", "module-crew scope",
                       "声明内公共文件", "--declared-scope"):
             self.assertIn(words, text)

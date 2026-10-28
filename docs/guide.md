@@ -165,7 +165,7 @@ Claude 额度紧张时，先打开检查记账，再由模块协调凭用户原�
    最后一个会话收回时 `merge cleanup` 会输出「本批已收尾，具备换宿主的条件」，`status` 也显示这一行。`module-crew coordinator handover --check [--to codex|claude]` 逐条列出哪项不满足；决策收件箱那边的待决请用 decision-inbox 再看一眼。
 2. **换**：用户明说后，原宿主上的模块协调运行 `module-crew coordinator handover --to codex|claude --original-file <原话文件>`。它改模块协调登记的宿主、按新宿主给集成 checkout 追加权限规则（项目 apply 过才写，原有规则保留），并把逐步交接说明打印出来、存到状态库目录 `handover-guide/`。
 3. **照交接说明做**：每一步写明去哪个会话、做什么、做完的样子。要点：
-   - Claude → Codex：先归档 Claude 上原来的模块协调会话（agent-relay 不让接管还在运行的 Claude 会话）；在 Codex 里信任项目（贴开场文字之前）；在 Codex 新建任务、目录选集成 checkout、贴开场文字；它用 `takeover:true` 加 `wake:{app:"codex", sessionId:<CODEX_THREAD_ID>}` 接管邮箱名，再 `bind --takeover`（会弹提权）；之后每轮开头不带 takeover 重新注册。
+   - Claude → Codex：先归档 Claude 上原来那个模块协调（agent-relay 不让接管还在运行的 Claude 会话）；在 Codex 里信任项目（贴开场文字之前）；在 Codex 新建任务、目录选集成 checkout、贴开场文字；它用 `takeover:true` 加 `wake:{app:"codex", sessionId:<CODEX_THREAD_ID>}` 接管邮箱名，再 `bind --takeover`（会弹提权）；之后每轮开头不带 takeover 重新注册。
    - 新宿主的规则文件（如 `.codex/rules/module-crew.rules`）没被 git 忽略时，规则没写上，交接说明多一步：模块协调在 `.gitignore`（公共文件）加上这个文件并提交，再凭用户原话重跑 `permissions apply`。
    - Codex → Claude：先确认原 Codex 任务已停（agent-relay 判断不了，它被接走后也收不到通知）；在 Claude 桌面版新开会话、贴开场文字；它用 `takeover:true, wake:"auto"` 接管，再 `bind --takeover`。新开会话不要用 worktree，要开在集成 checkout。
    - `bind --takeover` 只认登记宿主上的会话：没先跑 handover 就在另一边接管会被拒。

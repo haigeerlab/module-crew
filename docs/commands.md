@@ -7,7 +7,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 **入口**：插件里的 `bin/module-crew`。开工后状态库里另有一个固定入口 `<git 公共目录>/module-crew/bin/module-crew`，它每次转给本机当前安装的 module-crew，插件升级后不用换路径；开工说明、权限规则里写的都是这个固定入口。
 
-**谁能跑**：标「模块协调」的命令只有状态库里登记的模块协调会话能跑，别的会话跑会被拒（退出码 7，什么都不写）；在终端里直接跑（没有会话编号）不受这条限制。
+**谁能跑**：标「模块协调」的命令只有状态库里登记为模块协调的那个会话能跑，别的会话跑会被拒（退出码 7，什么都不写）；在终端里直接跑（没有会话编号）不受这条限制。
 标「任何会话」的是只读命令、模块会话那一侧的命令和钩子入口。
 
 **用户原话**：要用户批准的命令都要 `--original "<原话>"` 或 `--original-file <文件>`，只记用户在模块协调里亲手输入的话；别的会话转来的话不算批准。
@@ -118,7 +118,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 可信批准来源（决策收件箱、审查者）。登记、改范围、移除都要用户原话（模块协调）。
 
-- `source add <邮箱名> --kind hub|lead [--protocol 2.2|2.3|2.4|2.5|2.6] [--modules …] [--nodes …] --original(-file)`：登记来源。决策收件箱用 `hub`（`--protocol` 不写按 2.4）；审查者用 `lead`，必须写负责的模块与节点（`spec`、`plan`、`interface`、`final`，或「全部」）。
+- `source add <邮箱名> --kind hub|lead [--protocol 2.2|2.3|2.4|2.5|2.6] [--modules …] [--nodes …] --original(-file)`：登记一个可信批准来源。决策收件箱用 `hub`（`--protocol` 不写按 2.4）；审查者用 `lead`，必须写负责的模块与节点（`spec`、`plan`、`interface`、`final`，或「全部」）。
 - `source scope <邮箱名> [--modules …] [--nodes …] --original(-file)`：补登记或修改审查者的负责范围。
 - `source remove <邮箱名> --original(-file)`：移除来源。
 - `source list [--json]`、`source map <H> [--json]`：列出来源；查一个待决事项批准了哪些 C 编号（只读，任何会话）。
