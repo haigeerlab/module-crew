@@ -1,6 +1,6 @@
 # Implementation Plan: crew-final-accept-split
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-final-accept-split.md`（用户 2026-10-28 批准，事项 C357，原话「C357 A；D1 A；D2 A」）。任务清单：`tasks/crew-final-accept-split/todo.md`。
 > 待决已定：D1 A——决策收件箱的最终验收卡片加选项「C：只接受验收，暂不授权合并」；D2 A——已接受验收、没授权合并的模块不能 `merge cleanup`（退出码 3）。
