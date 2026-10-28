@@ -81,5 +81,44 @@ class AcceptTest(AcceptCase):
         self.assertEqual(again.returncode, 3)
 
 
+class AuthorizeTest(AcceptCase):
+    """AC2: a later merge authorization on the accepted item, no resubmission."""
+
+    def check(self):
+        script = self.tmp / "check.py"
+        script.write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+        return f"python3 {script}"
+
+    def test_approve_after_accept_merges(self):
+        n = self.final("b", 4800)
+        acc = merge.accept(self.db, n, "有限验收通过，暂不合并")
+        res = merge.approve(self.db, n, "授权合并 C%d" % n)
+        ap = store.get(self.db, "item", str(res.approval))
+        self.assertEqual((ap["kind"], ap["state"], ap["review"]), ("merge-approval", "open", n))
+        self.assertEqual(ap["acceptedBy"]["body"], acc.body)
+        self.assertEqual(ap["answer"]["original"], "授权合并 C%d" % n)
+        rec = store.get(self.db, "item", str(n))
+        self.assertEqual((rec["state"], rec["closedReason"]), ("closed", "answered"))
+        self.assertEqual(rec["answer"]["acceptance"]["original"], "有限验收通过，暂不合并")
+        self.assertEqual(rec["answer"]["original"], "授权合并 C%d" % n)
+        out = merge.run(self.repo, check_command=self.check())
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertTrue((self.repo / "src" / "b.py").exists())
+
+    def test_one_step_approve_has_no_accepted_by(self):
+        n = self.final("b", 1)
+        res = merge.approve(self.db, n, "批准")
+        self.assertIsNone(store.get(self.db, "item", str(res.approval))["acceptedBy"])
+
+    def test_cli_does_not_ask_questions_again(self):
+        n = self.final("b", 1)
+        with self.db.transaction(actor="t") as tx:
+            tx.put("item", str(n), dict(tx.get("item", str(n)), sentAt="2026-01-01T00:00:00+08:00"), action="aged")
+        self.assertEqual(self.run_cli("merge", "accept", f"C{n}", "--original", f"只验收；C{n}-1 A").returncode, 0)
+        out = self.run_cli("merge", "approve", f"C{n}", "--original", "授权合并")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("已排入本地合并队列", out.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -49,8 +49,9 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
         raise AnswerRefused(f"没有交审事项 C{review_no}")
     if rec.get("node") != "final":
         raise AnswerRefused(f"交审事项 C{review_no} 不是最终验收（Spec／Plan 用 review approve）")
-    if rec.get("state") != "open":
+    if rec.get("state") not in ("open", "accepted"):     # crew-final-accept-split: an accepted item is authorized here
         raise AnswerRefused(f"交审事项 C{review_no} 已关闭（{rec.get('closedReason')}）")
+    acceptance = rec.get("acceptance") if rec.get("state") == "accepted" else None
     answered_at = store.now()
     text = _reply_text(review_no, rec, original, answered_at)
     approval = tx.allocate_number()
@@ -67,12 +68,13 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
         "commit": rec["commit"], "from": rec["from"], "relayId": rec["relayId"],
         "answer": {"original": original, "answeredAt": answered_at, **store.source_field()},
         "closedReason": None, "mergeCommit": None, "revertCommit": None, "resetTo": None, "reason": None,
+        "acceptedBy": {"answeredAt": acceptance["answeredAt"], "body": acceptance["body"]} if acceptance else None,
     }, action="merge-approved")
     body = tx.allocate_number()
     meta = tx.write_body(body, text)
     tx.put("item", str(review_no), dict(rec, state="closed", closedReason="answered",
                                         answer={"original": original, "answeredAt": answered_at, **store.source_field(), "body": body,
-                                                "approval": approval}),
+                                                "approval": approval, **({"acceptance": acceptance} if acceptance else {})}),
            action="answered", data={"body": body})
     return Approved(approval, Reply(rec["from"], rec["relayId"], body, db.path / meta["path"]), replaced)
 
