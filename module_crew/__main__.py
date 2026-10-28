@@ -708,6 +708,8 @@ def _review(args) -> int:
         except review.AnswerRefused as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
+        if (store.get(db, "item", str(args.number)) or {}).get("node") == "final":    # crew-final-accept-split
+            print("已按要求修改退回；如果用户只是接受验收、不批合并，应该用 merge accept（这次已经退回，要改须模块重新交审）")
         print(f"收件人：{reply.to}")
         _sent(reply.to)
         print(f"replyTo：{reply.reply_to}")

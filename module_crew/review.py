@@ -720,8 +720,11 @@ def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict]
               "推荐 A：批准",
               f"  选了会怎样：{_effect(part)}",
               "B：退回修改（请写修改意见）",
-              "  选了会怎样：模块按你的意见改完再交审，集成分支不变",
-              "你该回：A" + "".join(f"；{k} {d['lean'] or 'A'}" for k, _, d in numbered),
+              "  选了会怎样：模块按你的意见改完再交审，集成分支不变"]
+    if any(i["node"] == "final" for i in part):           # crew-final-accept-split (D1 A)
+        lines += ["C：只接受验收，暂不授权合并",
+                  "  选了会怎样：记下验收结论，不合并、集成分支不变；之后你说一句授权合并就排进合并队列"]
+    lines += ["你该回：A" + "".join(f"；{k} {d['lean'] or 'A'}" for k, _, d in numbered),
               "是否完全停住：否"]
     text = "\n".join(lines) + "\n"
     msg = protocol.parse(text)
@@ -1163,7 +1166,8 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
         elif rec.get("state") != "open":
             reasons.append(f"交审事项 C{n} 已关闭（{rec.get('closedReason')}）")
         elif rec.get("node") not in APPROVABLE:
-            reasons.append(f"交审事项 C{n} 是最终验收：用 review answer 答复，合并归 crew-merge")
+            reasons.append(f"交审事项 C{n} 是最终验收：批准合并用 merge approve，只接受验收用 merge accept，"
+                           "要求修改用 review answer")
         else:
             picked.append((n, rec))
     src = store.source_field().get("source") or {}

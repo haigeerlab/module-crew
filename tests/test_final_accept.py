@@ -194,5 +194,42 @@ class CleanupTest(AcceptCase):
         self.assertTrue(self.wt["b"].is_dir())
 
 
+class HintsTest(AcceptCase):
+    """AC7, AC8 (D1 A)."""
+
+    def test_review_approve_refusal_names_three_commands(self):
+        n = self.final("b", 1)
+        res = review.approve(self.repo, [n], "批")
+        self.assertEqual(res.code, 3)
+        text = " ".join(res.lines)
+        for cmd in ("merge approve", "merge accept", "review answer"):
+            self.assertIn(cmd, text)
+
+    def test_review_answer_on_final_hints(self):
+        n = self.final("b", 1)
+        out = self.run_cli("review", "answer", f"C{n}", "--original", "补错误提示")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("已按要求修改退回", out.stdout)
+        self.assertIn("merge accept", out.stdout)
+        spec = review.add(self.db, self.spec_review("c"), "shop-c", 2).number
+        out = self.run_cli("review", "answer", f"C{spec}", "--original", "Spec 再改")
+        self.assertNotIn("merge accept", out.stdout)
+
+    def test_final_card_has_option_c(self):
+        self.final("b", 1)
+        [(_, _, text)] = review.for_hub(self.repo)
+        msg = protocol.parse(text)
+        self.assertTrue(msg.ok, msg.problems)
+        options = msg.fields["选项与我的建议"]
+        self.assertIn("C：只接受验收，暂不授权合并", options)
+        self.assertIn("之后你说一句授权合并就排进合并队列", options)
+        self.assertEqual(msg.fields["你该回"].strip(), "A")
+
+    def test_spec_card_unchanged(self):
+        review.add(self.db, self.spec_review("b"), "shop-b", 1)
+        [(_, _, text)] = review.for_hub(self.repo)
+        self.assertNotIn("只接受验收", text)
+
+
 if __name__ == "__main__":
     unittest.main()
