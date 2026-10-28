@@ -26,7 +26,7 @@
 | agent-relay | **必需**，接口主版本 2。会话之间用它收发消息（`bridge_send` 的 `bodyFile`、`replyTo`、`expectsReply`） |
 | spec-guard | 项目已启用本地多 Spec 约定（`spec/CAPABILITY-MAP.md`）。开工、批量批准、合并依赖 spec-guard 0.68.0（`interface.json` 1.1、`/map --json` 的 `moduleConcurrency`、`startable`）；第十版的声明范围、自治档位、额度外包的范围核对要 0.85.0（interface 1.11） |
 | 项目 | git 仓库，能建 worktree；有一条能在本地跑完的完整检查命令，合并后用它判断集成是否通过 |
-| delegate | 可选，只有打开额度外包（`codexOffload`）时才要：0.6.0 起（interface 1.1）；1.2 起超时也能续跑 |
+| delegate | 可选，只有打开额度外包（`codexOffload`）时才要：0.8.0 起（interface 1.3 的接续、长期限、结果文件与写入授权） |
 | 运行环境 | Python 3（只用标准库） |
 
 消息格式以 [session-protocol](../session-protocol) 契约为准（现钉住 v2.6）。
@@ -115,12 +115,15 @@ bin/module-crew status
 
 ## 额度外包（第十版，项目开关 codexOffload，默认关）
 
-打开检查记账后，模块协调凭用户原话打开 `codexOffload`，Spec、Plan 照旧由模块会话写、由用户批，之后：
+Claude 额度紧张时，打开检查记账后，模块协调凭用户原话打开 `codexOffload`（用户口头说「下一个模块交给 Codex」也一样）。之后**开工的**模块：
 
-1. **开工**：开工通知改成外包写法，模块会话 sync 后发【等待其他会话】停下；外包条件不满足（delegate 低于 1.1、模块协调在 Codex、Codex 把项目标为不信任等）时不发开工通知，交用户决定。
-2. **派出与收结果**：模块协调 `module-crew offload start <模块>` 取 todo 第一个未勾的 Task，照输出执行 `/delegate:run --write --resumable`（放后台）；跑完 `module-crew offload settle` 收结果。一次只派一个 Task（delegate 单次上限 540 秒）。
-3. **三种结束状态**：做完就核对改动都在本模块范围内（spec-guard scopeCheck，加预先声明名单）、跑快检查，在模块分支代提交；Codex 要问用户就把问题原样转给用户，带着答复 `offload resume`；超时不提交、先交进度，续跑要用户点头。认不出的一律停下问用户，不自动重派。
-4. **交还**：做到检查点或最终验收时 `offload handback` 交还模块会话，最终验收照常由用户批。Codex 只改文件，从不提交、推送或删除。
+1. **开工**：`review approve` 批齐 Spec、Plan 时，条件满足就把模块记为交给 Codex，把用户打开开关的原话存成授权文件，开工通知改成外包写法；模块会话在 Codex 时照旧、不外包；
+   其余条件不满足（delegate 接口低于 1.3 或缺接续、长期限、结果文件、写入授权，Codex 把项目标为不信任等）时不发开工通知，交用户决定。已经开工的模块不中途换手。
+2. **派出与收结果都在模块会话**：`module-crew offload start <模块>` 取 todo 第一个未勾的 Task，给出 `/delegate:run` 写法——第一个 Task `--resumable` 起头，之后 `--continue <runId>` 接着**同一个 Codex 会话**，都带 `--strict --timeout 1800 --authorized-by <授权文件>`，放 Bash 后台跑；
+   跑完 `module-crew offload settle <模块> --output … --stderr … --exit …` 读结果行、`delegate: result=` 行与结果文件，按结束状态分流。模块协调不调 Codex、不代提交。
+3. **结束状态**：做完就核对勾选、改动范围（spec-guard scopeCheck，加预先声明名单）、跑快检查，模块会话自己提交；Codex 要问用户就把问题原样转给用户，带着答复 `offload resume`；超时不提交、先交进度，续跑要用户点头。
+   核对不过、`unmarked`／`failed`／`empty` 第 1 次自动重来；超时、被停下、回收不了（125）、delegate 拒绝（64）与认不出的状态停下问用户，认不出的一律不当成完成。
+4. **退回 Claude**：同一个 Task 连续 2 次没通过，这一项改由模块会话自己写并告诉用户，下一个 Task 照旧交给 Codex；用户在停下时也可以选 `offload takeover`。检查点、最终验收照常由模块会话处理，最终验收由用户批。Codex 只改文件，从不提交、推送或删除。
 
 开关关着时一切照旧。
 
@@ -261,10 +264,10 @@ module-crew tier [--json] | tier --preflight      自治档位（只读）：设
 module-crew tier restore --original(-file)       降档后恢复一档（要用户原话）
 module-crew tier digest [--json] [--mark-told]   relaxed 档的收尾汇总；--mark-told 记为已汇总（只是记账）
 module-crew config set --codex-offload on|off --original(-file)  额度外包开关（默认关；要先开检查记账）
-module-crew offload start <模块> [--again]        额度外包：派出下一个 Task，给出 /delegate:run 写法（重派要原话）
-module-crew offload settle <模块> --output <文件> --exit <码>  收 delegate 的输出：做完的核对范围、跑快检查后代提交，其余停下问用户
-module-crew offload resume|decline <模块> --original(-file)  带用户的答复续跑／外包条件不满足时改由模块会话构建
-module-crew offload handback <模块>               交还模块会话（检查点、最终验收，或用户选交还）
+module-crew offload start <模块> [--again]        额度外包（模块会话）：派出下一个 Task，给出 /delegate:run 写法（重派要原话）
+module-crew offload settle <模块> --output <文件> --stderr <文件> --exit <码>  收 delegate 的输出：做完的核对范围、跑快检查后提交，没通过的重来、退回 Claude 或停下问用户
+module-crew offload resume|takeover <模块> --original(-file)  带用户的答复续跑／这一项改由 Claude 写
+module-crew offload decline <模块> --original(-file)  外包条件不满足时改由模块会话构建（模块协调）
 module-crew offload show [<模块>] [--json]        外包状态（只读）
 module-crew review add|batch|approve|answer      交审与批量批准
 module-crew change add|list|land|answer [--reason superseded]  公共变更请求（被取代的可直接关；检查记账打开时 land 先跑快检查，--skip-quick-check 要原话）
@@ -320,5 +323,5 @@ spec-guard 的命令入口路径带版本号，暂不放进放行清单。细节
 - 0.9.0 起的钩子按会话认身份：只用钩子事件数据做过测试，没在真实桌面会话里看过注入出来的文字。
 - 桌面版整个退出重开后会话 id 是否不变：压缩、`claude --resume` 接上都实测不变，退出整个桌面版这一种没测。
 - 0.12.0 的 Codex 固定入口：2026-10-23 在真实 Codex 沙箱里跑过 `status`（读得到 Claude 的安装记录）与 `host-check`（写 `.git` 要提权，提权后能提交）；登记过的 Codex 模块会话完整走一遍 bind、交审还没测。
-- 第十版四个开关：都只用测试和本机接口实测验证过，还没在真实项目上打开试跑（留给 LIVE-SAAS 下一轮，量同步与核验类提交占比、每个模块的批准次数等四个数）。额度外包对 delegate 0.6.0 真跑过一次（done），1.2 的 timeout 续跑只用夹具测过；多个 Task、needs-input 续跑的整轮外包没实跑。自治档位的升档门槛与收尾汇总时机是先定的，等试点数据再调。
+- 第十版四个开关：都只用测试和本机接口实测验证过，还没在真实项目上打开试跑（留给 LIVE-SAAS 下一轮，量同步与核验类提交占比、每个模块的批准次数等四个数）。额度外包（第 2 轮）只用夹具测过两种情形：带 `--resumable` 的长期限运行被中止后的收尾轮、长期限下回收不了（退出 125）的真实表现；needs-input 续跑与整模块的长链外包没实跑。自治档位的升档门槛与收尾汇总时机是先定的，等试点数据再调。
 - 第八版的模块协调在 Codex 上：只用测试验证过。`merge run --detach` 的后台进程能否活过 Codex 的一轮、提权是否随之继承，单次工具调用最长能等多久，一次提权批准能覆盖多少条命令，都还没在真实 Codex 线程里试过。

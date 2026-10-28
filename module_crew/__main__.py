@@ -447,13 +447,13 @@ def _offload(args) -> int:
         out = offload.start(Path.cwd(), args.module, again=args.again,
                             answer={"original": original, **store.source_field()} if args.again else None)
     elif args.action == "settle":
-        out = offload.settle(Path.cwd(), args.module, args.output, args.exit_code)
+        out = offload.settle(Path.cwd(), args.module, args.output, args.stderr, args.exit_code)
     elif args.action == "resume":
         out = offload.resume(Path.cwd(), args.module, {"original": original or "", **store.source_field()})
+    elif args.action == "takeover":
+        out = offload.takeover(Path.cwd(), args.module, {"original": original or "", **store.source_field()})
     elif args.action == "decline":
         out = offload.decline(Path.cwd(), args.module, original or "")
-    elif args.action == "handback":
-        out = offload.handback(Path.cwd(), args.module)
     elif args.action == "show":
         code, rows, lines = offload.show(Path.cwd(), args.module)
         if args.json:
@@ -461,7 +461,7 @@ def _offload(args) -> int:
         else:
             print("\n".join(lines), file=sys.stdout if code == 0 else sys.stderr)
         return code
-    print("\n".join(out.lines), file=sys.stdout if out.code in (0, 5) else sys.stderr)
+    print("\n".join(out.lines), file=sys.stdout if out.code in (0, 4, 5) else sys.stderr)
     return out.code
 
 
@@ -976,7 +976,8 @@ _ANY_SESSION = {("status", None), ("sessions", None), ("protocol", None), ("hook
                 ("host-check", None), ("scope", None), ("store", "check"), ("start", "plan"), ("review", "batch"), ("review", "show"),
                 ("change", "list"), ("merge", "queue"), ("merge", "push-plan"), ("source", "list"), ("source", "map"),
                 ("task", "list"), ("task", "show"), ("task", "next"), ("permissions", "plan"), ("coordinator", "up"),
-                ("offload", "show"), ("check", "quick"), ("check", "show"), ("check", "list")}
+                ("offload", "show"), ("offload", "start"), ("offload", "settle"),
+                ("offload", "resume"), ("offload", "takeover"), ("check", "quick"), ("check", "show"), ("check", "list")}
 
 
 def _session_guard(args) -> int | None:
@@ -1393,26 +1394,27 @@ def _main(argv: list[str] | None = None) -> int:
     tid = tis.add_parser("digest", help="relaxed 档的收尾汇总：同步、检查账、不经队列的提交、提前落地")
     tid.add_argument("--json", action="store_true")
     tid.add_argument("--mark-told", action="store_true", help="记为已汇总给用户（只是记账，不是批准）")
-    of = sub.add_parser("offload", help="额度外包：把 Task 经 delegate 交给 Codex，核对后代提交（项目开关 codexOffload）")
+    of = sub.add_parser("offload", help="额度外包：模块会话把 Task 经 delegate 交给同一个 Codex 会话，核对后自己提交（项目开关 codexOffload）")
     ofs = of.add_subparsers(dest="action", required=True)
     ofst = ofs.add_parser("start", help="派出模块的下一个 Task：生成任务说明与 /delegate:run 写法")
     ofst.add_argument("module")
-    ofst.add_argument("--again", action="store_true", help="超时、认不出或核对失败后重派（要用户原话）")
+    ofst.add_argument("--again", action="store_true", help="停下问用户后，用户选重派：另起一条链（要用户原话）")
     ofg = ofst.add_mutually_exclusive_group()
     ofg.add_argument("--original")
     ofg.add_argument("--original-file")
-    ofse = ofs.add_parser("settle", help="收 delegate 的输出：按结束状态分流，做完的核对范围、跑快检查后代提交")
+    ofse = ofs.add_parser("settle", help="收 delegate 的输出：按结束状态分流，做完的核对范围、跑快检查后提交")
     ofse.add_argument("module")
     ofse.add_argument("--output", required=True, help="/delegate:run 的标准输出文件")
+    ofse.add_argument("--stderr", required=True, help="/delegate:run 的标准错误文件")
     ofse.add_argument("--exit", dest="exit_code", type=int, required=True, help="/delegate:run 的退出码")
-    for name, text in (("resume", "带用户的答复续跑（needs-input；delegate ≥ 1.2 的超时）"),
+    for name, text in (("resume", "带用户的答复续跑（needs-input、超时）"),
+                       ("takeover", "用户选「这一项改由 Claude 写」（要用户原话）"),
                        ("decline", "外包条件不满足时改由模块会话构建：发今天的开工通知（要用户原话）")):
         c = ofs.add_parser(name, help=text)
         c.add_argument("module")
         g = c.add_mutually_exclusive_group(required=True)
         g.add_argument("--original")
         g.add_argument("--original-file")
-    ofs.add_parser("handback", help="交还模块会话：生成恢复通知（检查点、最终验收，或用户选交还）").add_argument("module")
     ofsh = ofs.add_parser("show", help="只读：各模块的外包状态")
     ofsh.add_argument("module", nargs="?")
     ofsh.add_argument("--json", action="store_true")

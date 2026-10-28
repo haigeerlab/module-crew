@@ -110,12 +110,18 @@ module-crew protocol check <消息文件>
 - 档位只改变模块协调怎么交审、怎么汇总消息，不改变你的停点：三种必停情况（测试改不红、Spec 没覆盖的决策、高风险不可逆改动）与 Plan 里标 `gate` 的检查点照旧停。
 - 开工说明写的评审节奏（separate／combined）就是按档位算过的，照它交审；Plan「预先声明」名单内的公共文件怎么改，照开工说明的「全局约束」一行。
 
-## 额度外包（开工通知写「本模块的实现外包给 Codex」时，第十版）
+## 额度外包（开工通知写「本模块的实现交给 Codex」时，第十版第 2 轮）
 
-- **收到外包开工通知**：先**单独执行** `module-crew sync`，再发一条【等待其他会话】给模块协调（在等谁：模块协调；等什么：Codex 外包实现），然后停下：不构建、不改本 worktree，也不跑 `check quick`。
-- **外包期间**：工作区里可能有 Codex 改到一半的文件，收到同步基线通知也先不同步；任务列表停在当前项，不提前勾 todo（Codex 做完一项由模块协调代提交，勾选随提交一起进来）。
-- **收到恢复通知（外包交还）**：照「要你做什么」先 sync，对照 Spec 看一遍 Codex 的提交，再按 Plan 处理停下的那一项（检查点照 gate／report 规则、最终验收照常交审），然后发【已恢复】结项你那张等待记录。
-  通知写「还有 Task 时再发【等待其他会话】」就照做，模块协调接着外包；写「之后本模块不再外包」就自己做完剩下的项。
+- **谁做什么**：你照常写 Spec、Plan、处理检查点和最终验收；Plan 里的每个 Task 由你经 delegate 交给**同一个 Codex 会话**做，回来后你核对、跑快检查、提交。模块协调不调 Codex、不替你提交。
+  只有开工通知写了这句的模块才这样做；开工时没交给 Codex 的模块照旧自己做完，中途不换。
+- **派出**：先照通知 `module-crew sync`，再在本 worktree **单独执行** `module-crew offload start <模块>`。照输出执行那一行 `/delegate:run`（第一次 `--resumable`，之后 `--continue <runId>`，都带 `--strict --timeout 1800 --authorized-by <授权文件>`）：
+  一律用 **Bash 后台**运行（`run_in_background`），标准输出、标准错误分别存到它给的两个文件，等完成通知、不轮询；不要改任务说明、不加 `--model`／`--effort`／`--check`。授权文件是用户打开开关时的原话，凭它每个 Task 不再单独问用户。
+- **收结果**：跑完**单独执行** `module-crew offload settle <模块> --output <stdout 文件> --stderr <stderr 文件> --exit <退出码>`，按退出码做：
+  - `0`：核对通过、已在本分支提交；照输出下一步：下一项是 Task 就再 `offload start`，是检查点、最终验收就自己按 Plan 处理，勾上后再 `offload start`。
+  - `4`：没通过但不用问用户。输出给了重来的 `/delegate:run` 就照样后台跑、再 `settle`；输出写「改由 Claude 写」（同一 Task 连续 2 次没通过）就把这句照原样告诉用户（本会话回复与任务列表里写，最终验收「做了什么」里也写），看懂工作区里留下的改动后自己写完这一项、提交、勾上，再 `offload start` 派下一个 Task。
+  - `5`：要用户决定。输出末尾是一份【等待用户】，自检后发给模块协调：Codex 的问题（needs-input）**原样转、不替用户回答**；超时、认不出、被停下、回收不了（125）都照草稿的选项问。
+    用户的答复到了：选续跑或回答问题就 `offload resume <模块> --original-file <答复>`，选重派就 `offload start <模块> --again --original-file <答复>`，选「这一项改由 Claude 写」就 `offload takeover <模块> --original-file <答复>`，再照输出做。
+- **始终**：Codex 的改动不回滚、不删除；认不出的结束状态不当成完成；`settle` 之外不替 Codex 提交。任务列表按 todo 推进，Codex 做完的 Task 由 `settle` 提交时一起勾上。
 
 ## 挂起与异常
 
