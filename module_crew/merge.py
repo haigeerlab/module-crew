@@ -77,6 +77,37 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
     return Approved(approval, Reply(rec["from"], rec["relayId"], body, db.path / meta["path"]), replaced)
 
 
+def accept(db: store.Store, review_no: int, original: str) -> Reply:
+    """Record that the user accepted a final acceptance without authorizing the merge (crew-final-accept-split)."""
+    return accept_many(db, [review_no], original)[0]
+
+
+def accept_many(db: store.Store, numbers: list[int], original: str) -> list[Reply]:
+    """accept() for several final acceptances at once; any refusal writes nothing."""
+    with db.transaction(actor="coordinator") as tx:
+        return [_accept_one(tx, db, n, original) for n in numbers]
+
+
+def _accept_one(tx, db: store.Store, review_no: int, original: str) -> Reply:
+    rec = tx.get("item", str(review_no))
+    if rec is None or rec.get("kind") != "review":
+        raise AnswerRefused(f"没有交审事项 C{review_no}")
+    if rec.get("node") != "final":
+        raise AnswerRefused(f"交审事项 C{review_no} 不是最终验收（Spec／Plan 用 review approve）")
+    if rec.get("state") == "accepted":
+        raise AnswerRefused(f"交审事项 C{review_no} 已接受验收：用户补授权合并时用 merge approve")
+    if rec.get("state") != "open":
+        raise AnswerRefused(f"交审事项 C{review_no} 已关闭（{rec.get('closedReason')}）")
+    answered_at = store.now()
+    body = tx.allocate_number()
+    meta = tx.write_body(body, _reply_text(review_no, rec, original, answered_at))
+    tx.put("item", str(review_no), dict(rec, state="accepted",
+                                        acceptance={"original": original, "answeredAt": answered_at,
+                                                    **store.source_field(), "body": body}),
+           action="accepted", data={"body": body})
+    return Reply(rec["from"], rec["relayId"], body, db.path / meta["path"])
+
+
 def awaiting_final(tx) -> set[str]:
     """Modules with an open final-acceptance submission: syncing now would void the approval they wait for (MC-10)."""
     return {v.get("module") for v in tx.records("item").values()

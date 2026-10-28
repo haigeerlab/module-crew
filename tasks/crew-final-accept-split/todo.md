@@ -2,7 +2,7 @@
 
 > 依据 `tasks/crew-final-accept-split/plan.md`。
 
-- [ ] Task 1：`merge accept` 命令与 `accepted` 状态——成功、拒绝、多编号整批不写、待决问题核对、【用户答复】与【已恢复】（Spec AC1、AC3）
+- [x] Task 1：`merge accept` 命令与 `accepted` 状态——成功、拒绝、多编号整批不写、待决问题核对、【用户答复】与【已恢复】（Spec AC1、AC3）——测试先红后绿（5 个）；待决问题核对复用 split_decisions，与 merge approve 同一段 CLI
 - [ ] Task 2：`merge approve` 收 `accepted`——`acceptedBy`、两段原话、不再问待决问题、`merge run` 照常合入（Spec AC2）
 - [ ] Checkpoint 1（report）：两步批准能走通，相关测试与已有 merge、review 测试通过
 - [ ] Task 3：各处读取——批量与 for-hub 不列、不收同步、重交审取代、`review answer` 收 `accepted`（Spec AC4、AC5）

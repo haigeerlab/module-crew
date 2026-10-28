@@ -878,7 +878,7 @@ def _merge(args) -> int:
     original = _original(args.original, args.original_file)
     if original is None:
         return 2
-    if args.action == "approve":
+    if args.action in ("approve", "accept"):         # crew-final-accept-split: accept = no merge authorization
         split = review.split_decisions(".", args.numbers, original)
         if split.missing:
             print("\n".join(review.chase_lines(split)))
@@ -890,10 +890,24 @@ def _merge(args) -> int:
                 _sent(reply.to)
             for n in split.hold:
                 print(f"C{n} 等审查结论：保持未答，没有批准")
-            done = merge.approve_many(store.open_store(), split.approve, original) if split.approve else []
+            if args.action == "accept":
+                accepted = merge.accept_many(store.open_store(), split.approve, original) if split.approve else []
+                done = []
+            else:
+                done = merge.approve_many(store.open_store(), split.approve, original) if split.approve else []
         except (merge.AnswerRefused, review.AnswerRefused) as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
+        if args.action == "accept":
+            for n, reply in zip(split.approve, accepted):
+                print(f"C{n} 已接受验收，暂不合并（集成分支不变）；用户补授权合并后 merge approve C{n}")
+                print(f"收件人：{reply.to}")
+                _sent(reply.to)
+                print(f"replyTo：{reply.reply_to}")
+                print(f"正文文件：{reply.path}")
+            done_to, done_numbers = [r.to for r in accepted], list(split.approve)
+        else:
+            done_to, done_numbers = [r.reply.to for r in done], list(split.approve)
         for res in done:
             print(f"合并批准事项 C{res.approval}，已排入本地合并队列")
             for n in res.superseded:
@@ -902,7 +916,7 @@ def _merge(args) -> int:
             _sent(res.reply.to)
             print(f"replyTo：{res.reply.reply_to}")
             print(f"正文文件：{res.reply.path}")
-        for closing in (merge.closing_all(store.open_store(), [r.reply.to for r in done], list(split.approve)) if done else []):
+        for closing in (merge.closing_all(store.open_store(), done_to, done_numbers) if done_to else []):
             if closing.get("wait"):
                 print(f"你开的等待记录 W{closing['wait']} 等的事已发生：发送 【已恢复】 → {closing['to']}，正文文件：{closing['path']}")
             else:
@@ -1234,12 +1248,13 @@ def _main(argv: list[str] | None = None) -> int:
     kg = rn2.add_mutually_exclusive_group(required=True)
     kg.add_argument("--env", action="store_const", const="env", dest="kind", help="检查环境出了问题，模块不用改代码")
     kg.add_argument("--module", action="store_const", const="module", dest="kind", help="模块需要修改")
-    for name, positional in (("approve", ("numbers", refs.parse)), ("revoke", ("number", refs.parse)),
+    for name, positional in (("approve", ("numbers", refs.parse)), ("accept", ("numbers", refs.parse)),
+                             ("revoke", ("number", refs.parse)),
                              ("cleanup", ("module", str)), ("tick", ("module", str)), ("record", ("number", refs.parse)),
                              ("push", None)):
         c = mgs.add_parser(name)
         if positional:
-            c.add_argument(positional[0], type=positional[1], **({"nargs": "+"} if name == "approve" else {}))
+            c.add_argument(positional[0], type=positional[1], **({"nargs": "+"} if name in ("approve", "accept") else {}))
         g = c.add_mutually_exclusive_group(required=True)
         g.add_argument("--original")
         g.add_argument("--original-file")
