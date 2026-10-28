@@ -294,6 +294,38 @@ class NarrowTest(TaskWorkCase):
                 tasks.scope(self.db, n, [f"{state}/t.md"], "说明写好", "收窄")
 
 
+class ScopeCliOutputTest(TaskWorkCase):
+    """T337: the task scope command line tells narrowing (state unchanged) from shrinking (back to working)."""
+
+    def run_scope(self, n, files):
+        import argparse
+        import contextlib
+        import io
+        from unittest import mock
+        from module_crew import __main__ as cli
+        args = argparse.Namespace(action="scope", number=n, expect=",".join(files), done="说明写好",
+                                  original="用户的决定", original_file=None)
+        out = io.StringIO()
+        with mock.patch.object(store, "open_store", return_value=self.db), contextlib.redirect_stdout(out):
+            self.assertEqual(cli._task(args), 0)
+        return out.getvalue()
+
+    def test_narrowing_says_state_unchanged(self):
+        n = new_task(self.db, self.repo, expect=("docs/", "src/a.py"))
+        tasks.advance(self.db, n, "dispatched", assignee=f"shop-t{n}")
+        tasks.advance(self.db, n, "working")
+        text = self.run_scope(n, ["docs/t.md", "src/a.py"])
+        self.assertIn("预计文件已收窄，状态不变", text)
+        self.assertNotIn("已缩小", text)
+        self.assertNotIn("回到在做", text)
+
+    def test_shrinking_after_escalation_says_back_to_working(self):
+        n = EscalationTest.escalate(self)[0]
+        text = self.run_scope(n, ["docs/t.md"])
+        self.assertIn("已缩小，回到在做", text)
+        self.assertNotIn("收窄", text)
+
+
 class TaskMergeTest(MergeCase):
     """Acceptance 5, 8."""
 

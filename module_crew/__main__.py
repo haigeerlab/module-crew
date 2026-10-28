@@ -253,7 +253,10 @@ def _task(args) -> int:
             return 0
         if args.action == "scope":
             r = tasks.scope(db, args.number, args.expect.split(","), args.done, original)
-            print(f"T{r.number} 的任务单已缩小，回到在做；把正文发给做事的会话：{r.path}")
+            if r.narrowed:
+                print(f"T{r.number} 的预计文件已收窄，状态不变；把正文发给做事的会话：{r.path}")
+            else:
+                print(f"T{r.number} 的任务单已缩小，回到在做；把正文发给做事的会话：{r.path}")
             return 0
         if args.action == "dispatch":
             from module_crew import handover
