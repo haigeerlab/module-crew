@@ -120,3 +120,147 @@ Claude 额度紧张时，先打开检查记账，再由模块协调凭用户原�
 ### 并行与串行
 
 同时开发的模块数默认最多 2 个。想收手、不再并行：`module-crew serial --original-file <原话文件>`——不再开新模块，已开的模块照常交审、合并、收尾；再用 `/spec-guard:config` 关掉 `moduleConcurrency`。恢复用 `serial --off`。
+
+## 轻任务
+
+不值得开模块的活（单个需求或 bug）走轻流程，不写 Spec、不调 spec-guard，但和模块一样只从合并队列进集成分支：
+
+1. **记任务**（模块协调）：用户明说要做后 `module-crew task add --type feature|bug --title … --what … --expect <预计文件> --done <完成标准> --original-file <原话文件>`。
+   预计文件和在做的任务或模块分支已改的文件重叠就排队，`task next` 按 bug 在前提为可开。两个点名的文件相同才算重叠；目录（如 `tests/`）只和同一目录或嵌套目录算重叠，不和点名的文件算。
+   在做的任务凭用户原话可以用 `task scope` 收窄预计文件，再 `task next` 放行排队的任务。
+2. **派出**：`module-crew task dispatch T<号>` 建 `task/t<号>` 分支与 worktree、登记轻任务会话（不占多模块名额）、生成开工说明；模块协调用桌面版开会话，第一条消息用开工说明全文。
+3. **做与交回**（轻任务会话，`crew-dev` skill 的「轻任务」一节）：bug 先补复现测试、确认它失败再修；检查通过后发最终验收【交审】（`模块：无`，带「任务：T<号>」）。
+   `review add` 会比对实际改动和任务单，多改的文件和越界重叠写进交审。交回后分支又多了提交（如同步）时重新发最终验收【交审】，旧交审与合并批准作废，用户重新批准。
+4. **批准与合并**：用户点一次批准，`merge approve` → `merge run`。队列顺序：bug 任务、模块（Build order）、需求任务。合入后在用的模块和在做的任务收到同步通知；`merge cleanup T<号>` 收回 worktree（分支保留）。
+5. **做大了**：轻任务会话停下发升格请求（【等待用户】「卡住选做法」），用户选 A 升格（`/spec-guard:add-module`）、B 缩小（`task scope`）或 C 取消（`task cancel`）。
+
+决策收件箱登记的契约版本低于 2.5 时，轻任务的提请批准不经过它，模块协调在会话里直接问用户。
+
+## 修订已完成的模块
+
+已合入的模块要返工时，不新开模块，原地重开：
+
+1. **在 spec-guard 里重开**（用户或模块协调按 spec-guard「返工与小模块」的做法）：在原 `tasks/<模块 id>/todo.md` 追加未勾任务、`plan.md` 补一节；超出原范围的把 Plan 改回待审。`/map` 会把它显示为进行中。
+2. **确认旧一轮已收回**：`merge cleanup <模块 id>` 做过；没做 `start prepare` 会拒绝。
+3. **用户点名后开会话**：`module-crew start prepare <模块 id> --original-file <原话文件>`。旧模块分支已合入就快进到集成分支再开 worktree，有没合进来的提交就拒绝、交用户决定；
+   新邮箱名带轮次后缀（`<简称>-<模块 id>-r2`），开工说明写明「只做 todo 新加的未勾项」。Spec、Plan 都还是批准状态时点名即开工；Plan 要重新交审时先交审；todo 新加的第一项是修订 Spec 时先改 Spec、交 Spec 节点。
+4. **退役旧邮箱名**：由用户在 agent-relay 里退役第一轮的名字（新名字不用 `reactivate`）。之后的交审、合并、收回和新模块一样，旧一轮的批准与合并记录不算进新一轮。
+
+## Codex 模块会话
+
+模块协调在 Claude 桌面版时，模块会话也可以开在 Codex 桌面版里；模块协调本身也可以在一批收尾后整体换到 Codex，见下一节「换宿主」。
+
+1. 在 Codex 里装同一版本的 module-crew（`.codex-plugin/plugin.json`，提供 Codex 版 `crew-dev` 与 `crew-coordinator` 两个 skill）；Codex 插件更新后要完全退出 ChatGPT 应用再打开。
+2. 模块协调用 `module-crew start prepare <模块>… --host codex --original-file <原话文件>` 开工；要混用就按宿主分两次。
+3. 用户在 Codex 里新建任务，工作目录选那个模块的 worktree，第一条消息贴开工说明全文。
+4. Codex 会话先跑 `module-crew host-check`：检查登记、版本、能否写 git 目录、能否读状态库。开工说明给的命令是状态库里的固定入口 `<git 公共目录>/module-crew/bin/module-crew`，它每次转给当前安装的 module-crew，升级后不用换。
+5. Codex 默认沙箱不让写 `.git`：第一次提交会弹提权，用户在那个 Codex 会话里批准（有「本会话一直允许」就选）。
+6. ChatGPT 应用重启后 Codex 会话不会自动加载，要用户逐个点开；Codex 会话掉了联调身份时用原名重新注册即可。
+
+## 换宿主
+
+一批模块收尾后的空档里，模块协调连同下一批模块会话可以整体在 Claude Code 与 Codex 之间来回换。换不换、换到哪边由用户决定；module-crew 不看额度、不自动换，也不做模块做到一半换宿主。
+
+1. **什么时候能换**：没有在用的模块会话与轻任务会话、没有排队或进行中的合并、module-crew 侧没有未结的事项、公共变更请求和等待记录。
+   最后一个会话收回时 `merge cleanup` 会输出「本批已收尾，具备换宿主的条件」，`status` 也显示这一行。`module-crew coordinator handover --check [--to codex|claude]` 逐条列出哪项不满足；决策收件箱那边的待决请用 decision-inbox 再看一眼。
+2. **换**：用户明说后，原宿主上的模块协调运行 `module-crew coordinator handover --to codex|claude --original-file <原话文件>`。它改模块协调登记的宿主、按新宿主给集成 checkout 追加权限规则（项目 apply 过才写，原有规则保留），并把逐步交接说明打印出来、存到状态库目录 `handover-guide/`。
+3. **照交接说明做**：每一步写明去哪个会话、做什么、做完的样子。要点：
+   - Claude → Codex：先归档 Claude 上原来的模块协调会话（agent-relay 不让接管还在运行的 Claude 会话）；在 Codex 里信任项目（贴开场文字之前）；在 Codex 新建任务、目录选集成 checkout、贴开场文字；它用 `takeover:true` 加 `wake:{app:"codex", sessionId:<CODEX_THREAD_ID>}` 接管邮箱名，再 `bind --takeover`（会弹提权）；之后每轮开头不带 takeover 重新注册。
+   - 新宿主的规则文件（如 `.codex/rules/module-crew.rules`）没被 git 忽略时，规则没写上，交接说明多一步：模块协调在 `.gitignore`（公共文件）加上这个文件并提交，再凭用户原话重跑 `permissions apply`。
+   - Codex → Claude：先确认原 Codex 任务已停（agent-relay 判断不了，它被接走后也收不到通知）；在 Claude 桌面版新开会话、贴开场文字；它用 `takeover:true, wake:"auto"` 接管，再 `bind --takeover`。新开会话不要用 worktree，要开在集成 checkout。
+   - `bind --takeover` 只认登记宿主上的会话：没先跑 handover 就在另一边接管会被拒。
+4. **之后**：`start prepare`、`task dispatch` 不写 `--host` 时用模块协调所在的宿主。模块协调在 Codex 时只开 Codex 会话（Codex 叫不醒停掉的 Claude 会话），`--host claude` 被拒。
+5. **代价**：Codex 上写状态库、提交、合并都在 `.git` 里，要用户点提权；Codex 模块会话要用户手动开；ChatGPT 应用重启后要逐个点开。批准照旧由用户在该端模块协调那里亲口给。
+6. **前提**：插件里要有 Codex 版模块协调规矩（`codex-skills/crew-coordinator/SKILL.md`，随插件发）；没有时 `handover --to codex` 拒绝执行，换回 Claude 不受影响。
+
+### 模块协调在 Codex 上
+
+Codex 版 `crew-coordinator` skill 管下面这些与 Claude 不同的地方，交接说明的开场文字会让新线程加载它：
+
+- **每轮开头三步**：Codex 每轮重启 MCP、会丢联调身份，也没有钩子注入角色。每一轮先用原名 `bridge_register`（`wake:{app:"codex", sessionId:<CODEX_THREAD_ID>}`，不带 takeover）→ 运行 `module-crew status`（首行写明本线程是不是登记的模块协调）→ 读收件箱。
+- **提权**：几乎所有模块协调的写命令都写状态库或 `.git`，Codex 默认沙箱不让写。skill 列出要「申请在沙箱外运行」的命令，用户在模块协调那个线程里点批准；被沙箱拒绝时报错会带「申请在沙箱外运行」（退出码 1），不换写法绕过。
+- **预检**：接手后在集成 checkout 跑 `module-crew host-check`，按模块协调查：登记、版本、能否写 git 公共目录、能否读状态库、找得到 spec-guard、固定入口在不在。
+- **合并长检查**：Codex 没有「后台跑、跑完叫醒」。`module-crew merge run --detach / merge result` 这一对命令代替：`merge run --detach` 拿到合并锁后把合并交给后台进程、立即返回，输出写到状态库目录 `merge-output/C<号>.log`；
+  `module-crew merge result [C<号>] [--wait <分钟>]`（单次最多等 8 分钟；第一次取到结果时记进状态库）分段取结果，跑完时打印与前台 `merge run` 相同的内容、以同样的退出码结束，还在跑时退出码 6。`status` 会提示「已结束，运行 merge result 取通知」。
+- **开会话**：模块会话、轻任务会话都开在 Codex，由用户手动开；`start prepare`、`task dispatch` 输出末尾有「请用户去 Codex 新建任务」一段，逐个写出工作目录与开工说明文件。
+- **找插件**：module-crew、spec-guard、agent-relay 都按 Claude 的插件安装记录找（Codex 沙箱里读得到）；Codex 侧自己的插件安装 module-crew 不读，所以本机要在 Claude Code 里装着这些插件。
+- **代价**：提权次数多；ChatGPT 应用重启后要逐个点开模块协调和模块会话；决策收件箱在 Claude，它被桌面版停掉时 Codex 叫不醒，要用户点开。
+
+## 审查就近与决策收件箱
+
+**审查就近**（登记了审查者时）：审查改在模块协调这一层就近来回，用户只看要拍板的事。
+
+1. 模块会话按项目的评审节奏交审；最终验收的「要点」里要有「验收结果」一节（按 Spec 的验收标准逐条写结果与证据）。
+2. `review add` 收下交审，输出把【交审】原样转给审查者的送审发送项。
+3. 审查者回【审查结论】，`review note [<C号>] … [--then-batch [--for-hub]]` 记下（一条消息几段也行）：
+   「有须修改项 N 条」时输出返工通知，模块改完重交、再送审，不问用户；返工满 3 次、模块写了「不同意」、或送审 15 分钟没结论，都变成要用户决定的待定问题。
+4. 只有审查通过（或带待定问题）的交审才提请批准：`review batch --for-hub` **一个模块一条**【等待用户】，
+   带交审要点全文、「批了会怎样」、「产物」（路径 ＠ 提交，重交带上一版）、「交审原文」「审查原文」（状态库 `originals/` 下的原文文件）和待定问题（字段名：待用户决定）。
+5. 用户的答复要答到每个待定问题；没答全批准命令退出码 3、什么都不做。退回、等审查这类答案分别让交审退回或保持未答。
+6. 最终验收批准后、合并前可以 `merge revoke <C号>` 撤回；`status` 与 `sessions --json` 显示返工轮次（`review` 字段）。
+
+**接入决策收件箱**：
+
+1. 在模块协调里由用户亲口登记可信批准来源：`module-crew source add <决策收件箱邮箱名> --kind hub --original-file <原话>`；审查者登记为 `--kind lead`（要写 `--modules`、`--nodes`）。
+2. 提请批准的正文逐条用 `bodyFile` 原样发给决策收件箱；要用户决定的事只在那里问，会话里不放可以点的决定按钮。
+3. 决策收件箱转来【用户答复】后，批准命令带 `--source <决策收件箱> --source-item <H> --source-relay-id <消息号> --source-from <实际发件人> --original-file <那条消息>`，用户原话从消息里读出；实际发件人不是来源本身或是模块会话时拒收。
+4. `module-crew source map <H>` 查一个待决事项批准了哪些 C 编号。
+5. **待定问题的编号**：决策收件箱登记为契约 2.6 及以上、或没有决策收件箱时，待定问题编成 `C<交审号>-<序号>`（如 C15-1），答复块一块只答一件事（如「C16 A；C16-1 B」）；登记低于 2.6 时用 D 编号。登记 2.6：`source add <邮箱名> --kind hub --protocol 2.6 --original-file <原话>`。
+6. 外部插件读 `module-crew sessions --json`（字段见[架构](architecture.md#对外出口)），只给事实、不判断是否卡住；出口与契约版本登记在根目录 `interface.json`。
+
+**并行边界重叠**（`review batch` 末尾）三种结论：有冲突就列出模块与路径；比对过且没有冲突写「无（已按交审中的 Spec 比对）」或「无（已按集成分支上的 Spec 比对）」；比不了写「未比对：<原因>」（例如交审中的 Spec 还没落到集成分支、spec-guard 低于 1.10 没有 `scopeOverlap`）。只有比对过才写「无」。
+
+**不配决策收件箱、不配审查者时**：一切照常在模块协调里由用户亲手批准；没有审查者就不送审、不返工，提请批准里写「未审查」；待定问题由模块协调直接问用户。
+
+审查者用【负责人转交】转来的批准只记账、不写批准标记（spec-guard 只认用户亲手与决策收件箱转来的批准）；带来源批准时，给模块的【用户答复】按契约带「转自」，命令同时给出发回决策收件箱的【已恢复】「结束：#H」。
+
+## 权限预配
+
+不可逆操作不能只靠弹窗：宿主确认在别的会话代开的会话里也会弹，但点一次「允许」就执行了，点的人未必清楚上下文。所以 module-crew 把常规操作写成宿主认的放行规则，把不可逆操作写成禁止规则，再用 git 的 pre-push 钩子守住推送：
+
+- **放行**：module-crew 自己的命令（放行的是状态库里的固定入口，升级插件后不用重跑）、常规 git 与测试命令、按锁文件装依赖与往项目里加新包（`npm ci`、`npm install <包名>`、`pnpm add`、`yarn add`、`uv add`、`.venv/bin/pip install` 等）。
+- **禁止**：推送、删除、全局安装（`-g`／`--global` 在任意位置、`yarn global`、`uv --system`、`brew install`）、改全局配置。禁止规则直接拒绝，不依赖有人当场判断。
+- **不写规则**：裸 `pip install <包名>`（不在 venv 里会装进系统 Python）交宿主默认确认；Codex 侧加新包也不写规则，因为前缀规则挡不住 `npm install x -g`。spec-guard 的命令入口路径带版本号，暂不放进放行清单。
+
+步骤：
+
+0. 先有模块协调登记（`coordinator up`，或已经用 `start prepare` 开过工），`plan`／`apply` 才列得出集成 checkout 与各模块；没登记时 `plan` 会直接提示先 `coordinator up`。
+1. `module-crew permissions plan`：只读预览每个 checkout 要追加什么、文件有没有被 git 忽略、钩子能不能装、Codex 项目是否受信任，以及别处（主 checkout 的设置、用户设置等）有没有确认或禁止规则会盖过要写的放行——宿主先看禁止、再看确认、最后看放行，模块 worktree 的会话也读主 checkout 的本地设置。
+2. `module-crew permissions apply --original-file <用户原话>`：Claude 写 `.claude/settings.local.json`（只追加条目），Codex 模块写 `.codex/rules/module-crew.rules`；有一个文件不能写就全部不写。之后 `start prepare` 新开的模块自动跟随。
+3. 开好会话后 `module-crew permissions verify`：四条应直接运行、一条应被拒的实测清单；结果用 `verify --record` 记下，`status` 显示每个会话最近一次实测，没测过写「权限未实测」。
+4. 推送只经 `module-crew merge push`：钩子拒绝模块 worktree 的推送，以及集成 checkout 上没有一次性放行凭证的推送。你自己在终端推送可以加 `--no-verify`。
+   仓库设了 `core.hooksPath`（如 husky）或已有 pre-push 钩子时不装，`plan` 会写明；这时推送只靠宿主的禁止规则（实测在 husky 仓库里，代开的会话 `git push` 被禁止规则拦下、不弹窗）。
+5. Codex 的项目级规则只在项目被 Codex 信任后生效；module-crew 不改你的全局配置，只提示。
+6. `module-crew permissions remove --original-file <用户原话>`：只撤 module-crew 加的条目；按「不删文件」的约定，Codex 规则文件清空、钩子改成空操作，可以手动删除。
+
+## 出状况时怎么办
+
+| 情况 | 做法 |
+|---|---|
+| 不知道哪个会话停下了 | `module-crew sessions` 列出每个模块会话的最后动静、未关的等待记录与事项、当前档位、挂起原因；只列事实，结合 agent-relay 在线状态自己判断 |
+| 某个模块会话在「等待审批」 | 权限弹窗只能用户去那个会话亲手点；模块协调醒来时会提醒，并核对各模块会话的权限模式有没有变宽 |
+| 集成分支上有不经合并队列的提交 | `status` 会显示数量；`module-crew unqueued` 列出（短号、作者、时间、标题），`--notify` 给在开发的模块与在做的轻任务发同步通知，同一批只报一次；`merge run` 合并前也会自动做这一步。插件不拦、不撤回 |
+| 消息发出去对方没反应 | 桌面版会停掉空闲会话，agent-relay 叫不醒（`pendingReason: offline`）；用桌面版跨会话消息发一句「去读 agent-relay 收件箱」 |
+| 模块在等外部条件（设计稿、别人交付） | 用户同意后 `module-crew suspend <模块> --reason "<原因>" --original-file <原话文件>`，不再占名额；按输出把挂起正文发给模块会话，它在自己的 worktree 里用 spec-guard 挂起。条件满足、用户同意后 `module-crew resume <模块> --original-file <原话文件>` |
+| 会话崩溃或要换新会话 | `module-crew resume-kit <模块>` 生成恢复说明；用户同意后 `module-crew takeover <邮箱名> --original-file <原话文件>`，在原 worktree 开新会话，第一条消息用恢复说明，新会话用同一个邮箱名重新注册 |
+| 模块协调要重开或换会话 | 在原会话里 `/clear`，或退出应用再打开，身份会自动接上；不要新开会话。已经新开了：用户同意后在新会话运行 `module-crew bind <邮箱名> --takeover --original-file <原话文件>`（同一仓库任一目录），旧会话随即失效；模块协调的写命令只有登记的会话能跑（别的会话退出码 7），`status` 里标着「← 本会话」 |
+| 会话被压缩 | 钩子会提醒先跑 `module-crew status`、以状态库为准，不按压缩前的记忆重做 |
+| 合并被退回 | 集成分支已回到合并前、模块分支不动；模块修好后重新发最终验收【交审】（不用撤销任何提交）。退回原因判错了，模块协调用 `merge renotice` 按另一种原因重发 |
+| 合并收尾超时、状态库没记下合并 | `module-crew merge record C<号> --original-file <原话文件>` 补记 |
+| 写类 git 命令超时，worktree 删了一半 | 命令以退出码 4 结束并写明恢复步骤；`merge cleanup` 能收完只剩已跟踪文件被删的 worktree |
+| 同一个 gate 再次挡住、异常停点、要改能力图 | 按 spec-guard 的规则办，把选项与代价交用户决定 |
+
+一个模块挂起、退回或崩溃，不影响其他模块的交审、合并与通知。
+
+插件更新后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对，不要接着装。
+
+## 已知限制与尚未验证
+
+已经实地验证过的：真实 spec-guard 与 agent-relay、会话间真实收发、开工、批量批准、审查就近与决策收件箱转达、合并与退回、挂起与恢复、换模块协调与换模块会话、退回串行、收尾与推送到本机远端；权限预配的禁止规则（编辑 worktree 里的 `.claude/` 被拒）；钩子按会话认身份、给真实桌面会话注入角色与命令入口。还没验证的：
+
+- 用 `gh` 真正开 PR（试点远端是本机裸仓库，只打印 PR 正文）。
+- 权限预配的放行规则：在本机宿主上和不写规则时看不出差别，是否真的减少弹窗还没证实。
+- 桌面版整个退出重开后会话 id 是否不变：压缩、`/clear`、`claude --resume` 接上都实测不变，退出整个桌面版这一种没测。
+- Codex 的固定入口：在真实 Codex 沙箱里跑过 `status`（读得到 Claude 的安装记录）与 `host-check`（写 `.git` 要提权，提权后能提交）；登记过的 Codex 模块会话完整走一遍 bind、交审还没测。
+- 声明范围、检查记账、自治档位、额度外包四个开关：都只用测试和本机接口实测验证过，还没在真实项目上打开试跑。额度外包只用夹具测过两种情形（带 `--resumable` 的长期限运行被中止后的收尾、长期限下回收不了时的真实表现）；needs-input 续跑与整个模块的长链外包没实跑。自治档位的升档门槛与收尾汇总时机是先定的，等试点数据再调。
+- 模块协调在 Codex 上：只用测试验证过。`merge run --detach` 的后台进程能否活过 Codex 的一轮、提权是否随之继承，单次工具调用最长能等多久，一次提权批准能覆盖多少条命令，都还没在真实 Codex 线程里试过。
