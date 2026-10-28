@@ -60,6 +60,7 @@
 6. **收尾与推送**
    - 用户同意后 `module-crew merge cleanup <模块> --original-file <原话文件>` 收回 worktree（分支保留）。
    - `module-crew merge push-plan` 预告；用户明确授权后 `module-crew merge push --original-file <原话文件>`，推到远端新分支 `crew/batch-<号>` 并开一个 PR。
+     远端是刚建的空仓库时，`push-plan` 会提示首次发布要你自己在终端运行 `git push --no-verify -u <远端> <集成分支>`（module-crew 不替你推）；推完后的批次再走 `merge push`。
    - **远端合并始终由用户做**。
 
 每条要发的消息，命令都会生成正文文件；模块协调用 agent-relay `bridge_send` 的 `bodyFile` 原样发出，不改一字。

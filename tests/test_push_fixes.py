@@ -53,6 +53,44 @@ class PrBaseTest(LocalIntegrationCase):
         self.assertIn("PR 开向 trunk", r.stdout)
 
 
+class EmptyRemoteTest(MergeCase):
+    """T338: a freshly created empty remote has no branch to open a PR against; say how to publish the first time."""
+
+    def setUp(self):
+        super().setUp()
+        self.remote = self.tmp / "empty.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(self.remote)], check=True)
+        git(self.repo, "remote", "add", "origin", str(self.remote))
+        self.approve_final("b", 1)
+        assert merge.run(self.repo, check_command="python3 -c pass").code == 0
+        os.environ["MODULE_CREW_GH"] = ""
+        self.addCleanup(lambda: os.environ.pop("MODULE_CREW_GH", None))
+
+    def test_empty_remote_gives_first_publish_command(self):
+        plan = merge.push_plan(self.repo)
+        text = " ".join(plan.lines)
+        self.assertEqual(plan.code, 3, plan.lines)
+        self.assertIn("空仓库", text)
+        self.assertIn("git push --no-verify -u origin main", text)
+        self.assertNotIn("--pr-base", text)
+
+    def test_empty_remote_cli_and_push_do_not_push(self):
+        r = self.run_cli("merge", "push-plan")
+        self.assertEqual(r.returncode, 3, r.stderr)
+        self.assertIn("git push --no-verify -u origin main", r.stdout + r.stderr)
+        res = merge.push(self.repo, "推送")
+        self.assertEqual(res.code, 3, res.lines)
+        heads = subprocess.run(["git", "-C", str(self.remote), "branch", "--list"], capture_output=True, text=True)
+        self.assertEqual(heads.stdout.strip(), "")
+
+    def test_non_empty_remote_without_default_keeps_old_hint(self):
+        git(self.repo, "push", "-q", "origin", "main:trunk")
+        plan = merge.push_plan(self.repo)
+        self.assertEqual(plan.code, 3, plan.lines)
+        self.assertIn("--pr-base", " ".join(plan.lines))
+        self.assertNotIn("空仓库", " ".join(plan.lines))
+
+
 class PushTimeoutTest(LocalIntegrationCase):
     """Acceptance 25."""
 
