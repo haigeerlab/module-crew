@@ -1,8 +1,10 @@
 # 第 7 关试点报告
 
-> 2026-10-18。试点项目 `/Users/vilin/Documents/haigeerlab/crew-pilot`（本机裸仓库远端 `crew-pilot-remote.git`），
+> **开发过程记录**，不随版本更新；现行用法见[使用手册](guide.md)。
+
+> 2026-10-18。试点项目 `~/Documents/haigeerlab/crew-pilot`（本机裸仓库远端 `crew-pilot-remote.git`），
 > module-crew 以本地插件 `module-crew@module-crew-local`（a93dd6e）安装，spec-guard 0.68.0，agent-relay 0.8.2。
-> 原始时间线：`/Users/vilin/Documents/haigeerlab/crew-pilot-notes.md`（协调会话记录）。
+> 原始时间线：`~/Documents/haigeerlab/crew-pilot-notes.md`（协调会话记录）。
 > 两轮：第一轮跑到合入本地 main 后停下修缺陷 A–G；修好后用新版收尾（补勾、推送、收回、退役），又发现 I–K 并修复。
 
 ## 跑了什么

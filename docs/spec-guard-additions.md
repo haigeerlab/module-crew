@@ -1,5 +1,7 @@
 # spec-guard 新增模块清单（交 spec-guard 插件负责人）
 
+> **开发过程记录**，不随版本更新；清单里的规划层能力已随 spec-guard 0.68.0 发布。
+
 > 第 2 关草案，待用户审。批准后在第 3 关交给 spec-guard 插件负责人，由他在 spec-guard 仓库用 `/spec-guard:add-module`
 > （或 Proposal）插进能力图，按 spec-guard 自己的流程逐个推进。需求依据见 `requirements-record.md` 第 5、9 节。
 
