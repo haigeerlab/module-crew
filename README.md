@@ -3,17 +3,17 @@
 让多个 Claude 或 Codex 桌面版会话在同一个项目里**并行开发多个模块**：一个模块协调统筹，每个模块会话在自己的 git worktree 里开发；
 所有批准都由用户在模块协调里亲手给出；会话中断、压缩或换新会话后，从状态库恢复，不靠对话记忆。
 
-> 版本 0.17.0。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
+> 版本 0.18.0。已在试点项目和 LIVE-SAAS 演练（阶段丙、短验证）上实地跑过（见 `docs/pilot-report.md`），还没验证的见文末「尚未验证」。
 
-## 0.17.0 的变化（公共变更一次落地、轻任务并行更顺）
+## 0.18.0 的变化（额度外包第 2 轮：模块会话自己交给 Codex）
 
-不加项目开关，单个编号的 `change land` 与原有轻任务流程照旧；接口与契约不变（`interface.json` 1.0、session-protocol v2.6），状态库不用迁移（只增 `config/main` 的 `protectedFiles` 与几种事件）。
+只改额度外包（`codexOffload`，默认关）；开关关着时一切和 0.17.0 一样。接口与契约不变（`interface.json` 1.0、session-protocol v2.6）；第 1 轮外包记录不迁移（第 1 轮从未在真实项目打开过）。
 
-- **几条已批的公共变更请求一次落地**（S43）：`change land C96 C99` 先逐条核对（都开着、清单文件都改了、没有清单外改动），再暂存并跑检查——`checkLedger` 开着跑快检查并记账，没开跑完整检查 `checkCommand`，两者都没有时要用户原话加 `--skip-check`——任一条不满足或检查不过整批不提交；通过就合成一个提交，各请求记同一提交号与 `batch`，每个请求方一条带回复行的同步通知（同一请求方的多条用 `alsoAnswers` 一并关掉）。批量不和 `--partial`、`--from-module` 一起用。`--skip-quick-check` 改名 `--skip-check`，旧名仍认。
-- **锁文件连带保护文件的提示**：凭用户原话用 `config set --protected-file <路径>`（可重复，整份替换）登记保护文件、`--clear-protected-files` 清空；`change add` 认出请求里有锁文件改动时，列出名单里不在本请求清单内的保护文件，没登记只给一行通用提示，不猜。
-- **轻任务重叠判断更细**：两个点名的文件相同才算重叠，两个目录相同或嵌套才算，目录不再和点名的文件判重叠（`tests/` 与 `tests/a.py` 不算）；交回时的「任务单以外多改了」口径不变，撞上别的任务点名的同一文件照旧标越界重叠。`spec/crew-task-ledger.md` 决策 4 随之修订。
-- **在做的轻任务可以收窄预计文件**：「已派出」「在做」的任务凭用户原话 `task scope <号> --expect … --done … --original-file …` 收窄，新列表必须落在原范围里，状态不变；之后 `task next` 放行不再重叠的排队任务。
-- **轻任务交回后可以重新交审**（S33）：交回后分支又多了提交时，新的最终验收【交审】照常 `review add`，旧的交审与合并批准记为被取代，再走一次批准；分支顶端没变或正在合并时拒收。
+- **改由模块会话自己外包**（S38）：开关打开后，开工那一刻把模块记为交给 Codex，并把用户打开开关的原话存成授权文件；模块会话自己 `offload start` 派出、执行 `/delegate:run`、`offload settle` 核对后自己提交。模块协调不再调 Codex、不代提交。
+- **同一个 Codex 会话跨 Task 续接**：第一个 Task `--resumable` 起头，之后 `--continue` 接同一条链；每次 `--write` 带 `--authorized-by`，`settle` 核对授权文件 sha256。
+- **要 delegate 接口 1.3**（delegate 0.8.0 起）：读 run.resume、run.continue、run.longRun、run.result、run.writeAuthorization 能力标记，缺哪项报哪项。
+- **结束状态归类表**：done 核对后提交；needs-input、timeout、被中止（143/130/129）、回收不了（125）、delegate 拒绝（64）停下问用户；unmarked／failed／empty 与核对不过第 1 次自动重来；同一 Task 连续 2 次没通过退回 Claude（125 例外仍问用户）；表外、结果行与结果文件不一致、读不出一律「认不出」。Codex 问题正文去掉 `delegate: result=` 行。
+- **命令不兼容改动**：去掉 `offload handback`；新增 `offload takeover`（用户选这一项改由 Claude 写）；`settle` 新增必填 `--stderr`；`start`／`settle`／`resume`／`takeover` 只能在该模块会话的 worktree 跑。
 - 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
 
 更早的版本见 [CHANGELOG.md](CHANGELOG.md)。

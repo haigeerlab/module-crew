@@ -2,6 +2,17 @@
 
 各版本的变化，最新的在前。README 只写最新一版。
 
+## 0.17.0 的变化（公共变更一次落地、轻任务并行更顺）
+
+不加项目开关，单个编号的 `change land` 与原有轻任务流程照旧；接口与契约不变（`interface.json` 1.0、session-protocol v2.6），状态库不用迁移（只增 `config/main` 的 `protectedFiles` 与几种事件）。
+
+- **几条已批的公共变更请求一次落地**（S43）：`change land C96 C99` 先逐条核对（都开着、清单文件都改了、没有清单外改动），再暂存并跑检查——`checkLedger` 开着跑快检查并记账，没开跑完整检查 `checkCommand`，两者都没有时要用户原话加 `--skip-check`——任一条不满足或检查不过整批不提交；通过就合成一个提交，各请求记同一提交号与 `batch`，每个请求方一条带回复行的同步通知（同一请求方的多条用 `alsoAnswers` 一并关掉）。批量不和 `--partial`、`--from-module` 一起用。`--skip-quick-check` 改名 `--skip-check`，旧名仍认。
+- **锁文件连带保护文件的提示**：凭用户原话用 `config set --protected-file <路径>`（可重复，整份替换）登记保护文件、`--clear-protected-files` 清空；`change add` 认出请求里有锁文件改动时，列出名单里不在本请求清单内的保护文件，没登记只给一行通用提示，不猜。
+- **轻任务重叠判断更细**：两个点名的文件相同才算重叠，两个目录相同或嵌套才算，目录不再和点名的文件判重叠（`tests/` 与 `tests/a.py` 不算）；交回时的「任务单以外多改了」口径不变，撞上别的任务点名的同一文件照旧标越界重叠。`spec/crew-task-ledger.md` 决策 4 随之修订。
+- **在做的轻任务可以收窄预计文件**：「已派出」「在做」的任务凭用户原话 `task scope <号> --expect … --done … --original-file …` 收窄，新列表必须落在原范围里，状态不变；之后 `task next` 放行不再重叠的排队任务。
+- **轻任务交回后可以重新交审**（S33）：交回后分支又多了提交时，新的最终验收【交审】照常 `review add`，旧的交审与合并批准记为被取代，再走一次批准；分支顶端没变或正在合并时拒收。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
+
 ## 0.16.1 的变化（热修：LIVE-SAAS 现场问题）
 
 只修缺陷，不加开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.6），状态库不用迁移。
