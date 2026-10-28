@@ -13,7 +13,7 @@
 - [x] Task 8：`LICENSE`（MIT）、`CONTRIBUTING.md`、`SECURITY.md`
 - [x] Task 9：过程记录（删两份、四份加说明行、`pilot-report.md` 路径改写）
 - [x] Checkpoint 2（report）：全部文档就位（`tests.test_docs` 6 项通过）
-- [ ] Task 10：sync 后全量测试、补完核实记录、越界检查
+- [x] Task 10：sync 后全量测试、补完核实记录、越界检查
 - [ ] Checkpoint 3（gate）：最终验收
 - [ ] 回告：无外部来源；列出用户要做的一步（GitHub 打开私下漏洞报告）
 
@@ -90,3 +90,11 @@
 - 四份加说明行（标题下一行引用块）：`requirements-record.md`、`pilot-report.md`、`capability-map-draft.md`、`spec-guard-additions.md`；`pilot-report.md` 另把两处 `/Users/vilin/Documents/haigeerlab/` 改成 `~/Documents/haigeerlab/`。`git diff --stat`：4 个文件 10 行新增、2 行删除。
 - 链接核对：`git grep` 取 `spec/`、`tasks/`、`tests/`、`module_crew/`、两套 skill 里所有 `docs/…md` 路径逐个看在不在。不在的三类，都不是本模块弄断的：decision-inbox 仓库自己的 `docs/host-differences.md`（3 份 Spec 引用别的仓库）；测试与契约夹具里的假路径（`docs/x.md`、`docs/acceptance/crew-store.md` 等）；本模块自己的 Spec 与 Plan 里点名要删的两份。
 - `git grep '/Users/'` 在 `docs/`、两份 README、CONTRIBUTING、SECURITY 里没有结果。
+
+### 全量测试与越界检查（Task 10）
+
+- `module-crew sync`：已包含集成分支 main c66645e。
+- 第一次全量（1a135c2）：1123 个，6 项没过——Plan 只预计到 `test_readme` 读 README，实际还有 `test_handover_docs`（2 项）、`test_declared_scope`、`test_reopen_module` 读的 README 章节已搬进使用手册，`test_readme_hosts` 要求 README 宿主一行写 `coordinator handover`，`test_glossary` 查出 README 一处旧称「审核」。
+- 修法（f6eb7e5）：三个测试改读 `docs/guide.md`，断言词不变，只有 `test_reopen_module` 的标题断言去掉「（第九版）」（对外文档不带版本标记，Spec 假设 3）；`test_glossary` 的扫描范围从 README 扩到 guide、commands、architecture（原 README 的内容在那里），顺带改掉三处旧称；README 两版宿主一行补换宿主。
+- 第二次全量（f6eb7e5）：`python3 -m unittest discover -s tests` 1123 个全部通过，1520 秒。
+- 越界检查：相对集成分支 c66645e 改 22 个文件。比 Plan「影响面」多 4 个测试文件（`test_declared_scope.py`、`test_glossary.py`、`test_handover_docs.py`、`test_reopen_module.py`，各改 1～2 行，原因见上）；其余与 Plan 一致。没碰 `spec/`、其他模块的 `tasks/`、代码、skill、钩子、插件清单、`interface.json`、版本号。
