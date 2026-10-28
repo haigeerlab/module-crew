@@ -1,5 +1,7 @@
 # 多模块并行开发 · 需求记录（定稿草案）
 
+> **开发过程记录**，不随版本更新；现行用法见[使用手册](guide.md)。
+
 > 状态：第 2 关已获用户批准（2026-10-18，含 11 条假设）；第 3 关已下发 ①spec-guard 负责人、②decision-inbox 负责人；契约 v1.0 已迁移（session-protocol 7585be8）；③已开 module-crew 开发会话（local_dbe419ad） · 第 1 关结论于 2026-10-17～18 逐项确认
 > 读者：开发 spec-guard 规划层的会话、开发 module-crew 的会话、session-protocol 的维护者。不看讨论记录也应能读懂。
 > 讨论过程的完整记录另存（会话临时目录 `parallel-modules-requirements.md`），本文只留结论。

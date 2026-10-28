@@ -11,8 +11,8 @@
 - [x] Task 6：`README.md` 重写＋`CHANGELOG.md` 收下 0.18.0 一节
 - [x] Task 7：`README.en.md`
 - [x] Task 8：`LICENSE`（MIT）、`CONTRIBUTING.md`、`SECURITY.md`
-- [ ] Task 9：过程记录（删两份、四份加说明行、`pilot-report.md` 路径改写）
-- [ ] Checkpoint 2（report）：全部文档就位
+- [x] Task 9：过程记录（删两份、四份加说明行、`pilot-report.md` 路径改写）
+- [x] Checkpoint 2（report）：全部文档就位（`tests.test_docs` 6 项通过）
 - [ ] Task 10：sync 后全量测试、补完核实记录、越界检查
 - [ ] Checkpoint 3（gate）：最终验收
 - [ ] 回告：无外部来源；列出用户要做的一步（GitHub 打开私下漏洞报告）
@@ -82,4 +82,11 @@
 - LICENSE：MIT 标准全文，Copyright (c) 2026 haigeerlab（C320-1）。
 - CONTRIBUTING：按 C320-2 A 收 issue 和 PR；提交前缀照本仓库最近 40 个提交的习惯（`docs`、`feat`、`fix`、`test`、`chore` 加范围）；全量测试时长按 README 原有的约 2000 秒写成「约半小时」。
 - SECURITY：渠道是 GitHub 私下漏洞报告（C320-2）；没写回复时限、支持哪些版本这类用户没定的承诺。
-- 用户要做的一步：仓库建好后在 Settings → Code security 里打开 Private vulnerability reporting，否则 Security 页没有「Report a vulnerability」按钮。
+- 用户要做的一步：仓库建好后在仓库设置里打开私下漏洞报告（Private vulnerability reporting），否则 Security 页没有「Report a vulnerability」入口。
+
+### 过程记录（Task 9）
+
+- 删除：`docs/kickoff-prompts.md`（52 行）、`docs/session-protocol-notes.md`（46 行）。
+- 四份加说明行（标题下一行引用块）：`requirements-record.md`、`pilot-report.md`、`capability-map-draft.md`、`spec-guard-additions.md`；`pilot-report.md` 另把两处 `/Users/vilin/Documents/haigeerlab/` 改成 `~/Documents/haigeerlab/`。`git diff --stat`：4 个文件 10 行新增、2 行删除。
+- 链接核对：`git grep` 取 `spec/`、`tasks/`、`tests/`、`module_crew/`、两套 skill 里所有 `docs/…md` 路径逐个看在不在。不在的三类，都不是本模块弄断的：decision-inbox 仓库自己的 `docs/host-differences.md`（3 份 Spec 引用别的仓库）；测试与契约夹具里的假路径（`docs/x.md`、`docs/acceptance/crew-store.md` 等）；本模块自己的 Spec 与 Plan 里点名要删的两份。
+- `git grep '/Users/'` 在 `docs/`、两份 README、CONTRIBUTING、SECURITY 里没有结果。

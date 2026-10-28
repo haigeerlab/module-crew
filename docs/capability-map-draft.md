@@ -1,5 +1,7 @@
 # module-crew 能力图草案
 
+> **开发过程记录**，不随版本更新；已被 `spec/CAPABILITY-MAP.md` 取代。
+
 > 第 2 关草案，待用户审。第 4 关在本仓库运行 `/spec-guard:setup-convention` 后，经 `/spec` 的 Phase 0 正式写入
 > `spec/CAPABILITY-MAP.md` 并再审一次。模块 id 正式写入前都可改。需求依据见 `requirements-record.md`。
 
