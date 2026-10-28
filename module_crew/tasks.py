@@ -321,6 +321,7 @@ class Scoped:
     number: int
     body: int
     path: str
+    narrowed: bool = False
 
 
 def scope(db: store.Store, number: int, expect: list[str], done: str, original: str) -> Scoped:
@@ -354,7 +355,7 @@ def scope(db: store.Store, number: int, expect: list[str], done: str, original: 
                action="narrowed" if narrowing else "scoped", data={"original": original})
         body = tx.allocate_number()
         meta = tx.write_body(body, text)
-    return Scoped(number, body, str(db.path / meta["path"]))
+    return Scoped(number, body, str(db.path / meta["path"]), narrowed=narrowing)
 
 
 def bound(db: store.Store, name: str) -> None:
