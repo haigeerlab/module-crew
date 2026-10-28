@@ -950,6 +950,15 @@ def _pr_base(project: Path, cfg: dict, remote: str, integration: str, given: str
     return None, ""
 
 
+def _remote_is_empty(project: Path, remote: str) -> bool:
+    """T338: the remote answers `ls-remote --heads` with nothing at all; unreachable counts as not empty."""
+    try:
+        listed = _git(project, "ls-remote", "--heads", remote, timeout=30)
+    except subprocess.TimeoutExpired:
+        return False
+    return listed.returncode == 0 and not listed.stdout.strip()
+
+
 def push_plan(project: str | os.PathLike, pr_base: str | None = None) -> PushPlan:
     """Read-only preview of the push: remote, new branch, PR base, commits and PR text."""
     project = Path(project)
@@ -963,6 +972,11 @@ def push_plan(project: str | os.PathLike, pr_base: str | None = None) -> PushPla
         return PushPlan(3, [f"没有远端 {remote}：推送与开 PR 交用户自己处理"])
     base, why = _pr_base(project, cfg, remote, integration, pr_base)
     if base is None:
+        if _remote_is_empty(project, remote):
+            return PushPlan(3, [f"远端 {remote} 是空仓库（没有任何分支），没有可开 PR 的目标：首次发布要用户自己在终端推集成分支，"
+                                f"module-crew 不放行、也不替你推：",
+                                f"  git push --no-verify -u {remote} {integration}",
+                                "推完后再开新批次；之后的批次照常走 merge push"], remote=remote)
         return PushPlan(3, [f"集成分支 {integration} 在远端 {remote} 没有跟踪分支，也读不出远端的默认分支：PR 开向哪里请用户指定，"
                             f"再带 --pr-base <分支> 重跑（先 git fetch {remote} 也可能取得到）"], remote=remote)
     tracking = f"refs/remotes/{remote}/{base}"

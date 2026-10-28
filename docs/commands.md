@@ -155,6 +155,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 - `merge tick <模块> --original(-file)`：补勾漏勾的最终验收（模块协调）。
 - `merge record <C号> --original(-file)`：合并收尾超时、状态库没记下合并时补记（模块协调）。
 - `merge push-plan [--pr-base <分支>] [--json]`：预告要推什么（只读，任何会话）。
+  远端是空仓库（没有任何分支）时没有 PR 目标，预告会写明首次发布的做法：由用户自己在终端运行 `git push --no-verify -u <远端> <集成分支>`，推完后的批次再走 `merge push`；module-crew 不放行也不替用户推送。
 - `merge push --original(-file) [--pr-base <分支>]`：推到远端新分支 `crew/batch-<号>` 并开一个 PR（远端是 github.com 时用 `gh`，否则只打印 PR 正文）（模块协调）。远端合并始终由用户做。
 
 ### `unqueued`
