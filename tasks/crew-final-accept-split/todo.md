@@ -13,4 +13,4 @@
 - [x] Task 7：四份技能与两份文档改写（Spec AC10、AC11）——断言先红后绿（DocsTest 5 个，含两版协调技能第 2 步逐字相同）；另把 Codex 版沙箱外命令清单加上 accept、两份协调技能的「待决问题必须答全」与「转达答复」两处补上 merge accept；test_docs、test_skills、test_codex_coordinator 等照常通过
 - [x] Task 8：`module-crew sync` 后全量测试（Spec AC12）——sync 显示已包含 main be8d13e；c56c3e3 上单独跑全量 1153 个测试全部通过（第一次全量的 3 失败 1 错误未复现）
 - [x] Checkpoint 3（gate）：最终验收
-- [ ] 回告：ecosystem-lead（S48 的 module-crew 一侧已就位），经 mc-coord 转
+- [x] 回告：ecosystem-lead（S48 的 module-crew 一侧已就位），经 mc-coord 转——已发 #12518（合入 025e671、新入口说明；发版后再通知转告 livesaas-fe-coord）；随最终验收 C364 获批
