@@ -1028,7 +1028,7 @@ def push_plan(project: str | os.PathLike, pr_base: str | None = None) -> PushPla
     if not commits:
         return PushPlan(3, ["没有要推送的提交"], remote=remote, base=base)
     pushed = {c for v in store.records(db, "item").values() if v.get("kind") == "push" for c in v.get("mergeCommits", [])}
-    modules = [{"module": v["module"], "approval": int(k), "mergeCommit": v["mergeCommit"]}
+    modules = [{"module": v["module"] or f"T{v['task']}", "approval": int(k), "mergeCommit": v["mergeCommit"]}
                for k, v in sorted(store.records(db, "item").items(), key=lambda kv: int(kv[0]))
                if v.get("kind") == "merge-approval" and v.get("closedReason") == "merged" and v["mergeCommit"] not in pushed]
     number = _next_number(db)

@@ -4,6 +4,7 @@ import os
 import subprocess
 import unittest
 
+import test_light_task
 from helpers import MergeCase, git
 
 from module_crew import merge, store
@@ -117,6 +118,31 @@ class PushTimeoutTest(LocalIntegrationCase):
         r = self.run_cli("merge", "push", "--pr-base", "trunk", "--original", "推送")
         self.assertEqual(r.returncode, 4, r.stdout + r.stderr)
         self.assertIn("推送失败", r.stdout + r.stderr)
+        self.assertNotIn("Traceback", r.stdout + r.stderr)
+
+
+class LightTaskPushPlanTest(LocalIntegrationCase):
+    """T374: a light task's merge approval has no module; push-plan names it T<n> instead of failing."""
+
+    def setUp(self):
+        super().setUp()
+        from module_crew import hooks
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+
+    start_task = test_light_task.TaskWorkCase.start_task
+    approve_task = test_light_task.TaskMergeTest.approve_task
+
+    def test_push_plan_with_light_task(self):
+        n, _, approval = self.approve_task()
+        res = merge.run(self.repo, check_command="python3 -c pass")
+        self.assertEqual(res.code, 0, res.lines)
+        plan = merge.push_plan(self.repo, pr_base="trunk")
+        self.assertEqual(plan.code, 0, plan.lines)
+        self.assertEqual(plan.title, f"module-crew：合入 b、T{n}")
+        commit = store.get(self.db, "item", str(approval))["mergeCommit"]
+        self.assertIn(f"- T{n}：合并批准事项 C{approval}，合并提交 {commit[:7]}", plan.body)
+        r = self.run_cli("merge", "push-plan", "--pr-base", "trunk")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn("Traceback", r.stdout + r.stderr)
 
 
