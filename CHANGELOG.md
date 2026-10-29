@@ -2,6 +2,14 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.21.0 的变化（公共变更请求的文件行剥掉指纹，钉 session-protocol v2.8）
+
+不加项目开关；接口不变（`interface.json` 1.0），契约改钉 session-protocol v2.8（`interface.json` 的 `contract` 由 2.6 改为 2.8），状态库不用迁移。
+
+- **公共变更请求的「文件」行先剥掉行尾指纹**（S54，T402）：照【交审】的习惯写成「<路径> sha256:<指纹>」的行，先剥掉行尾「一个空格 + `sha256:` 加 12～64 位小写十六进制」，再按路径规则判断，请求登记剥后的路径，判重叠也按剥后的路径；大写、位数不够或超过 64 位的不剥。剥过就在解析结果的 `hints` 里给一次 `file-fingerprint-stripped`（不论消息合不合格），`change add` 输出这条提示并写「转告发件人：公共变更请求的文件行只写路径」。
+- 钉住 session-protocol v2.7（d1bdb05）与 v2.8（486e1ee）的样例，v2.2～v2.8 各版样例都对当前解析器跑一遍。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
+
 ## 0.20.0 的变化（公共变更请求只批准范围、只批 Spec 修订不再开工）
 
 不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.6），状态库不用迁移（只增请求的「已批准范围」状态、`merged-with-module` 关闭原因与几种事件）。
