@@ -146,5 +146,22 @@ class LightTaskPushPlanTest(LocalIntegrationCase):
         self.assertNotIn("Traceback", r.stdout + r.stderr)
 
 
+class AlreadyOnRemoteTest(LocalIntegrationCase):
+    """T380: a merge already on the remote (pushed earlier without merge push, so no push record) is not listed again."""
+
+    def test_pushed_without_record_not_listed(self):
+        git(self.repo, "push", "-q", "origin", "main:trunk")          # b went out by hand: no push record
+        git(self.repo, "fetch", "-q", "origin")
+        self.approve_final("c", 2)
+        res = merge.run(self.repo, check_command="python3 -c pass")
+        self.assertEqual(res.code, 0, res.lines)
+        plan = merge.push_plan(self.repo, pr_base="trunk")
+        self.assertEqual(plan.code, 0, plan.lines)
+        self.assertEqual(plan.title, "module-crew：合入 c")
+        self.assertEqual([m["module"] for m in plan.modules], ["c"])
+        self.assertNotIn("- b：", plan.body)
+        self.assertIn("- c：", plan.body)
+
+
 if __name__ == "__main__":
     unittest.main()
