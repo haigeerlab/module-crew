@@ -461,6 +461,12 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
         problems.append(f"{unit} 的 worktree 不干净或不存在：{worktree}")
     if checkout is None or not _clean(checkout):
         problems.append("集成分支所在的 checkout 不干净或集成分支没有被检出")
+    from module_crew import changes           # S52 (T388): requests whose scope the user approved land with this merge
+    scoped = changes.scope_check(db, changes._module_of(store.records(db, "session"), rec["from"]),
+                                 changes.branch_changes(project, f"refs/heads/{cfg.get('integrationBranch', '')}",
+                                                        f"refs/heads/{m}"))
+    if scoped is not None:
+        problems += scoped.problems
     if problems:
         return RunResult(3, [f"C{n}（{unit}）没有合并："] + problems, approval=n)
     from module_crew import mergelock      # taken only once the checklist passed: a refusal writes nothing
@@ -571,6 +577,8 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
         else:
             _close_merged(tx, db, result, n, current, unit)
             result.lines.append(f"C{n}（{unit}）已合入集成分支 {result.merge_commit[:7]}")
+            if scoped is not None:
+                result.lines += changes.land_with_module(tx, scoped, n, result.merge_commit)
             if mark_line:
                 result.lines.append(mark_line)
             if tick_line:
@@ -633,9 +641,13 @@ def record(project: str | os.PathLike, approval: int, original: str) -> RunResul
         return RunResult(3, [f"C{approval}（{unit}）没有补记：集成分支 {branch} 上没有合入交审提交 {rec['commit'][:7]} 的合并提交"],
                          approval=approval)
     result = RunResult(0, approval=approval, merge_commit=found)
+    from module_crew import changes           # S52 (T388): the merge already stands, so only the summary is taken
+    scoped = changes.scope_check(db, changes._module_of(store.records(db, "session"), rec["from"]),
+                                 changes.branch_changes(project, f"{found}^1", found))
     with db.transaction(actor="coordinator") as tx:
         _close_merged(tx, db, result, approval, tx.get("item", str(approval)), unit,
                       data={"original": original, "recorded": True})
+        landed = changes.land_with_module(tx, scoped, approval, found) if scoped is not None else []
     if task:
         from module_crew import tasks
         tasks.advance(db, task, "merged")
@@ -644,6 +656,7 @@ def record(project: str | os.PathLike, approval: int, original: str) -> RunResul
         from module_crew import unqueued        # crew-unqueued-commits: the merge commit is module-crew's own
         unqueued.mark(db, checkout, "merge-record")
     result.lines.append(f"C{approval}（{unit}）已补记合并：合并提交 {found[:7]} 在集成分支上")
+    result.lines += landed
     if not task:
         result.lines.append(f"最终验收的勾选若没做成，用户同意后运行 module-crew merge tick {m}（已勾上的会说已勾选）")
     return result

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import os
 import subprocess
 from dataclasses import dataclass, field
@@ -95,7 +96,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         module = _module_of(sessions, sender)
         # S27 (T133): the module's own older request on the same files, nothing landed yet, is replaced by this one
         replaced = {k: v for k, v in sorted(open_reqs.items(), key=lambda kv: int(kv[0]))
-                    if _module_of(sessions, v["from"]) == module and not v.get("partial")
+                    if _module_of(sessions, v["from"]) == module and not v.get("partial") and not v.get("accepted")
                     and set(req_files) & set(v["files"])}
         open_reqs = {k: v for k, v in open_reqs.items() if k not in replaced}
         hints = hints_for(req_files, {k: v["files"] for k, v in open_reqs.items()})
@@ -216,6 +217,107 @@ def answer(db: store.Store, number: int, original: str) -> Reply:
     return Reply(rec["from"], rec["relayId"], body, db.path / meta["path"])
 
 
+ACCEPTED_LAND = "已批准范围、待随模块合并：不用 change land，模块的最终验收合并（merge run）时自动核对并落地"
+
+
+def accept(db: store.Store, number: int, original: str) -> Reply:
+    """S52 (T388): the user approved the request's scope only; the module changes the files on its own branch and the
+    request lands with the module's merge (merge run). It stays open until then; the baseline is not touched."""
+    with db.transaction(actor="coordinator") as tx:
+        rec = _open_request(tx, number)
+        if rec.get("accepted"):
+            raise AnswerRefused(f"公共变更请求 C{number} 已批准范围，待随模块合并")
+        if rec.get("partial"):
+            raise AnswerRefused(f"公共变更请求 C{number} 已部分落地，不能再改为随模块合并")
+        answered_at = store.now()
+        try:
+            text = protocol.render_user_reply(item=number, original=original, answered_at=answered_at,
+                                              source_relay_id=rec["relayId"], crew=True)
+        except ValueError as exc:
+            raise AnswerRefused(str(exc)) from exc
+        body = tx.allocate_number()
+        meta = tx.write_body(body, text)
+        tx.put("request", str(number), dict(rec, accepted={"original": original, "answeredAt": answered_at,
+                                                           **store.source_field(), "body": body}),
+               action="accepted", data={"body": body})
+    return Reply(rec["from"], rec["relayId"], body, db.path / meta["path"])
+
+
+def accepted_for(db: store.Store, module: str) -> list[tuple[int, dict]]:
+    """The open scope-approved requests sent by `module`, in order."""
+    sessions = store.records(db, "session")
+    return sorted(((int(k), v) for k, v in store.records(db, "request").items()
+                   if v.get("state") == "open" and v.get("accepted") and _module_of(sessions, v["from"]) == module),
+                  key=lambda kv: kv[0])
+
+
+def _covers(entry: str, path: str) -> bool:
+    """A request's file line covers `path`: the same path, a directory line ending in `/`, or a glob."""
+    entry = entry.lstrip("- ").strip()
+    if entry.endswith("/"):
+        return path.startswith(entry)
+    return path == entry or (any(c in entry for c in "*?[") and fnmatch.fnmatchcase(path, entry))
+
+
+def branch_changes(cwd: Path, base: str, tip: str) -> list[tuple[str, str]]:
+    """(status letter, path) for each file `tip` changed since its merge base with `base`; renames as delete + add."""
+    raw = probe._git(cwd, "diff", "--name-status", "--no-renames", "-z", f"{base}...{tip}").stdout.split("\0")
+    return [(raw[i][:1], raw[i + 1]) for i in range(0, len(raw) - 1, 2) if raw[i]]
+
+
+@dataclass
+class ScopeCheck:
+    numbers: list[int]
+    problems: list[str] = field(default_factory=list)
+    summary: dict[int, dict] = field(default_factory=dict)   # number -> {"changed", "deleted", "untouched"}
+
+
+def scope_check(db: store.Store, module: str, diff: list[tuple[str, str]]) -> ScopeCheck | None:
+    """S52 (T388): before merging `module`, its actual changes against its scope-approved requests; None when it has
+    none. A changed file on the protected list or in another open request's list, and in none of these lists, is a
+    problem."""
+    scoped = accepted_for(db, module)
+    if not scoped:
+        return None
+    out = ScopeCheck([n for n, _ in scoped])
+    listed = [f for _, rec in scoped for f in rec["files"]]
+    cfg = store.get(db, "config", "main") or {}
+    guards = [(f, "保护文件") for f in cfg.get(PROTECTED) or []]
+    guards += [(f, f"C{n} 的清单") for n, rec in pending(db) if n not in out.numbers for f in rec["files"]]
+    hits = []
+    for _, path in diff:
+        if any(_covers(f, path) for f in listed):
+            continue
+        why = list(dict.fromkeys(w for f, w in guards if _covers(f, path)))
+        if why:
+            hits.append(f"{path}（{'、'.join(why)}）")
+    if hits:
+        out.problems.append(f"改动越出已批准范围（{'、'.join(f'C{n}' for n in out.numbers)}）：这些文件在保护文件名单或别的"
+                            f"开着的请求清单里、不在本请求清单内：{'、'.join(hits)}")
+    for n, rec in scoped:
+        mine = [(s, p) for s, p in diff if any(_covers(f, p) for f in rec["files"])]
+        out.summary[n] = {"changed": sum(1 for s, _ in mine if s != "D"), "deleted": sum(1 for s, _ in mine if s == "D"),
+                          "untouched": [f for f in rec["files"] if not any(_covers(f, p) for _, p in mine)]}
+    return out
+
+
+def land_with_module(tx, check: ScopeCheck, approval: int, merge_commit: str) -> list[str]:
+    """Close the scope-approved requests as landed with the module's merge, their waiting records too."""
+    lines = []
+    for n in check.numbers:
+        rec = tx.get("request", str(n))
+        s = check.summary[n]
+        tx.put("request", str(n), dict(rec, state="closed", closedReason="merged-with-module", commit=merge_commit,
+                                        mergeApproval=approval, landing=s),
+               action="merged-with-module", data={"commit": merge_commit, "approval": approval})
+        _close_ticket(tx, rec)
+        left = s["untouched"]
+        lines.append(f"公共变更请求 C{n} 随模块合并落地 {merge_commit[:7]}：清单 {len(rec['files'])} 项，实际改了 {s['changed']} 个、"
+                     f"删了 {s['deleted']} 个" + (f"；没动 {len(left)} 项（清单是上限不是必改）：{'、'.join(left[:30])}"
+                                                + (" 等，全部见请求记录 landing.untouched" if len(left) > 30 else "") if left else ""))
+    return lines
+
+
 @dataclass
 class LandResult:
     code: int                                     # 0 done / 3 refused, nothing changed / 4 commit failed
@@ -285,6 +387,8 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
         return LandResult(3, [f"没有公共变更请求 C{number}"])
     if rec.get("state") != "open":
         return LandResult(3, [f"公共变更请求 C{number} 已关闭（{rec.get('closedReason')}）"])
+    if rec.get("accepted"):
+        return LandResult(3, [f"公共变更请求 C{number} {ACCEPTED_LAND}"])
     cfg = store.get(db, "config", "main") or {}
     checkout = probe._checkout_of(project, cfg.get("integrationBranch", "")) if cfg else None
     if checkout is None:
@@ -417,6 +521,8 @@ def land_batch(project: str | os.PathLike, numbers: list[int], original: str | N
             problems.append(f"没有公共变更请求 C{n}")
         elif rec.get("state") != "open":
             problems.append(f"公共变更请求 C{n} 已关闭（{rec.get('closedReason')}）")
+        elif rec.get("accepted"):
+            problems.append(f"公共变更请求 C{n} {ACCEPTED_LAND}")
         else:
             recs[n] = rec
     cfg = store.get(db, "config", "main") or {}
