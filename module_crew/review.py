@@ -89,7 +89,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             out.lines.append(f"已记过：{sender} 的邮箱消息 #{relay_id}，没有重复记账")
             return out
         for key, rec in sorted(tx.records("item").items(), key=lambda kv: int(kv[0])):
-            if (rec.get("kind") == "review" and rec.get("state") == "open" and rec.get("module") == sub["module"]
+            if (rec.get("kind") == "review" and rec.get("state") in ("open", "accepted") and rec.get("module") == sub["module"]
                     and rec.get("node") == sub["node"]):
                 tx.put("item", key, dict(rec, state="closed", closedReason="superseded"), action="superseded",
                        data={"relayId": relay_id})
@@ -231,7 +231,7 @@ def _add_task(db: store.Store, msg, text: str, sender: str, relay_id: int) -> Ou
     with db.transaction(actor=sender) as tx:
         number = tx.allocate_number()
         for key, ap in sorted(tx.records("item").items(), key=lambda kv: int(kv[0])):
-            if ap.get("kind") in ("review", "merge-approval") and ap.get("state") == "open" and ap.get("task") == n:
+            if ap.get("kind") in ("review", "merge-approval") and ap.get("state") in ("open", "accepted") and ap.get("task") == n:
                 tx.put("item", key, dict(ap, state="closed", closedReason="superseded", supersededBy=number),
                        action="superseded", data={"by": number})
                 out.closed.append(int(key))
@@ -570,6 +570,12 @@ def progress(db: store.Store) -> dict[str, dict]:
     return out
 
 
+def accepted(db: store.Store) -> list[tuple[int, dict]]:
+    """Final acceptances the user accepted without authorizing the merge yet (crew-final-accept-split)."""
+    return sorted(((int(k), v) for k, v in store.records(db, "item").items()
+                   if v.get("kind") == "review" and v.get("state") == "accepted"), key=lambda kv: kv[0])
+
+
 def waiting(project: str | os.PathLike) -> list[str]:
     """Open reviews a batch still waits for: under review (not timed out) or in rework."""
     db = store.open_store(Path(project))
@@ -714,8 +720,11 @@ def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict]
               "推荐 A：批准",
               f"  选了会怎样：{_effect(part)}",
               "B：退回修改（请写修改意见）",
-              "  选了会怎样：模块按你的意见改完再交审，集成分支不变",
-              "你该回：A" + "".join(f"；{k} {d['lean'] or 'A'}" for k, _, d in numbered),
+              "  选了会怎样：模块按你的意见改完再交审，集成分支不变"]
+    if any(i["node"] == "final" for i in part):           # crew-final-accept-split (D1 A)
+        lines += ["C：只接受验收，暂不授权合并",
+                  "  选了会怎样：记下验收结论，不合并、集成分支不变；之后你说一句授权合并就排进合并队列"]
+    lines += ["你该回：A" + "".join(f"；{k} {d['lean'] or 'A'}" for k, _, d in numbered),
               "是否完全停住：否"]
     text = "\n".join(lines) + "\n"
     msg = protocol.parse(text)
@@ -968,12 +977,13 @@ def _reply_text(item_no: int, rec: dict, original: str, answered_at: str) -> str
 
 
 def answer(db: store.Store, number: int, original: str) -> Reply:
-    """【用户答复】 for one open review (e.g. changes required); the baseline is not touched."""
+    """【用户答复】 for one open review (e.g. changes required), or an accepted final acceptance the user now wants
+    changed (crew-final-accept-split); the baseline is not touched."""
     with db.transaction(actor="coordinator") as tx:
         rec = tx.get("item", str(number))
         if rec is None or rec.get("kind") != "review":
             raise AnswerRefused(f"没有交审事项 C{number}")
-        if rec.get("state") != "open":
+        if rec.get("state") not in ("open", "accepted"):
             raise AnswerRefused(f"交审事项 C{number} 已关闭（{rec.get('closedReason')}）")
         answered_at = store.now()
         text = _reply_text(number, rec, original, answered_at)
@@ -1156,7 +1166,8 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
         elif rec.get("state") != "open":
             reasons.append(f"交审事项 C{n} 已关闭（{rec.get('closedReason')}）")
         elif rec.get("node") not in APPROVABLE:
-            reasons.append(f"交审事项 C{n} 是最终验收：用 review answer 答复，合并归 crew-merge")
+            reasons.append(f"交审事项 C{n} 是最终验收：批准合并用 merge approve，只接受验收用 merge accept，"
+                           "要求修改用 review answer")
         else:
             picked.append((n, rec))
     src = store.source_field().get("source") or {}

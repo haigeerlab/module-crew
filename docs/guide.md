@@ -51,6 +51,7 @@
    - 声明范围开关打开时，Plan 里预先声明过的公共文件模块直接改，见下文「项目开关」。
 5. **合并**
    - 模块做完发最终验收【交审】，用户批准后 `module-crew merge approve <交审编号> --original-file <原话文件>`。
+     用户只接受验收、暂不合并时用 `module-crew merge accept <交审编号> --original-file <原话文件>`：事项保留为「已接受验收、待授权合并」，之后用户补一句授权合并，对同一编号 `merge approve` 即可；要求修改用 `review answer`。
      提请批准时按 spec-guard 的最终验收小项排：做了什么、验收结果、改了哪些文件（文档表、代码文件表——新增／修改／删除与行数，超出 Plan 的标出——、提交表、新增依赖表），以及 Spec 中途改过吗（改过就附差异）；这几张表由 module-crew 从版本库算出，不用模块自己报。
    - `module-crew merge run`（第一次带 `--check-command "<完整检查命令>"`）：按队列一次只合一个，`--no-ff` 合入本地集成分支后跑完整检查；
      不过就把集成分支重置回合并前（模块分支原样保留）并退回该模块，冲突就中止并退回。
@@ -60,6 +61,7 @@
 6. **收尾与推送**
    - 用户同意后 `module-crew merge cleanup <模块> --original-file <原话文件>` 收回 worktree（分支保留）。
    - `module-crew merge push-plan` 预告；用户明确授权后 `module-crew merge push --original-file <原话文件>`，推到远端新分支 `crew/batch-<号>` 并开一个 PR。
+     远端是刚建的空仓库时，`push-plan` 会提示首次发布要你自己在终端运行 `git push --no-verify -u <远端> <集成分支>`（module-crew 不替你推）；推完后的批次再走 `merge push`。
    - **远端合并始终由用户做**。
 
 每条要发的消息，命令都会生成正文文件；模块协调用 agent-relay `bridge_send` 的 `bodyFile` 原样发出，不改一字。
@@ -246,6 +248,7 @@ Codex 版 `crew-coordinator` skill 管下面这些与 Claude 不同的地方，�
 | 模块协调要重开或换会话 | 在原会话里 `/clear`，或退出应用再打开，身份会自动接上；不要新开会话。已经新开了：用户同意后在新会话运行 `module-crew bind <邮箱名> --takeover --original-file <原话文件>`（同一仓库任一目录），旧会话随即失效；模块协调的写命令只有登记的会话能跑（别的会话退出码 7），`status` 里标着「← 本会话」 |
 | 会话被压缩 | 钩子会提醒先跑 `module-crew status`、以状态库为准，不按压缩前的记忆重做 |
 | 合并被退回 | 集成分支已回到合并前、模块分支不动；模块修好后重新发最终验收【交审】（不用撤销任何提交）。退回原因判错了，模块协调用 `merge renotice` 按另一种原因重发 |
+| 用户只接受验收、暂不合并 | `merge accept <C号> --original-file <原话文件>` 记下原话；事项不关闭、不排合并，模块停在原地、不收同步通知，`status` 显示「已接受验收、待授权合并」。用户补一句授权合并时对同一编号 `merge approve`；改主意要修改就 `review answer` 退回 |
 | 合并收尾超时、状态库没记下合并 | `module-crew merge record C<号> --original-file <原话文件>` 补记 |
 | 写类 git 命令超时，worktree 删了一半 | 命令以退出码 4 结束并写明恢复步骤；`merge cleanup` 能收完只剩已跟踪文件被删的 worktree |
 | 同一个 gate 再次挡住、异常停点、要改能力图 | 按 spec-guard 的规则办，把选项与代价交用户决定 |

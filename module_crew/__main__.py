@@ -123,6 +123,9 @@ def _status(as_json: bool) -> int:
         for mod, r in review.progress(store.open_store()).items():
             print(f"  {mod} " + (f"返工中（审查第 {r['round']} 轮）" if r["state"] == "rework" else
                                  "审查中" + (f"（第 {r['round'] + 1} 轮）" if r["round"] else "")))
+        for n, v in review.accepted(store.open_store()):     # crew-final-accept-split
+            who = v.get("module") or f"T{v.get('task')}"
+            print(f"  {who} 已接受验收、待授权合并（C{n}，接受于 {v['acceptance']['answeredAt']}）")
     print("模块协调")
     coord = (report.store or {}).get("coordinator")
     if coord is None:
@@ -252,8 +255,15 @@ def _task(args) -> int:
             print(f"已取消 T{args.number}；已派出的话，告诉做事的会话停下")
             return 0
         if args.action == "scope":
-            r = tasks.scope(db, args.number, args.expect.split(","), args.done, original)
-            print(f"T{r.number} 的任务单已缩小，回到在做；把正文发给做事的会话：{r.path}")
+            r = tasks.scope(db, args.number, args.expect.split(","), args.done, original,
+                            what=getattr(args, "what", None))
+            said = {"narrowed": "的预计文件已收窄，状态不变", "shrunk": "的任务单已缩小，回到在做",
+                    "expanded": "已扩项，回到在做", "adjusted": "的任务单已调整，回到在做"}[r.kind]
+            print(f"T{r.number} {said}；把正文发给做事的会话：{r.path}")
+            for c in r.clashes:
+                print(f"  重叠：{c}")
+            for note in r.notes:
+                print(f"  注意：{note}")
             return 0
         if args.action == "dispatch":
             from module_crew import handover
@@ -702,6 +712,8 @@ def _review(args) -> int:
         except review.AnswerRefused as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
+        if (store.get(db, "item", str(args.number)) or {}).get("node") == "final":    # crew-final-accept-split
+            print("已按要求修改退回；如果用户只是接受验收、不批合并，应该用 merge accept（这次已经退回，要改须模块重新交审）")
         print(f"收件人：{reply.to}")
         _sent(reply.to)
         print(f"replyTo：{reply.reply_to}")
@@ -875,7 +887,7 @@ def _merge(args) -> int:
     original = _original(args.original, args.original_file)
     if original is None:
         return 2
-    if args.action == "approve":
+    if args.action in ("approve", "accept"):         # crew-final-accept-split: accept = no merge authorization
         split = review.split_decisions(".", args.numbers, original)
         if split.missing:
             print("\n".join(review.chase_lines(split)))
@@ -887,10 +899,24 @@ def _merge(args) -> int:
                 _sent(reply.to)
             for n in split.hold:
                 print(f"C{n} 等审查结论：保持未答，没有批准")
-            done = merge.approve_many(store.open_store(), split.approve, original) if split.approve else []
+            if args.action == "accept":
+                accepted = merge.accept_many(store.open_store(), split.approve, original) if split.approve else []
+                done = []
+            else:
+                done = merge.approve_many(store.open_store(), split.approve, original) if split.approve else []
         except (merge.AnswerRefused, review.AnswerRefused) as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
+        if args.action == "accept":
+            for n, reply in zip(split.approve, accepted):
+                print(f"C{n} 已接受验收，暂不合并（集成分支不变）；用户补授权合并后 merge approve C{n}")
+                print(f"收件人：{reply.to}")
+                _sent(reply.to)
+                print(f"replyTo：{reply.reply_to}")
+                print(f"正文文件：{reply.path}")
+            done_to, done_numbers = [r.to for r in accepted], list(split.approve)
+        else:
+            done_to, done_numbers = [r.reply.to for r in done], list(split.approve)
         for res in done:
             print(f"合并批准事项 C{res.approval}，已排入本地合并队列")
             for n in res.superseded:
@@ -899,7 +925,7 @@ def _merge(args) -> int:
             _sent(res.reply.to)
             print(f"replyTo：{res.reply.reply_to}")
             print(f"正文文件：{res.reply.path}")
-        for closing in (merge.closing_all(store.open_store(), [r.reply.to for r in done], list(split.approve)) if done else []):
+        for closing in (merge.closing_all(store.open_store(), done_to, done_numbers) if done_to else []):
             if closing.get("wait"):
                 print(f"你开的等待记录 W{closing['wait']} 等的事已发生：发送 【已恢复】 → {closing['to']}，正文文件：{closing['path']}")
             else:
@@ -1231,12 +1257,13 @@ def _main(argv: list[str] | None = None) -> int:
     kg = rn2.add_mutually_exclusive_group(required=True)
     kg.add_argument("--env", action="store_const", const="env", dest="kind", help="检查环境出了问题，模块不用改代码")
     kg.add_argument("--module", action="store_const", const="module", dest="kind", help="模块需要修改")
-    for name, positional in (("approve", ("numbers", refs.parse)), ("revoke", ("number", refs.parse)),
+    for name, positional in (("approve", ("numbers", refs.parse)), ("accept", ("numbers", refs.parse)),
+                             ("revoke", ("number", refs.parse)),
                              ("cleanup", ("module", str)), ("tick", ("module", str)), ("record", ("number", refs.parse)),
                              ("push", None)):
         c = mgs.add_parser(name)
         if positional:
-            c.add_argument(positional[0], type=positional[1], **({"nargs": "+"} if name == "approve" else {}))
+            c.add_argument(positional[0], type=positional[1], **({"nargs": "+"} if name in ("approve", "accept") else {}))
         g = c.add_mutually_exclusive_group(required=True)
         g.add_argument("--original")
         g.add_argument("--original-file")
@@ -1298,10 +1325,11 @@ def _main(argv: list[str] | None = None) -> int:
     tash = tas.add_parser("show")
     tash.add_argument("number", type=refs.parse)
     tas.add_parser("next", help="把排队里已不重叠的提为可开（bug 在前）")
-    tsc = tas.add_parser("scope", help="升格请求选了缩小：改任务单，任务回到在做")
+    tsc = tas.add_parser("scope", help="改任务单：升格请求选了缩小或扩项（回到在做），或在做的任务收窄预计文件")
     tsc.add_argument("number", type=refs.parse)
     tsc.add_argument("--expect", required=True)
     tsc.add_argument("--done", required=True)
+    tsc.add_argument("--what", help="新的「做什么」（只在升格待定时可改；不给就不变）")
     tad = tas.add_parser("dispatch", help="派出可开的任务：建 worktree 与分支、登记轻任务会话、生成开工说明")
     tad.add_argument("number", type=refs.parse)
     tad.add_argument("--host", choices=("claude", "codex"), help="默认跟随模块协调的宿主（crew-host-handover）")

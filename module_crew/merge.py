@@ -49,8 +49,9 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
         raise AnswerRefused(f"没有交审事项 C{review_no}")
     if rec.get("node") != "final":
         raise AnswerRefused(f"交审事项 C{review_no} 不是最终验收（Spec／Plan 用 review approve）")
-    if rec.get("state") != "open":
+    if rec.get("state") not in ("open", "accepted"):     # crew-final-accept-split: an accepted item is authorized here
         raise AnswerRefused(f"交审事项 C{review_no} 已关闭（{rec.get('closedReason')}）")
+    acceptance = rec.get("acceptance") if rec.get("state") == "accepted" else None
     answered_at = store.now()
     text = _reply_text(review_no, rec, original, answered_at)
     approval = tx.allocate_number()
@@ -67,20 +68,53 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
         "commit": rec["commit"], "from": rec["from"], "relayId": rec["relayId"],
         "answer": {"original": original, "answeredAt": answered_at, **store.source_field()},
         "closedReason": None, "mergeCommit": None, "revertCommit": None, "resetTo": None, "reason": None,
+        "acceptedBy": {"answeredAt": acceptance["answeredAt"], "body": acceptance["body"]} if acceptance else None,
     }, action="merge-approved")
     body = tx.allocate_number()
     meta = tx.write_body(body, text)
     tx.put("item", str(review_no), dict(rec, state="closed", closedReason="answered",
                                         answer={"original": original, "answeredAt": answered_at, **store.source_field(), "body": body,
-                                                "approval": approval}),
+                                                "approval": approval, **({"acceptance": acceptance} if acceptance else {})}),
            action="answered", data={"body": body})
     return Approved(approval, Reply(rec["from"], rec["relayId"], body, db.path / meta["path"]), replaced)
 
 
+def accept(db: store.Store, review_no: int, original: str) -> Reply:
+    """Record that the user accepted a final acceptance without authorizing the merge (crew-final-accept-split)."""
+    return accept_many(db, [review_no], original)[0]
+
+
+def accept_many(db: store.Store, numbers: list[int], original: str) -> list[Reply]:
+    """accept() for several final acceptances at once; any refusal writes nothing."""
+    with db.transaction(actor="coordinator") as tx:
+        return [_accept_one(tx, db, n, original) for n in numbers]
+
+
+def _accept_one(tx, db: store.Store, review_no: int, original: str) -> Reply:
+    rec = tx.get("item", str(review_no))
+    if rec is None or rec.get("kind") != "review":
+        raise AnswerRefused(f"没有交审事项 C{review_no}")
+    if rec.get("node") != "final":
+        raise AnswerRefused(f"交审事项 C{review_no} 不是最终验收（Spec／Plan 用 review approve）")
+    if rec.get("state") == "accepted":
+        raise AnswerRefused(f"交审事项 C{review_no} 已接受验收：用户补授权合并时用 merge approve")
+    if rec.get("state") != "open":
+        raise AnswerRefused(f"交审事项 C{review_no} 已关闭（{rec.get('closedReason')}）")
+    answered_at = store.now()
+    body = tx.allocate_number()
+    meta = tx.write_body(body, _reply_text(review_no, rec, original, answered_at))
+    tx.put("item", str(review_no), dict(rec, state="accepted",
+                                        acceptance={"original": original, "answeredAt": answered_at,
+                                                    **store.source_field(), "body": body}),
+           action="accepted", data={"body": body})
+    return Reply(rec["from"], rec["relayId"], body, db.path / meta["path"])
+
+
 def awaiting_final(tx) -> set[str]:
-    """Modules with an open final-acceptance submission: syncing now would void the approval they wait for (MC-10)."""
+    """Modules with an open or accepted final-acceptance submission: syncing now would void the approval they wait for
+    (MC-10; crew-final-accept-split: an accepted one still waits for the merge authorization)."""
     return {v.get("module") for v in tx.records("item").values()
-            if v.get("kind") == "review" and v.get("node") == "final" and v.get("state") == "open"}
+            if v.get("kind") == "review" and v.get("node") == "final" and v.get("state") in ("open", "accepted")}
 
 
 def no_sync(tx) -> set[str]:
@@ -801,7 +835,13 @@ def _cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
     import re
     if re.match(r"^[Tt][1-9]\d*$", module):
         return _cleanup_task(project, db, int(module[1:]), original)
-    merged = [v for v in store.round_items(store.records(db, "item"), store.records(db, "session"), module).values()
+    items = store.round_items(store.records(db, "item"), store.records(db, "session"), module)
+    accepted = sorted(int(k) for k, v in items.items() if v.get("kind") == "review" and v.get("module") == module
+                      and v.get("state") == "accepted")
+    if accepted:                    # crew-final-accept-split (D2 A): keep the session until the merge is authorized
+        return Simple(3, [f"模块 {module} 已接受验收、待授权合并（C{accepted[-1]}）：收回后合并要重新开会话，"
+                          "等授权合并、合入后再收"])
+    merged = [v for v in items.values()
               if v.get("kind") == "merge-approval" and v.get("module") == module and v.get("closedReason") == "merged"]
     if not merged:
         return Simple(3, [f"模块 {module} 还没有合入集成分支，不能收回"])
@@ -950,6 +990,15 @@ def _pr_base(project: Path, cfg: dict, remote: str, integration: str, given: str
     return None, ""
 
 
+def _remote_is_empty(project: Path, remote: str) -> bool:
+    """T338: the remote answers `ls-remote --heads` with nothing at all; unreachable counts as not empty."""
+    try:
+        listed = _git(project, "ls-remote", "--heads", remote, timeout=30)
+    except subprocess.TimeoutExpired:
+        return False
+    return listed.returncode == 0 and not listed.stdout.strip()
+
+
 def push_plan(project: str | os.PathLike, pr_base: str | None = None) -> PushPlan:
     """Read-only preview of the push: remote, new branch, PR base, commits and PR text."""
     project = Path(project)
@@ -963,6 +1012,11 @@ def push_plan(project: str | os.PathLike, pr_base: str | None = None) -> PushPla
         return PushPlan(3, [f"没有远端 {remote}：推送与开 PR 交用户自己处理"])
     base, why = _pr_base(project, cfg, remote, integration, pr_base)
     if base is None:
+        if _remote_is_empty(project, remote):
+            return PushPlan(3, [f"远端 {remote} 是空仓库（没有任何分支），没有可开 PR 的目标：首次发布要用户自己在终端推集成分支，"
+                                f"module-crew 不放行、也不替你推：",
+                                f"  git push --no-verify -u {remote} {integration}",
+                                "推完后再开新批次；之后的批次照常走 merge push"], remote=remote)
         return PushPlan(3, [f"集成分支 {integration} 在远端 {remote} 没有跟踪分支，也读不出远端的默认分支：PR 开向哪里请用户指定，"
                             f"再带 --pr-base <分支> 重跑（先 git fetch {remote} 也可能取得到）"], remote=remote)
     tracking = f"refs/remotes/{remote}/{base}"
@@ -974,9 +1028,12 @@ def push_plan(project: str | os.PathLike, pr_base: str | None = None) -> PushPla
     if not commits:
         return PushPlan(3, ["没有要推送的提交"], remote=remote, base=base)
     pushed = {c for v in store.records(db, "item").values() if v.get("kind") == "push" for c in v.get("mergeCommits", [])}
-    modules = [{"module": v["module"], "approval": int(k), "mergeCommit": v["mergeCommit"]}
+    # T380: only merges inside this push's span; ones already on the remote (pushed without a push record) are left out
+    in_span = set(_git(project, "rev-list", *span).stdout.split())
+    modules = [{"module": v["module"] or f"T{v['task']}", "approval": int(k), "mergeCommit": v["mergeCommit"]}
                for k, v in sorted(store.records(db, "item").items(), key=lambda kv: int(kv[0]))
-               if v.get("kind") == "merge-approval" and v.get("closedReason") == "merged" and v["mergeCommit"] not in pushed]
+               if v.get("kind") == "merge-approval" and v.get("closedReason") == "merged"
+               and v["mergeCommit"] in in_span and v["mergeCommit"] not in pushed]
     number = _next_number(db)
     branch = f"crew/batch-{number}"
     names = "、".join(m["module"] for m in modules) or "集成分支改动"

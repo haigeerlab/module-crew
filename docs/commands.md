@@ -108,7 +108,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 - `review note [<C号>] --from <审查者> --file <文件> [--then-batch [--for-hub]]`：记下审查者的【审查结论】（模块协调）；有须修改项时输出返工通知。
 - `review show <C号> [--submission] [--spec-diff]`：交审的审查原文全文与 sha256（只读，任何会话）；`--submission` 另附交审原文，`--spec-diff` 只出最终验收时 Spec 相对集成分支的差异。
 - `review approve <C号>… --original(-file)`：批准（模块协调）：在集成分支记批准标记，生成【用户答复】与开工通知。用户的答复没答全每个待定问题时退出码 3、什么都不做。
-- `review answer <C号> --original(-file)`：转达用户对交审的其他答复（退回、等审查等）（模块协调）。
+- `review answer <C号> --original(-file)`：转达用户对交审的其他答复（退回、等审查等）（模块协调）。对最终验收只用于要求修改（退回）；只接受验收用 `merge accept`。
 
 ### `answer`
 
@@ -144,7 +144,8 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 ### `merge`
 
-- `merge approve <交审号>… --original(-file)`：批准最终验收，排进合并队列（模块协调）。
+- `merge approve <交审号>… --original(-file)`：批准最终验收并授权合并，排进合并队列（模块协调）。也收已接受验收的交审：用户补一句授权合并即可，不用重新交审、不再问待定问题。
+- `merge accept <交审号>… --original(-file)`：只接受验收、暂不授权合并（模块协调）。交审事项记为「已接受验收、待授权合并」：不关闭、不进合并队列，集成分支不变，模块不收同步通知，`merge cleanup` 不收它。待定问题要答全（同 `merge approve`），任一编号不合格什么都不写（退出码 3）。
 - `merge revoke <交审号> --original(-file)`：合并前撤回最终验收的批准（模块协调）。
 - `merge queue [--json]`：合并队列（只读，任何会话）。顺序：bug 任务、模块（按 Build order）、需求任务。
 - `merge run [--check-command "<完整检查命令>"] [--replace-check] [--detach]`：一次合一个：`--no-ff` 合入本地集成分支后跑完整检查；不过就把集成分支重置回合并前、退回该模块，冲突就中止并退回（模块协调）。第一次要给 `--check-command`。
@@ -155,6 +156,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 - `merge tick <模块> --original(-file)`：补勾漏勾的最终验收（模块协调）。
 - `merge record <C号> --original(-file)`：合并收尾超时、状态库没记下合并时补记（模块协调）。
 - `merge push-plan [--pr-base <分支>] [--json]`：预告要推什么（只读，任何会话）。
+  远端是空仓库（没有任何分支）时没有 PR 目标，预告会写明首次发布的做法：由用户自己在终端运行 `git push --no-verify -u <远端> <集成分支>`，推完后的批次再走 `merge push`；module-crew 不放行也不替用户推送。
 - `merge push --original(-file) [--pr-base <分支>]`：推到远端新分支 `crew/batch-<号>` 并开一个 PR（远端是 github.com 时用 `gh`，否则只打印 PR 正文）（模块协调）。远端合并始终由用户做。
 
 ### `unqueued`
@@ -175,7 +177,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 - `task add --type feature|bug --title … --what … --expect <预计文件> --done <完成标准> [--caused-by …] --original(-file)`：记下一件事（模块协调）。预计文件逗号分隔，以 `/` 结尾表示整个目录；和在做的活重叠就排队。
 - `task list [--all]`、`task show <T号>`、`task next`：在做与排队的任务；看一件；把已不重叠的排队任务提为可开、bug 在前（只读，任何会话）。
 - `task dispatch <T号> [--host claude|codex]`：派出可开的任务：建 `task/t<号>` 分支与 worktree、登记轻任务会话（不占多模块名额）、生成开工说明（模块协调）。
-- `task scope <T号> --expect … --done … --original(-file)`：改任务单——升格请求选了缩小，或在做的任务收窄预计文件（新范围必须落在原范围里）（模块协调）。
+- `task scope <T号> --expect … --done … [--what …] --original(-file)`：改任务单（模块协调）。升格待定时回到在做：新列表比原来窄是缩小（升格请求选 B）；超出原来的是扩项（选 D「批准扩项，继续当轻任务做」，可同时改「做什么」，和别的任务、在用模块做重叠检查，重叠照实报出、不拒）；列表不变只算调整，不说「缩小」。在做（含已派出）的任务只能收窄预计文件（新范围必须落在原范围里），状态不变，不能改「做什么」。
 - `task cancel <T号> --original(-file)`：取消（模块协调）。
 
 ## 挂起、等待与换会话

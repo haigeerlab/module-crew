@@ -1,4 +1,4 @@
-"""Parse and render session-protocol v2.4 messages (see spec/crew-protocol.md).
+"""Parse and render session-protocol v2.6 messages (see spec/crew-protocol.md).
 
 Pure functions only: no file, git or agent-relay access. Field names, tags and
 problem codes follow the contract text in session-protocol PROTOCOL.md.

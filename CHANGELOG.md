@@ -2,6 +2,17 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.19.0 的变化（最终验收分开接受与合并、轻任务扩项、推送计划修正）
+
+不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.6），状态库不用迁移（只增 `accepted` 状态与几种事件）。
+
+- **最终验收分开「接受验收」与「授权合并」**（S48）：用户只批验收、暂不批合并时 `merge accept C<号> --original-file …` 记下原话，事项进「已接受验收、待授权合并」，不关闭、不排合并、不收同步，`merge cleanup` 拒收；之后用户补一句授权合并，对同一编号 `merge approve` 即可，不用重新交审、不再问待决问题。`review answer` 对最终验收只用于要求修改；决策收件箱的最终验收卡片加选项「C：只接受验收，暂不授权合并」。
+- **轻任务支持扩项**（S49）：升格请求加一条路「D：批准扩项，继续当轻任务做」；`task scope` 在升格待定时新的预计文件超出原来的就按扩项处理——附用户原话，可同时用新参数 `--what` 改「做什么」、改预计文件与完成标准，和别的任务做重叠检查（重叠照实报出），状态回到在做，输出写「扩项」并给出发给做事会话的正文。列表没变时写「已调整」，收窄写法照旧。
+- **`merge push-plan` 修正**：上次推送后合入过轻任务时不再报错，PR 标题与正文用「T<号>」列出轻任务（T374）；只列合并提交落在本次推送范围里的模块，之前不经 `merge push` 推过、没有推送记录的旧模块不再列出（T380）；远端是空仓库时给出首次发布的做法。
+- `task scope` 收窄成功后如实提示「预计文件已收窄，状态不变」。
+- 开源文档补全（crew-docs）：README 只写当前功能，新增英文版 README、命令参考 `docs/commands.md`、使用手册 `docs/guide.md`、架构说明 `docs/architecture.md`，以及 LICENSE（MIT）、CONTRIBUTING、SECURITY。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
+
 ## 0.18.0 的变化（额度外包第 2 轮：模块会话自己交给 Codex）
 
 只改额度外包（`codexOffload`，默认关）；开关关着时一切和 0.17.0 一样。接口与契约不变（`interface.json` 1.0、session-protocol v2.6）；第 1 轮外包记录不迁移（第 1 轮从未在真实项目打开过）。

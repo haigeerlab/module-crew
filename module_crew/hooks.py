@@ -131,6 +131,7 @@ STAGE_WRITE = "写 Spec 与 Plan、发【交审】，收到开工通知之前不
 STAGE_BUILD = "Spec 与 Plan 已批准，可以构建；做完发最终验收【交审】"
 STAGE_WAIT_MERGE = "最终验收已批准，等模块协调合并"
 STAGE_WAIT_FINAL = "最终验收已交审（交审事项 C{n}），等用户批准；不要重做或重发"
+STAGE_ACCEPTED = "最终验收已接受（交审事项 C{n}），用户暂未授权合并：停在当前停点，不要再提交，等授权合并或退回"
 STAGE_MERGED = "已合入集成分支，停止开发，等模块协调收回 worktree"
 
 
@@ -151,6 +152,10 @@ def _stage(items: dict, module: str, sessions: dict | None = None) -> str:
         return STAGE_MERGED
     if any(v.get("state") == "open" for _, v in merges):
         return STAGE_WAIT_MERGE
+    accepted = sorted(int(k) for k, v in items.items() if v.get("kind") == "review" and v.get("module") == module
+                      and v.get("node") == "final" and v.get("state") == "accepted")
+    if accepted:                                      # crew-final-accept-split
+        return STAGE_ACCEPTED.format(n=accepted[-1])
     final = sorted(int(k) for k, v in items.items() if v.get("kind") == "review" and v.get("module") == module
                    and v.get("node") == "final" and v.get("state") == "open")
     if final:
