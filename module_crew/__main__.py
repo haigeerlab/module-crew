@@ -753,11 +753,13 @@ def _change(args) -> int:
     if args.action == "list":
         rows = changes.pending(db)
         if args.json:
-            print(json.dumps([{"number": n, **{k: r[k] for k in ("from", "files", "what", "why", "fullyStopped", "hints")}}
+            print(json.dumps([{"number": n, **{k: r[k] for k in ("from", "files", "what", "why", "fullyStopped", "hints")},
+                               "accepted": bool(r.get("accepted"))}
                               for n, r in rows], ensure_ascii=False, indent=2))
         for n, r in rows if not args.json else []:
             hint = f"；提示：{'、'.join(r['hints'])}" if r["hints"] else ""
-            print(f"C{n} {r['from']}：{'、'.join(r['files'])}——{r['what']}{'（完全停住）' if r['fullyStopped'] else ''}{hint}")
+            scoped = "（已批准范围、待随模块合并）" if r.get("accepted") else ""
+            print(f"C{n} {r['from']}：{'、'.join(r['files'])}——{r['what']}{'（完全停住）' if r['fullyStopped'] else ''}{scoped}{hint}")
         if not rows and not args.json:
             print("没有未处理的公共变更请求")
         return 0 if rows else 3
@@ -788,6 +790,22 @@ def _change(args) -> int:
         else:
             print("没有待汇总的提前落地")
         return 0 if rows else 3
+    if args.action == "accept":          # S52 (T388): scope approved, lands with the module's merge
+        original = _original(None, args.original_file)
+        if original is None:
+            return 2
+        try:
+            reply = changes.accept(db, args.number, original)
+        except changes.AnswerRefused as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 3
+        print(f"公共变更请求 C{args.number} 已批准范围、待随模块合并：模块在自己的分支里改，最终验收合并（merge run）时"
+              "核对改动并落地；不用 change land")
+        print(f"收件人：{reply.to}")
+        _sent(reply.to)
+        print(f"replyTo：{reply.reply_to}")
+        print(f"正文文件：{reply.path}")
+        return 0
     original = _original(args.original, args.original_file)
     if args.action == "answer":
         if original is None:
@@ -1222,6 +1240,9 @@ def _main(argv: list[str] | None = None) -> int:
     cld = chs.add_parser("landed", help="名单内提前落地、还没汇总给用户的（crew-declared-scope）")
     cld.add_argument("--json", action="store_true")
     cld.add_argument("--mark-told", nargs="+", type=refs.parse, metavar="编号", help="记为已汇总给用户（只是记账，不是批准）")
+    cac = chs.add_parser("accept", help="只批准范围：请求随发起模块的最终验收合并落地（要用户原话）")
+    cac.add_argument("number", type=refs.parse)
+    cac.add_argument("--original-file", required=True)
     for name in ("land", "answer"):
         c = chs.add_parser(name)
         c.add_argument("number", type=refs.parse, nargs="+" if name == "land" else None,
