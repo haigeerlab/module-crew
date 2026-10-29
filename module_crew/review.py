@@ -376,6 +376,26 @@ def _approved_nodes(db: store.Store) -> dict[str, set[str]]:
     return approved
 
 
+def start_basis(db: store.Store, module: str, approval: int, nodes: set[str]) -> str:
+    """S53: what a start notice rests on — the nodes approved in C<approval>, and the earlier record of the rest."""
+    items = store.records(db, "item")
+    since = store.round_since(store.records(db, "session"), module)
+    earlier: dict[str, tuple[int, str]] = {}
+    for key, rec in items.items():
+        if rec.get("kind") != "review-approval" or int(key) >= approval:
+            continue
+        for n in rec.get("reviews", []):
+            r = items.get(str(n)) or {}
+            target = MARK_TARGET.get(r.get("node"))
+            if r.get("module") == module and n > since and target and int(key) > earlier.get(target, (0, ""))[0]:
+                earlier[target] = (int(key), r["node"])
+    here = " 与 ".join(NODE_NAME[n] for n in sorted(nodes, key=NODE_RANK.get))
+    covered = {MARK_TARGET.get(n) for n in nodes}
+    rest = [f"{NODE_NAME[earlier[t][1]]} 以前批准于 C{earlier[t][0]}" for t in ("spec", "plan")
+            if t not in covered and t in earlier]
+    return f"用户批准事项 C{approval}（{module} 的 {here}" + ("；" + "，".join(rest) if rest else "") + "）"
+
+
 NODE_RANK = {"spec": 0, "interface": 1, "plan": 2, "final": 3}
 
 
@@ -825,7 +845,7 @@ def _card_fields(db: store.Store, part: list[dict], missing: list[str]) -> list[
 def _what_happens(part: list[dict]) -> list[str]:
     out = []
     if any(i["node"] != "final" for i in part):
-        out.append("- 在集成分支记批准标记并提交这些文件；Spec 与 Plan 都批了的模块收到开工通知开始构建")
+        out.append("- 在集成分支记批准标记并提交这些文件；这次批了 Plan、Spec 也已批准的模块收到开工通知开始构建")
         out.append("- 不授权合并代码；批准后要改，模块重新交审再批")
     if any(i["node"] == "final" for i in part):
         out.append("- 排进本地合并队列，完整检查通过后合并进集成分支；不推送远端")
@@ -1256,15 +1276,20 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
                                  "body": body, "path": db.path / meta["path"]})
         _closing_send(tx, db, result.sends, modules, [n for n, _ in picked])
         for m in modules:
-            nodes_now = approved_before.get(m, set()) | {rec["node"] for _, rec in picked if rec["module"] == m}
+            nodes_here = {rec["node"] for _, rec in picked if rec["module"] == m}
+            nodes_now = approved_before.get(m, set()) | nodes_here
             if not {MARK_TARGET[n] for n in nodes_now if n in MARK_TARGET} >= {"spec", "plan"}:   # interface counts as Spec
+                continue
+            if "plan" not in nodes_here:          # S53: a Spec revision alone does not start the build
+                result.lines.append(f"{m}：这次没批 Plan，没有发开工通知。以前批过的 Plan 仍是批准状态；Spec 修订后 Plan "
+                                    "是否还适用由用户定，要复审就用 /spec-guard:review-mark 把它标回待批准")
                 continue
             sender = next(rec["from"] for _, rec in picked if rec["module"] == m)
             todo = _start_todo(tx, db, project, m, approval, result.lines)
             if todo is None:                      # crew-codex-offload decision 4: held until the user decides
                 continue
             text = protocol.render_coordination_notice(
-                kind="start", basis=f"用户批准事项 C{approval}（{m} 的 Spec 与 Plan），"
+                kind="start", basis=start_basis(db, m, approval, nodes_here) + "，"
                                     + (f"集成分支 {commit[:7]} 已是批准内容" if empty else f"已提交到集成分支 {commit[:7]}"),
                 todo=(todo + "".join(f"\n审查原文：module-crew review show C{k}（写 Plan、构建时吸收遗留建议）"
                                      for k, rec in picked if rec["module"] == m and rec.get("reviews"))))
