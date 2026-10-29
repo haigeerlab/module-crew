@@ -1,0 +1,93 @@
+{
+  "parse": {
+    "type": "wait-user",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "来自": "前端模块协调",
+      "项目": "crew-rehearsal",
+      "要你决定": "交审 C21（epsilon 的 Spec）批不批",
+      "要点": "目标：新增 top_words(text, n)，返回出现最多的前 n 个单词，跳过停用词\n边界：总是做：每个改动带测试\n先问：要改公共文件时\n不做：不处理非英文字母\n要你确认的假设：① 只返回单词不返回次数；② 次数相同按第一次出现的先后排\n验收标准：共 2 条\nAC1 top_words(\"a b a\", 1) 得到 [\"a\"]\nAC2 n 为负数时报错\n未决问题：C21-1 停用词表放在哪，见待用户决定",
+      "类型": "Spec",
+      "批了会怎样": "开始写 Plan，还不动代码",
+      "待用户决定": "C21-1：停用词表放在哪？\n  A. 写死在代码里\n  B. 放在配置文件\n  倾向：A（只有十几个词）",
+      "选项与我的建议": "推荐 A：批准\n  选了会怎样：开始写 Plan\nB. 退回\n  选了会怎样：按你的意见改完再交",
+      "你该回": "42 A；C21-1 A",
+      "是否完全停住": "是"
+    },
+    "options": [
+      {
+        "letter": "A",
+        "text": "批准",
+        "consequence": "开始写 Plan"
+      },
+      {
+        "letter": "B",
+        "text": "退回",
+        "consequence": "按你的意见改完再交"
+      }
+    ],
+    "recommended": "A",
+    "suggestedReply": "42 A；C21-1 A",
+    "fullyStopped": true,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "waitKind": "spec",
+    "points": [
+      {
+        "name": "目标",
+        "text": "新增 top_words(text, n)，返回出现最多的前 n 个单词，跳过停用词"
+      },
+      {
+        "name": "边界",
+        "text": "总是做：每个改动带测试\n先问：要改公共文件时\n不做：不处理非英文字母"
+      },
+      {
+        "name": "要你确认的假设",
+        "text": "① 只返回单词不返回次数；② 次数相同按第一次出现的先后排"
+      },
+      {
+        "name": "验收标准",
+        "text": "共 2 条\nAC1 top_words(\"a b a\", 1) 得到 [\"a\"]\nAC2 n 为负数时报错"
+      },
+      {
+        "name": "未决问题",
+        "text": "C21-1 停用词表放在哪，见待用户决定"
+      }
+    ],
+    "decisions": [
+      {
+        "id": "C21-1",
+        "question": "停用词表放在哪？",
+        "options": [
+          {
+            "letter": "A",
+            "text": "写死在代码里"
+          },
+          {
+            "letter": "B",
+            "text": "放在配置文件"
+          }
+        ],
+        "lean": "A",
+        "leanReason": "只有十几个词"
+      }
+    ]
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "parse": {
+    "type": "wait-user",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "来自": "前端模块协调",
+      "项目": "crew-rehearsal",
+      "要你决定": "轻任务 T3 超出任务单，升格、缩小还是取消",
+      "要点": "出了什么事：做了空输入的修复和测试\n剩下要把输入缓存改成按行存，要动 src/cache.py 和 src/store.py\n这两个文件不在任务单里，改动会碰到 crew-store 模块",
+      "任务": "T3",
+      "类型": "卡住选做法",
+      "选项与我的建议": "推荐 A：升格为模块\n  选了会怎样：停下 T3，按模块写 Spec 再做\nB. 缩小\n  选了会怎样：只交空输入修复，缓存另开任务\nC. 取消\n  选了会怎样：丢弃 T3 的改动",
+      "你该回": "52 A",
+      "是否完全停住": "是"
+    },
+    "options": [
+      {
+        "letter": "A",
+        "text": "升格为模块",
+        "consequence": "停下 T3，按模块写 Spec 再做"
+      },
+      {
+        "letter": "B",
+        "text": "缩小",
+        "consequence": "只交空输入修复，缓存另开任务"
+      },
+      {
+        "letter": "C",
+        "text": "取消",
+        "consequence": "丢弃 T3 的改动"
+      }
+    ],
+    "recommended": "A",
+    "suggestedReply": "52 A",
+    "fullyStopped": true,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "module": null,
+    "task": "T3",
+    "waitKind": "stuck",
+    "points": [
+      {
+        "name": "出了什么事",
+        "text": "做了空输入的修复和测试\n剩下要把输入缓存改成按行存，要动 src/cache.py 和 src/store.py\n这两个文件不在任务单里，改动会碰到 crew-store 模块"
+      }
+    ]
+  }
+}

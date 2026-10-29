@@ -1,0 +1,7 @@
+【公共变更请求】
+来自：crew-store
+文件：
+tsconfig.base.json
+改什么：打开 strict
+为什么：状态库的类型要严格检查
+是否完全停住：是

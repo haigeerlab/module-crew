@@ -1,0 +1,47 @@
+{
+  "parse": {
+    "type": "review-request",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "模块": "crew-store",
+      "节点": "需求",
+      "文件": "spec/crew-store/SPEC.md sha256:3f2a9c1e7b4d",
+      "要点": "- 做：状态库\n- 不做：删除记录"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "bad-node"
+    ],
+    "hints": [],
+    "submission": {
+      "module": "crew-store",
+      "node": null,
+      "files": [
+        {
+          "path": "spec/crew-store/SPEC.md",
+          "fingerprint": "sha256:3f2a9c1e7b4d"
+        }
+      ]
+    }
+  }
+}

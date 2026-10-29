@@ -1,0 +1,41 @@
+{
+  "parse": {
+    "type": "hub-receipt",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": 21,
+    "fields": {
+      "原消息": "#4540",
+      "事项": "#21",
+      "状态": "已退回"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "bad-receipt-status"
+    ],
+    "hints": [],
+    "receipt": {
+      "original": 4540,
+      "status": null,
+      "supersedes": []
+    }
+  }
+}
