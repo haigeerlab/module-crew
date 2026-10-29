@@ -356,6 +356,13 @@ def _approval(db: store.Store, module: str) -> tuple[int, str] | None:
     return found
 
 
+def _approved_in(db: store.Store, approval: int, module: str) -> set[str]:
+    """The nodes of module that approval C<approval> approved (S53: the start notice names them as they are)."""
+    items_ = store.records(db, "item")
+    return {(items_.get(str(n)) or {}).get("node") for n in (items_.get(str(approval)) or {}).get("reviews", [])
+            if (items_.get(str(n)) or {}).get("module") == module}
+
+
 def _now() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
@@ -772,7 +779,8 @@ def decline(project: str | os.PathLike, module: str, original: str) -> Outcome:
         return Outcome(3, [f"{module} 已经交给 Codex：不中途切换"])
     dev = _dev(db, module)
     text = protocol.render_coordination_notice(
-        kind="start", basis=f"用户批准事项 C{approval[0]}（{module} 的 Spec 与 Plan），集成分支 {approval[1][:7]}；"
+        kind="start", basis=review.start_basis(db, module, approval[0], _approved_in(db, approval[0], module))
+                            + f"，集成分支 {approval[1][:7]}；"
                             "额度外包条件不满足，用户选择由模块会话自己构建", todo=review.start_todo_today(module))
     with db.transaction(actor="coordinator") as tx:
         n = tx.allocate_number()

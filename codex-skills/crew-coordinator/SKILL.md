@@ -94,6 +94,8 @@ module-crew start prepare <模块 id>… --original-file <原话文件> [--proje
    开好后按「权限预配」第 2 步让它跑实测清单并记下结果。
 5. 模块会话按项目的评审节奏交审（`module-crew status` 显示生效的 reviewCadence）：`separate`（默认）先只交 Spec，Spec 的批准答复到了再写 Plan 交审；
    `combined` 时 Spec 与 Plan 一起交。Spec 与 Plan 都批了之前，不要发开工通知。
+   `review approve` 只在这次批准含该模块的 Plan 时才生成开工通知；只批 Spec 修订（Plan 以前批过）不生成，输出会提示 Plan 仍是批准状态、是否复审由用户定。
+   发 `review approve` 输出的开工通知之前，先对照用户原话：原话说不开工（例如「只批 Spec」「先不实施」）就不发，并告诉用户这份通知扣下了。
 6. **重开已完成的模块（第九版起）**：用户要修订一个已合入的模块时——
    - 先确认它已在 spec-guard 里按「返工与小模块」原地重开（todo 追加了未勾项、plan.md 补了一节；超出原范围的把 Plan 改回 pending）：`start plan` 的原因里会写「已重开…要用户点名」，它不会出现在提议里；
    - 旧一轮的会话要已收回（`merge cleanup <id>`），没收回 `start prepare` 会拒绝；
@@ -167,11 +169,14 @@ module-crew review answer <交审事项编号> --original-file <原话文件>   
 ```bash
 module-crew change land <编号> [--original-file <用户原话文件>]     # 问过用户就带上原话
 module-crew change answer <编号> --original-file <用户原话文件>     # 用户不同意
+module-crew change accept <编号> --original-file <用户原话文件>     # 用户只批准范围：随发起模块的合并落地
 ```
 
 4. 按输出逐条 `bridge_send`（`bodyFile`，不改一字）：请求方那条带 `replyTo`，其他在用模块收到同步基线通知。
 5. `change land` 退出码 3：清单外有改动或没有改动，什么都没提交——把多余的改动挪走，或让请求方补一条请求。
    清单里还有文件没改也是退出码 3（输出列出它们）：改完再 land；用户同意先落地已改的部分时加 `--partial --original-file <原话文件>`，请求保持打开，改完剩下的再 land 才关闭。
+   - **用户只批准范围**（清单是上限不是必改，模块在自己分支分阶段改，随模块合并落地）：`change accept <编号> --original-file <原话文件>`，按输出把【用户答复】`bridge_send` 给请求方（带 `replyTo`），集成 checkout 不动。请求仍算未结（status、钩子、换宿主照旧列出），`change list` 标「已批准范围、待随模块合并」；此后 `change land` 拒绝（退出码 3），用户改主意仍可 `change answer` 拒绝；同一模块再发文件重叠的请求不取代它。
+     发起模块的最终验收 `merge run` 先取模块分支相对集成分支的实际改动（含删除）核对：落在保护文件名单或别的开着请求清单里、又不在本请求清单内的文件，拒合并（退出码 3、什么都不动）并逐个报出；通过则合并后把请求关成「随模块合并落地」、记合并提交，输出写清单内实际改了几个、删了几个、哪些没动，请求带出的等待记录一并关闭。被拒时把报出的文件交用户：让模块改回，或请模块另发请求。
 6. 改动影响已批准的 Spec 时，按 spec-guard 规则在那份 Spec 末尾「变更记录」追加一行，复审时一并呈现。
 7. **声明范围开关 `declaredScope`**（默认关；开关都要用户原话：`module-crew config set --declared-scope on|off --original-file <原话文件>`）打开后：
    - 模块会话对 Plan「预先声明」名单内的公共文件直接在自己分支改，不发请求；最终验收的「声明内公共文件」一节把它们和模块代码一起交用户审，默认合并时才进集成分支。
