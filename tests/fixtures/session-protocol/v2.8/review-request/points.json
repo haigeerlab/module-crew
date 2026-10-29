@@ -1,0 +1,67 @@
+{
+  "parse": {
+    "type": "review-request",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "模块": "crew-store",
+      "节点": "Spec",
+      "文件": "- spec/crew-store.md sha256:3f2a9c1e7b4d",
+      "要点": "目标：状态库放仓库公共 git 目录，事务写入、统一编号\n边界：总是做：写入走事务\n不做：删除记录、跨仓库共享\n要你确认的假设：用单个 SQLite 文件，不用每类一个 JSON\n验收标准：共 2 条\nAC1 两个 worktree 同时写入编号不重复\nAC2 断电后重启数据不丢\n未决问题：无"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "submission": {
+      "module": "crew-store",
+      "node": "spec",
+      "files": [
+        {
+          "path": "spec/crew-store.md",
+          "fingerprint": "sha256:3f2a9c1e7b4d"
+        }
+      ]
+    },
+    "points": [
+      {
+        "name": "目标",
+        "text": "状态库放仓库公共 git 目录，事务写入、统一编号"
+      },
+      {
+        "name": "边界",
+        "text": "总是做：写入走事务\n不做：删除记录、跨仓库共享"
+      },
+      {
+        "name": "要你确认的假设",
+        "text": "用单个 SQLite 文件，不用每类一个 JSON"
+      },
+      {
+        "name": "验收标准",
+        "text": "共 2 条\nAC1 两个 worktree 同时写入编号不重复\nAC2 断电后重启数据不丢"
+      },
+      {
+        "name": "未决问题",
+        "text": "无"
+      }
+    ]
+  }
+}

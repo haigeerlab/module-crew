@@ -1,0 +1,48 @@
+{
+  "parse": {
+    "type": "coordination-notice",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "类型": "返工",
+      "依据": "审查 R-7（交审 C15）",
+      "轮次": "第二轮",
+      "要你做什么": "1. 验收标准缺少令牌过期的错误路径，偏离已批准的能力图条目\n2. 令牌原文写进了调试日志，属于安全缺陷\n改完重新发 Spec【交审】"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "bad-round"
+    ],
+    "hints": [],
+    "notice": {
+      "kind": "rework",
+      "refs": [],
+      "localRefs": [
+        "C15"
+      ],
+      "reviewRefs": [
+        "R-7"
+      ],
+      "round": null
+    }
+  }
+}

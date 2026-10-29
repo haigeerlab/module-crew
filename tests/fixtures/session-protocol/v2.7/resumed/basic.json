@@ -1,0 +1,33 @@
+{
+  "parse": {
+    "type": "resumed",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [
+        12,
+        15
+      ],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {},
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": []
+  }
+}

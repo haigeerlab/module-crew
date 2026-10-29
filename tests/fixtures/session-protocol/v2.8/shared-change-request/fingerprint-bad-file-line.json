@@ -1,0 +1,46 @@
+{
+  "parse": {
+    "type": "shared-change-request",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "来自": "crew-store",
+      "文件": "- package.json\n说明：见 a.ts sha256:0123456789ab",
+      "改什么": "统一打开 strict",
+      "为什么": "状态库的类型要严格检查",
+      "是否完全停住": "否"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": false,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "bad-file-line"
+    ],
+    "hints": [
+      "file-fingerprint-stripped"
+    ],
+    "changeRequest": {
+      "files": [
+        "package.json",
+        "说明：见 a.ts"
+      ]
+    }
+  }
+}

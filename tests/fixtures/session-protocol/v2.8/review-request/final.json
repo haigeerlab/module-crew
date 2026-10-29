@@ -1,0 +1,49 @@
+{
+  "parse": {
+    "type": "review-request",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [
+        41
+      ],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "模块": "crew-store",
+      "节点": "最终验收",
+      "文件": "- docs/acceptance/crew-store.md sha256:9e0b44d21c7a5f30",
+      "要点": "- 交付了状态库与 32 个测试，全部通过\n- 实测：在两个 worktree 同时写入，编号不重复\n- 没验证：断电时的恢复",
+      "改动统计": "  7 files changed, 412 insertions(+), 3 deletions(-)",
+      "越界检查": "无越界（对照集成基线 a1b2c3d 与并行边界）"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "submission": {
+      "module": "crew-store",
+      "node": "final",
+      "files": [
+        {
+          "path": "docs/acceptance/crew-store.md",
+          "fingerprint": "sha256:9e0b44d21c7a5f30"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "parse": {
+    "type": "review-conclusion",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "审查编号": "R-4",
+      "节点": "最终验收",
+      "模块": "pay",
+      "送审方": "前端",
+      "结论": "通过，附建议2条",
+      "来自": "前端负责人",
+      "要点": "建议补两条边界测试。"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": {
+      "ref": "R-4",
+      "node": "final",
+      "submitter": "前端",
+      "verdict": "passed-with-advice",
+      "adviceCount": 2,
+      "module": "pay"
+    },
+    "problems": [],
+    "hints": []
+  }
+}
