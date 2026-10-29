@@ -1028,9 +1028,12 @@ def push_plan(project: str | os.PathLike, pr_base: str | None = None) -> PushPla
     if not commits:
         return PushPlan(3, ["没有要推送的提交"], remote=remote, base=base)
     pushed = {c for v in store.records(db, "item").values() if v.get("kind") == "push" for c in v.get("mergeCommits", [])}
+    # T380: only merges inside this push's span; ones already on the remote (pushed without a push record) are left out
+    in_span = set(_git(project, "rev-list", *span).stdout.split())
     modules = [{"module": v["module"] or f"T{v['task']}", "approval": int(k), "mergeCommit": v["mergeCommit"]}
                for k, v in sorted(store.records(db, "item").items(), key=lambda kv: int(kv[0]))
-               if v.get("kind") == "merge-approval" and v.get("closedReason") == "merged" and v["mergeCommit"] not in pushed]
+               if v.get("kind") == "merge-approval" and v.get("closedReason") == "merged"
+               and v["mergeCommit"] in in_span and v["mergeCommit"] not in pushed]
     number = _next_number(db)
     branch = f"crew/batch-{number}"
     names = "、".join(m["module"] for m in modules) or "集成分支改动"
