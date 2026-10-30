@@ -1,0 +1,19 @@
+# Todo: crew-live-rehost
+
+> 依据 `tasks/crew-live-rehost/plan.md`。
+
+- [ ] Task 1：store 校验 `rehost` 字段与 `previousSessions.reason`（Spec 验收 4 状态库部分）
+- [ ] Task 2：挡住清单、快照与确认码，`coordinator rehost --check`（Spec 验收 1、2 确认码部分）
+- [ ] Task 3：`coordinator rehost --to claude`：守门窄口、原话与确认码核对、一个事务改登记（Spec 验收 2、3、4）
+- [ ] Task 4：权限跟随全部 checkout、恢复说明、迁移说明（Spec 验收 5、6）
+- [ ] Checkpoint 1（report）：迁移本身走通，相关测试通过
+- [ ] Task 5：旧会话失效（Spec 验收 7）
+- [ ] Task 6：盘点闸：钩子档位、`rehost show`、`rehost release`、最终验收拦截、status（Spec 验收 8）
+- [ ] Task 7：`coordinator rehost --undo`（Spec 验收 9）
+- [ ] Task 8：钩子陌生 Claude 会话提示（Spec 验收 10）
+- [ ] Checkpoint 2（report）：命令层做完，全量测试通过
+- [ ] Task 9：文档与技能（Spec 验收 11）
+- [ ] Task 10：`module-crew sync` 后全量测试（Spec 验收 12 测试部分）
+- [ ] Checkpoint 3（gate）：实地演练要不要现在做
+- [ ] Checkpoint 4（gate）：最终验收
+- [ ] 回告：mc-coord（转用户）LIVE-SAAS 可按迁移说明迁
