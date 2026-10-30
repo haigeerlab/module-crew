@@ -1,0 +1,42 @@
+{
+  "parse": {
+    "type": "user-reply",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": 1003,
+    "fields": {
+      "事项": "#1003（你的原消息 #612）",
+      "转自": "收件枢纽，消息 #640",
+      "用户原话": "A 批准 pay 的最终验收",
+      "答复时间": "2026-10-18T15:20:00+08:00"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "origin": {
+      "originals": [
+        612
+      ],
+      "relayedFrom": "hub",
+      "relayMessage": 640
+    }
+  }
+}

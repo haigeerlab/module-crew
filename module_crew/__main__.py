@@ -745,6 +745,8 @@ def _change(args) -> int:
         print(f"类型：{out.kind}")
         for line in out.lines:
             print(line)
+        if "file-fingerprint-stripped" in protocol.parse(text).hints:   # S54 (T402): files listed without the digest
+            print("提示：file-fingerprint-stripped（文件行尾的指纹已剥掉）；转告发件人：公共变更请求的文件行只写路径")
         early = out.number is not None and (store.get(db, "request", str(out.number)) or {}).get("declared") is True
         if out.code == 0 and out.number is not None and not early:   # crew-review-display: the card the user is asked with
             from module_crew import present

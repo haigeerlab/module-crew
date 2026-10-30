@@ -1,0 +1,10 @@
+【公共变更请求】
+结束：无
+来自：crew-store
+文件：
+- scripts/a.sh sha256:0123456789ab
+- package.json sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+- pnpm-lock.yaml
+改什么：统一打开 strict
+为什么：状态库的类型要严格检查
+是否完全停住：否

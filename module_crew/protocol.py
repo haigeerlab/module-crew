@@ -1,4 +1,4 @@
-"""Parse and render session-protocol v2.6 messages (see spec/crew-protocol.md).
+"""Parse and render session-protocol v2.8 messages (see spec/crew-protocol.md).
 
 Pure functions only: no file, git or agent-relay access. Field names, tags and
 problem codes follow the contract text in session-protocol PROTOCOL.md.
@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-CONTRACT_VERSION = "2.6"
+CONTRACT_VERSION = "2.8"
 
 KIND_TAGS = {
     "等待用户": "wait-user",
@@ -66,6 +66,7 @@ _FILE_LINE_RE = re.compile(r"^(?:-\s+)?(\S.*?)\s+(sha256:[0-9a-f]{12,64})$")
 _PROSE_RE = re.compile(r"[：，。；！？]")          # S27: sentence punctuation never appears in a path
 _PROSE_HINT_RE = re.compile(r"[\s\u4e00-\u9fff]")    # spaces or Chinese: allowed only when the line still reads as a path
 _PATHISH_RE = re.compile(r"/|\.[A-Za-z0-9]+$")
+_FILE_FINGERPRINT_RE = re.compile(r"(?<=\S) sha256:[0-9a-f]{12,64}$")   # S54 (v2.8): one space + lowercase digest, stripped
 REVIEW_NODES = {"Spec": "spec", "Plan": "plan", "接口提案": "interface", "最终验收": "final"}
 NOTICE_KINDS = {"开工": "start", "同步基线": "sync-baseline", "接口变更": "interface-change", "收尾": "wrap-up", "退回": "returned",
                 "挂起": "suspend", "恢复": "resume", "返工": "rework", "撤销批准": "approval-revoked"}
@@ -534,7 +535,10 @@ def parse(text: str) -> Message:
             problems.append("missing-end")
         _require(fields, ("来自", "文件", "改什么", "为什么"), problems)
         stopped = _stop_flag(fields, problems)
-        req_files = _lines(fields.get("文件"))
+        raw_files = _lines(fields.get("文件"))
+        req_files = [_FILE_FINGERPRINT_RE.sub("", f) for f in raw_files]
+        if req_files != raw_files:
+            hints.append("file-fingerprint-stripped")
         if any(not _path_like(f) for f in req_files):         # S27 (T133): a sentence is not a file
             problems.append("bad-file-line")
         extra = {"fullyStopped": stopped, "changeRequest": {"files": req_files}}

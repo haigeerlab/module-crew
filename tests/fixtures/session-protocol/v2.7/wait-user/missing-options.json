@@ -1,0 +1,38 @@
+{
+  "parse": {
+    "type": "wait-user",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "来自": "前端",
+      "要你决定": "要不要加暗色模式",
+      "要点": "- 设计稿只有亮色\n- 加暗色要多两天",
+      "你该回": "15 加",
+      "是否完全停住": "否"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": "15 加",
+    "fullyStopped": false,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "missing-options"
+    ],
+    "hints": []
+  }
+}

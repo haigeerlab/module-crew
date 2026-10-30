@@ -1,0 +1,77 @@
+{
+  "parse": {
+    "type": "review-conclusion",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "审查编号": "R-7",
+      "节点": "Spec",
+      "模块": "alpha",
+      "送审方": "前端",
+      "结论": "通过",
+      "待用户决定": "D1：alpha 首字母要不要大写？\n  A. 大写\n  倾向：A\nD2：错误日志保留多久？\n  A. 7 天\n  B. 30 天"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": {
+      "ref": "R-7",
+      "node": "spec",
+      "submitter": "前端",
+      "verdict": "passed",
+      "adviceCount": null,
+      "module": "alpha"
+    },
+    "problems": [
+      "bad-decision-item:D1",
+      "bad-decision-item:D2"
+    ],
+    "hints": [],
+    "decisions": [
+      {
+        "id": "D1",
+        "question": "alpha 首字母要不要大写？",
+        "options": [
+          {
+            "letter": "A",
+            "text": "大写"
+          }
+        ],
+        "lean": "A",
+        "leanReason": null
+      },
+      {
+        "id": "D2",
+        "question": "错误日志保留多久？",
+        "options": [
+          {
+            "letter": "A",
+            "text": "7 天"
+          },
+          {
+            "letter": "B",
+            "text": "30 天"
+          }
+        ],
+        "lean": null,
+        "leanReason": null
+      }
+    ]
+  }
+}

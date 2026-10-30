@@ -1,0 +1,10 @@
+【交审】
+结束：无
+模块：crew-protocol
+节点：Plan
+文件：
+tasks/crew-protocol/plan.md sha256:77c1d0e9a3b2
+tasks/crew-protocol/todo.md
+要点：
+- 步骤：先写解析，再写生成，最后接契约样例
+- 最大风险：续行的缩进规则

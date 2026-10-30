@@ -1,0 +1,15 @@
+【交审】
+结束：无
+模块：无
+节点：最终验收
+文件：
+- tasks/T3.md sha256:5c1f0e27ab94d3e8
+- src/parse_input.py sha256:a03b9e4471c2f6d0
+要点：
+- 修了空输入时崩溃，补了 2 个测试
+- 实测：pytest tests/test_parse_input.py，14 passed
+- 没验证：Windows 下的换行符
+任务：T3
+改动统计：
+  2 files changed, 31 insertions(+), 2 deletions(-)
+越界检查：与任务单一致（预计 src/parse_input.py、tests/test_parse_input.py，对照集成基线 b4c5d6e）

@@ -1,0 +1,47 @@
+{
+  "parse": {
+    "type": "review-request",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "模块": "crew-protocol",
+      "节点": "Plan",
+      "文件": "tasks/crew-protocol/plan.md sha256:77c1d0e9a3b2\ntasks/crew-protocol/todo.md",
+      "要点": "- 步骤：先写解析，再写生成，最后接契约样例\n- 最大风险：续行的缩进规则"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "bad-file-line"
+    ],
+    "hints": [],
+    "submission": {
+      "module": "crew-protocol",
+      "node": "plan",
+      "files": [
+        {
+          "path": "tasks/crew-protocol/plan.md",
+          "fingerprint": "sha256:77c1d0e9a3b2"
+        }
+      ]
+    }
+  }
+}

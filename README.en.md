@@ -4,7 +4,7 @@ A plugin that lets several Claude Code or Codex desktop sessions **develop sever
 
 [中文](README.md) | English
 
-> Version 0.20.0 · License [MIT](LICENSE)
+> Version 0.21.0 · License [MIT](LICENSE)
 >
 > Only this README is in English. The other documents linked below (user guide, command reference, architecture, changelog) are in Chinese.
 
@@ -37,7 +37,7 @@ There are also light tasks (轻任务: a single feature or bug that skips the Sp
 | [agent-relay](https://github.com/haigeerlab/agent-relay) | Required, interface major version 2. Sessions exchange messages through it |
 | [spec-guard](https://github.com/haigeerlab/spec-guard-plugin) | Required, 0.68.0 or later (planning layer, interface 1.1), with spec-guard's local multi-spec convention enabled in the project (`spec/CAPABILITY-MAP.md`). Declared scope, autonomy tiers and quota offload need 0.85.0 or later (interface 1.11) |
 | [delegate](https://github.com/haigeerlab/delegate-plugin) | Optional, only for quota offload: 0.8.0 or later (interface 1.3) |
-| session-protocol | The message format contract between sessions; module-crew pins v2.6 (enforced by module-crew's built-in parser, nothing to install) |
+| session-protocol | The message format contract between sessions; module-crew pins v2.8 (enforced by module-crew's built-in parser, nothing to install) |
 | Project | A git repository that can host worktrees, with one full check command that runs locally; it decides whether a merge passes |
 | Runtime | Python 3 (standard library only; developed and tested on 3.10) |
 

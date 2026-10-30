@@ -4,7 +4,7 @@
 
 中文 | [English](README.en.md)
 
-> 版本 0.20.0 · 许可证 [MIT](LICENSE)
+> 版本 0.21.0 · 许可证 [MIT](LICENSE)
 
 ## 它解决什么
 
@@ -35,7 +35,7 @@ module-crew 在它之上加一层运行层：
 | [agent-relay](https://github.com/haigeerlab/agent-relay) | 必需，接口主版本 2。会话之间用它收发消息 |
 | [spec-guard](https://github.com/haigeerlab/spec-guard-plugin) | 必需，0.68.0 起（接口 1.1 的规划层）；项目已启用 spec-guard 的本地多 Spec 约定（`spec/CAPABILITY-MAP.md`）。声明范围、自治档位、额度外包要 0.85.0 起（接口 1.11） |
 | [delegate](https://github.com/haigeerlab/delegate-plugin) | 可选，只有打开额度外包时才要：0.8.0 起（接口 1.3） |
-| session-protocol | 会话间消息的格式契约，module-crew 钉住 v2.6（契约本身随 module-crew 内置的解析器生效，不用另装） |
+| session-protocol | 会话间消息的格式契约，module-crew 钉住 v2.8（契约本身随 module-crew 内置的解析器生效，不用另装） |
 | 项目 | git 仓库，能建 worktree；有一条能在本地跑完的完整检查命令，合并后用它判断集成是否通过 |
 | 运行环境 | Python 3（只用标准库；开发与测试用 3.10） |
 

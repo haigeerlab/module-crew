@@ -1,0 +1,49 @@
+{
+  "parse": {
+    "type": "wait-user",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "要你决定": "先做哪个页面",
+      "要点": "- 两个页面都已有设计稿\n- 后端接口都已就绪",
+      "选项与我的建议": "推荐 A：先做列表页\n  选了会怎样：先能演示\nB：先做详情页\n  选了会怎样：先解决最难的部分",
+      "你该回": "19 A",
+      "是否完全停住": "否"
+    },
+    "options": [
+      {
+        "letter": "A",
+        "text": "先做列表页",
+        "consequence": "先能演示"
+      },
+      {
+        "letter": "B",
+        "text": "先做详情页",
+        "consequence": "先解决最难的部分"
+      }
+    ],
+    "recommended": "A",
+    "suggestedReply": "19 A",
+    "fullyStopped": false,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "missing-field:来自"
+    ],
+    "hints": []
+  }
+}

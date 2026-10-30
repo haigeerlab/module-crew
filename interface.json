@@ -1,8 +1,8 @@
 {
   "interface": "1.0",
   "plugin": "module-crew",
-  "version": "0.20.0",
-  "contract": "2.6",
+  "version": "0.21.0",
+  "contract": "2.8",
   "sessions": {
     "command": [
       "bin/module-crew",
