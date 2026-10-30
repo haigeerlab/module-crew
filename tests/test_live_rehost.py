@@ -355,5 +355,32 @@ class RehostPermissionsTest(PermCase):
         self.assertTrue(any(str(self.wt["c"]) in l and "已写权限规则" in l for l in lines), lines)
 
 
+class OldSessionTest(ToClaudeCase):
+    """Task 5 (acceptance 7): a moved-away Codex thread may still read but no longer write."""
+
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(self.go()[0], 0)
+
+    def cli(self, *args, thread="codex-shop-b"):
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_SESSION_ID"}
+        return self.run_cli(*args, cwd=self.wt["b"], env={**env, "CODEX_THREAD_ID": thread})
+
+    def test_module_writes_refused(self):
+        for args in (("sync",), ("check", "quick"), ("offload", "start", "b"), ("bind", "shop-b")):
+            with self.subTest(args):
+                out = self.cli(*args)
+                self.assertEqual(out.returncode, 7, out.stdout + out.stderr)
+                self.assertIn("已被迁到 Claude", out.stderr)
+
+    def test_reads_still_work(self):
+        self.assertEqual(self.cli("status").returncode, 0)
+        self.assertEqual(self.cli("sessions").returncode, 0)
+
+    def test_other_threads_unaffected(self):
+        out = self.cli("bind", "shop-b", thread="claude-new")
+        self.assertNotEqual(out.returncode, 7, out.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

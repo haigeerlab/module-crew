@@ -1026,8 +1026,35 @@ _ANY_SESSION = {("status", None), ("sessions", None), ("protocol", None), ("hook
                 ("offload", "resume"), ("offload", "takeover"), ("check", "quick"), ("check", "show"), ("check", "list")}
 
 
+# crew-live-rehost decision 5: module-side writes a conversation moved away from Codex may no longer run
+_MODULE_WRITES = {("sync", None), ("check", "quick"), ("offload", "start"), ("offload", "settle"), ("offload", "resume"),
+                  ("offload", "takeover"), ("bind", None)}
+
+
+def _moved_away(key) -> int | None:
+    if key not in _MODULE_WRITES and (key[0], None) not in _MODULE_WRITES:
+        return None
+    caller = hooks.own_session_id()
+    if not caller:
+        return None
+    try:
+        sessions = store.records(store.open_store(), "session")
+    except store.StoreError:
+        return None
+    name = next((n for n, r in sorted(sessions.items()) if r.get("status") == "active"
+                 and any(p.get("sessionId") == caller and p.get("reason") == "rehost" for p in r.get("previousSessions") or [])), None)
+    if name is None:
+        return None
+    print(f"❌ 本会话已被迁到 Claude：{name} 现在由 Claude 上的新会话接手，本会话停手，不要再运行 module-crew 写命令或改 worktree。"
+          "没有执行，什么都没写。", file=sys.stderr)
+    return 7
+
+
 def _session_guard(args) -> int | None:
     key = (args.group, getattr(args, "action", None))
+    moved = _moved_away(key)
+    if moved is not None:
+        return moved
     if (args.group, None) in _ANY_SESSION or key in _ANY_SESSION:
         return None
     if args.group == "unqueued" and not getattr(args, "notify", False):
