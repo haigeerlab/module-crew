@@ -1,6 +1,6 @@
 # Implementation Plan: crew-live-rehost
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-live-rehost.md`（用户 2026-10-30 批准，事项 C412／C413，原话「批准，未决都选 A」）。任务清单：`tasks/crew-live-rehost/todo.md`。
 > 未决问题的选择：Q1 A（没人 bind 前可撤回）、Q2 A（原话关键词「已停／停了」）、Q3 A（「丢」的未提交改动用带标签的 stash 收起）——都与 Spec 正文的推荐值一致，Spec 不用改。
