@@ -171,3 +171,75 @@ def check(project: str | os.PathLike, cwd: str | os.PathLike, session_id: str | 
     else:
         lines.append("还不能迁：先处理上面打 ❌ 的项")
     return (0 if ok else 3), doc, lines
+
+
+STOPPED_WORDS = ("已停", "停了")      # Q2 A: the user says the old Codex sessions are stopped
+
+
+def may_start(db: store.Store, project: str | os.PathLike, cwd: str | os.PathLike, session_id: str | None) -> str | None:
+    """Decision 2: the narrow gap in the write-command guard. None, or why this caller may not start a move (exit 7)."""
+    by_id = {c.id: c for c in readiness(db, project, cwd, session_id)}
+    for cid in ("caller", "cwd", "coordinator-host"):
+        if not by_id[cid].ok:
+            return by_id[cid].reason
+    return None
+
+
+def words_problem(original: str, code: str) -> str | None:
+    if not original or not original.strip():
+        return "用户原话不能为空：迁移要用户在本会话明说"
+    if code not in original:
+        return f"用户原话里没有确认码 {code}：请把 --check 的预览给用户看，用户同意时原话要带上确认码"
+    if not any(w in original for w in STOPPED_WORDS):
+        return "用户原话没说 Codex 里的旧会话已停：请用户先在 Codex 里亲手停下并归档它们，再在原话里写明「已停」"
+    return None
+
+
+def rehost(project: str | os.PathLike, original: str, code: str, session_id: str | None,
+           cwd: str | os.PathLike) -> tuple[int, list[str]]:
+    """Decision 4: check, then move every registration in one transaction. Nothing is written on refusal."""
+    from module_crew import hooks
+    db = store.open_store(Path(project))
+    refused = may_start(db, project, cwd, session_id)
+    if refused:
+        return 7, ["没有执行，什么都没写，原因：", refused]
+    problem = words_problem(original, code or "")
+    if problem:
+        return 3, ["没有执行，什么都没写，原因：", problem]
+    checks = readiness(db, project, cwd, session_id)
+    if not ready(checks):
+        return 3, ["没有执行，什么都没写，原因：还不能迁"] + [f"  ❌ {c.id}：{c.reason}" for c in checks if not c.ok]
+    state = state_of(db)
+    if confirm_code(state) != code:
+        return 3, ["没有执行，什么都没写，原因：", "预览之后状态变了（确认码对不上），请重新 --check 给用户看"]
+    rows = {r["name"]: r for r in state["sessions"]}
+    at = store.now()
+    with db.transaction(actor="rehost") as tx:
+        batch = tx.allocate_number()
+        for name, rec in movers(db):
+            cur = tx.get("session", name)
+            old = (cur.get("hostSession") or {}).get("sessionId")
+            moved = {k: v for k, v in cur.items() if k != "hostSession"}
+            moved["host"] = TO
+            if old:
+                moved["previousSessions"] = (list(cur.get("previousSessions") or [])
+                                             + [{"sessionId": old, "at": at, "reason": "rehost"}])[-hooks.PREVIOUS_KEPT:]
+            mark = {"from": FROM, "at": at, "original": original, "batch": batch}
+            new_id = None
+            if cur.get("role") == "coordinator":
+                moved["hostHandover"] = {"from": FROM, "to": TO, "at": at, "original": original, "pending": False}
+                if session_id:
+                    moved["hostSession"] = hooks.identity(session_id)
+                    new_id = session_id
+            else:
+                row = rows[name]
+                mark.update(snapshot={"head": row.get("head"), "dirty": row.get("dirty") or []}, inventory="pending")
+            moved["rehost"] = mark
+            tx.put("session", name, moved, action="rehosted",
+                   data={"original": original, "batch": batch, "oldSessionId": old, "newSessionId": new_id})
+            if new_id:
+                hooks._clear_sighting(tx, new_id, name)
+    coord = next(n for n, r in movers(db) if r.get("role") == "coordinator")
+    return 0, [f"已迁到 Claude Code（迁移 #{batch}）：{len(rows)} 个登记改为 Claude，旧的 Codex 会话从现在起不能再执行 module-crew 写命令",
+               (f"本会话已绑为模块协调 {coord}" if session_id else
+                f"模块协调 {coord} 还没绑会话：在 Claude 新会话里运行 module-crew bind {coord} --takeover --original-file <原话文件>")]

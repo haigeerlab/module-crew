@@ -209,5 +209,105 @@ class CheckTest(RehostCase):
         self.assertEqual((store.records(self.db, "session"), len(store.events(self.db))), before)
 
 
+class ToClaudeCase(RehostCase):
+    def code(self, **who):
+        return self.check(**who)[1]["code"]
+
+    def words(self, code):
+        return f"把这批迁到 Claude，Codex 里 7 个旧会话我已停下并归档，确认码 {code}"
+
+    def go(self, original=None, code=None, sid="sid-new", cwd=None, **who):
+        who = who or ({"claude": sid} if sid else {})
+        code = code or self.code(**who)
+        with as_caller(**who):
+            return rh.rehost(self.repo, original if original is not None else self.words(code), code, sid, cwd or self.repo)
+
+    def snap(self):
+        return (store.records(self.db, "session"), store.records(self.db, "item"), store.records(self.db, "ticket"),
+                store.records(self.db, "request"), store.records(self.db, "task"), len(store.events(self.db)))
+
+
+class ToClaudeTest(ToClaudeCase):
+    """Task 3 (acceptance 2, 3, 4): checks, the narrow guard, and the one transaction."""
+
+    def test_refusals_write_nothing(self):
+        good = self.code(claude="sid-new")
+        cases = {
+            "wrong code": dict(code="ZZZZZZ", original=self.words("ZZZZZZ")),
+            "no code in words": dict(code=good, original="迁到 Claude，旧会话已停"),
+            "not stopped": dict(code=good, original=f"迁到 Claude，确认码 {good}"),
+            "empty": dict(code=good, original=" "),
+        }
+        for name, kw in cases.items():
+            with self.subTest(name):
+                before = self.snap()
+                code, lines = self.go(**kw)
+                self.assertEqual(code, 3, lines)
+                self.assertEqual(self.snap(), before)
+
+    def test_code_stale_after_change(self):
+        good = self.code(claude="sid-new")
+        (self.wt["b"] / "late.txt").write_text("x", encoding="utf-8")
+        before = self.snap()
+        code, lines = self.go(code=good, original=self.words(good))
+        self.assertEqual(code, 3, lines)
+        self.assertIn("重新 --check", "\n".join(lines))
+        self.assertEqual(self.snap(), before)
+
+    def test_guard_exit_7(self):
+        cases = {"codex thread": dict(sid="codex-x", codex="codex-x"),
+                 "bound caller": dict(sid="codex-shop-b", claude="codex-shop-b"),
+                 "outside integration": dict(sid="sid-new", claude="sid-new", cwd=self.wt["b"])}
+        for name, kw in cases.items():
+            with self.subTest(name):
+                before = self.snap()
+                sid, cwd = kw.pop("sid"), kw.pop("cwd", None)
+                code, lines = self.go(code="ABCDEF", original=self.words("ABCDEF"), sid=sid, cwd=cwd, **kw)
+                self.assertEqual(code, 7, lines)
+                self.assertEqual(self.snap(), before)
+
+    def test_moves_everyone(self):
+        with self.db.transaction(actor="t") as tx:
+            tx.put("item", str(tx.allocate_number()), {"kind": "review", "module": "b", "node": "spec", "state": "open"}, action="t")
+            tx.put("request", str(tx.allocate_number()), {"from": "shop-c", "files": ["x.ts"], "state": "open"}, action="t")
+            tx.put("ticket", str(tx.allocate_number()), {"from": "shop-b", "state": "open"}, action="t")
+        (self.wt["b"] / "wip.py").write_text("x", encoding="utf-8")
+        items_before = self.snap()[1:5]
+        code, lines = self.go()
+        self.assertEqual(code, 0, lines)
+        sessions = store.records(self.db, "session")
+        moved = {n: r for n, r in sessions.items() if r.get("status") == "active"}
+        self.assertEqual({r["host"] for r in moved.values()}, {"claude-desktop"})
+        coord = moved["shop-coord"]
+        self.assertEqual(coord["hostSession"]["sessionId"], "sid-new")
+        self.assertEqual(coord["hostHandover"]["from"], "codex-desktop")
+        self.assertFalse(coord["hostHandover"]["pending"])
+        self.assertNotIn("snapshot", coord["rehost"])
+        for name in ("shop-b", "shop-c"):
+            rec = moved[name]
+            self.assertNotIn("hostSession", rec)
+            self.assertEqual(rec["previousSessions"][-1], {**rec["previousSessions"][-1], "sessionId": f"codex-{name}", "reason": "rehost"})
+            self.assertEqual(rec["rehost"]["inventory"], "pending")
+        self.assertIn("?? wip.py", moved["shop-b"]["rehost"]["snapshot"]["dirty"])
+        self.assertEqual(self.snap()[1:5], items_before)
+        ev = [e for e in store.events(self.db) if e["type"] == "session.rehosted"]
+        self.assertEqual(len(ev), 3)
+        self.assertTrue(all("确认码" in e["data"]["original"] for e in ev))
+
+    def test_terminal_leaves_coordinator_unbound(self):
+        code, lines = self.go(sid=None)
+        self.assertEqual(code, 0, lines)
+        self.assertNotIn("hostSession", store.get(self.db, "session", "shop-coord"))
+
+    def test_cli_passes_guard_for_unbound_claude(self):
+        env = {k: v for k, v in os.environ.items() if k != "CODEX_THREAD_ID"}
+        env["CLAUDE_CODE_SESSION_ID"] = "sid-cli"
+        out = self.run_cli("coordinator", "rehost", "--check", "--json", env=env)
+        code = json.loads(out.stdout)["code"]
+        out = self.run_cli("coordinator", "rehost", "--to", "claude", "--code", code, "--original", self.words(code), env=env)
+        self.assertEqual(out.returncode, 0, out.stderr + out.stdout)
+        self.assertEqual(store.get(self.db, "session", "shop-coord")["hostSession"]["sessionId"], "sid-cli")
+
+
 if __name__ == "__main__":
     unittest.main()

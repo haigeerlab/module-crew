@@ -1038,8 +1038,8 @@ def _session_guard(args) -> int | None:
         return None
     if key == ("coordinator", "handover") and getattr(args, "check", False):
         return None                         # crew-host-handover: the check is read only
-    if key == ("coordinator", "rehost") and getattr(args, "check", False):
-        return None                         # crew-live-rehost: the check is read only
+    if key == ("coordinator", "rehost") and (getattr(args, "check", False) or getattr(args, "to", None)):
+        return None                         # crew-live-rehost: the check is read only; --to runs its own guard (exit 7)
     caller = hooks.own_session_id()
     if not caller:
         return None                         # no session id: the user at a terminal
@@ -1092,8 +1092,19 @@ def _rehost(args) -> int:
             code, doc, lines = rehost.check(".", os.getcwd(), hooks.own_session_id())
             print(json.dumps(doc, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
             return code
-        print("❌ 还没有实现", file=sys.stderr)
-        return 2
+        original = _original(args.original, args.original_file)
+        if original is None:
+            return 2
+        if args.to:
+            if not args.code:
+                print("❌ --to claude 要带 --code <确认码>（先 --check）", file=sys.stderr)
+                return 2
+            code, lines = rehost.rehost(".", original, args.code.strip().upper(), hooks.own_session_id(), os.getcwd())
+        else:
+            print("❌ 还没有实现", file=sys.stderr)
+            return 2
+        print(json.dumps({"code": code, "lines": lines}, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+        return code
     except store.StoreError as exc:
         print(f"❌ {exc}", file=sys.stderr)
         return 2
