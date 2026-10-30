@@ -117,6 +117,9 @@ def _status(as_json: bool) -> int:
                   "等新宿主的会话 bind --takeover（交接说明在状态库目录 handover-guide/ 下）")
         if report.store.get("handoverLine"):
             print("  " + report.store["handoverLine"])
+        if report.store.get("rehostPending"):              # crew-live-rehost
+            print("  迁来待盘点：" + "、".join(report.store["rehostPending"])
+                  + "（盘点交用户、用户点头后 module-crew rehost release <邮箱名>）")
         own = inbox.own_waits(store.open_store())
         if own:
             print("  模块协调自开的等待记录：" + "、".join(f"W{n}（等 {r['about']}）" for n, r in own))
@@ -1022,7 +1025,7 @@ _ANY_SESSION = {("status", None), ("sessions", None), ("protocol", None), ("hook
                 ("host-check", None), ("scope", None), ("store", "check"), ("start", "plan"), ("review", "batch"), ("review", "show"),
                 ("change", "list"), ("merge", "queue"), ("merge", "push-plan"), ("source", "list"), ("source", "map"),
                 ("task", "list"), ("task", "show"), ("task", "next"), ("permissions", "plan"), ("coordinator", "up"),
-                ("offload", "show"), ("offload", "start"), ("offload", "settle"),
+                ("offload", "show"), ("rehost", "show"), ("offload", "start"), ("offload", "settle"),
                 ("offload", "resume"), ("offload", "takeover"), ("check", "quick"), ("check", "show"), ("check", "list")}
 
 
@@ -1135,6 +1138,26 @@ def _rehost(args) -> int:
     except store.StoreError as exc:
         print(f"❌ {exc}", file=sys.stderr)
         return 2
+
+
+def _rehost_after(args) -> int:
+    """crew-live-rehost: `rehost show [<name>] | rehost release <name>`."""
+    from module_crew import rehost
+    try:
+        db = store.open_store()
+        if args.action == "show":
+            code, lines = rehost.show(db, args.name)
+            print(json.dumps({"code": code, "lines": lines}, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+            return code
+        original = _original(args.original, args.original_file)
+        if original is None:
+            return 2
+        code, lines = rehost.release(db, args.name, original)
+    except store.StoreError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 2
+    print("\n".join(lines))
+    return code
 
 
 def _tier(args) -> int:
@@ -1449,6 +1472,16 @@ def _main(argv: list[str] | None = None) -> int:
     rg.add_argument("--original")
     rg.add_argument("--original-file")
     cor.add_argument("--json", action="store_true")
+    rh = sub.add_parser("rehost", help="批次内迁移之后：show 对照迁移时的快照；release 在用户点头后解除盘点闸（crew-live-rehost）")
+    rhs = rh.add_subparsers(dest="action", required=True)
+    rhw = rhs.add_parser("show", help="只读：快照与现在、已批 Spec/Plan、todo 进度")
+    rhw.add_argument("name", nargs="?")
+    rhw.add_argument("--json", action="store_true")
+    rhr = rhs.add_parser("release", help="模块协调：用户看过盘点点头后，解除这个会话的盘点闸（要用户原话）")
+    rhr.add_argument("name")
+    rrg = rhr.add_mutually_exclusive_group(required=True)
+    rrg.add_argument("--original")
+    rrg.add_argument("--original-file")
     bd = sub.add_parser("bind", help="登记本会话就是状态库里的某个会话（钩子只给登记过的会话注入角色）")
     bd.add_argument("name", help="开工说明或恢复说明里写的邮箱名")
     bg = bd.add_mutually_exclusive_group()
@@ -1772,6 +1805,8 @@ def _run(args) -> int:
         return _handover(args)
     if args.group == "coordinator" and args.action == "rehost":
         return _rehost(args)
+    if args.group == "rehost":
+        return _rehost_after(args)
     if args.group == "coordinator":
         original = _original(args.original, args.original_file)
         if original is None:

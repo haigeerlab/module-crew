@@ -7,9 +7,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from helpers import RepoCase, ReviewCase, git
+from helpers import RepoCase, ReviewCase, git, review_text
 
-from module_crew import hooks, mergelock, permissions, rehost as rh, store
+from module_crew import hooks, mergelock, permissions, rehost as rh, review, store
 from test_permissions import PermCase
 
 
@@ -380,6 +380,72 @@ class OldSessionTest(ToClaudeCase):
     def test_other_threads_unaffected(self):
         out = self.cli("bind", "shop-b", thread="claude-new")
         self.assertNotEqual(out.returncode, 7, out.stderr)
+
+
+class InventoryTest(ToClaudeCase):
+    """Task 6 (acceptance 8): the inventory gate."""
+
+    def setUp(self):
+        super().setUp()
+        (self.wt["b"] / "wip.py").write_text("x", encoding="utf-8")
+        self.assertEqual(self.go()[0], 0)
+
+    def final(self, m="b", value=1):
+        f = self.wt[m] / "src" / f"{m}.py"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(f"V = {value}\n", encoding="utf-8")
+        git(self.wt[m], "add", "src")
+        git(self.wt[m], "commit", "-q", "-m", "code")
+        head = review_text(m, "最终验收", [(f"src/{m}.py", f)])
+        head = head.replace("要点：\n", "要点：\n验收结果：\n1：通过\n\n", 1)
+        return head + "改动统计：1 file changed\n越界检查：无越界\n"
+
+    def test_hook_stage(self):
+        text = hooks.session_start(self.wt["b"], "startup") or ""
+        self.assertIn("迁来待盘点", text)
+        with as_caller():
+            line = hooks.prompt_line(self.wt["b"]) or ""
+        self.assertIn("迁来待盘点", line)
+
+    def test_show_reports_changes_since_snapshot(self):
+        (self.wt["b"] / "late.txt").write_text("y", encoding="utf-8")
+        git(self.wt["b"], "add", "late.txt")
+        git(self.wt["b"], "commit", "-q", "-m", "late")
+        code, lines = rh.show(self.db, "shop-b")
+        text = "\n".join(lines)
+        self.assertEqual(code, 0, text)
+        self.assertIn("快照之后多了 1 个提交", text)
+        self.assertIn("spec/b.md", text)
+        self.assertIn("todo", text)
+        self.assertIn("对不上", text)
+
+    def test_show_unchanged(self):
+        code, lines = rh.show(self.db, "shop-c")
+        self.assertEqual(code, 0)
+        self.assertIn("与迁移时的快照一致", "\n".join(lines))
+
+    def test_final_refused_until_released(self):
+        out = review.add(self.db, self.final(), "shop-b", 9001)
+        self.assertEqual(out.code, 3, out.lines)
+        self.assertIn("rehost release", "\n".join(out.lines))
+        self.assertEqual(review.add(self.db, review_text("b", "Spec", [("spec/b.md", self.wt["b"] / "spec" / "b.md")]),
+                                    "shop-b", 9002).code, 0)
+        code, lines = rh.release(self.db, "shop-b", "盘点看过了，继续做")
+        self.assertEqual(code, 0, lines)
+        self.assertEqual(store.get(self.db, "session", "shop-b")["rehost"]["inventory"], "released")
+        self.assertNotIn("迁来待盘点", hooks.session_start(self.wt["b"], "startup") or "")
+        self.assertEqual(review.add(self.db, self.final(value=2), "shop-b", 9003).code, 0)
+
+    def test_release_refusals(self):
+        self.assertEqual(rh.release(self.db, "shop-b", " ")[0], 3)
+        self.assertEqual(rh.release(self.db, "shop-coord", "x")[0], 3)
+        self.assertEqual(rh.release(self.db, "shop-b", "好")[0], 0)
+        self.assertEqual(rh.release(self.db, "shop-b", "好")[0], 3)
+
+    def test_status_lists_pending(self):
+        out = self.run_cli("status", "--json")
+        self.assertEqual(json.loads(out.stdout)["store"]["rehostPending"], ["shop-b", "shop-c"])
+        self.assertIn("迁来待盘点", self.run_cli("status").stdout)
 
 
 if __name__ == "__main__":

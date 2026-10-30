@@ -457,7 +457,9 @@ def summarize_store(project: Path) -> tuple[Check, dict | None]:
                                                 "coordinator": coord, "sightings": seen, "tasks": task_rows,
                                                 "unqueued": unq, "mergeLock": _merge_lock(db), "mergeResult": _merge_result(db),
                                                 "permissionsStale": _stale_permissions(db), "selfIsCoordinator": self_coord,
-                                                "codexSelf": codex_self(sessions), **_handover_state(db)}
+                                                "codexSelf": codex_self(sessions), **_handover_state(db),
+                                                "rehostPending": sorted(n for n, r in sessions.items() if r.get("status") == "active"
+                                                                        and (r.get("rehost") or {}).get("inventory") == "pending")}
 
 
 def codex_self(sessions: dict) -> dict | None:

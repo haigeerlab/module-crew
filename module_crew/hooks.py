@@ -133,10 +133,20 @@ STAGE_WAIT_MERGE = "最终验收已批准，等模块协调合并"
 STAGE_WAIT_FINAL = "最终验收已交审（交审事项 C{n}），等用户批准；不要重做或重发"
 STAGE_ACCEPTED = "最终验收已接受（交审事项 C{n}），用户暂未授权合并：停在当前停点，不要再提交，等授权合并或退回"
 STAGE_MERGED = "已合入集成分支，停止开发，等模块协调收回 worktree"
+# crew-live-rehost decision 6: a session moved from Codex inventories against the approved Spec and Plan first
+STAGE_REHOST = ("迁来待盘点（先跑 module-crew rehost show、对照已批 Spec 与 Plan 盘点，作为【等待用户】「类型：中途检查点」"
+                "经模块协调交用户；用户点头前不写代码）")
+
+
+def _rehost_pending(rec: dict | None) -> bool:
+    return ((rec or {}).get("rehost") or {}).get("inventory") == "pending"
 
 
 def _stage(items: dict, module: str, sessions: dict | None = None) -> str:
     """With `sessions`, a reopened module only counts this round (crew-reopen-module decision 4)."""
+    if any(r.get("role") == "dev" and r.get("status") == "active" and r.get("module") == module and _rehost_pending(r)
+           for r in (sessions or {}).values()):
+        return STAGE_REHOST
     items = store.round_items(items, sessions, module)
     reopen = store.reopen_of(sessions or {}, module) or {}
     approved = {"spec", "plan"} if reopen.get("review") == {"spec": "approved", "plan": "approved"} else set()
@@ -218,7 +228,7 @@ def session_start(cwd: str | os.PathLike, source: str = "startup", role: Role | 
         lines = [f"module-crew：你是轻任务 T{role.task} 的会话（邮箱名 {role.name}），模块协调是 {_coordinator_name(role.db)}，你只和它说话。",
                  "按 crew-dev skill 的「轻任务」一节做：只做任务单里的事，测试全过才交回，做大了就停下发升格请求。",
                  f"任务单：{t.get('what', '?')}；预计文件：{'、'.join(t.get('expectedFiles') or [])}；完成标准：{t.get('done', '?')}",
-                 f"当前：{_task_stage(t)}"]
+                 f"当前：{STAGE_REHOST if _rehost_pending(store.get(role.db, 'session', role.name)) else _task_stage(t)}"]
     elif role.kind == "dev":
         tickets = sorted(int(k) for k, v in store.records(role.db, "ticket").items()
                          if v.get("from") == role.name and v.get("state") == "open")
@@ -248,7 +258,9 @@ def prompt_line(cwd: str | os.PathLike, role: Role | None = None) -> str | None:
     if role is None:
         return None
     if role.kind == "task":
-        return f"module-crew：你是轻任务 T{role.task} 的会话（{role.name}），当前：{_task_stage(store.get(role.db, 'task', str(role.task)) or {})}"
+        stage = ("迁来待盘点" if _rehost_pending(store.get(role.db, "session", role.name))
+                 else _task_stage(store.get(role.db, "task", str(role.task)) or {}))
+        return f"module-crew：你是轻任务 T{role.task} 的会话（{role.name}），当前：{stage}"
     if role.kind == "dev":
         stage = _stage(store.records(role.db, "item"), role.module, store.records(role.db, "session")).split("，")[0].split("（")[0]
         return f"module-crew：你是 {role.module} 的模块会话（{role.name}），当前：{stage}"

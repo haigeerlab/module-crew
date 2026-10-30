@@ -330,3 +330,87 @@ def after(db: store.Store, project: str | os.PathLike, batch: int, original: str
             (f"本会话已绑为模块协调 {coord}" if session_id else
              f"模块协调 {coord} 还没绑会话：在 Claude 新会话里运行 module-crew bind {coord} --takeover --original-file {original_file}"),
             *rules, f"迁移说明已存到 {path}，全文如下；请照着一步步做：", "", text]
+
+
+def _marker(path: Path) -> str:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return "没有这个文件"
+    line = next((l.strip() for l in text.splitlines() if l.strip().startswith("<!-- spec-guard: review")), None)
+    return line or "没有批准标记"
+
+
+def _todo(path: Path) -> str:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return "没有 todo"
+    done = sum(1 for l in text.splitlines() if l.lstrip().startswith("- [x]"))
+    total = done + sum(1 for l in text.splitlines() if l.lstrip().startswith("- [ ]"))
+    return f"todo 勾了 {done}／{total}"
+
+
+def show_one(name: str, rec: dict) -> list[str]:
+    """Decision 6: the snapshot taken at the move against the worktree now, and what was approved."""
+    mark = rec.get("rehost") or {}
+    snap = mark.get("snapshot") or {}
+    wt = rec.get("worktree")
+    now = snapshot(wt)
+    who = f"模块 {rec.get('module')}" if rec.get("role") == "dev" else f"轻任务 T{rec.get('task')}"
+    lines = [f"{name}（{who}，迁移 #{mark.get('batch')}，盘点：{'待盘点' if mark.get('inventory') == 'pending' else '已解除'}）",
+             f"  worktree：{wt}"]
+    then, head = snap.get("head"), now.get("head")
+    ahead = None
+    if then and head and then != head:
+        try:
+            out = _git(wt, "rev-list", "--count", f"{then}..{head}")
+            ahead = int(out.stdout.strip()) if out.returncode == 0 else None
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            ahead = None
+    old, new = set(snap.get("dirty") or []), set(now.get("dirty") or [])
+    same = then == head and old == new
+    lines.append(f"  HEAD：迁移时 {(then or '读不到')[:12]}，现在 {(head or '读不到')[:12]}"
+                 + ("" if then == head else f"（快照之后多了 {ahead} 个提交）" if ahead is not None else "（不是快照的后续）"))
+    lines.append(f"  未提交改动：迁移时 {len(old)} 个，现在 {len(new)} 个")
+    lines += [f"    新出现：{l}" for l in sorted(new - old)[:DIRTY_SHOWN]]
+    lines += [f"    已不在：{l}" for l in sorted(old - new)[:DIRTY_SHOWN]]
+    lines += [f"    {l}" for l in sorted(old & new)[:DIRTY_SHOWN]]
+    lines.append("  与迁移时的快照一致" if same else
+                 "  ⚠️ 与迁移时的快照对不上：Codex 里的旧会话可能没停。停下，发【等待其他会话】给模块协调，请用户去 Codex 停掉它，再定这些改动留不留")
+    if rec.get("role") == "dev" and wt:
+        m = rec.get("module")
+        lines.append(f"  已批：spec/{m}.md {_marker(Path(wt) / 'spec' / f'{m}.md')}；"
+                     f"tasks/{m}/plan.md {_marker(Path(wt) / 'tasks' / m / 'plan.md')}；{_todo(Path(wt) / 'tasks' / m / 'todo.md')}")
+    elif rec.get("task") is not None:
+        lines.append(f"  任务单：module-crew task show T{rec.get('task')}（盘点对照它的完成标准）")
+    return lines
+
+
+def show(db: store.Store, name: str | None = None) -> tuple[int, list[str]]:
+    """`rehost show [<name>]`: read only. Without a name, every session still waiting for its inventory."""
+    sessions = store.records(db, "session")
+    if name is not None:
+        rec = sessions.get(name)
+        if rec is None or rec.get("status") != "active" or not (rec.get("rehost") or {}).get("snapshot"):
+            return 3, [f"{name} 不是迁来的在用会话"]
+        return 0, show_one(name, rec)
+    rows = [(n, r) for n, r in sorted(sessions.items()) if r.get("status") == "active"
+            and (r.get("rehost") or {}).get("inventory") == "pending"]
+    if not rows:
+        return 0, ["没有待盘点的迁来会话"]
+    return 0, [l for n, r in rows for l in show_one(n, r)]
+
+
+def release(db: store.Store, name: str, original: str) -> tuple[int, list[str]]:
+    """Decision 6: the user nodded at the inventory; the coordinator lifts the gate for `name`."""
+    if not original or not original.strip():
+        return 3, ["没有执行，原因：", "用户原话不能为空：解除盘点闸要用户看过盘点后的答复"]
+    with db.transaction(actor="coordinator") as tx:
+        rec = tx.get("session", name)
+        mark = (rec or {}).get("rehost") or {}
+        if rec is None or rec.get("status") != "active" or mark.get("inventory") != "pending":
+            return 3, ["没有执行，原因：", f"{name} 没有待盘点的迁移"]
+        tx.put("session", name, {**rec, "rehost": {**mark, "inventory": "released", "releasedAt": store.now(), "releaseOriginal": original}},
+               action="rehost-released", data={"original": original, "batch": mark.get("batch")})
+    return 0, [f"已解除 {name} 的盘点闸：它可以按用户的答复接着做，最终验收照常收"]
