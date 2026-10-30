@@ -1,6 +1,6 @@
 # Spec: crew-live-rehost
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved dea5825450a2 -->
 
 > 能力图模块 `crew-live-rehost`（第十版）。需求来源：接缝 S55，用户在 mc-coord 会话确认需求七条，批准开会话（批准事项 C410）。
 > 依赖 `crew-host-handover`（空档换宿主、`hostHandover`、`bind --takeover` 认宿主、交接说明）、`crew-recovery-hooks`（钩子按角色注入、`takeover` 记同意）、
