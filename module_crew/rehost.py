@@ -239,7 +239,94 @@ def rehost(project: str | os.PathLike, original: str, code: str, session_id: str
                    data={"original": original, "batch": batch, "oldSessionId": old, "newSessionId": new_id})
             if new_id:
                 hooks._clear_sighting(tx, new_id, name)
-    coord = next(n for n, r in movers(db) if r.get("role") == "coordinator")
-    return 0, [f"已迁到 Claude Code（迁移 #{batch}）：{len(rows)} 个登记改为 Claude，旧的 Codex 会话从现在起不能再执行 module-crew 写命令",
-               (f"本会话已绑为模块协调 {coord}" if session_id else
-                f"模块协调 {coord} 还没绑会话：在 Claude 新会话里运行 module-crew bind {coord} --takeover --original-file <原话文件>")]
+    return 0, after(db, project, batch, original, session_id)
+
+
+GUIDE_DIR = "rehost-guide"
+
+
+def kit_note(name: str, rec: dict, batch: int, original_file: str) -> list[str]:
+    """Decision 9: what a moved session does first; the move's words are the user's consent to every takeover."""
+    snap = (rec.get("rehost") or {}).get("snapshot") or {}
+    dirty = snap.get("dirty") or []
+    task = rec.get("task")
+    lines = [f"这是批次内迁移（Codex→Claude，迁移 #{batch}）的恢复：Codex 里原来的会话已被用户停下归档，你在原 worktree 里接着做。",
+             f"用户这次迁移的原话就是对接管 {name} 的同意（原话文件 {original_file}）。依次：",
+             f'① 调 agent-relay 的 bridge_register：{{agent:"{name}", takeover:true, wake:"auto"}}'
+             "（提示无法确认之前的 Codex 会话是否已停时，用户已在原话里确认停了，继续）；",
+             f"② 运行 `module-crew bind {name}`；",
+             f"③ 运行 `module-crew rehost show {name}`，对照下面的快照：HEAD 或未提交文件对不上就停下，"
+             "发【等待其他会话】给模块协调，说 Codex 里的旧会话可能没停；",
+             "④ 对照已批的 Spec 与 Plan 盘点：做对了哪些、要返工哪些、每个未提交文件留还是丢，"
+             "作为【等待用户】「类型：中途检查点」发给模块协调；用户的答复到之前不写代码、不提交；",
+             "⑤ 用户选「丢」的未提交改动用 `git stash push -u -m \"rehost-" + name + "\"` 收起（找得回来），不删文件。",
+             "", f"迁移时的快照：HEAD {(snap.get('head') or '读不到')[:12]}，未提交改动 {len(dirty)} 个（原样带过来，没动过）"]
+    lines += [f"  {l}" for l in dirty[:DIRTY_SHOWN]]
+    if len(dirty) > DIRTY_SHOWN:
+        lines.append(f"  另有 {len(dirty) - DIRTY_SHOWN} 个（rehost show 里有全部）")
+    if task is not None:
+        lines.append(f"轻任务 T{task}：任务单用 `module-crew task show T{task}` 看；盘点对照任务单的完成标准。")
+    return lines
+
+
+def _rules(project: str | os.PathLike, db: store.Store) -> list[str]:
+    """Decision 4 ③: Claude rules for the integration checkout and every moved worktree; a failure never rolls back."""
+    from module_crew import permissions
+    if not ((store.get(db, "config", "main") or {}).get("permissions") or {}).get("applied"):
+        return ["项目没有 permissions apply 过：没写 Claude 规则，开会话后会多弹确认；要预配就凭用户原话运行 module-crew permissions apply"]
+    lines = [permissions.follow_integration(project) or "集成 checkout：没有要写的规则"]
+    for name, rec in movers(db):
+        if rec.get("role") != "coordinator":
+            lines.append(permissions.follow(project, name) or f"{name}：没有要写的规则")
+    return lines
+
+
+def guide(coord: str, kits: list, integration_dir: str, original_file: str, rules: list[str], bound: bool) -> str:
+    from module_crew.handover import _step
+    lines = [f"# 批次内迁移说明：模块协调 {coord} 与 {len(kits)} 个会话从 Codex 迁到 Claude Code", "",
+             f"集成 checkout：`{integration_dir}`。邮箱名都不变。用户这次的原话（已存为 `{original_file}`）就是对下面每一次接管的同意。", ""]
+    lines += _step(1, "Codex（ChatGPT 应用）", "核对旧会话都已停下并归档：" + "、".join([coord] + [k.name for k in kits]),
+                   "Codex 里这些任务都已归档，不再在里面发话")
+    lines += _step(2, "本会话（新的模块协调）" if bound else "Claude 桌面版新会话（目录选集成 checkout，不用 worktree）",
+                   ("" if bound else f"运行 `module-crew bind {coord} --takeover --original-file {original_file}`；")
+                   + f'调 bridge_register {{agent:"{coord}", takeover:true, wake:"auto"}}，加载 crew-coordinator skill，运行 `module-crew status`',
+                   f"status 显示模块协调 {coord} 在 Claude Code，收件箱里没读的消息照常读到")
+    lines += _step(3, f"模块协调 {coord}",
+                   "按 crew-coordinator 的开会话做法，为下面每个会话开一个 Claude 会话：工作目录选它原来的 worktree（不新建 worktree），"
+                   "首条消息贴它的恢复说明",
+                   "每个新会话按恢复说明接管邮箱名、bind、rehost show")
+    lines += ["恢复说明：", *[f"- {k.name}（{k.module}）：worktree `{k.worktree}`，正文 #{k.body}（{k.path}）" for k in kits], ""]
+    lines += _step(4, "每个迁来的会话", "对照已批 Spec、Plan 盘点，作为【等待用户】「类型：中途检查点」发给模块协调；用户点头前不写代码",
+                   "模块协调收到每个会话的盘点")
+    lines += _step(5, f"模块协调 {coord}", "把盘点照常交用户；用户答复到了，转达并运行 "
+                   "`module-crew rehost release <邮箱名> --original-file <答复原话>` 解除盘点闸",
+                   "status 里不再有「迁来待盘点」")
+    lines += _step(6, f"模块协调 {coord}", "看下面的权限规则；开会话后按 crew-coordinator 跑 permissions verify 实测",
+                   "每个会话的权限实测记录都在")
+    lines += ["## 权限规则", "", *rules, "",
+              "## 撤回", "", "迁来的会话一个都还没 bind 之前，可以凭用户原话运行 `module-crew coordinator rehost --undo --original-file <原话文件>` 撤回；"
+              "有会话 bind 之后不能撤回。", ""]
+    return "\n".join(lines)
+
+
+def after(db: store.Store, project: str | os.PathLike, batch: int, original: str, session_id: str | None) -> list[str]:
+    """Decision 4 ③④: rules, one recovery kit per moved session, and the guide (printed and kept in the store)."""
+    from datetime import datetime
+    from module_crew import failure
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    folder = db.path / GUIDE_DIR
+    folder.mkdir(exist_ok=True)
+    original_file = folder / f"{stamp}-original.txt"
+    original_file.write_text(original, encoding="utf-8")
+    rules = _rules(project, db)
+    sessions = movers(db)
+    coord = next(n for n, r in sessions if r.get("role") == "coordinator")
+    kits = [failure.session_kit(db, n, kit_note(n, r, batch, str(original_file))) for n, r in sessions if r.get("role") != "coordinator"]
+    home = integration(db, project)
+    text = guide(coord, kits, str(home or project), str(original_file), rules, bool(session_id))
+    path = folder / f"{stamp}.md"
+    path.write_text(text, encoding="utf-8")
+    return [f"已迁到 Claude Code（迁移 #{batch}）：{len(sessions)} 个登记改为 Claude，旧的 Codex 会话从现在起不能再执行 module-crew 写命令",
+            (f"本会话已绑为模块协调 {coord}" if session_id else
+             f"模块协调 {coord} 还没绑会话：在 Claude 新会话里运行 module-crew bind {coord} --takeover --original-file {original_file}"),
+            *rules, f"迁移说明已存到 {path}，全文如下；请照着一步步做：", "", text]

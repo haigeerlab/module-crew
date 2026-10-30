@@ -229,10 +229,20 @@ class Kit:
 
 def resume_kit(db: store.Store, module: str) -> Kit:
     """Store the first message for a new conversation that takes over `module` in its original worktree."""
+    name, _ = _dev_of(store.records(db, "session"), module)
+    return session_kit(db, name)
+
+
+def session_kit(db: store.Store, name: str, note: list[str] | None = None) -> Kit:
+    """The first message for a new conversation taking over module or light-task session `name` in its worktree.
+
+    `note` replaces the usual takeover note (crew-live-rehost: the move's own words are the user's consent)."""
     from module_crew import hooks
-    name, rec = _dev_of(store.records(db, "session"), module)
+    rec = store.get(db, "session", name) or {}
     context = hooks.session_start(rec["worktree"], "startup") or ""
-    lines = [f"模块：{module}　邮箱名：{name}　worktree：{rec['worktree']}", "", context, "", RECOVERY_NOTE.format(name=name)]
+    who = f"模块：{rec.get('module')}" if rec.get("role") == "dev" else f"轻任务：T{rec.get('task')}"
+    lines = [f"{who}　邮箱名：{name}　worktree：{rec['worktree']}", "", context, "",
+             *(note if note is not None else [RECOVERY_NOTE.format(name=name)])]
     if rec.get("host") == "codex-desktop":
         from module_crew.start import codex_lines
         lines += codex_lines(name, db.path)
@@ -240,7 +250,7 @@ def resume_kit(db: store.Store, module: str) -> Kit:
     with db.transaction(actor="coordinator") as tx:
         n = tx.allocate_number()
         tx.write_body(n, text)
-    return Kit(name, module, rec["worktree"], n, str(db.path / "bodies" / f"{n}.txt"))
+    return Kit(name, str(rec.get("module") or f"T{rec.get('task')}"), rec["worktree"], n, str(db.path / "bodies" / f"{n}.txt"))
 
 
 SERIAL_BLOCKER = "已退回串行：不再开新模块，已开的模块照常推进（用户说恢复并行后运行 serial --off）"

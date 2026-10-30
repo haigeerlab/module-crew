@@ -2,12 +2,15 @@
 
 import json
 import os
+import re
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from helpers import RepoCase, ReviewCase, git
 
-from module_crew import hooks, mergelock, rehost as rh, store
+from module_crew import hooks, mergelock, permissions, rehost as rh, store
+from test_permissions import PermCase
 
 
 def rehost(**extra):
@@ -307,6 +310,49 @@ class ToClaudeTest(ToClaudeCase):
         out = self.run_cli("coordinator", "rehost", "--to", "claude", "--code", code, "--original", self.words(code), env=env)
         self.assertEqual(out.returncode, 0, out.stderr + out.stdout)
         self.assertEqual(store.get(self.db, "session", "shop-coord")["hostSession"]["sessionId"], "sid-cli")
+
+
+class AfterTest(ToClaudeCase):
+    """Task 4 (acceptance 5 not-applied, 6): recovery kits and the guide."""
+
+    def test_kits_and_guide(self):
+        (self.wt["b"] / "wip.py").write_text("x", encoding="utf-8")
+        code, lines = self.go()
+        self.assertEqual(code, 0, lines)
+        text = "\n".join(lines)
+        self.assertIn("没有 permissions apply 过", text)
+        guides = sorted(p for p in (self.db.path / "rehost-guide").glob("*.md"))
+        self.assertEqual(len(guides), 1)
+        guide = guides[0].read_text(encoding="utf-8")
+        for phrase in ("去哪个会话", "做什么", "做完的样子", "shop-b", "shop-c", "归档", "rehost release", "--undo"):
+            self.assertIn(phrase, guide)
+        bodies = [int(n) for n in re.findall(r"正文 #(\d+)", guide)]
+        self.assertEqual(len(bodies), 2)
+        kit_b = next(store.read_body(self.db, n) for n in bodies if "shop-b" in store.read_body(self.db, n).splitlines()[0])
+        for phrase in ('takeover:true, wake:"auto"', "module-crew bind shop-b", "rehost show shop-b", "?? wip.py",
+                       "中途检查点", "不写代码", "rehost-shop-b"):
+            self.assertIn(phrase, kit_b)
+        self.assertNotIn("Codex 桌面版里", kit_b)
+        self.assertNotIn("模块协调运行 `module-crew takeover", kit_b)
+        original = re.search(r"原话文件 (\S+?)）", kit_b).group(1)
+        self.assertIn("确认码", Path(original).read_text(encoding="utf-8"))
+
+
+class RehostPermissionsTest(PermCase):
+    """Task 4 (acceptance 5): Claude rules for every checkout, Codex rules left as they were."""
+
+    def test_rules_follow(self):
+        permissions.apply(self.repo, "按清单预配权限")
+        to_codex(self.db)
+        codex_rules = self.wt["c"] / ".codex" / "rules" / "module-crew.rules"
+        before = codex_rules.read_text(encoding="utf-8")
+        with as_caller(claude="sid-new"):
+            code = rh.check(self.repo, self.repo, "sid-new")[1]["code"]
+            res, lines = rh.rehost(self.repo, f"迁到 Claude，旧会话已停，确认码 {code}", code, "sid-new", self.repo)
+        self.assertEqual(res, 0, lines)
+        self.assertEqual(codex_rules.read_text(encoding="utf-8"), before)
+        self.assertIn("Bash(git push *)", self.settings(self.wt["c"])["permissions"]["deny"])
+        self.assertTrue(any(str(self.wt["c"]) in l and "已写权限规则" in l for l in lines), lines)
 
 
 if __name__ == "__main__":
