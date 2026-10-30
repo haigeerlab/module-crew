@@ -234,6 +234,7 @@ def rehost(project: str | os.PathLike, original: str, code: str, session_id: str
             else:
                 row = rows[name]
                 mark.update(snapshot={"head": row.get("head"), "dirty": row.get("dirty") or []}, inventory="pending")
+            mark["before"] = cur                 # decision 7: --undo puts this back exactly
             moved["rehost"] = mark
             tx.put("session", name, moved, action="rehosted",
                    data={"original": original, "batch": batch, "oldSessionId": old, "newSessionId": new_id})
@@ -414,3 +415,25 @@ def release(db: store.Store, name: str, original: str) -> tuple[int, list[str]]:
         tx.put("session", name, {**rec, "rehost": {**mark, "inventory": "released", "releasedAt": store.now(), "releaseOriginal": original}},
                action="rehost-released", data={"original": original, "batch": mark.get("batch")})
     return 0, [f"已解除 {name} 的盘点闸：它可以按用户的答复接着做，最终验收照常收"]
+
+
+def undo(project: str | os.PathLike, original: str) -> tuple[int, list[str]]:
+    """Decision 7 (Q1 A): put the latest move back exactly, only while none of its sessions has bound in Claude."""
+    if not original or not original.strip():
+        return 3, ["没有执行，原因：", "用户原话不能为空：撤回迁移要用户明说"]
+    db = store.open_store(Path(project))
+    sessions = store.records(db, "session")
+    batches = [r["rehost"]["batch"] for r in sessions.values() if r.get("status") == "active"
+               and isinstance((r.get("rehost") or {}).get("before"), dict)]
+    if not batches:
+        return 3, ["没有执行，原因：", "没有可撤回的迁移"]
+    batch = max(batches)
+    moved = {n: r for n, r in sessions.items() if (r.get("rehost") or {}).get("batch") == batch and r.get("status") == "active"}
+    bound = sorted(n for n, r in moved.items() if r.get("role") != "coordinator" and (r.get("hostSession") or {}).get("sessionId"))
+    if bound:
+        return 3, ["没有执行，原因：", f"迁来的会话已经 bind：{'、'.join(bound)}——它们可能已经动了 worktree，迁移 #{batch} 不能再撤回"]
+    with db.transaction(actor="rehost") as tx:
+        for name, rec in sorted(moved.items()):
+            tx.put("session", name, rec["rehost"]["before"], action="rehost-undone", data={"original": original, "batch": batch})
+    return 0, [f"已撤回迁移 #{batch}：{len(moved)} 个登记恢复为迁移前（Codex）；写上的 Claude 权限规则保留（只追加），恢复说明留着不用",
+               "请用户回到 Codex 里重新打开原来的会话接着做"]

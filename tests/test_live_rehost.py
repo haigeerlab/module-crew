@@ -448,5 +448,40 @@ class InventoryTest(ToClaudeCase):
         self.assertIn("迁来待盘点", self.run_cli("status").stdout)
 
 
+class UndoTest(ToClaudeCase):
+    """Task 7 (acceptance 9, Q1 A): undo only before any moved session binds."""
+
+    def test_undo_restores_exactly(self):
+        before = store.records(self.db, "session")
+        self.assertEqual(self.go()[0], 0)
+        with as_caller(claude="sid-new"):
+            code, lines = rh.undo(self.repo, "迁错了，撤回")
+        self.assertEqual(code, 0, lines)
+        self.assertEqual(store.records(self.db, "session"), before)
+        self.assertTrue(any(e["type"] == "session.rehost-undone" for e in store.events(self.db)))
+
+    def test_undo_refused_after_bind(self):
+        self.assertEqual(self.go()[0], 0)
+        hooks.bind(self.db, "shop-b", "claude-b", self.wt["b"])
+        snap = store.records(self.db, "session")
+        code, lines = rh.undo(self.repo, "撤回")
+        self.assertEqual(code, 3, lines)
+        self.assertIn("shop-b", "\n".join(lines))
+        self.assertEqual(store.records(self.db, "session"), snap)
+
+    def test_undo_refusals(self):
+        self.assertEqual(rh.undo(self.repo, "撤回")[0], 3)          # nothing moved yet
+        self.assertEqual(self.go()[0], 0)
+        self.assertEqual(rh.undo(self.repo, " ")[0], 3)
+
+    def test_undo_cli_needs_bound_coordinator(self):
+        self.assertEqual(self.go()[0], 0)
+        env = {k: v for k, v in os.environ.items() if k != "CODEX_THREAD_ID"}
+        out = self.run_cli("coordinator", "rehost", "--undo", "--original", "撤回", env={**env, "CLAUDE_CODE_SESSION_ID": "sid-other"})
+        self.assertEqual(out.returncode, 7, out.stderr)
+        out = self.run_cli("coordinator", "rehost", "--undo", "--original", "撤回", env={**env, "CLAUDE_CODE_SESSION_ID": "sid-new"})
+        self.assertEqual(out.returncode, 0, out.stderr + out.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

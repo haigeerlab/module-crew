@@ -1131,8 +1131,7 @@ def _rehost(args) -> int:
                 return 2
             code, lines = rehost.rehost(".", original, args.code.strip().upper(), hooks.own_session_id(), os.getcwd())
         else:
-            print("❌ 还没有实现", file=sys.stderr)
-            return 2
+            code, lines = rehost.undo(".", original)
         print(json.dumps({"code": code, "lines": lines}, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
         return code
     except store.StoreError as exc:
