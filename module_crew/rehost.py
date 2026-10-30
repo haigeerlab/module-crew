@@ -299,7 +299,7 @@ def guide(coord: str, kits: list, integration_dir: str, original_file: str, rule
     lines += ["恢复说明：", *[f"- {k.name}（{k.module}）：worktree `{k.worktree}`，正文 #{k.body}（{k.path}）" for k in kits], ""]
     lines += _step(4, "每个迁来的会话", "对照已批 Spec、Plan 盘点，作为【等待用户】「类型：中途检查点」发给模块协调；用户点头前不写代码",
                    "模块协调收到每个会话的盘点")
-    lines += _step(5, f"模块协调 {coord}", "把盘点照常交用户；用户答复到了，转达并运行 "
+    lines += _step(5, f"模块协调 {coord}", "把盘点照常交用户；用户的答复到了，转达并运行 "
                    "`module-crew rehost release <邮箱名> --original-file <答复原话>` 解除盘点闸",
                    "status 里不再有「迁来待盘点」")
     lines += _step(6, f"模块协调 {coord}", "看下面的权限规则；开会话后按 crew-coordinator 跑 permissions verify 实测",

@@ -204,7 +204,7 @@ Codex 版 `crew-coordinator` skill 管下面这些与 Claude 不同的地方，�
 6. **开新会话**：模块协调按迁移说明为每个会话开 Claude 会话，目录选它原来的 worktree，首条消息贴它的恢复说明。新会话用 `takeover:true, wake:"auto"` 接管邮箱名、`bind`。
 7. **先盘点**：迁来的会话第一步运行 `module-crew rehost show <邮箱名>`，对照迁移时的快照（HEAD、未提交文件）——对不上说明 Codex 里的旧会话可能没停，停下报模块协调；
    再对照已批的 Spec、Plan 盘点做对的、要返工的、每个未提交文件留还是丢，作为【等待用户】「类型：中途检查点」交用户。用户点头前不写代码，最终验收交审也会被拒；
-   用户答复到了，模块协调运行 `module-crew rehost release <邮箱名> --original-file <答复原话>` 解除。用户选「丢」的改动用带标签的 `git stash` 收起，不删。
+   用户的答复到了，模块协调运行 `module-crew rehost release <邮箱名> --original-file <答复原话>` 解除。用户选「丢」的改动用带标签的 `git stash` 收起，不删。
 8. **撤回**：迁来的会话一个都还没 `bind` 之前，模块协调可以凭用户原话 `module-crew coordinator rehost --undo --original-file <原话文件>`，登记逐字恢复到迁移前；有会话 bind 之后不能撤回。
 9. **拒绝的情况**：合并进行中（含 Codex 上 `merge run --detach` 还在后台跑）、外包没结时直接拒绝，不提供强制。
 
