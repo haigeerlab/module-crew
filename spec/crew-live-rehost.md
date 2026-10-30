@@ -198,3 +198,7 @@ module-crew 不发消息、不替用户点弹窗、不停或归档会话、不�
 
 `docs/guide.md`「换宿主」一节补「批次内迁到 Claude」；README／README.en 功能清单加一项、命令一览补 `coordinator rehost` 与 `rehost show|release`；CHANGELOG 随发版写。
 回告：发版后告诉 mc-coord（转用户）LIVE-SAAS 可以按迁移说明迁；随最终验收列出。
+
+## 变更记录
+
+- 2026-10-30：关键决策 4 的 `rehost` 记录另存一份迁移前的登记 `before`，`--undo` 用它逐字恢复（关键决策 7、验收 9 要求逐字）；项目结构补 `codex-skills/crew-coordinator/SKILL.md`：加同名小节「接手 Codex 上没做完的一批」，写 Codex 一侧被迁走时停手（`test_skills` 要求两版协调技能小节一致）。原因：构建 Task 7、Task 9 时发现；来源：模块会话，随最终验收交用户复审。

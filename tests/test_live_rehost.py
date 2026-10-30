@@ -501,5 +501,34 @@ class StrangerHintTest(RehostCase):
         self.assertIn("bind shop-coord --original-file", line)
 
 
+class RehostDocsTest(unittest.TestCase):
+    """Task 9 (acceptance 11): the guide, both READMEs, the command reference and two skills say how to rehost."""
+
+    def read(self, rel):
+        return (rh.Path(rh.__file__).resolve().parents[1] / rel).read_text(encoding="utf-8")
+
+    def test_docs(self):
+        guide = self.read("docs/guide.md")
+        self.assertIn("### 批次内迁到 Claude", guide)
+        for phrase in ("coordinator rehost --check", "确认码", "已停", "rehost show", "rehost release", "--undo", "分不清"):
+            self.assertIn(phrase, guide)
+        self.assertIn("coordinator rehost", self.read("README.md"))
+        self.assertIn("coordinator rehost", self.read("README.en.md"))
+        commands = self.read("docs/commands.md")
+        for phrase in ("coordinator rehost --check", "coordinator rehost --to claude", "coordinator rehost --undo",
+                       "### `rehost`", "rehost show", "rehost release"):
+            self.assertIn(phrase, commands)
+
+    def test_skills(self):
+        coord = self.read("skills/crew-coordinator/SKILL.md")
+        self.assertIn("## 接手 Codex 上没做完的一批", coord)
+        for phrase in ("rehost --check", "确认码", "已停", "恢复说明", "rehost release", "分不清"):
+            self.assertIn(phrase, coord)
+        dev = self.read("skills/crew-dev/SKILL.md")
+        self.assertIn("## 迁来之后", dev)
+        for phrase in ("rehost show", "中途检查点", "不写代码", "对不上", "stash"):
+            self.assertIn(phrase, dev)
+
+
 if __name__ == "__main__":
     unittest.main()
