@@ -2,8 +2,8 @@
 
 > 依据 `tasks/crew-live-rehost/plan.md`。
 
-- [ ] Task 1：store 校验 `rehost` 字段与 `previousSessions.reason`（Spec 验收 4 状态库部分）
-- [ ] Task 2：挡住清单、快照与确认码，`coordinator rehost --check`（Spec 验收 1、2 确认码部分）
+- [x] Task 1：store 校验 `rehost` 字段与 `previousSessions.reason`（Spec 验收 4 状态库部分）——测试先红后绿（5 个）；store 各测试照常通过（90db36e）
+- [x] Task 2：挡住清单、快照与确认码，`coordinator rehost --check`（Spec 验收 1、2 确认码部分）——新增 module_crew/rehost.py 与 8 个测试（七项挡住逐项、确认码稳定与随改动／提交／绑定变化、CLI 只读）；这一项测试与实现同步写，没有先单独看红
 - [ ] Task 3：`coordinator rehost --to claude`：守门窄口、原话与确认码核对、一个事务改登记（Spec 验收 2、3、4）
 - [ ] Task 4：权限跟随全部 checkout、恢复说明、迁移说明（Spec 验收 5、6）
 - [ ] Checkpoint 1（report）：迁移本身走通，相关测试通过

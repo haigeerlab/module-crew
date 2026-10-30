@@ -1038,6 +1038,8 @@ def _session_guard(args) -> int | None:
         return None
     if key == ("coordinator", "handover") and getattr(args, "check", False):
         return None                         # crew-host-handover: the check is read only
+    if key == ("coordinator", "rehost") and getattr(args, "check", False):
+        return None                         # crew-live-rehost: the check is read only
     caller = hooks.own_session_id()
     if not caller:
         return None                         # no session id: the user at a terminal
@@ -1076,6 +1078,25 @@ def _handover(args) -> int:
         return 2
     print(json.dumps({"code": code, "lines": lines}, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
     return code
+
+
+def _rehost(args) -> int:
+    """crew-live-rehost: `coordinator rehost --check | --to claude | --undo`."""
+    from module_crew import rehost
+    if sum(bool(x) for x in (args.check, args.to, args.undo)) != 1:
+        print("❌ 只能三选一：--check（只读预览）、--to claude（加 --code 与 --original／--original-file）、--undo（加原话）",
+              file=sys.stderr)
+        return 2
+    try:
+        if args.check:
+            code, doc, lines = rehost.check(".", os.getcwd(), hooks.own_session_id())
+            print(json.dumps(doc, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+            return code
+        print("❌ 还没有实现", file=sys.stderr)
+        return 2
+    except store.StoreError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 2
 
 
 def _tier(args) -> int:
@@ -1381,6 +1402,15 @@ def _main(argv: list[str] | None = None) -> int:
     hg.add_argument("--original")
     hg.add_argument("--original-file")
     coh.add_argument("--json", action="store_true")
+    cor = cos.add_parser("rehost", help="批次内迁到 Claude：--check 只读预览与确认码；--to claude 凭含确认码的原话整批迁（crew-live-rehost）")
+    cor.add_argument("--check", action="store_true", help="只读：挡住清单、要迁的会话、未提交改动、确认码")
+    cor.add_argument("--to", choices=("claude",))
+    cor.add_argument("--undo", action="store_true", help="没人 bind 之前撤回这次迁移（要用户原话）")
+    cor.add_argument("--code", help="--check 给出的确认码")
+    rg = cor.add_mutually_exclusive_group()
+    rg.add_argument("--original")
+    rg.add_argument("--original-file")
+    cor.add_argument("--json", action="store_true")
     bd = sub.add_parser("bind", help="登记本会话就是状态库里的某个会话（钩子只给登记过的会话注入角色）")
     bd.add_argument("name", help="开工说明或恢复说明里写的邮箱名")
     bg = bd.add_mutually_exclusive_group()
@@ -1702,6 +1732,8 @@ def _run(args) -> int:
             return 2
     if args.group == "coordinator" and args.action == "handover":
         return _handover(args)
+    if args.group == "coordinator" and args.action == "rehost":
+        return _rehost(args)
     if args.group == "coordinator":
         original = _original(args.original, args.original_file)
         if original is None:
