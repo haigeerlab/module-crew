@@ -312,6 +312,10 @@ def stranger_line(role: Role) -> str:
     if role.kind == "dev":
         return (f"module-crew：本目录属于模块 {role.module}（登记会话 {role.name}）；你不是它的登记会话，不要按模块会话行事。"
                 f"如果你刚收到这个模块的开工说明或恢复说明，先按说明运行 module-crew bind {role.name}。")
+    if (store.get(role.db, "session", role.name) or {}).get("host") == "codex-desktop":     # crew-live-rehost
+        return (f"module-crew：本目录是 module-crew 的集成 checkout（模块协调 {role.name} 登记在 Codex）；你不是它的登记会话，不要按模块协调行事。"
+                "要把这一批（模块协调与所有在用会话）迁到 Claude，请用户在本会话明说后先运行 module-crew coordinator rehost --check，"
+                "把预览与确认码给用户看。")
     return (f"module-crew：本目录是 module-crew 的集成 checkout（模块协调 {role.name}）；你不是它的登记会话，不要按模块协调行事。"
             f"要换模块协调，请用户在本会话同意后运行 module-crew bind {role.name} --original-file <原话文件>。")
 

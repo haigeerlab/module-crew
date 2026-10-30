@@ -483,5 +483,23 @@ class UndoTest(ToClaudeCase):
         self.assertEqual(out.returncode, 0, out.stderr + out.stdout)
 
 
+class StrangerHintTest(RehostCase):
+    """Task 8 (acceptance 10): an unregistered Claude conversation in the integration checkout learns it may rehost."""
+
+    def test_hint_when_coordinator_on_codex(self):
+        line = hooks.stranger_line(hooks.detect(self.repo))
+        self.assertIn("coordinator rehost --check", line)
+        self.assertIn("Codex", line)
+
+    def test_unchanged_when_coordinator_on_claude(self):
+        rec = store.get(self.db, "session", "shop-coord")
+        with self.db.transaction(actor="t") as tx:
+            tx.put("session", "shop-coord", {k: v for k, v in rec.items() if k != "hostHandover"} | {"host": "claude-desktop"},
+                   action="registered")
+        line = hooks.stranger_line(hooks.detect(self.repo))
+        self.assertNotIn("rehost", line)
+        self.assertIn("bind shop-coord --original-file", line)
+
+
 if __name__ == "__main__":
     unittest.main()
