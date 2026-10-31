@@ -193,6 +193,7 @@ Codex 版 `crew-coordinator` skill 管下面这些与 Claude 不同的地方，�
 一批没做完、模块协调和模块会话都在 Codex 上时，用户可以在 Claude Code 里把这一批整体接过来，不需要 Codex 上的模块协调配合。只做 Codex→Claude 这一个方向；协调在 Claude、模块在 Codex 的混搭不迁。
 
 1. **在哪发起**：用户在 Claude 桌面版新开一个会话，目录选集成 checkout（不用 worktree），这个会话还没登记成任何会话。钩子会提示「模块协调登记在 Codex，可以 rehost --check」。
+   程序会核对**会话的启动目录**（钩子在会话开始时记下的那个目录）：在别的 worktree 里开的会话，命令里 `cd` 进集成 checkout 也不算，`--check` 不给确认码、`--to` 退出码 7；预览会列出发起会话的启动目录。终端里运行（读不到会话编号）时照旧看命令的当前目录。
 2. **先看预览**：运行 `module-crew coordinator rehost --check`（只读）。它列出挡住的条件（模块协调在 Codex、会话全在 Codex、没有进行中的合并、没有未结的外包、本机 Claude 装着 spec-guard、调用者没登记、目录在集成 checkout）、要迁的每个会话、每个 worktree 的 HEAD 与未提交改动，全满足时给一个 6 位确认码。
    未结的事项、公共变更请求、等待记录、轻任务都挂在邮箱名上，原样带过去，不用先处理。
 3. **用户亲手停旧会话**：用户在 Codex 里把旧的模块协调和每个模块会话、轻任务会话停下并归档。module-crew 判断不了 Codex 线程停没停。

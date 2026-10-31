@@ -98,11 +98,18 @@ def to_codex(db):
             tx.put("session", name, new, action="registered")
 
 
+def sighted(db, sid, cwd):
+    """What the SessionStart hook records for an unregistered conversation started in cwd."""
+    hooks.sight(db, sid, str(cwd))
+
+
 class RehostCase(ReviewCase):
     def setUp(self):
         super().setUp()
         self.db = store.open_store(self.repo)
         to_codex(self.db)
+        for sid in ("sid-new", "sid-cli"):
+            sighted(self.db, sid, self.repo)
 
     def check(self, sid=None, cwd=None, **who):
         with as_caller(**who):
@@ -210,6 +217,57 @@ class CheckTest(RehostCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertTrue(json.loads(out.stdout)["ready"])
         self.assertEqual((store.records(self.db, "session"), len(store.events(self.db))), before)
+
+
+class StartDirTest(RehostCase):
+    """T429 (S56): the caller's start directory, not just the command's cwd, must be in the integration checkout."""
+
+    def cwd_check(self, doc):
+        return next(c for c in doc["checks"] if c["id"] == "cwd")
+
+    def test_started_elsewhere_refused_even_if_cd_into_integration(self):
+        sighted(self.db, "sid-away", self.wt["b"])
+        code, doc, lines = self.check(sid="sid-away", claude="sid-away")
+        self.assertEqual(code, 3, lines)
+        self.assertIsNone(doc["code"])
+        self.assertFalse(self.cwd_check(doc)["ok"], doc["checks"])
+        self.assertEqual(doc["startDir"], os.path.realpath(self.wt["b"]))
+        self.assertIn(f"发起会话的启动目录：{os.path.realpath(self.wt['b'])}", lines)
+
+    def test_no_sighting_refused(self):
+        code, doc, lines = self.check(sid="sid-unseen", claude="sid-unseen")
+        self.assertEqual(code, 3, lines)
+        self.assertFalse(self.cwd_check(doc)["ok"])
+        self.assertIsNone(doc["startDir"])
+        self.assertIn("钩子没有记下", self.cwd_check(doc)["reason"])
+
+    def test_started_in_integration_still_ready(self):
+        code, doc, lines = self.check(sid="sid-new", claude="sid-new")
+        self.assertEqual(code, 0, lines)
+        self.assertEqual(doc["startDir"], os.path.realpath(self.repo))
+        self.assertIn(f"发起会话的启动目录：{os.path.realpath(self.repo)}", lines)
+
+    def test_terminal_uses_command_cwd(self):
+        code, doc, lines = self.check()
+        self.assertEqual(code, 0, lines)
+        self.assertIsNone(doc["startDir"])
+        self.assertEqual(self.check(cwd=self.wt["b"])[0], 3)
+
+    def test_to_exit_7_writes_nothing(self):
+        sighted(self.db, "sid-away", self.wt["b"])
+        before = (store.records(self.db, "session"), len(store.events(self.db)))
+        with as_caller(claude="sid-away"):
+            code, lines = rh.rehost(self.repo, "迁到 Claude，旧会话已停，确认码 ABCDEF", "ABCDEF", "sid-away", self.repo)
+        self.assertEqual(code, 7, lines)
+        self.assertEqual((store.records(self.db, "session"), len(store.events(self.db))), before)
+
+    def test_check_cli_json_lists_start_dir(self):
+        sighted(self.db, "sid-away", self.wt["b"])
+        env = {k: v for k, v in os.environ.items() if k != "CODEX_THREAD_ID"}
+        out = self.run_cli("coordinator", "rehost", "--check", "--json", env={**env, "CLAUDE_CODE_SESSION_ID": "sid-away"})
+        doc = json.loads(out.stdout)
+        self.assertFalse(doc["ready"])
+        self.assertEqual(doc["startDir"], os.path.realpath(self.wt["b"]))
 
 
 class ToClaudeCase(RehostCase):
@@ -344,6 +402,7 @@ class RehostPermissionsTest(PermCase):
     def test_rules_follow(self):
         permissions.apply(self.repo, "按清单预配权限")
         to_codex(self.db)
+        sighted(self.db, "sid-new", self.repo)
         codex_rules = self.wt["c"] / ".codex" / "rules" / "module-crew.rules"
         before = codex_rules.read_text(encoding="utf-8")
         with as_caller(claude="sid-new"):
@@ -510,7 +569,7 @@ class RehostDocsTest(unittest.TestCase):
     def test_docs(self):
         guide = self.read("docs/guide.md")
         self.assertIn("### 批次内迁到 Claude", guide)
-        for phrase in ("coordinator rehost --check", "确认码", "已停", "rehost show", "rehost release", "--undo", "分不清"):
+        for phrase in ("coordinator rehost --check", "确认码", "已停", "rehost show", "rehost release", "--undo", "分不清", "会话的启动目录"):
             self.assertIn(phrase, guide)
         self.assertIn("coordinator rehost", self.read("README.md"))
         self.assertIn("coordinator rehost", self.read("README.en.md"))
