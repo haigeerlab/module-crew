@@ -27,7 +27,7 @@ user ──approves in own words──> module coordinator (integration checkout
         state store (module-crew/ in the git common dir, shared by all worktrees)
 ```
 
-There are also light tasks (轻任务: a single feature or bug that skips the Spec but still goes through the merge queue), an optional reviewer and decision inbox, moving the whole crew to Codex between batches, and quota offload that hands a module's implementation to Codex. See the [user guide](docs/guide.md).
+There are also light tasks (轻任务: a single feature or bug that skips the Spec but still goes through the merge queue), an optional reviewer and decision inbox, moving the whole crew to Codex between batches, moving an unfinished batch from Codex back to Claude with `coordinator rehost`, and quota offload that hands a module's implementation to Codex. See the [user guide](docs/guide.md).
 
 ## Requirements
 

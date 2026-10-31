@@ -56,6 +56,14 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 - `coordinator down --original(-file)`：关闭模块协调（模块协调）。没有在用的模块会话时才行，状态库保留。
 - `coordinator handover --check [--to codex|claude]`：只读核对空档换宿主的收尾条件（任何会话）。
 - `coordinator handover --to codex|claude --original(-file)`：换宿主（模块协调）：改登记的宿主、追加新宿主的权限规则、生成交接说明到状态库的 `handover-guide/`。
+- `coordinator rehost --check [--json]`：只读预览批次内迁到 Claude：挡住清单、要迁的会话、每个 worktree 的未提交改动、确认码（任何会话）。
+- `coordinator rehost --to claude --code <确认码> --original(-file)`：批次内把模块协调与所有在用会话从 Codex 迁到 Claude（只能在集成 checkout 里、还没登记的 Claude 会话或终端运行；原话要含确认码并写明旧会话已停）：改登记、旧会话失效、追加 Claude 权限规则、生成恢复说明与迁移说明到状态库的 `rehost-guide/`。
+- `coordinator rehost --undo --original(-file)`：迁来的会话都还没 bind 时撤回最近一次迁移（模块协调）。
+
+### `rehost`
+
+- `rehost show [<邮箱名>] [--json]`：只读：迁来的会话迁移时的快照与现在（HEAD、未提交改动）、已批 Spec/Plan、todo 进度；不写名字时列出所有待盘点的会话（任何会话）。
+- `rehost release <邮箱名> --original(-file)`：用户看过盘点点头后，解除这个会话的盘点闸（模块协调）。
 
 ### `bind`
 

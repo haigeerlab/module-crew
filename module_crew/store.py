@@ -361,8 +361,22 @@ def _validate_session(key: str, rec: dict, others: dict) -> None:
     prev = rec.get("previousSessions")         # crew-session-handover: conversations this one took over from
     if prev is not None and not (isinstance(prev, list) and all(
             isinstance(x, dict) and isinstance(x.get("sessionId"), str) and x["sessionId"].strip()
-            and isinstance(x.get("at"), str) for x in prev)):
-        raise bad("previousSessions 必须是列表，每项带非空的 sessionId 与 at")
+            and isinstance(x.get("at"), str)
+            and ("reason" not in x or (isinstance(x["reason"], str) and x["reason"].strip())) for x in prev)):
+        raise bad("previousSessions 必须是列表，每项带非空的 sessionId 与 at（reason 可选，须非空）")
+    moved = rec.get("rehost")                   # crew-live-rehost: moved from Codex to Claude in the middle of a batch
+    if moved is not None:
+        if not (isinstance(moved, dict) and moved.get("from") == "codex-desktop" and isinstance(moved.get("at"), str)
+                and isinstance(moved.get("original"), str) and moved["original"].strip() and _positive(moved.get("batch"))):
+            raise bad("rehost 必须带 from（codex-desktop）、at、非空的 original 与正整数 batch")
+        snap = moved.get("snapshot")
+        if role == "coordinator":
+            if "snapshot" in moved or "inventory" in moved:
+                raise bad("模块协调的 rehost 不带 snapshot 与 inventory")
+        elif not (isinstance(snap, dict) and (snap.get("head") is None or isinstance(snap.get("head"), str))
+                  and isinstance(snap.get("dirty"), list) and all(isinstance(x, str) for x in snap["dirty"])
+                  and moved.get("inventory") in ("pending", "released")):
+            raise bad("模块会话与轻任务会话的 rehost 必须带 snapshot（head、dirty 列表）与 inventory（pending／released）")
     reopen = rec.get("reopen")                  # crew-reopen-module: a finished module opened again for a revision
     if reopen is not None:
         if role != "dev":

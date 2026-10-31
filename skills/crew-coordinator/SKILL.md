@@ -307,6 +307,18 @@ module-crew ticket close <编号> --reason user --original-file <用户原话文
 - **两个方向的关键**：换到 Codex 时先让用户归档本会话，再去 Codex 开任务接管（agent-relay 不让接管还在运行的 Claude 会话）；从 Codex 换回时先请用户确认原 Codex 任务已停，再在新 Claude 会话接管。接管就是用户同意的接管，原话即 handover 的原话。
 - **之后**：`start prepare`、`task dispatch` 默认用新宿主；模块协调在 Codex 时只开 Codex 会话。换到 Codex 后新线程按 Codex 版 crew-coordinator 做事（插件里没有这份 skill 时 `handover --to codex` 会被拒，照实告诉用户）。
 
+## 接手 Codex 上没做完的一批（第十版）
+
+本会话是用户在集成 checkout 新开、还没登记的 Claude 会话，用户说要把 Codex 上没做完的一批迁过来时：
+
+- **先预览**：运行 `module-crew coordinator rehost --check`，把输出**全文**写进正文给用户（挡住的条件、要迁的会话、每个 worktree 的未提交改动、确认码）。有 ❌ 先照实告诉用户怎么处理；合并进行中、外包没结时不迁。
+- **请用户亲手停旧会话**：在 Codex 里把旧的模块协调和每个模块会话、轻任务会话停下并归档；module-crew 判断不了，你也代做不了。
+- **原话要带确认码并写明已停**：用户的原话（含确认码、写明旧会话已停）存成文件，运行 `module-crew coordinator rehost --to claude --code <确认码> --original-file <原话文件>`。确认码对不上就重新 `--check` 给用户看，不要自己拼原话。
+  module-crew 分不清原话文件是用户打的还是会话写的：只写用户在本会话亲手输入的话，别的会话转来的不算。
+- **之后**：本会话已绑为模块协调。按输出的迁移说明做：`bridge_register` 带 `takeover:true, wake:"auto"`、跑 `status`；为每个迁来的会话开 Claude 会话（目录选它原来的 worktree，不新建），首条消息贴它的恢复说明。
+- **盘点**：每个迁来的会话会发【等待用户】「类型：中途检查点」报盘点（做对的、要返工的、未提交改动留／丢），照常经决策收件箱交用户；用户的答复到了，转达【用户答复】并运行 `module-crew rehost release <邮箱名> --original-file <答复原话>`。盘点没解除前它的最终验收交审会被拒。
+- **撤回**：迁来的会话都还没 bind 时，用户说撤回就 `module-crew coordinator rehost --undo --original-file <原话文件>`；有会话 bind 了就不能撤回，照实告诉用户。
+
 ## 接入决策收件箱
 
 接了决策收件箱（decision-inbox 等）时：

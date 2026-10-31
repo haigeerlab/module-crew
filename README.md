@@ -25,7 +25,7 @@ module-crew 在它之上加一层运行层：
            状态库（git 公共目录下 module-crew/，所有 worktree 共用）
 ```
 
-另外还有轻任务（单个需求或 bug，不写 Spec 也走合并队列）、可选的审查者与决策收件箱、空档时整体换到 Codex、把实现交给 Codex 的额度外包。详见[使用手册](docs/guide.md)。
+另外还有轻任务（单个需求或 bug，不写 Spec 也走合并队列）、可选的审查者与决策收件箱、空档时整体换到 Codex、一批没做完时用 `coordinator rehost` 整批从 Codex 迁回 Claude、把实现交给 Codex 的额度外包。详见[使用手册](docs/guide.md)。
 
 ## 前提
 
