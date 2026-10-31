@@ -2,6 +2,15 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.22.0 的变化（批次内迁到 Claude）
+
+不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移（会话登记只增可选的 `rehost` 记录）。
+
+- **批次内把模块协调与在用会话从 Codex 整体迁到 Claude**（S55，crew-live-rehost）：一批没做完时，在 Claude 侧的集成 checkout 先跑 `coordinator rehost --check`，只读预览七项挡住条件（合并进行中、外包未结等），全部满足才给 6 位确认码；`coordinator rehost --to claude --code <确认码> --original-file …` 要求原话含确认码并写明已停，一次改掉所有会话的登记宿主，旧会话编号记进 `previousSessions`，发起的会话绑为模块协调，按 Claude 追加权限规则，给每个会话生成恢复说明（未提交改动原样列出），另存一份迁移说明；`--undo` 在还没人 `bind` 之前逐字撤回。
+- **迁来的会话先盘点**：`rehost show` 列出迁移快照之后的提交与未提交文件，用户点头后 `rehost release` 解除；未解除时钩子提示先盘点，最终验收交审拒收，`status` 显示一行。被迁走的旧 Codex 会话再跑模块侧写命令退出码 7。
+- 协调在 Codex 时，集成 checkout 里出现陌生 Claude 会话会提示 `rehost --check`。使用手册新增「批次内迁到 Claude」一节，命令参考、README 与协调、模块技能同步更新。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
+
 ## 0.21.0 的变化（公共变更请求的文件行剥掉指纹，钉 session-protocol v2.8）
 
 不加项目开关；接口不变（`interface.json` 1.0），契约改钉 session-protocol v2.8（`interface.json` 的 `contract` 由 2.6 改为 2.8），状态库不用迁移。
