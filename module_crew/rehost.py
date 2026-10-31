@@ -65,6 +65,27 @@ def _inside(path: str, root: Path) -> bool:
     return here == str(root) or here.startswith(str(root) + os.sep)
 
 
+def start_dir(db: store.Store, session_id: str | None) -> str | None:
+    """Where the calling conversation was started, as the SessionStart hook recorded it (S56); None if never seen."""
+    seen = store.get(db, "sighting", session_id) if session_id else None
+    return (seen or {}).get("cwd")
+
+
+def _where_check(db: store.Store, home: Path | None, cwd: str | os.PathLike, session_id: str | None) -> Check:
+    """A conversation is judged by its start directory too, so a `cd` in the command is not enough; a terminal by its cwd."""
+    need = f"要在集成 checkout {home or '（集成分支没有被检出）'} 里"
+    if home is None or not _inside(str(cwd), home):
+        return Check("cwd", False, need + "运行")
+    if not session_id:
+        return Check("cwd", True, f"当前目录在集成 checkout {home}")
+    start = start_dir(db, session_id)
+    if start is None:
+        return Check("cwd", False, f"钩子没有记下本会话的启动目录：{need}新开一个 Claude 会话再发起")
+    ok = _inside(start, home)
+    return Check("cwd", ok, f"当前目录与会话启动目录都在集成 checkout {home}" if ok else
+                 f"会话启动目录是 {start}：{need}新开一个 Claude 会话再发起（命令里 cd 过去不算）")
+
+
 def readiness(db: store.Store, project: str | os.PathLike, cwd: str | os.PathLike,
               session_id: str | None) -> list[Check]:
     """Decision 1: the fixed list `rehost --check` and `rehost --to` share."""
@@ -98,9 +119,7 @@ def readiness(db: store.Store, project: str | os.PathLike, cwd: str | os.PathLik
         Check("spec-guard", not isinstance(found, str),
               "本机 Claude 装着 spec-guard" if not isinstance(found, str) else f"找不到 spec-guard（{found}）：迁过去的会话离不开它"),
         Check("caller", host != FROM and bound is None, caller_reason),
-        Check("cwd", home is not None and _inside(str(cwd), home),
-              f"当前目录在集成 checkout {home}" if home is not None and _inside(str(cwd), home) else
-              f"要在集成 checkout {home or '（集成分支没有被检出）'} 里运行"),
+        _where_check(db, home, cwd, session_id),
     ]
 
 
@@ -153,7 +172,8 @@ def check(project: str | os.PathLike, cwd: str | os.PathLike, session_id: str | 
     state = state_of(db)
     ok = ready(checks)
     code = confirm_code(state) if ok else None
-    doc = {"ready": ok, "code": code, "from": FROM, "to": TO,
+    start = start_dir(db, session_id)
+    doc = {"ready": ok, "code": code, "from": FROM, "to": TO, "startDir": start,
            "checks": [{"id": c.id, "ok": c.ok, "reason": c.reason} for c in checks],
            "sessions": [{"name": r["name"], "role": r["role"],
                          "module": (store.get(db, "session", r["name"]) or {}).get("module"),
@@ -161,6 +181,8 @@ def check(project: str | os.PathLike, cwd: str | os.PathLike, session_id: str | 
                          "worktree": r.get("worktree"), "head": r.get("head"), "dirty": r.get("dirty")}
                         for r in state["sessions"]]}
     lines = ["批次内迁移：Codex → Claude Code"] + [f"  {'✅' if c.ok else '❌'} {c.id}：{c.reason}" for c in checks]
+    if session_id:
+        lines.append(f"发起会话的启动目录：{start or '钩子没有记下'}")
     lines += session_lines(db, state)
     lines.append("未结的事项、公共变更请求、等待记录、轻任务都按邮箱名原样带过去，不用处理；"
                  "决策收件箱侧的待决事项 module-crew 看不全，请用 decision-inbox 的 waits 再看一眼")
