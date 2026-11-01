@@ -270,6 +270,54 @@ class StartDirTest(RehostCase):
         self.assertEqual(doc["startDir"], os.path.realpath(self.wt["b"]))
 
 
+class NestedWorktreeTest(RehostCase):
+    """T435 (S57): a worktree nested under the integration checkout's directory is not the integration checkout."""
+
+    def setUp(self):
+        super().setUp()
+        self.nested = self.repo / ".claude" / "worktrees" / "away"
+        git(self.repo, "worktree", "add", "-q", "-b", "away", str(self.nested))
+        sighted(self.db, "sid-nested", self.nested)
+
+    def cwd_check(self, doc):
+        return next(c for c in doc["checks"] if c["id"] == "cwd")
+
+    def test_nested_worktree_refused(self):
+        code, doc, lines = self.check(sid="sid-nested", cwd=self.nested, claude="sid-nested")
+        self.assertEqual(code, 3, lines)
+        self.assertIsNone(doc["code"])
+        reason = self.cwd_check(doc)["reason"]
+        self.assertFalse(self.cwd_check(doc)["ok"], doc["checks"])
+        self.assertIn("另一个 worktree", reason)
+        self.assertIn(os.path.realpath(self.nested), reason)
+
+    def test_nested_start_dir_refused_even_if_command_in_integration(self):
+        code, doc, lines = self.check(sid="sid-nested", claude="sid-nested")
+        self.assertEqual(code, 3, lines)
+        self.assertIn("另一个 worktree", self.cwd_check(doc)["reason"])
+
+    def test_terminal_in_nested_worktree_refused(self):
+        code, doc, lines = self.check(cwd=self.nested)
+        self.assertEqual(code, 3, lines)
+        self.assertIn("另一个 worktree", self.cwd_check(doc)["reason"])
+
+    def test_to_exit_7_writes_nothing(self):
+        before = (store.records(self.db, "session"), len(store.events(self.db)))
+        with as_caller(claude="sid-nested"):
+            code, lines = rh.rehost(self.repo, "迁到 Claude，旧会话已停，确认码 ABCDEF", "ABCDEF", "sid-nested", self.nested)
+        self.assertEqual(code, 7, lines)
+        self.assertEqual((store.records(self.db, "session"), len(store.events(self.db))), before)
+
+    def test_subdirectory_of_integration_still_ready(self):
+        sub = self.repo / "docs" / "deep"
+        sub.mkdir(parents=True, exist_ok=True)
+        sighted(self.db, "sid-sub", sub)
+        code, doc, lines = self.check(sid="sid-sub", cwd=sub, claude="sid-sub")
+        self.assertEqual(code, 0, lines)
+        self.assertEqual(self.check(cwd=sub)[0], 0)
+        self.assertEqual(self.check(claude="sid-new")[0], 0)
+
+
 class ToClaudeCase(RehostCase):
     def code(self, **who):
         return self.check(**who)[1]["code"]
@@ -569,7 +617,7 @@ class RehostDocsTest(unittest.TestCase):
     def test_docs(self):
         guide = self.read("docs/guide.md")
         self.assertIn("### 批次内迁到 Claude", guide)
-        for phrase in ("coordinator rehost --check", "确认码", "已停", "rehost show", "rehost release", "--undo", "分不清", "会话的启动目录"):
+        for phrase in ("coordinator rehost --check", "确认码", "已停", "rehost show", "rehost release", "--undo", "分不清", "会话的启动目录", ".claude/worktrees"):
             self.assertIn(phrase, guide)
         self.assertIn("coordinator rehost", self.read("README.md"))
         self.assertIn("coordinator rehost", self.read("README.en.md"))
