@@ -60,6 +60,16 @@ class PrepareTest(StartCase):
         (self.tmp / "repo-crew" / "e").mkdir(parents=True)
         self.assert_refused(["e"], "目录已存在")
 
+    def test_branch_exists_or_serial_refused(self):
+        git(self.repo, "branch", "e")
+        self.assert_refused(["e"], "分支已存在")
+        git(self.repo, "branch", "-D", "e")
+        self.assertEqual(start.prepare(self.repo, ["d"], "开 d", short="shop").code, 0)      # the store exists
+        db = store.open_store(self.repo)
+        with db.transaction(actor="test") as tx:
+            tx.put("config", "main", {**tx.get("config", "main"), "mode": "serial"}, action="set")
+        self.assert_refused(["e"], "串行")
+
     def test_existing_session_refused(self):
         self.assertEqual(start.prepare(self.repo, ["e"], "开 e", short="shop").code, 0)
         self.assert_refused(["e"], "已有在用的模块会话")
