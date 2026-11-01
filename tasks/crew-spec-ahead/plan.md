@@ -1,5 +1,7 @@
 # Implementation Plan: crew-spec-ahead
 
+<!-- spec-guard: review approved -->
+
 > 依据：`spec/crew-spec-ahead.md`（用户 2026-11-01 批准，事项 C459，原话「批准 C459」）。任务清单：`tasks/crew-spec-ahead/todo.md`。
 > 本次随 Plan 一并复审 Spec 的一处修订（见 Spec「变更记录」）：CHANGELOG 与版本号改为随 0.23.0 发版由模块协调写，文档补 `docs/commands.md`。
 

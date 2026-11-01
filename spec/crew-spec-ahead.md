@@ -1,5 +1,7 @@
 # Spec: crew-spec-ahead
 
+<!-- spec-guard: review approved 415719aa9b6c -->
+
 > 能力图模块 `crew-spec-ahead`。需求来源：接缝 S60（live-saas-backoffice 想让用户点名的模块在依赖没做完时先写 Spec），用户在 mc-coord 已定取舍四条，批准开会话（批准事项 C457）。
 > 依赖 `crew-start`（`start plan`／`start prepare`、开工说明、名额、`_held` 与同批依赖检查）、`crew-review-batch`（`review approve` 生成开工类【协调通知】）；
 > 另用到 `crew-declared-scope`（开关 `declaredScope` 下的依赖挡住）、`crew-codex-offload`（`_start_todo` 决定开工通知写法）、`crew-merge`（`merge run` 输出）、`crew-codex-host`（Codex 开工说明）。
