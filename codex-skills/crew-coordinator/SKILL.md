@@ -316,6 +316,14 @@ module-crew ticket close <编号> --reason user --original-file <用户原话文
   之后你停手，不再运行 module-crew 写命令，也不再在本线程发消息——agent-relay 判断不了 Codex 线程停没停，新 Claude 会话接管后本线程收不到通知。
 - **之后**：`start prepare`、`task dispatch` 默认用新宿主。
 
+## 接手 Codex 上没做完的一批（第十版）
+
+这一节在 Claude 版里写的是怎么发起迁移；在 Codex 上，你是被迁走的一方：
+
+- 迁移由用户在 Claude 里新开的会话发起（`coordinator rehost`），不需要你配合，你也不替用户发起。
+- 用户说要把这一批迁到 Claude 时，你停手：不再运行 module-crew 写命令，提醒用户在 Codex 里把你和每个模块会话、轻任务会话停下并归档。
+- 迁移之后你的写命令会被拒（退出码 7），重新 `bridge_register` 也会被拒：照实告诉用户这一批已由 Claude 接手，不换写法绕过。
+
 ## 接入决策收件箱
 
 接了决策收件箱（decision-inbox 等）时：

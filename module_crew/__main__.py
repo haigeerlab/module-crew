@@ -117,6 +117,9 @@ def _status(as_json: bool) -> int:
                   "等新宿主的会话 bind --takeover（交接说明在状态库目录 handover-guide/ 下）")
         if report.store.get("handoverLine"):
             print("  " + report.store["handoverLine"])
+        if report.store.get("rehostPending"):              # crew-live-rehost
+            print("  迁来待盘点：" + "、".join(report.store["rehostPending"])
+                  + "（盘点交用户、用户点头后 module-crew rehost release <邮箱名>）")
         own = inbox.own_waits(store.open_store())
         if own:
             print("  模块协调自开的等待记录：" + "、".join(f"W{n}（等 {r['about']}）" for n, r in own))
@@ -1022,12 +1025,39 @@ _ANY_SESSION = {("status", None), ("sessions", None), ("protocol", None), ("hook
                 ("host-check", None), ("scope", None), ("store", "check"), ("start", "plan"), ("review", "batch"), ("review", "show"),
                 ("change", "list"), ("merge", "queue"), ("merge", "push-plan"), ("source", "list"), ("source", "map"),
                 ("task", "list"), ("task", "show"), ("task", "next"), ("permissions", "plan"), ("coordinator", "up"),
-                ("offload", "show"), ("offload", "start"), ("offload", "settle"),
+                ("offload", "show"), ("rehost", "show"), ("offload", "start"), ("offload", "settle"),
                 ("offload", "resume"), ("offload", "takeover"), ("check", "quick"), ("check", "show"), ("check", "list")}
+
+
+# crew-live-rehost decision 5: module-side writes a conversation moved away from Codex may no longer run
+_MODULE_WRITES = {("sync", None), ("check", "quick"), ("offload", "start"), ("offload", "settle"), ("offload", "resume"),
+                  ("offload", "takeover"), ("bind", None)}
+
+
+def _moved_away(key) -> int | None:
+    if key not in _MODULE_WRITES and (key[0], None) not in _MODULE_WRITES:
+        return None
+    caller = hooks.own_session_id()
+    if not caller:
+        return None
+    try:
+        sessions = store.records(store.open_store(), "session")
+    except store.StoreError:
+        return None
+    name = next((n for n, r in sorted(sessions.items()) if r.get("status") == "active"
+                 and any(p.get("sessionId") == caller and p.get("reason") == "rehost" for p in r.get("previousSessions") or [])), None)
+    if name is None:
+        return None
+    print(f"❌ 本会话已被迁到 Claude：{name} 现在由 Claude 上的新会话接手，本会话停手，不要再运行 module-crew 写命令或改 worktree。"
+          "没有执行，什么都没写。", file=sys.stderr)
+    return 7
 
 
 def _session_guard(args) -> int | None:
     key = (args.group, getattr(args, "action", None))
+    moved = _moved_away(key)
+    if moved is not None:
+        return moved
     if (args.group, None) in _ANY_SESSION or key in _ANY_SESSION:
         return None
     if args.group == "unqueued" and not getattr(args, "notify", False):
@@ -1038,6 +1068,8 @@ def _session_guard(args) -> int | None:
         return None
     if key == ("coordinator", "handover") and getattr(args, "check", False):
         return None                         # crew-host-handover: the check is read only
+    if key == ("coordinator", "rehost") and (getattr(args, "check", False) or getattr(args, "to", None)):
+        return None                         # crew-live-rehost: the check is read only; --to runs its own guard (exit 7)
     caller = hooks.own_session_id()
     if not caller:
         return None                         # no session id: the user at a terminal
@@ -1075,6 +1107,55 @@ def _handover(args) -> int:
         print(f"❌ {exc}", file=sys.stderr)
         return 2
     print(json.dumps({"code": code, "lines": lines}, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+    return code
+
+
+def _rehost(args) -> int:
+    """crew-live-rehost: `coordinator rehost --check | --to claude | --undo`."""
+    from module_crew import rehost
+    if sum(bool(x) for x in (args.check, args.to, args.undo)) != 1:
+        print("❌ 只能三选一：--check（只读预览）、--to claude（加 --code 与 --original／--original-file）、--undo（加原话）",
+              file=sys.stderr)
+        return 2
+    try:
+        if args.check:
+            code, doc, lines = rehost.check(".", os.getcwd(), hooks.own_session_id())
+            print(json.dumps(doc, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+            return code
+        original = _original(args.original, args.original_file)
+        if original is None:
+            return 2
+        if args.to:
+            if not args.code:
+                print("❌ --to claude 要带 --code <确认码>（先 --check）", file=sys.stderr)
+                return 2
+            code, lines = rehost.rehost(".", original, args.code.strip().upper(), hooks.own_session_id(), os.getcwd())
+        else:
+            code, lines = rehost.undo(".", original)
+        print(json.dumps({"code": code, "lines": lines}, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+        return code
+    except store.StoreError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 2
+
+
+def _rehost_after(args) -> int:
+    """crew-live-rehost: `rehost show [<name>] | rehost release <name>`."""
+    from module_crew import rehost
+    try:
+        db = store.open_store()
+        if args.action == "show":
+            code, lines = rehost.show(db, args.name)
+            print(json.dumps({"code": code, "lines": lines}, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+            return code
+        original = _original(args.original, args.original_file)
+        if original is None:
+            return 2
+        code, lines = rehost.release(db, args.name, original)
+    except store.StoreError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 2
+    print("\n".join(lines))
     return code
 
 
@@ -1381,6 +1462,25 @@ def _main(argv: list[str] | None = None) -> int:
     hg.add_argument("--original")
     hg.add_argument("--original-file")
     coh.add_argument("--json", action="store_true")
+    cor = cos.add_parser("rehost", help="批次内迁到 Claude：--check 只读预览与确认码；--to claude 凭含确认码的原话整批迁（crew-live-rehost）")
+    cor.add_argument("--check", action="store_true", help="只读：挡住清单、要迁的会话、未提交改动、确认码")
+    cor.add_argument("--to", choices=("claude",))
+    cor.add_argument("--undo", action="store_true", help="没人 bind 之前撤回这次迁移（要用户原话）")
+    cor.add_argument("--code", help="--check 给出的确认码")
+    rg = cor.add_mutually_exclusive_group()
+    rg.add_argument("--original")
+    rg.add_argument("--original-file")
+    cor.add_argument("--json", action="store_true")
+    rh = sub.add_parser("rehost", help="批次内迁移之后：show 对照迁移时的快照；release 在用户点头后解除盘点闸（crew-live-rehost）")
+    rhs = rh.add_subparsers(dest="action", required=True)
+    rhw = rhs.add_parser("show", help="只读：快照与现在、已批 Spec/Plan、todo 进度")
+    rhw.add_argument("name", nargs="?")
+    rhw.add_argument("--json", action="store_true")
+    rhr = rhs.add_parser("release", help="模块协调：用户看过盘点点头后，解除这个会话的盘点闸（要用户原话）")
+    rhr.add_argument("name")
+    rrg = rhr.add_mutually_exclusive_group(required=True)
+    rrg.add_argument("--original")
+    rrg.add_argument("--original-file")
     bd = sub.add_parser("bind", help="登记本会话就是状态库里的某个会话（钩子只给登记过的会话注入角色）")
     bd.add_argument("name", help="开工说明或恢复说明里写的邮箱名")
     bg = bd.add_mutually_exclusive_group()
@@ -1702,6 +1802,10 @@ def _run(args) -> int:
             return 2
     if args.group == "coordinator" and args.action == "handover":
         return _handover(args)
+    if args.group == "coordinator" and args.action == "rehost":
+        return _rehost(args)
+    if args.group == "rehost":
+        return _rehost_after(args)
     if args.group == "coordinator":
         original = _original(args.original, args.original_file)
         if original is None:

@@ -54,6 +54,15 @@ def _missing_files(module: str, node: str, files: list[dict]) -> list[str]:
             for node_file in (r.format(m=module) for r in REQUIRED_FILES.get(node, ())) if node_file not in listed]
 
 
+# crew-live-rehost decision 6: no final acceptance before the moved session's inventory is released
+INVENTORY_PENDING = ("迁来的会话还没盘点完：先对照已批 Spec、Plan 盘点交用户，用户点头后模块协调运行 module-crew rehost release <邮箱名>，"
+                     "之后才收最终验收")
+
+
+def _inventory_pending(session: dict) -> bool:
+    return ((session or {}).get("rehost") or {}).get("inventory") == "pending"
+
+
 def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
     """Judge one 【交审】 and record it; nothing is written unless the code is 0."""
     msg = protocol.parse(text)
@@ -73,6 +82,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
     reasons = _missing_files(sub["module"], sub["node"], sub["files"]) + _check_files(worktree, sub["files"])
     if sub["node"] == "final" and not _evidence(msg.fields.get("要点", "")):
         reasons.append(f"最终验收的「要点」里缺「{EVIDENCE}」一节：按 Spec 的验收标准逐条写结果与证据「<编号或原文>：<结果与证据>」，没有证据写「无」")
+    if sub["node"] == "final" and _inventory_pending(session):
+        reasons.append(INVENTORY_PENDING)
     if not reasons and sub.get("disputes"):
         reasons = _disagree_reasons(db, worktree, sub)
     if reasons:
@@ -215,7 +226,7 @@ def _add_task(db: store.Store, msg, text: str, sender: str, relay_id: int) -> Ou
         from module_crew import mergelock
         if mergelock.locked(db) and (mergelock.read(db) or {}).get("unit") == f"T{n}":
             return Outcome(msg.kind, 3, lines=[f"T{n} 正在合并，等合并结束再交审"])
-    reasons = _check_files(worktree, sub["files"])
+    reasons = _check_files(worktree, sub["files"]) + ([INVENTORY_PENDING] if _inventory_pending(session) else [])
     if reasons:
         return Outcome(msg.kind, 3, lines=["拒收，请退回："] + reasons)
     if any(e["actor"] == sender and e["data"].get("relayId") == relay_id for e in store.events(db)):

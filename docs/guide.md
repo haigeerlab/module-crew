@@ -188,6 +188,27 @@ Codex 版 `crew-coordinator` skill 管下面这些与 Claude 不同的地方，�
 - **找插件**：module-crew、spec-guard、agent-relay 都按 Claude 的插件安装记录找（Codex 沙箱里读得到）；Codex 侧自己的插件安装 module-crew 不读，所以本机要在 Claude Code 里装着这些插件。
 - **代价**：提权次数多；ChatGPT 应用重启后要逐个点开模块协调和模块会话；决策收件箱在 Claude，它被桌面版停掉时 Codex 叫不醒，要用户点开。
 
+### 批次内迁到 Claude
+
+一批没做完、模块协调和模块会话都在 Codex 上时，用户可以在 Claude Code 里把这一批整体接过来，不需要 Codex 上的模块协调配合。只做 Codex→Claude 这一个方向；协调在 Claude、模块在 Codex 的混搭不迁。
+
+1. **在哪发起**：用户在 Claude 桌面版新开一个会话，目录选集成 checkout 本身，不能用 worktree：嵌套在集成 checkout 目录下的 worktree（如 `.claude/worktrees/<名>`）也不行，桌面版给会话开 worktree 时就会放在那里。这个会话还没登记成任何会话。钩子会提示「模块协调登记在 Codex，可以 rehost --check」。
+   程序会核对**会话的启动目录**（钩子在会话开始时记下的那个目录）：在别的 worktree 里开的会话，命令里 `cd` 进集成 checkout 也不算，`--check` 不给确认码、`--to` 退出码 7；预览会列出发起会话的启动目录。终端里运行（读不到会话编号）时照旧看命令的当前目录。判断按目录所在的 git 顶层目录：集成 checkout 的子目录可以，另一个 worktree 不行，原因里会写出它的顶层目录。
+2. **先看预览**：运行 `module-crew coordinator rehost --check`（只读）。它列出挡住的条件（模块协调在 Codex、会话全在 Codex、没有进行中的合并、没有未结的外包、本机 Claude 装着 spec-guard、调用者没登记、目录在集成 checkout）、要迁的每个会话、每个 worktree 的 HEAD 与未提交改动，全满足时给一个 6 位确认码。
+   未结的事项、公共变更请求、等待记录、轻任务都挂在邮箱名上，原样带过去，不用先处理。
+3. **用户亲手停旧会话**：用户在 Codex 里把旧的模块协调和每个模块会话、轻任务会话停下并归档。module-crew 判断不了 Codex 线程停没停。
+4. **迁**：用户说一句原话，里面要有确认码，并写明旧会话已停（「已停」或「停了」）。会话把它存成文件，运行 `module-crew coordinator rehost --to claude --code <确认码> --original-file <原话文件>`。
+   确认码是按预览那一刻的状态算的：预览之后有人提交、改了文件或换了绑定，确认码就对不上，要重新 `--check` 给用户看。这能挡住别的会话转来的话、拿旧预览开工、没给用户看预览就执行；
+   但 module-crew 分不清原话文件是用户打的还是会话写的，这一点和别的凭原话的命令一样。
+5. **一步改完**：所有在用登记改为 Claude；旧 Codex 会话的编号移进 `previousSessions`，从此它们跑 `sync`、`check quick`、`offload`、`bind` 都被拒（退出码 7）；发起的会话绑成模块协调；
+   项目 apply 过权限时给集成 checkout 和每个 worktree 追加 Claude 规则（原有 Codex 规则留着）；每个会话一份恢复说明，迁移说明打印并存到状态库目录 `rehost-guide/`。
+6. **开新会话**：模块协调按迁移说明为每个会话开 Claude 会话，目录选它原来的 worktree，首条消息贴它的恢复说明。新会话用 `takeover:true, wake:"auto"` 接管邮箱名、`bind`。
+7. **先盘点**：迁来的会话第一步运行 `module-crew rehost show <邮箱名>`，对照迁移时的快照（HEAD、未提交文件）——对不上说明 Codex 里的旧会话可能没停，停下报模块协调；
+   再对照已批的 Spec、Plan 盘点做对的、要返工的、每个未提交文件留还是丢，作为【等待用户】「类型：中途检查点」交用户。用户点头前不写代码，最终验收交审也会被拒；
+   用户的答复到了，模块协调运行 `module-crew rehost release <邮箱名> --original-file <答复原话>` 解除。用户选「丢」的改动用带标签的 `git stash` 收起，不删。
+8. **撤回**：迁来的会话一个都还没 `bind` 之前，模块协调可以凭用户原话 `module-crew coordinator rehost --undo --original-file <原话文件>`，登记逐字恢复到迁移前；有会话 bind 之后不能撤回。
+9. **拒绝的情况**：合并进行中（含 Codex 上 `merge run --detach` 还在后台跑）、外包没结时直接拒绝，不提供强制。
+
 ## 审查就近与决策收件箱
 
 **审查就近**（登记了审查者时）：审查改在模块协调这一层就近来回，用户只看要拍板的事。

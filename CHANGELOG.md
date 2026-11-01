@@ -2,6 +2,24 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.22.1 的变化（批次内迁到 Claude 的三处修正）
+
+不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移。三处都来自 LIVE-SAAS 前端第一次实际迁移。
+
+- **`coordinator rehost` 核对发起会话的启动目录**（S56，T429）：有会话编号时，除命令的当前目录外，还要求 module-crew 钩子记下的会话启动目录也在集成 checkout；没有记录或启动目录在别处时 `--check` 不通过、不给确认码，`--to` 退出码 7、什么都不写。之前从别处启动的会话只要在命令里 cd 进集成 checkout 就能通过。终端里运行（没有会话编号）照旧只看命令的当前目录。`--check` 预览列出「发起会话的启动目录」，`--json` 加 `startDir`。
+- **嵌套在集成 checkout 目录下的 worktree 不算集成 checkout**（S57，T435）：判断「在集成 checkout」改为比 git 顶层目录（`git rev-parse --show-toplevel`），不再用路径前缀；开在 `.claude/worktrees/<名>` 里的会话不再通过检查，原因写明它是另一个 worktree。集成 checkout 的子目录照旧通过。使用手册「批次内迁到 Claude」第 1 步写明不能用 worktree。
+- **盘点解除后 `rehost show` 不再误报**（S58，T437）：只有待盘点的会话才拿迁移快照比对并提示「对不上…停下」；已解除的会话改写「盘点已于 <时间> 解除，之后的提交与改动是解除后的正常开发」，HEAD 与未提交改动照常列出。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
+
+## 0.22.0 的变化（批次内迁到 Claude）
+
+不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移（会话登记只增可选的 `rehost` 记录）。
+
+- **批次内把模块协调与在用会话从 Codex 整体迁到 Claude**（S55，crew-live-rehost）：一批没做完时，在 Claude 侧的集成 checkout 先跑 `coordinator rehost --check`，只读预览七项挡住条件（合并进行中、外包未结等），全部满足才给 6 位确认码；`coordinator rehost --to claude --code <确认码> --original-file …` 要求原话含确认码并写明已停，一次改掉所有会话的登记宿主，旧会话编号记进 `previousSessions`，发起的会话绑为模块协调，按 Claude 追加权限规则，给每个会话生成恢复说明（未提交改动原样列出），另存一份迁移说明；`--undo` 在还没人 `bind` 之前逐字撤回。
+- **迁来的会话先盘点**：`rehost show` 列出迁移快照之后的提交与未提交文件，用户点头后 `rehost release` 解除；未解除时钩子提示先盘点，最终验收交审拒收，`status` 显示一行。被迁走的旧 Codex 会话再跑模块侧写命令退出码 7。
+- 协调在 Codex 时，集成 checkout 里出现陌生 Claude 会话会提示 `rehost --check`。使用手册新增「批次内迁到 Claude」一节，命令参考、README 与协调、模块技能同步更新。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
+
 ## 0.21.0 的变化（公共变更请求的文件行剥掉指纹，钉 session-protocol v2.8）
 
 不加项目开关；接口不变（`interface.json` 1.0），契约改钉 session-protocol v2.8（`interface.json` 的 `contract` 由 2.6 改为 2.8），状态库不用迁移。
