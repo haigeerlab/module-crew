@@ -25,6 +25,7 @@ class Proposal:
     reasons: list[dict] = field(default_factory=list)      # {"module", "reason"} when nothing can be started
     cadence: str = "separate"                                 # effective reviewCadence (from /map when it has one)
     reopen: dict = field(default_factory=dict)              # module -> {"round", "branch", "review", "info"} (prepare only)
+    spec_ahead: dict = field(default_factory=dict)          # module -> {"missing", "info"} (prepare only, crew-spec-ahead)
 
 
 def _open_store(project: Path) -> store.Store | None:
@@ -267,6 +268,21 @@ def _reopenable(m: dict | None) -> str | None:
     return None
 
 
+def deps_missing(db: store.Store | None, mapped: dict[str, dict], module: str) -> list[str]:
+    """crew-spec-ahead assumption 14: the module's capability-map dependencies that are neither done nor merged.
+    Not /map's missingDeps: once the module's Spec is on the integration branch /map reports it in_progress, without them."""
+    merged = _merged_modules(db)
+    return [d for d in (mapped.get(module) or {}).get("dependsOn") or []
+            if (mapped.get(d) or {}).get("status") != "done" and d not in merged]
+
+
+def _spec_ahead(db: store.Store | None, mapped: dict[str, dict], module: str) -> list[str]:
+    """crew-spec-ahead decision 1: the unfinished dependencies when the module can open ahead of them, else []."""
+    if (mapped.get(module) or {}).get("status") != "not_ready":    # assumption 13: blocked, suspended… stay refused
+        return []
+    return deps_missing(db, mapped, module)
+
+
 def _reopen_round(db: store.Store | None, module: str) -> int:
     """r<round>: every module session this module ever had, plus one; at least 2 (assumption 6)."""
     seen = sum(1 for v in (store.records(db, "session").values() if db else [])
@@ -315,7 +331,12 @@ def validate(project: Path, modules: list[str], original: str, short: str | None
                            else f"{m} 已有在用的模块会话")
         elif m not in startable:
             why = _reopenable(mapped.get(m))
-            if why:
+            ahead = _spec_ahead(db, mapped, m) if why else []
+            if ahead:
+                proposal.spec_ahead[m] = {"missing": ahead, "info": {
+                    "id": m, "responsibility": mapped[m].get("responsibility", ""),
+                    "dependsOn": list(mapped[m].get("dependsOn") or [])}}
+            elif why:
                 reasons.append(f"{m} 不在可开工列表（startable.modules）里，也不能按重开处理：{why}")
             else:
                 info = {"id": m, "responsibility": mapped[m].get("responsibility", ""),
@@ -365,6 +386,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
         return PrepareResult(3, ["没有执行，原因："] + reasons)
     info = {m["id"]: m for m in plan(project, len(modules) + len(_counted_devs(_open_store(project)))).modules}
     info.update({m: r["info"] for m, r in proposal.reopen.items()})
+    info.update({m: r["info"] for m, r in proposal.spec_ahead.items()})
     db = _open_store(project) or store.init_store(project)[0]
     short = cfg["projectShort"]
     coord = f"{short}-coord"
@@ -389,6 +411,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             "closedReason": "answered", "answer": {"original": original, "answeredAt": store.now(), **store.source_field()},
             **({"host": host_id} if host_id != "claude-desktop" else {}),
             **({"reopened": [m for m in modules if m in proposal.reopen]} if proposal.reopen else {}),
+            **({"specAhead": [m for m in modules if m in proposal.spec_ahead]} if proposal.spec_ahead else {}),
         }, action="start-approved")
     from module_crew import unqueued
     unqueued.mark_integration(db, project, "start-prepare", only_if_unset=True)
@@ -432,6 +455,9 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
         text = render_kickoff(m, info.get(m, {}), path, {**cfg, "reviewCadence": proposal.cadence}, relay, coord,
                               approval, host_id, reopen=reopen)
         extra = {"reopen": {"round": reopen["round"], "since": approval, "review": reopen["review"]}} if reopen else {}
+        ahead = proposal.spec_ahead.get(m)
+        if ahead:
+            extra["specAhead"] = {"missing": ahead["missing"], "since": approval}
         with db.transaction(actor=coord) as tx:
             tx.put("session", relay, {"role": "dev", "host": host_id, "status": "active",
                                       "module": m, "worktree": str(path), **extra}, action="registered")
@@ -440,6 +466,8 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
         result.prepared.append({"id": m, "worktree": path, "branch": m, "relayName": relay, "kickoff": body, "host": host_id,
                                 "kickoffPath": db.path / "bodies" / f"{body}.txt",
                                 **({"reopen": {"round": reopen["round"], "branch": reopen["branch"]}} if reopen else {})})
+        if ahead:
+            result.lines.append(f"{m}：提前开工（依赖 {'、'.join(ahead['missing'])} 未完成），只写 Spec 与 Plan")
         if reopen:
             head = _git(project, "rev-parse", "--short", m).stdout.strip()
             result.lines.append(f"{m}：按重开处理（第 {reopen['round']} 轮）；"

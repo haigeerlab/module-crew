@@ -28,7 +28,7 @@ class ValidateTest(StartCase):
         self.assertFalse((self.repo / ".git" / "module-crew").exists())
 
     def test_not_startable(self):
-        self.assert_refused(["e"], "不在可开工列表")
+        self.assert_refused(["x"], "不在可开工列表")     # crew-spec-ahead: not_ready e now opens ahead
 
     def test_over_slots(self):
         self.assert_refused(["b", "c", "d"], "空位", max_modules=2)
@@ -226,7 +226,7 @@ class PrepareCliTest(StartCase):
             self.assertIn(words, r.stdout)
         approval = [x for x in store.records(store.open_store(self.repo), "item").values() if x["kind"] == "start"][0]
         self.assertEqual(approval["answer"]["original"], "开 b\n就这样")
-        r = self.run_cli("start", "prepare", "e", "--original", "开 e")
+        r = self.run_cli("start", "prepare", "x", "--original", "开 x")
         self.assertEqual(r.returncode, 3)
         self.assertEqual(self.run_cli("start", "prepare", "b").returncode, 2)
 
