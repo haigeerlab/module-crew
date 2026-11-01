@@ -4,7 +4,7 @@
 
 中文 | [English](README.en.md)
 
-> 版本 0.22.2 · 许可证 [MIT](LICENSE)
+> 版本 0.23.0 · 许可证 [MIT](LICENSE)
 
 ## 它解决什么
 
