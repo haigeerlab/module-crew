@@ -60,9 +60,24 @@ def caller_host() -> str | None:
     return FROM if (os.environ.get("CODEX_THREAD_ID") or "").strip() else None
 
 
-def _inside(path: str, root: Path) -> bool:
-    here = os.path.realpath(path)
-    return here == str(root) or here.startswith(str(root) + os.sep)
+def _toplevel(path: str) -> str | None:
+    """The real path of the git worktree that contains path, or None outside any (S57: a worktree nested under the
+    integration checkout's directory has its own top level, so a path prefix is not enough)."""
+    try:
+        out = _git(path, "rev-parse", "--show-toplevel")
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return os.path.realpath(out.stdout.strip()) if out.returncode == 0 and out.stdout.strip() else None
+
+
+def _where(path: str, root: Path, need: str) -> str | None:
+    """None when path is in the integration checkout itself (any subdirectory of it); otherwise why not."""
+    top = _toplevel(path)
+    if top == str(root):
+        return None
+    if top is None:
+        return f"{os.path.realpath(path)} 不在 git checkout 里：{need}"
+    return f"{os.path.realpath(path)} 是另一个 worktree（顶层目录 {top}）：{need}"
 
 
 def start_dir(db: store.Store, session_id: str | None) -> str | None:
@@ -74,16 +89,19 @@ def start_dir(db: store.Store, session_id: str | None) -> str | None:
 def _where_check(db: store.Store, home: Path | None, cwd: str | os.PathLike, session_id: str | None) -> Check:
     """A conversation is judged by its start directory too, so a `cd` in the command is not enough; a terminal by its cwd."""
     need = f"要在集成 checkout {home or '（集成分支没有被检出）'} 里"
-    if home is None or not _inside(str(cwd), home):
+    if home is None:
         return Check("cwd", False, need + "运行")
+    away = _where(str(cwd), home, need + "运行（不能用 worktree，嵌套在它下面的也不行）")
+    if away:
+        return Check("cwd", False, f"当前目录 {away}")
     if not session_id:
         return Check("cwd", True, f"当前目录在集成 checkout {home}")
     start = start_dir(db, session_id)
     if start is None:
         return Check("cwd", False, f"钩子没有记下本会话的启动目录：{need}新开一个 Claude 会话再发起")
-    ok = _inside(start, home)
-    return Check("cwd", ok, f"当前目录与会话启动目录都在集成 checkout {home}" if ok else
-                 f"会话启动目录是 {start}：{need}新开一个 Claude 会话再发起（命令里 cd 过去不算）")
+    away = _where(start, home, need + "新开一个 Claude 会话再发起（命令里 cd 过去不算，worktree 也不行）")
+    return Check("cwd", away is None, f"当前目录与会话启动目录都在集成 checkout {home}" if away is None else
+                 f"会话启动目录 {away}")
 
 
 def readiness(db: store.Store, project: str | os.PathLike, cwd: str | os.PathLike,
