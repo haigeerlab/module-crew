@@ -84,6 +84,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 - `start plan [--json]`：按能力图的 Build order 提议可开的模块，不超过空位（只读，任何会话）。
 - `start prepare <模块>… --original(-file) [--project-short <简称>] [--max <上限>] [--host claude|codex] [--commit-prefix <前缀>]`：为每个模块建 worktree（`<仓库名>-crew/<模块>`）、登记会话、生成开工说明（模块协调）。重开已完成的模块也用它（见使用手册「修订已完成的模块」）。
+- `start kickoff <模块> --original(-file) [--json]`：给提前开工的模块发开工通知；要依赖都已合入、Spec 与 Plan 都已批准、还没发过（模块协调，用户原话）。见使用手册「提前开工」。
 
 ### `config`
 

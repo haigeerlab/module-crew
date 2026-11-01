@@ -294,5 +294,35 @@ class HintTest(AheadCase):
         self.assertIn(self.READY, res.lines)
 
 
+class DocsTest(unittest.TestCase):
+    """Acceptance 13 and the docs."""
+
+    def read(self, rel):
+        from helpers import PLUGIN_ROOT
+        return (PLUGIN_ROOT / rel).read_text(encoding="utf-8")
+
+    def test_coordinator_skills(self):
+        texts = [self.read(f"{d}/crew-coordinator/SKILL.md") for d in ("skills", "codex-skills")]
+        sections = [t.split("## 开工", 1)[1].split("\n## ", 1)[0] for t in texts]
+        for section in sections:
+            for words in ("提前开工", "用户原话点名", "依赖未就绪", "start kickoff", "问用户一次"):
+                self.assertIn(words, section)
+        para = [s[s.index("提前开工（"):].split("\n7.", 1)[0] for s in sections]
+        self.assertEqual(para[0], para[1])
+
+    def test_dev_skills(self):
+        for d in ("skills", "codex-skills"):
+            text = self.read(f"{d}/crew-dev/SKILL.md")
+            section = text.split("## 交审节奏、返工与证据", 1)[1].split("\n## ", 1)[0]
+            for words in ("提前开工", "Plan 批准后", "停住", "不发【等待其他会话】"):
+                self.assertIn(words, section)
+
+    def test_guide_commands_readme(self):
+        self.assertIn("提前开工", self.read("docs/guide.md"))
+        self.assertIn("start kickoff", self.read("docs/commands.md"))
+        self.assertIn("提前开工", self.read("README.md"))
+        self.assertIn("start kickoff", self.read("README.en.md"))
+
+
 if __name__ == "__main__":
     unittest.main()
