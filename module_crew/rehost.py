@@ -417,8 +417,11 @@ def show_one(name: str, rec: dict) -> list[str]:
     lines += [f"    新出现：{l}" for l in sorted(new - old)[:DIRTY_SHOWN]]
     lines += [f"    已不在：{l}" for l in sorted(old - new)[:DIRTY_SHOWN]]
     lines += [f"    {l}" for l in sorted(old & new)[:DIRTY_SHOWN]]
-    lines.append("  与迁移时的快照一致" if same else
-                 "  ⚠️ 与迁移时的快照对不上：Codex 里的旧会话可能没停。停下，发【等待其他会话】给模块协调，请用户去 Codex 停掉它，再定这些改动留不留")
+    if mark.get("inventory") != "pending":
+        lines.append(f"  盘点已于 {mark.get('releasedAt') or '（时间未记）'} 解除，之后的提交与改动是解除后的正常开发")
+    else:
+        lines.append("  与迁移时的快照一致" if same else
+                     "  ⚠️ 与迁移时的快照对不上：Codex 里的旧会话可能没停。停下，发【等待其他会话】给模块协调，请用户去 Codex 停掉它，再定这些改动留不留")
     if rec.get("role") == "dev" and wt:
         m = rec.get("module")
         lines.append(f"  已批：spec/{m}.md {_marker(Path(wt) / 'spec' / f'{m}.md')}；"

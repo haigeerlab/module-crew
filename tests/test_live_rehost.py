@@ -526,6 +526,22 @@ class InventoryTest(ToClaudeCase):
         self.assertIn("todo", text)
         self.assertIn("对不上", text)
 
+    def test_show_after_release_no_stale_warning(self):
+        """T437 (S58): once released, later commits are normal work, not a sign the old session is still running."""
+        self.assertEqual(rh.release(self.db, "shop-b", "盘点看过了，继续做")[0], 0)
+        (self.wt["b"] / "late.txt").write_text("y", encoding="utf-8")
+        git(self.wt["b"], "add", "late.txt")
+        git(self.wt["b"], "commit", "-q", "-m", "late")
+        code, lines = rh.show(self.db, "shop-b")
+        text = "\n".join(lines)
+        self.assertEqual(code, 0, text)
+        self.assertNotIn("对不上", text)
+        self.assertNotIn("停下", text)
+        at = store.get(self.db, "session", "shop-b")["rehost"]["releasedAt"]
+        self.assertIn(f"盘点已于 {at} 解除，之后的提交与改动是解除后的正常开发", text)
+        self.assertIn("快照之后多了 1 个提交", text)
+        self.assertIn("未提交改动", text)
+
     def test_show_unchanged(self):
         code, lines = rh.show(self.db, "shop-c")
         self.assertEqual(code, 0)
