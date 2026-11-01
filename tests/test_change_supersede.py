@@ -41,7 +41,7 @@ class SupersedeTest(ReviewCase):
     def test_newer_overlapping_request_supersedes_older(self):
         old = changes.add(self.db, request(["package.json", "a.txt"], stopped="是"), "shop-b", 10).number
         ticket = store.get(self.db, "request", str(old))["ticket"]
-        out = changes.add(self.db, request(["package.json"]), "shop-b", 11)
+        out = changes.add(self.db, request(["package.json", "a.txt", "b.txt"]), "shop-b", 11)
         self.assertEqual(out.code, 0, out.lines)
         rec = store.get(self.db, "request", str(old))
         self.assertEqual((rec["state"], rec["closedReason"], rec["supersededBy"]), ("closed", "superseded", out.number))
@@ -51,6 +51,28 @@ class SupersedeTest(ReviewCase):
         new = store.get(self.db, "request", str(out.number))
         self.assertNotIn(f"conflict:{old}", new["hints"])
         self.assertEqual([n for n, _ in changes.pending(self.db)], [out.number])
+
+    def test_partial_overlap_not_superseded(self):
+        """S59 (T447): sharing one file with an older request of three is not a replacement."""
+        old = changes.add(self.db, request(["package.json", "a.txt", "b.txt"], stopped="是"), "shop-b", 40).number
+        ticket = store.get(self.db, "request", str(old))["ticket"]
+        out = changes.add(self.db, request(["a.txt", "c.txt"]), "shop-b", 41)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertEqual(out.closed, [])
+        rec = store.get(self.db, "request", str(old))
+        self.assertEqual(rec["state"], "open")
+        self.assertEqual(store.get(self.db, "ticket", str(ticket))["state"], "open")
+        self.assertIn(f"conflict:{out.number}", rec["hints"])
+        self.assertIn(f"conflict:{old}", store.get(self.db, "request", str(out.number))["hints"])
+        self.assertIn(f"与 C{old} 部分重叠，没有取代", " ".join(out.lines))
+        self.assertEqual([n for n, _ in changes.pending(self.db)], [old, out.number])
+
+    def test_covering_by_directory_or_glob_supersedes(self):
+        old = changes.add(self.db, request(["src/a.ts", "packages/x/tsconfig.json"]), "shop-b", 50).number
+        out = changes.add(self.db, request(["src/", "packages/*/tsconfig.json"]), "shop-b", 51)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertEqual(out.closed, [old])
+        self.assertEqual(store.get(self.db, "request", str(old))["closedReason"], "superseded")
 
     def test_disjoint_or_other_module_kept(self):
         a = changes.add(self.db, request(["a.txt"]), "shop-b", 20).number

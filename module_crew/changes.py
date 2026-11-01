@@ -94,10 +94,12 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         open_reqs = {k: v for k, v in tx.records("request").items() if v.get("state") == "open"}
         sessions = tx.records("session")
         module = _module_of(sessions, sender)
-        # S27 (T133): the module's own older request on the same files, nothing landed yet, is replaced by this one
-        replaced = {k: v for k, v in sorted(open_reqs.items(), key=lambda kv: int(kv[0]))
-                    if _module_of(sessions, v["from"]) == module and not v.get("partial") and not v.get("accepted")
-                    and set(req_files) & set(v["files"])}
+        # S27 (T133): the module's own older request, nothing landed yet, is replaced by this one when every
+        # file it lists is covered here; S59 (T447): one that only partly overlaps stays open with conflict hints
+        own = {k: v for k, v in sorted(open_reqs.items(), key=lambda kv: int(kv[0]))
+               if _module_of(sessions, v["from"]) == module and not v.get("partial") and not v.get("accepted")}
+        replaced = {k: v for k, v in own.items() if all(any(_covers(e, f) for e in req_files) for f in v["files"])}
+        overlapped = [k for k, v in own.items() if k not in replaced and set(req_files) & set(v["files"])]
         open_reqs = {k: v for k, v in open_reqs.items() if k not in replaced}
         hints = hints_for(req_files, {k: v["files"] for k, v in open_reqs.items()})
         inside = [f for f in req_files if scope is not None and scope.inside(f)]
@@ -131,9 +133,10 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         out.number = n
         out.lines.append(f"已记为公共变更请求 C{n}" + (f"，等待记录 W{ticket}" if ticket else ""))
         if out.closed:
-            out.lines.append("取代了 " + "、".join(f"C{k}" for k in out.closed) + f"（{module} 未落地的旧请求，文件重叠），"
+            out.lines.append("取代了 " + "、".join(f"C{k}" for k in out.closed) + f"（{module} 未落地的旧请求，文件全被新请求覆盖），"
                              "旧请求不再处理；告诉 " + "、".join(sorted({v["from"] for v in replaced.values()}))
                              + f"：以新请求 C{n} 为准")
+        out.lines += [f"与 C{k} 部分重叠，没有取代" for k in overlapped]
         if hints:
             out.lines.append("提示：" + "、".join(hints))
         out.lines += protected_lines(req_files, tx.get("config", "main") or {})
