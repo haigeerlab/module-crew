@@ -13,5 +13,5 @@
 - [x] Checkpoint 2（report）：命令层做完，全量测试通过——见 Task 9
 - [x] Task 8：文档与技能（Spec 验收 13）——断言先红后绿（DocsTest 3 个）；test_skills、test_docs、test_readme_hosts 通过；test_glossary 拦下手册里「交审批准」含旧称「审批」，改为「交审、由用户批准」后通过（6606d50）
 - [x] Task 9：`module-crew sync` 后全量测试（Spec 验收 14）——sync 显示已包含 main 1d1c8a6；3cefd91 上全量 1260 个测试全部通过（1604 秒）
-- [ ] Checkpoint 3（gate）：最终验收
+- [x] Checkpoint 3（gate）：最终验收
 - [ ] 回告：mc-coord（转用户）live-saas-backoffice 可凭原话提前开依赖未完成的模块
