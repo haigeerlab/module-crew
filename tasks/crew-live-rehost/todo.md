@@ -16,4 +16,4 @@
 - [x] Task 10：`module-crew sync` 后全量测试（Spec 验收 12 测试部分）——sync 显示已包含 main 2fd7cb9；3cf4bec 上单独跑全量 1220 个测试全部通过
 - [x] Checkpoint 3（gate）：实地演练要不要现在做——用户先答「A 先演练」（C419）；crew-rehearsal 有 11 个在用模块、不能空档换宿主，用户选「A 另建演练仓库」（C421），已建 ~/Documents/haigeerlab/rehost-drill（2c8968e）并发 12 步清单；用户最后答「改为不演练」（C423）：验收 12 写「宿主未实测」，演练仓库由用户删
 - [x] Checkpoint 4（gate）：最终验收
-- [ ] 回告：mc-coord（转用户）LIVE-SAAS 可按迁移说明迁
+- [x] 回告：mc-coord（转用户）LIVE-SAAS 可按迁移说明迁——0.22.0 发版后 mc-coord 已发 ecosystem-lead（agent-relay #13764）转 livesaas-lead；LIVE-SAAS 前端 2026-11-01 已按迁移说明迁完

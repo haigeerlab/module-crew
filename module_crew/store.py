@@ -386,6 +386,16 @@ def _validate_session(key: str, rec: dict, others: dict) -> None:
                 and _positive(reopen.get("since")) and isinstance(review, dict)
                 and all(isinstance(review.get(k), str) for k in ("spec", "plan"))):
             raise bad("reopen 必须带 round（≥2 的整数）、since（正整数）与含 spec、plan 的 review")
+    ahead = rec.get("specAhead")                # crew-spec-ahead: opened before its dependencies were done
+    if ahead is not None:
+        if role != "dev":
+            raise bad("specAhead 只用于模块会话")
+        missing = ahead.get("missing") if isinstance(ahead, dict) else None
+        if not (isinstance(missing, list) and missing and all(isinstance(x, str) and x for x in missing)
+                and _positive(ahead.get("since"))):
+            raise bad("specAhead 必须带 missing（非空的模块 id 列表）与 since（正整数）")
+    if rec.get("kickoff") is not None and not (role == "dev" and _positive(rec["kickoff"])):
+        raise bad("kickoff 只用于模块会话，必须是正整数（发开工通知的事项号）")
     if role == "dev":
         module, worktree = rec.get("module"), rec.get("worktree")
         if not isinstance(module, str) or not module:

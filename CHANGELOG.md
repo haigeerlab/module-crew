@@ -2,6 +2,18 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.23.0 的变化（依赖没做完时提前开工，只写 Spec 与 Plan）
+
+不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移（模块会话登记只增可选的 `specAhead`、`kickoff` 两项）。
+
+- **凭用户原话提前开依赖没做完的模块**（S60，crew-spec-ahead）：`start prepare` 不加新参数，用户原话点名的模块在 `/map` 里是 `not_ready`（依赖未完成）时不再拒绝，改为提前开工，输出写「<模块>：提前开工（依赖 <列表> 未完成），只写 Spec 与 Plan」，照常占多模块名额。只放宽这一条，名额、已有会话、worktree／分支已存在、退回串行、probe 阻塞等照旧挡住；`start plan` 不主动提议这类模块。
+- **开工说明限定到 Spec 与 Plan**：多写两行，说明依赖还没合入，只写 Spec 与 Plan、照常交审，Plan 批准后停在原地等开工通知，收到后先 `module-crew sync` 再构建。Claude 与 Codex 宿主都写。
+- **Plan 批准后依赖没就位不发开工通知**：`review approve` 照常发【用户答复】，但不生成开工通知，输出写明哪些依赖还没合入。Plan 批准时依赖已经就位的，照旧直接发开工通知。
+- **依赖就位后问用户一次再发**：`status` 与 `merge run`（合入成功后）列出「依赖已就位、等发开工通知」的模块；新命令 `start kickoff <模块> --original(-file)` 凭用户原话发开工通知（要 Spec 与 Plan 都已批准、依赖都已合入、还没发过），任何自治档位都不自动发。
+- **`declaredScope` 打开时**：提前开工的模块不受「和在用模块有依赖关系」挡住，同一次点名的模块之间有依赖、其中一个是提前开工的也可以一起开；都是普通可开工模块之间的依赖照旧挡。
+- 协调与模块技能（Claude 版与 Codex 版）、使用手册「提前开工」一节、命令参考、README 同步更新。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
+
 ## 0.22.2 的变化（公共变更请求只有完全覆盖才取代）
 
 不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移。

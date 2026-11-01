@@ -4,7 +4,7 @@
 
 中文 | [English](README.en.md)
 
-> 版本 0.22.2 · 许可证 [MIT](LICENSE)
+> 版本 0.23.0 · 许可证 [MIT](LICENSE)
 
 ## 它解决什么
 
@@ -70,6 +70,7 @@ bin/module-crew status
 
 1. **升级模块协调**：在你想让它统筹的会话里明说「把本会话升级为模块协调」，它运行 `module-crew coordinator up`。
 2. **开模块**：模块协调 `module-crew start plan` 按能力图提议可开的模块；你答应后 `module-crew start prepare <模块>…` 建 worktree、生成开工说明，在每个 worktree 开新会话、贴上开工说明。
+   你点名的模块依赖还没做完时也能提前开工，只写 Spec 与 Plan；依赖合入后模块协调问你一次，再用 `module-crew start kickoff <模块>` 发开工通知。
 3. **写 Spec 与 Plan**：模块会话写好后发【交审】，模块协调汇总给你审；你批准后它 `module-crew review approve`，模块会话收到开工通知再构建。
 4. **合并**：模块做完发最终验收，你批准后模块协调 `module-crew merge run` 合入本地集成分支并跑完整检查，不过就自动退回。
 5. **推送**：你授权后 `module-crew merge push` 推到远端新分支并开 PR；远端合并由你自己做。
