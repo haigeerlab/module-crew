@@ -599,6 +599,9 @@ def run(project: str | os.PathLike | None = None, timeout: float = MAP_TIMEOUT) 
     enabled = check_enabled(home)
     baseline = check_baseline(root) if git_check.state == "ok" else Check("baseline", "blocker", "git 不可用")
     store_check, summary = summarize_store(root)
+    if summary is not None:              # crew-spec-ahead decision 6
+        from module_crew import start
+        summary["specAhead"] = start.spec_ahead_rows(store.open_store(root), map_doc)
     checks = {c.id: c for c in (git_check, relay, sg, enabled, planning, baseline, store_check, check_self(root))}
     startable = map_doc.get("startable") if map_doc and planning.state == "ok" else None
     return Report(checks, summary, map_doc, startable)

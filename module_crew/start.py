@@ -25,6 +25,7 @@ class Proposal:
     reasons: list[dict] = field(default_factory=list)      # {"module", "reason"} when nothing can be started
     cadence: str = "separate"                                 # effective reviewCadence (from /map when it has one)
     reopen: dict = field(default_factory=dict)              # module -> {"round", "branch", "review", "info"} (prepare only)
+    spec_ahead: dict = field(default_factory=dict)          # module -> {"missing", "info"} (prepare only, crew-spec-ahead)
 
 
 def _open_store(project: Path) -> store.Store | None:
@@ -267,6 +268,69 @@ def _reopenable(m: dict | None) -> str | None:
     return None
 
 
+def deps_missing(db: store.Store | None, mapped: dict[str, dict], module: str) -> list[str]:
+    """crew-spec-ahead assumption 14: the module's capability-map dependencies that are neither done nor merged.
+    Not /map's missingDeps: once the module's Spec is on the integration branch /map reports it in_progress, without them."""
+    merged = _merged_modules(db)
+    return [d for d in (mapped.get(module) or {}).get("dependsOn") or []
+            if (mapped.get(d) or {}).get("status") != "done" and d not in merged]
+
+
+def spec_ahead_session(sessions: dict, module: str) -> tuple[str, dict] | None:
+    """crew-spec-ahead: (name, record) of the module's in-use session opened ahead and not started yet, else None."""
+    return next(((k, v) for k, v in sessions.items() if v.get("role") == "dev" and v.get("status") == "active"
+                 and v.get("module") == module and v.get("specAhead") and not v.get("kickoff")), None)
+
+
+def spec_ahead_rows(db: store.Store | None, map_doc: dict | None) -> list[dict]:
+    """crew-spec-ahead decision 6: every in-use module session opened ahead, with what it still waits for."""
+    if db is None:
+        return []
+    from module_crew import offload
+    mapped = {m.get("id"): m for m in (map_doc or {}).get("modules") or [] if isinstance(m, dict)}
+    rows = []
+    for name, v in sorted(store.records(db, "session").items()):
+        if not (v.get("role") == "dev" and v.get("status") == "active" and v.get("specAhead")):
+            continue
+        module = v.get("module")
+        missing = deps_missing(db, mapped, module) if module in mapped else list(v["specAhead"]["missing"])
+        planned = offload._approval(db, module) is not None
+        rows.append({"module": module, "session": name, "missing": missing, "planApproved": planned,
+                     "kickoffReady": planned and not missing and not v.get("kickoff"), "kickoff": v.get("kickoff"),
+                     "dependsOn": list((mapped.get(module) or {}).get("dependsOn") or v["specAhead"]["missing"])})
+    return rows
+
+
+def ready_line(module: str) -> str:
+    return f"{module} 的依赖已就位，可以发开工通知：问用户一次，同意后 module-crew start kickoff {module} --original-file <原话文件>"
+
+
+def spec_ahead_line(row: dict) -> str | None:
+    """The status line of one row; None once its start notice went out."""
+    if row["kickoff"]:
+        return None
+    if row["kickoffReady"]:
+        return ready_line(row["module"])
+    if row["missing"]:
+        return f"{row['module']} 提前开工，等 {'、'.join(row['missing'])} 合入"
+    return f"{row['module']} 提前开工，依赖已就位，Plan 批准后直接发开工通知"
+
+
+def merged_lines(db: store.Store, project: str | os.PathLike, merged: str) -> list[str]:
+    """After `merge run` merged a module: the modules opened ahead this merge made ready to start."""
+    if not any(v.get("specAhead") and not v.get("kickoff") for v in store.records(db, "session").values()):
+        return []
+    return [ready_line(r["module"]) for r in spec_ahead_rows(db, probe.run(Path(project)).map)
+            if r["kickoffReady"] and merged in r["dependsOn"]]
+
+
+def _spec_ahead(db: store.Store | None, mapped: dict[str, dict], module: str) -> list[str]:
+    """crew-spec-ahead decision 1: the unfinished dependencies when the module can open ahead of them, else []."""
+    if (mapped.get(module) or {}).get("status") != "not_ready":    # assumption 13: blocked, suspended… stay refused
+        return []
+    return deps_missing(db, mapped, module)
+
+
 def _reopen_round(db: store.Store | None, module: str) -> int:
     """r<round>: every module session this module ever had, plus one; at least 2 (assumption 6)."""
     seen = sum(1 for v in (store.records(db, "session").values() if db else [])
@@ -315,20 +379,26 @@ def validate(project: Path, modules: list[str], original: str, short: str | None
                            else f"{m} 已有在用的模块会话")
         elif m not in startable:
             why = _reopenable(mapped.get(m))
-            if why:
+            ahead = _spec_ahead(db, mapped, m) if why else []
+            if ahead:
+                proposal.spec_ahead[m] = {"missing": ahead, "info": {
+                    "id": m, "responsibility": mapped[m].get("responsibility", ""),
+                    "dependsOn": list(mapped[m].get("dependsOn") or [])}}
+            elif why:
                 reasons.append(f"{m} 不在可开工列表（startable.modules）里，也不能按重开处理：{why}")
             else:
                 info = {"id": m, "responsibility": mapped[m].get("responsibility", ""),
                         "dependsOn": list(mapped[m].get("dependsOn") or [])}
                 proposal.reopen[m] = {"round": _reopen_round(db, m), "info": info,
                                       "review": {k: str((mapped[m].get("review") or {}).get(k)) for k in ("spec", "plan")}}
-    held = _held(db, mapped, [m for m in modules if m in mapped])
+    # crew-spec-ahead decision 2: a module opened ahead does not build before its dependencies merge, so neither hold applies
+    held = _held(db, mapped, [m for m in modules if m in mapped and m not in proposal.spec_ahead])
     reasons += [f"{m} {why}" for m, why in held.items()]
     from module_crew import declared
     if declared.enabled(db):
         for i, a in enumerate(modules):
             for b in modules[i + 1:]:
-                if a in mapped and b in _related(mapped, a):
+                if a in mapped and b in _related(mapped, a) and not {a, b} & proposal.spec_ahead.keys():
                     reasons.append(f"同一次要开的 {a} 和 {b} 有依赖关系，不能同时开")
     for m in modules:
         if (Path(cfg["crewDir"]) / m).exists():
@@ -365,6 +435,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
         return PrepareResult(3, ["没有执行，原因："] + reasons)
     info = {m["id"]: m for m in plan(project, len(modules) + len(_counted_devs(_open_store(project)))).modules}
     info.update({m: r["info"] for m, r in proposal.reopen.items()})
+    info.update({m: r["info"] for m, r in proposal.spec_ahead.items()})
     db = _open_store(project) or store.init_store(project)[0]
     short = cfg["projectShort"]
     coord = f"{short}-coord"
@@ -389,6 +460,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             "closedReason": "answered", "answer": {"original": original, "answeredAt": store.now(), **store.source_field()},
             **({"host": host_id} if host_id != "claude-desktop" else {}),
             **({"reopened": [m for m in modules if m in proposal.reopen]} if proposal.reopen else {}),
+            **({"specAhead": [m for m in modules if m in proposal.spec_ahead]} if proposal.spec_ahead else {}),
         }, action="start-approved")
     from module_crew import unqueued
     unqueued.mark_integration(db, project, "start-prepare", only_if_unset=True)
@@ -430,8 +502,12 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             result.lines.append(f"{m}：{copied}")
         relay = f"{short}-{m}" + (f"-r{reopen['round']}" if reopen else "")
         text = render_kickoff(m, info.get(m, {}), path, {**cfg, "reviewCadence": proposal.cadence}, relay, coord,
-                              approval, host_id, reopen=reopen)
+                              approval, host_id, reopen=reopen,
+                              spec_ahead=(proposal.spec_ahead.get(m) or {}).get("missing"))
         extra = {"reopen": {"round": reopen["round"], "since": approval, "review": reopen["review"]}} if reopen else {}
+        ahead = proposal.spec_ahead.get(m)
+        if ahead:
+            extra["specAhead"] = {"missing": ahead["missing"], "since": approval}
         with db.transaction(actor=coord) as tx:
             tx.put("session", relay, {"role": "dev", "host": host_id, "status": "active",
                                       "module": m, "worktree": str(path), **extra}, action="registered")
@@ -440,6 +516,8 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
         result.prepared.append({"id": m, "worktree": path, "branch": m, "relayName": relay, "kickoff": body, "host": host_id,
                                 "kickoffPath": db.path / "bodies" / f"{body}.txt",
                                 **({"reopen": {"round": reopen["round"], "branch": reopen["branch"]}} if reopen else {})})
+        if ahead:
+            result.lines.append(f"{m}：提前开工（依赖 {'、'.join(ahead['missing'])} 未完成），只写 Spec 与 Plan")
         if reopen:
             head = _git(project, "rev-parse", "--short", m).stdout.strip()
             result.lines.append(f"{m}：按重开处理（第 {reopen['round']} 轮）；"
@@ -469,6 +547,58 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
         result.lines.append(f"开会话之前：模块协调先用 agent-relay bridge_register 注册邮箱名 {coord}（wake: \"auto\"），模块只和这个名字说话")
         if not (store.get(db, "session", coord) or {}).get("hostSession"):
             result.lines.append(f"模块协调还没登记身份：请用户在本会话同意后运行 module-crew bind {coord} --original-file <原话文件>，钩子才认本会话")
+    return result
+
+
+@dataclass
+class KickoffResult:
+    code: int
+    lines: list[str] = field(default_factory=list)
+    sends: list[dict] = field(default_factory=list)
+
+
+def kickoff(project: str | os.PathLike, module: str, original: str) -> KickoffResult:
+    """crew-spec-ahead decision 5: the start notice of a module opened ahead, once its dependencies merged and the
+    user said so (the way offload decline sends a held start notice)."""
+    from module_crew import offload, protocol, review
+    project = Path(project)
+    db = _open_store(project)
+    if db is None:
+        return KickoffResult(3, ["未建库"])
+    ahead = spec_ahead_session(store.records(db, "session"), module)
+    if ahead is None:
+        return KickoffResult(3, [f"{module} 没有在用的提前开工会话，或开工通知已经发过"])
+    if not original or not original.strip():
+        return KickoffResult(3, ["发开工通知要用户原话（--original 或 --original-file）"])
+    approval = offload._approval(db, module)
+    if approval is None:
+        return KickoffResult(3, [f"{module} 的 Spec 与 Plan 还没都批准"])
+    mapped = {m.get("id"): m for m in probe.run(project).map.get("modules") or [] if isinstance(m, dict)}
+    missing = deps_missing(db, mapped, module)
+    if missing:
+        return KickoffResult(3, [f"{module} 的依赖 {'、'.join(missing)} 还没合入，不能发开工通知"])
+    deps = "、".join(mapped.get(module, {}).get("dependsOn") or ahead[1]["specAhead"]["missing"])
+    result = KickoffResult(0)
+    with db.transaction(actor="coordinator") as tx:
+        todo = review._start_todo(tx, db, project, module, approval[0], result.lines)
+        if todo is None:                       # crew-codex-offload decision 4: the user decides first
+            result.code = 3
+            return result
+        n = tx.allocate_number()
+        tx.put("item", str(n), {"state": "closed", "kind": "start-kickoff", "closedReason": "answered", "relayId": None,
+                                "from": "coordinator", "module": module, "approval": approval[0],
+                                "answer": {"original": original, "answeredAt": store.now(), **store.source_field()}},
+               action="start-kickoff")
+        text = protocol.render_coordination_notice(
+            kind="start", basis=review.start_basis(db, module, approval[0], offload._approved_in(db, approval[0], module))
+                                + f"，集成分支 {str(approval[1])[:7]}；依赖 {deps} 已合入，用户 C{n} 同意开工", todo=todo)
+        body = tx.allocate_number()
+        meta = tx.write_body(body, text)
+        tx.put("session", ahead[0], dict(ahead[1], kickoff=n), action="kickoff", data={"kickoff": n})
+    result.sends.append({"kind": "coordination-notice", "to": ahead[0], "replyTo": None, "body": body,
+                         "path": db.path / meta["path"]})
+    result.lines += [f"{module} 的开工通知已生成（事项 C{n}）",
+                     f"发送 【协调通知】 → {ahead[0]}，正文文件：{db.path / meta['path']}"]
     return result
 
 
@@ -612,8 +742,15 @@ def _constraint_line(cfg: dict) -> str:
     return "全局约束：不改公共文件（要改发【公共变更请求】）；被挡住发【等待其他会话】；发出前 module-crew protocol check。"
 
 
+def spec_ahead_lines(missing: list[str]) -> list[str]:
+    """crew-spec-ahead decision 3: what a module opened ahead of its dependencies is told on top of the first step."""
+    return [f"这是提前开工：依赖 {'、'.join(missing)} 还没合入。只写 Spec 与 Plan、照常交审；Plan 批准后不会马上收到开工通知，"
+            "停在原地等，不要构建，也不用为此发【等待其他会话】。",
+            "依赖合入后模块协调会问用户，再发开工通知；收到后先 module-crew sync 拿到依赖的代码再构建。"]
+
+
 def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: str, coord: str, approval: int,
-                   host: str = "claude-desktop", reopen: dict | None = None) -> str:
+                   host: str = "claude-desktop", reopen: dict | None = None, spec_ahead: list[str] | None = None) -> str:
     deps = "\n".join(f"spec/{d}.md" for d in info.get("dependsOn") or []) or "无"
     from module_crew.hooks import ENTRY_LINE
     extra = codex_lines(relay, store.open_store(worktree).path) if host == "codex-desktop" else []
@@ -631,7 +768,8 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
         *install_line(worktree),
         *(_reopen_lines(module, reopen, cfg["integrationBranch"], cfg.get("reviewCadence", "separate"),
                          worktree) if reopen else
-          [_first_step(module, cfg.get("reviewCadence", "separate")), "收到开工类【协调通知】之前不要开始构建。"]),
+          [_first_step(module, cfg.get("reviewCadence", "separate")),
+           *(spec_ahead_lines(spec_ahead) if spec_ahead else []), "收到开工类【协调通知】之前不要开始构建。"]),
         "",
         f"接口：\n{deps}",
         _constraint_line(cfg),

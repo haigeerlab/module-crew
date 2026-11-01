@@ -13,7 +13,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from module_crew import commits, probe, protocol, store, sync
+from module_crew import commits, probe, protocol, start, store, sync
 from module_crew.inbox import AnswerRefused, Outcome, Reply
 
 
@@ -1268,6 +1268,7 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
     result = ApproveResult(0, commit=commit)
     answered_at = store.now()
     approved_before = _approved_nodes(db)
+    mapped = None                                 # crew-spec-ahead: the capability map, read only when a module needs it
     with db.transaction(actor="coordinator") as tx:
         approval = tx.allocate_number()
         tx.put("item", str(approval), {
@@ -1296,6 +1297,15 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
                                     "是否还适用由用户定，要复审就用 /spec-guard:review-mark 把它标回待批准")
                 continue
             sender = next(rec["from"] for _, rec in picked if rec["module"] == m)
+            ahead = start.spec_ahead_session(tx.records("session"), m)
+            if ahead:                             # crew-spec-ahead decision 4: no start notice before the dependencies merge
+                if mapped is None:
+                    mapped = {x.get("id"): x for x in probe.run(project).map.get("modules") or [] if isinstance(x, dict)}
+                missing = start.deps_missing(db, mapped, m)
+                if missing:
+                    result.lines.append(f"{m}：提前开工的模块，依赖 {'、'.join(missing)} 还没合入，没有发开工通知；"
+                                        f"依赖就位后 status 与 merge run 会提示，问用户一次再运行 start kickoff {m}")
+                    continue
             todo = _start_todo(tx, db, project, m, approval, result.lines)
             if todo is None:                      # crew-codex-offload decision 4: held until the user decides
                 continue
@@ -1308,6 +1318,8 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
             meta = tx.write_body(body, text)
             result.sends.append({"kind": "coordination-notice", "to": sender, "replyTo": None, "body": body,
                                  "path": db.path / meta["path"]})
+            if ahead:
+                tx.put("session", ahead[0], dict(ahead[1], kickoff=approval), action="kickoff", data={"kickoff": approval})
     result.approval = approval
     if empty:
         result.lines.append(f"批准记录 C{approval}；集成分支已是批准内容、没有差异，未提交，基线记为 HEAD {commit[:7]}")

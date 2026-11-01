@@ -72,6 +72,7 @@ It checks seven things — git, agent-relay, spec-guard, whether spec-guard is e
 
 1. **Make a coordinator**: in the session you want to coordinate, say "upgrade this session to module coordinator" (「把本会话升级为模块协调」); it runs `module-crew coordinator up`.
 2. **Open modules**: the coordinator's `module-crew start plan` proposes modules from the capability map; once you agree, `module-crew start prepare <module>…` creates worktrees and kickoff notes. Open a new session in each worktree and paste its kickoff note.
+   A module you name can open before its dependencies are done, for its Spec and Plan only; once they merge, the coordinator asks you once and sends the start notice with `module-crew start kickoff <module>`.
 3. **Spec and Plan**: each module session sends a review request (【交审】); the coordinator batches them for you. After you approve, it runs `module-crew review approve`, and module sessions start building once they get the kickoff notice.
 4. **Merge**: when a module is done it asks for final acceptance; after you approve, the coordinator's `module-crew merge run` merges it into the local integration branch and runs the full check, sending it back automatically if the check fails.
 5. **Push**: once you authorize it, `module-crew merge push` pushes to a new remote branch and opens a PR. Merging on the remote is always up to you.

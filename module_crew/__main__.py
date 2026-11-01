@@ -126,6 +126,10 @@ def _status(as_json: bool) -> int:
         for mod, r in review.progress(store.open_store()).items():
             print(f"  {mod} " + (f"返工中（审查第 {r['round']} 轮）" if r["state"] == "rework" else
                                  "审查中" + (f"（第 {r['round'] + 1} 轮）" if r["round"] else "")))
+        for row in report.store.get("specAhead") or []:     # crew-spec-ahead
+            line = start.spec_ahead_line(row)
+            if line:
+                print("  " + line)
         for n, v in review.accepted(store.open_store()):     # crew-final-accept-split
             who = v.get("module") or f"T{v.get('task')}"
             print(f"  {who} 已接受验收、待授权合并（C{n}，接受于 {v['acceptance']['answeredAt']}）")
@@ -442,6 +446,20 @@ def _start_prepare(modules: list[str], original: str | None, original_file: str 
     from module_crew import handover
     if res.prepared and handover.coordinator_host(store.open_store()) == "codex-desktop":
         print("\n".join(start.codex_open_lines([(p["id"], str(p["worktree"]), str(p["kickoffPath"])) for p in res.prepared])))
+    return res.code
+
+
+def _start_kickoff(module: str, original: str | None, as_json: bool) -> int:
+    if original is None:
+        return 2
+    res = start.kickoff(".", module, original)
+    if as_json:
+        print(json.dumps({"code": res.code, "lines": res.lines,
+                          "sends": [{k: str(v) if isinstance(v, Path) else v for k, v in x.items()} for x in res.sends]},
+                         ensure_ascii=False, indent=2))
+        return res.code
+    for line in res.lines:
+        print(line)
     return res.code
 
 
@@ -1266,6 +1284,12 @@ def _main(argv: list[str] | None = None) -> int:
     spr.add_argument("--host", choices=("claude", "codex"), help="默认跟随模块协调的宿主（crew-host-handover）")
     spr.add_argument("--commit-prefix", help="module-crew 提交信息的前缀（项目配置；不设按 chore(crew): ，空字符串表示不加）")
     spr.add_argument("--json", action="store_true")
+    spk = sps.add_parser("kickoff", help="依赖就位后凭用户原话给提前开工的模块发开工通知（crew-spec-ahead）")
+    spk.add_argument("module")
+    orig = spk.add_mutually_exclusive_group(required=True)
+    orig.add_argument("--original")
+    orig.add_argument("--original-file")
+    spk.add_argument("--json", action="store_true")
     cf = sub.add_parser("config", help="改项目配置（要用户原话）")
     cfs = cf.add_subparsers(dest="action", required=True)
     cfset = cfs.add_parser("set")
@@ -1897,6 +1921,8 @@ def _run(args) -> int:
         try:
             if args.action == "plan":
                 return _start_plan(args.json)
+            if args.action == "kickoff":
+                return _start_kickoff(args.module, _original(args.original, args.original_file), args.json)
             return _start_prepare(args.modules, args.original, args.original_file, args.project_short, args.max, args.json,
                                   args.host, args.commit_prefix)
         except store.StoreError as exc:

@@ -102,6 +102,11 @@ module-crew start prepare <模块 id>… --original-file <原话文件> [--proje
    - 用户点名后照第 3 步运行 `start prepare <id>`：旧模块分支已合入就快进到集成分支再开 worktree；旧分支有没合进来的提交就退出码 3，把提交数和三条路（合进集成分支、换名保留、确认丢弃后再重开）交用户决定；
    - 新邮箱名是 `<简称>-<id>-r<轮次>`；旧邮箱名由用户在 agent-relay 里退役，不要 `reactivate`；
    - Spec、Plan 都还是批准状态（范围内返工）时，用户点名重开就是开工批准，模块会话按开工说明直接构建，不再发开工通知；Plan 要重新交审时照第 5 步。
+7. **提前开工（依赖没做完先写 Spec，第十版起）**：只在用户原话点名了某个依赖还没做完的模块时这样开，`start plan` 不会提议它——
+   - 照第 3 步运行 `start prepare <id>`：能力图状态为 not_ready 的模块照常占名额，输出写「<id>：提前开工（依赖 … 未完成），只写 Spec 与 Plan」；同一次点名的模块之间有依赖也可以一起开（打开了 `declaredScope` 也放行）；名额、已有会话、目录或分支已存在等挡住条件照旧；
+   - 它的交审在 `review batch` 里显示「依赖未就绪」是预期的，不挡批准；
+   - Plan 批准时依赖还没合入，`review approve` 不生成开工通知，模块会话停住等；
+   - 依赖都合入后 `status` 与 `merge run` 提示「<id> 的依赖已就位，可以发开工通知」：问用户一次，同意后运行 `module-crew start kickoff <id> --original-file <原话文件>`，按输出 `bridge_send` 开工通知；任何自治档位都不自动发。
 
 ## 权限预配
 
