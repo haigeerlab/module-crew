@@ -2,6 +2,15 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.22.1 的变化（批次内迁到 Claude 的三处修正）
+
+不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移。三处都来自 LIVE-SAAS 前端第一次实际迁移。
+
+- **`coordinator rehost` 核对发起会话的启动目录**（S56，T429）：有会话编号时，除命令的当前目录外，还要求 module-crew 钩子记下的会话启动目录也在集成 checkout；没有记录或启动目录在别处时 `--check` 不通过、不给确认码，`--to` 退出码 7、什么都不写。之前从别处启动的会话只要在命令里 cd 进集成 checkout 就能通过。终端里运行（没有会话编号）照旧只看命令的当前目录。`--check` 预览列出「发起会话的启动目录」，`--json` 加 `startDir`。
+- **嵌套在集成 checkout 目录下的 worktree 不算集成 checkout**（S57，T435）：判断「在集成 checkout」改为比 git 顶层目录（`git rev-parse --show-toplevel`），不再用路径前缀；开在 `.claude/worktrees/<名>` 里的会话不再通过检查，原因写明它是另一个 worktree。集成 checkout 的子目录照旧通过。使用手册「批次内迁到 Claude」第 1 步写明不能用 worktree。
+- **盘点解除后 `rehost show` 不再误报**（S58，T437）：只有待盘点的会话才拿迁移快照比对并提示「对不上…停下」；已解除的会话改写「盘点已于 <时间> 解除，之后的提交与改动是解除后的正常开发」，HEAD 与未提交改动照常列出。
+- 升级后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
+
 ## 0.22.0 的变化（批次内迁到 Claude）
 
 不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移（会话登记只增可选的 `rehost` 记录）。
