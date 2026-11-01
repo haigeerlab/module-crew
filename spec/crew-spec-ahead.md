@@ -26,7 +26,7 @@
 4. 新命令 `start kickoff <模块> (--original <原话> | --original-file <文件>)`：依赖就位后凭用户原话发开工通知（关键决策 5）。
 5. 提示：`status`（「会话与待办」一节）与 `merge run`（合入成功后）列出依赖已就位、等发开工通知的模块（关键决策 6）。
 6. `declaredScope` 打开时：提前开工的模块不受「和在用模块有依赖关系」挡住，同批有依赖也放行（关键决策 2）。
-7. 文档：crew-coordinator skill（Claude 版与 Codex 版）「开工」一节补「提前开工」；crew-dev skill（两份）补一句 Plan 批准后不来开工通知就停住；`docs/guide.md`、README／README.en 功能清单；CHANGELOG 0.23.0。
+7. 文档：crew-coordinator skill（Claude 版与 Codex 版）「开工」一节补「提前开工」；crew-dev skill（两份）补一句 Plan 批准后不来开工通知就停住；`docs/guide.md`、`docs/commands.md`（`start kickoff`）、README／README.en 功能清单；CHANGELOG 与版本号随 0.23.0 发版由模块协调写。
 
 **范围外**
 
@@ -123,7 +123,7 @@ skills/crew-coordinator/SKILL.md   「开工」补提前开工
 codex-skills/…/crew-coordinator    同上（Codex 版）
 skills/crew-dev/SKILL.md           Plan 批准后不来开工通知就停住
 codex-skills/…/crew-dev            同上
-docs/guide.md、README.md、README.en.md、CHANGELOG.md
+docs/guide.md、docs/commands.md、README.md、README.en.md
 tests/test_spec_ahead.py
 ```
 
@@ -175,5 +175,9 @@ python3 -m unittest discover -s tests -v
 ## 文档建议
 
 - `docs/guide.md`「开工」一节加「提前开工（依赖没做完先写 Spec）」：何时用、限定、依赖就位后的 `start kickoff`。
-- README／README.en 功能清单加一行。
+- README／README.en 功能清单加一行；`docs/commands.md` 加 `start kickoff`。
 - 无其他。
+
+## 变更记录
+
+- 2026-11-01：范围第 7 条与项目结构去掉 CHANGELOG（改为随 0.23.0 发版由模块协调写，与前几个模块一致），文档补 `docs/commands.md`（新命令 `start kickoff` 要进命令一览）。原因：写 Plan 时核对发版惯例（crew-final-accept-split 范围外、crew-live-rehost 文档建议都写 CHANGELOG 随发版写）；来源：本会话写 Plan 时发现，随 Plan 交审复审。
