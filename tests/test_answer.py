@@ -62,5 +62,53 @@ class AnswerTest(RepoCase):
         self.assertEqual(open_items(), 0)
 
 
+class AnswerNewTest(RepoCase):
+    """S79: the user approved directly, no 【等待用户】 was ever recorded (answer --new)."""
+
+    def setUp(self):
+        super().setUp()
+        self.db, _ = store.init_store(self.repo)
+        seed_sessions(self.db)
+        self.orig = self.tmp / "orig.txt"
+        self.orig.write_text("同意方案甲，按 answer --new 做", encoding="utf-8")
+
+    def test_creates_closed_item_and_reply_passes_protocol_check(self):
+        r = self.run_cli("answer", "--new", "--to", "shop-a", "--about", "批准方案甲", "--original-file", str(self.orig))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("收件人：shop-a", r.stdout)
+        self.assertNotIn("replyTo", r.stdout)
+        (key, item), = [(k, v) for k, v in store.records(self.db, "item").items() if v.get("kind") == "direct-answer"]
+        self.assertEqual((item["state"], item["closedReason"], item["to"], item["about"]),
+                         ("closed", "answered", "shop-a", "批准方案甲"))
+        self.assertEqual(item["answer"]["original"], "同意方案甲，按 answer --new 做")
+        body = store.read_body(self.db, item["answer"]["body"])
+        msg = protocol.parse(body)
+        self.assertTrue(msg.ok, msg.problems)
+        self.assertIn(f"事项：C{key}", body)
+        self.assertIn(f"已建已结事项 C{key}（批准方案甲）", r.stdout)
+        self.assertEqual(msg.fields["答复时间"], item["answer"]["answeredAt"])
+        path = next(line.split("：", 1)[1] for line in r.stdout.splitlines() if line.startswith("正文文件："))
+        check = self.run_cli("protocol", "check", path)
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+
+    def test_refusals_exit_3_and_leave_store_unchanged(self):
+        before = files(self.db)
+        empty = self.tmp / "empty.txt"
+        empty.write_text("  \n", encoding="utf-8")
+        for to, f in (("shop-a", empty), ("shop-old", self.orig), ("nobody", self.orig)):
+            with self.subTest(to=to, f=f.name):
+                r = self.run_cli("answer", "--new", "--to", to, "--about", "x", "--original-file", str(f))
+                self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        r = self.run_cli("answer", "--new", "--to", "shop-a", "--about", " ", "--original-file", str(self.orig))
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        self.assertEqual(files(self.db), before)
+
+    def test_new_and_number_are_exclusive(self):
+        self.assertEqual(self.run_cli("answer", "5", "--new", "--to", "shop-a", "--about", "x",
+                                      "--original", "好").returncode, 2)
+        self.assertEqual(self.run_cli("answer", "--original", "好").returncode, 2)
+        self.assertEqual(self.run_cli("answer", "--new", "--about", "x", "--original", "好").returncode, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

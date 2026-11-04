@@ -186,10 +186,11 @@ class AnswerRefused(Exception):
 @dataclass(frozen=True)
 class Reply:
     to: str
-    reply_to: int
+    reply_to: int | None       # None: answer_new, nothing to reply to
     body: int
     path: Path
     notes: tuple = ()          # what the coordinator does next (crew-light-task escalation answers)
+    item: int | None = None    # answer_new: the item C<N> it opened and closed
 
 
 def answer(db: store.Store, number: int, original: str, option: str | None = None) -> Reply:
@@ -220,6 +221,34 @@ def answer(db: store.Store, number: int, original: str, option: str | None = Non
         tx.put("item", str(number), closed, action="answered", data={"body": body})
     notes = _task_answer(db, item, option_text[0] if option_text else None)
     return Reply(item["from"], item["relayId"], body, db.path / meta["path"], tuple(notes))
+
+
+def answer_new(db: store.Store, to: str, about: str, original: str) -> Reply:
+    """S79: the user approved directly, with no 【等待用户】 on record; open and close an item C<N> in one step.
+
+    The 【用户答复】 carries C<N> and 答复时间 like any other, so the recipient's protocol check accepts it."""
+    if not original or not original.strip():
+        raise AnswerRefused("用户原话不能为空")
+    about = (about or "").strip()
+    if not about:
+        raise AnswerRefused("--about 不能为空：写清这次答复的是什么事")
+    rec = store.get(db, "session", to)
+    if not rec or rec.get("status") != "active":
+        raise AnswerRefused(f"收件人 {to} 不是状态库里登记的在用会话")
+    with db.transaction(actor="coordinator") as tx:
+        number = tx.allocate_number()
+        answered_at = store.now()
+        try:
+            text = protocol.render_user_reply(item=number, original=original, answered_at=answered_at, crew=True)
+        except ValueError as exc:
+            raise AnswerRefused(str(exc)) from exc
+        body = tx.allocate_number()
+        meta = tx.write_body(body, text)
+        tx.put("item", str(number), {
+            "state": "closed", "kind": "direct-answer", "to": to, "about": about, "closedReason": "answered",
+            "answer": {"original": original, **store.source_field(), "option": None, "answeredAt": answered_at, "body": body},
+        }, action="answered", data={"body": body, "direct": True})
+    return Reply(to, None, body, db.path / meta["path"], item=number)
 
 
 def _task_answer(db: store.Store, item: dict, letter: str | None) -> list[str]:
