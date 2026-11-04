@@ -396,7 +396,24 @@ def _answer(number: int, original: str | None, original_file: str | None, option
     return 0
 
 
-def _start_plan(as_json: bool) -> int:
+def _answer_new(to: str, about: str, original: str | None, original_file: str | None) -> int:
+    if original_file is not None:
+        original = _read(original_file)
+        if original is None:
+            return 2
+    try:
+        reply = inbox.answer_new(store.open_store(), to, about, original)
+    except inbox.AnswerRefused as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 3
+    print(f"已建已结事项 C{reply.item}（{about.strip()}）")
+    print(f"收件人：{reply.to}")
+    _sent(reply.to)
+    print(f"正文文件：{reply.path}")
+    return 0
+
+
+
     p = start.plan(".")
     if as_json:
         print(json.dumps({"slots": p.slots, "modules": p.modules, "conflicts": p.conflicts, "blockers": p.blockers,
@@ -1277,7 +1294,10 @@ def _main(argv: list[str] | None = None) -> int:
     ib.add_argument("--from", dest="sender", required=True)
     ib.add_argument("--relay-id", type=int, required=True)
     an = sub.add_parser("answer", help="转达你的答复")
-    an.add_argument("number", type=refs.parse)
+    an.add_argument("number", type=refs.parse, nargs="?")
+    an.add_argument("--new", action="store_true", help="用户直接批准、没有收件记账的事项：新建已结事项 C<号>（S79）")
+    an.add_argument("--to", help="--new 的收件人：登记的在用会话的邮箱名")
+    an.add_argument("--about", help="--new 的事由")
     src = an.add_mutually_exclusive_group(required=True)
     src.add_argument("--original")
     src.add_argument("--original-file")
@@ -1944,7 +1964,14 @@ def _run(args) -> int:
             print(f"❌ {exc}", file=sys.stderr)
             return 2
     if args.group == "answer":
+        if args.new != (args.number is None) or (args.new and (not args.to or args.about is None or args.option)) \
+                or (not args.new and (args.to or args.about is not None)):
+            print("❌ 写 answer <编号> --original(-file) [--option …]，或 answer --new --to <邮箱名> --about <事由> "
+                  "--original(-file)，两种不混用", file=sys.stderr)
+            return 2
         try:
+            if args.new:
+                return _answer_new(args.to, args.about, args.original, args.original_file)
             return _answer(args.number, args.original, args.original_file, args.option)
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)
