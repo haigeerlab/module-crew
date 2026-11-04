@@ -610,10 +610,13 @@ def _failure(args) -> int:
     db = store.open_store()
     if args.group == "sessions":
         rows = failure.sessions(db)
+        light = failure.light_tasks(db, include_retired=args.all)
+        retired = failure.retired_modules(db) if args.all else None
         if args.json:
-            print(json.dumps({"schemaVersion": failure.SESSIONS_SCHEMA, "sessions": rows}, ensure_ascii=False, indent=2))
+            print(json.dumps({"schemaVersion": failure.SESSIONS_SCHEMA, "sessions": rows + (retired or []),
+                              "tasks": light}, ensure_ascii=False, indent=2))
         else:
-            print("\n".join(failure.render_sessions(rows)))
+            print("\n".join(failure.render_list(db, rows, light, retired)))
             own = inbox.own_waits(db)
             if own:
                 print("模块协调自开的等待记录：" + "、".join(f"W{n}（等 {r['about']}，邮箱 #{r['relayId']} → {r['to']}）" for n, r in own))
@@ -1561,7 +1564,9 @@ def _main(argv: list[str] | None = None) -> int:
     rg = rs.add_mutually_exclusive_group(required=True)
     rg.add_argument("--original")
     rg.add_argument("--original-file")
-    sub.add_parser("sessions", help="列出模块会话的事实（只读）").add_argument("--json", action="store_true")
+    se = sub.add_parser("sessions", help="列出模块协调开过的会话：模块会话的事实与轻任务会话（只读）")
+    se.add_argument("--json", action="store_true")
+    se.add_argument("--all", action="store_true", help="另列出已收回的会话")
     pm = sub.add_parser("permissions", help="宿主权限预配：预览、凭用户原话写入、实测、撤销")
     pm_sub = pm.add_subparsers(dest="action", required=True)
     pm_sub.add_parser("plan", help="只读：每个 checkout 要写什么、能不能写").add_argument("--json", action="store_true")

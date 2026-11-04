@@ -112,7 +112,7 @@ def _related(event: dict, name: str, module: str) -> bool:
     if kind not in ("item", "request", "ticket"):
         return False
     rec = (event.get("data") or {}).get("record") or {}
-    return name in (rec.get("from"), rec.get("to")) or rec.get("module") == module
+    return name in (rec.get("from"), rec.get("to")) or module is not None and rec.get("module") == module
 
 
 def _ago(at: str, now: datetime) -> str:
@@ -179,6 +179,67 @@ def sessions(db: store.Store, now: datetime | None = None) -> list[dict]:
     return rows
 
 
+def _place(name: str, rec: dict, events: list[dict], now: datetime) -> dict:
+    """Where a session runs and whether it was retired (T504: the session list)."""
+    last = next((e["at"] for e in reversed(events) if _related(e, name, rec.get("module"))), None)
+    return {"name": name, "relayName": name, "worktree": rec.get("worktree"), "host": rec.get("host"),
+            "desktopId": (rec.get("hostSession") or {}).get("desktopId"), "retired": rec.get("status") == "retired",
+            "lastActivity": last, "ago": _ago(last, now) if last else None}
+
+
+def light_tasks(db: store.Store, include_retired: bool = False, now: datetime | None = None) -> list[dict]:
+    """Light-task sessions (the export's `tasks` array); with include_retired, retired ones are appended."""
+    from module_crew import tasks
+    now = now or datetime.now().astimezone()
+    events = store.events(db)
+    records = store.records(db, "task")
+    rows = []
+    for retired in (False, True) if include_retired else (False,):
+        for name, rec in sorted(store.records(db, "session").items()):
+            if rec.get("role") != "task" or (rec.get("status") == "retired") != retired:
+                continue
+            t = records.get(str(rec.get("task"))) or {}
+            rows.append({"type": "task", **_place(name, rec, events, now), "task": rec.get("task"),
+                         "taskRef": f"T{rec.get('task')}", "taskState": t.get("state"),
+                         "taskStateText": tasks.STATE_NAMES.get(t.get("state")), "title": t.get("title")})
+    return rows
+
+
+def retired_modules(db: store.Store, now: datetime | None = None) -> list[dict]:
+    """Retired module sessions, appended to the export's `sessions` array only under --all."""
+    now = now or datetime.now().astimezone()
+    events = store.events(db)
+    return [{"type": "module", "module": rec.get("module"), **_place(name, rec, events, now)}
+            for name, rec in sorted(store.records(db, "session").items())
+            if rec.get("role") == "dev" and rec.get("status") == "retired"]
+
+
+def _place_line(r: dict, kind: str) -> str:
+    from module_crew import handover
+    return (f"  类型：{kind}；宿主：{handover.HOST_NAMES.get(r['host'], r['host'] or '?')}；"
+            f"桌面会话：{r['desktopId'] or '无'}；worktree：{r['worktree'] or '无'}；{'已收回' if r['retired'] else '在用'}")
+
+
+def render_list(db: store.Store, modules: list[dict], light: list[dict], retired: list[dict] | None = None,
+                now: datetime | None = None) -> list[str]:
+    """The text `sessions`: module sessions, light-task sessions, and with --all the retired ones."""
+    desktop = {n: (r.get("hostSession") or {}).get("desktopId") for n, r in store.records(db, "session").items()}
+    lines = render_sessions(modules, now, desktop)
+    for r in (x for x in light if not x["retired"]):
+        lines.append(f"{r['taskRef']}（{r['name']}）")
+        lines.append(_place_line(r, "轻任务"))
+        lines.append(f"  任务状态：{r['taskStateText'] or '?'}" + (f"　{r['title']}" if r["title"] else ""))
+        lines.append(f"  最后动静：{r['lastActivity'] or '无记录'}" + (f"（{r['ago']}）" if r["ago"] else ""))
+    if retired is not None:
+        gone = retired + [x for x in light if x["retired"]]
+        lines.append("已收回的会话：" + ("" if gone else "无"))
+        for r in gone:
+            lines.append(f"{r['module']}（{r['name']}）" if r["type"] == "module"
+                         else f"{r['taskRef']}（{r['name']}）　任务状态：{r['taskStateText'] or '?'}")
+            lines.append(_place_line(r, "模块" if r["type"] == "module" else "轻任务"))
+    return lines
+
+
 def _commit_line(r: dict, now: datetime) -> str:
     """crew-stall-signals: the latest commit, as a fact."""
     c = r["commits"]
@@ -196,13 +257,14 @@ def _asks_line(r: dict) -> str:
     return "  问过你：" + (asked or "无") + (f"；合并退回 {len(r['returns'])} 次" if r["returns"] else "")
 
 
-def render_sessions(rows: list[dict], now: datetime | None = None) -> list[str]:
+def render_sessions(rows: list[dict], now: datetime | None = None, desktop: dict | None = None) -> list[str]:
     if not rows:
         return ["没有在用的模块会话"]
     now = now or datetime.now().astimezone()
     lines = []
     for r in rows:
         lines.append(f"{r['module']}（{r['name']}）" + (f"　挂起：{r['suspended']}" if r["suspended"] else ""))
+        lines.append(_place_line({**r, "desktopId": (desktop or {}).get(r["name"]), "retired": False}, "模块"))
         lines.append(f"  最后动静：{r['lastActivity'] or '无记录'}" + (f"（{r['ago']}）" if r["ago"] else ""))
         lines.append("  未关等待记录：" + ("、".join(f"W{n}" for n in r["openTickets"]) or "无")
                      + "；未关事项：" + ("、".join(f"C{n}" for n in r["openItems"]) or "无"))

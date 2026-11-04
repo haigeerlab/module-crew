@@ -140,5 +140,72 @@ class SessionsExportTest(HubCase):
         self.assertTrue((PLUGIN_ROOT / doc["sessions"]["command"][0]).exists())
 
 
+class SessionListTest(HubCase):
+    """T504: light-task sessions in a new `tasks` array, retired sessions under --all; `sessions` unchanged."""
+
+    def setUp(self):
+        super().setUp()
+        from module_crew import tasks
+        self.t = tasks.add(self.db, self.repo, "feature", "改文档", "补一段说明", ["docs/t.md"], "说明写好", "加一段说明").number
+        self.gone = tasks.add(self.db, self.repo, "bug", "修脚本", "修一下", ["bin/x"], "修好", "修一下").number
+        with self.db.transaction(actor="t") as tx:
+            tx.put("task", str(self.t), {**tx.get("task", str(self.t)), "state": "working"}, action="working")
+            tx.put("session", "shop-t1", {"role": "task", "host": "claude-desktop", "status": "active", "task": self.t,
+                                          "worktree": "/tmp/wt1",
+                                          "hostSession": {"sessionId": "sid-t1", "desktopId": "local_t1"}},
+                   action="registered")
+            tx.put("session", "shop-t2", {"role": "task", "host": "codex-desktop", "status": "retired",
+                                          "task": self.gone, "worktree": "/tmp/wt2"}, action="registered")
+            tx.put("session", "shop-z", {"role": "dev", "host": "claude-desktop", "status": "retired", "module": "z",
+                                         "worktree": "/tmp/wz"}, action="registered")
+
+    def export(self, *extra):
+        import json
+        out = self.run_cli("sessions", "--json", *extra, cwd=self.repo)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def test_tasks_array_and_sessions_unchanged(self):
+        from module_crew import failure
+        doc = self.export()
+        self.assertEqual(doc["schemaVersion"], 1)
+        self.assertEqual(doc["sessions"], json_round(failure.sessions(self.db), doc["sessions"]))
+        self.assertTrue(all("retired" not in r and "type" not in r for r in doc["sessions"]))
+        [t] = doc["tasks"]
+        self.assertEqual({k: t[k] for k in ("type", "name", "relayName", "task", "taskRef", "taskState", "worktree",
+                                            "host", "desktopId", "retired")},
+                         {"type": "task", "name": "shop-t1", "relayName": "shop-t1", "task": self.t,
+                          "taskRef": f"T{self.t}", "taskState": "working", "worktree": "/tmp/wt1",
+                          "host": "claude-desktop", "desktopId": "local_t1", "retired": False})
+
+    def test_all_appends_retired(self):
+        doc = self.export("--all")
+        plain = self.export()
+        self.assertEqual(doc["sessions"][:len(plain["sessions"])], plain["sessions"])
+        extra = doc["sessions"][len(plain["sessions"]):]
+        self.assertEqual([(r["module"], r["retired"], r["type"]) for r in extra], [("z", True, "module")])
+        self.assertEqual([(r["name"], r["retired"]) for r in doc["tasks"]], [("shop-t1", False), ("shop-t2", True)])
+
+    def test_text(self):
+        out = self.run_cli("sessions", cwd=self.repo).stdout
+        self.assertIn(f"T{self.t}（shop-t1）", out)
+        self.assertIn("类型：轻任务；宿主：Claude Code；桌面会话：local_t1；worktree：/tmp/wt1；在用", out)
+        self.assertIn("任务状态：在做　改文档", out)
+        self.assertIn("类型：模块；", out)
+        self.assertNotIn("shop-t2", out)
+        self.assertNotIn("已收回", out)
+        out = self.run_cli("sessions", "--all", cwd=self.repo).stdout
+        self.assertIn("已收回的会话：", out)
+        self.assertIn("z（shop-z）", out)
+        self.assertIn("类型：模块；宿主：Claude Code；桌面会话：无；worktree：/tmp/wz；已收回", out)
+        self.assertIn(f"T{self.gone}（shop-t2）　任务状态：可开", out)
+        self.assertIn("宿主：Codex", out)
+
+
+def json_round(rows, _):
+    import json
+    return json.loads(json.dumps(rows, ensure_ascii=False))
+
+
 if __name__ == "__main__":
     unittest.main()
