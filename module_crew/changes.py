@@ -71,8 +71,15 @@ def _module_of(sessions: dict, sender: str) -> str:
 
 
 def _active(db: store.Store, sender: str) -> bool:
+    """A module session, or a light task's session (S65, T473: the same rule as inbox)."""
     rec = store.get(db, "session", sender)
-    return bool(rec) and rec.get("role") == "dev" and rec.get("status") == "active"
+    return bool(rec) and rec.get("role") in ("dev", "task") and rec.get("status") == "active"
+
+
+def _light_task(db: store.Store, sender: str) -> str | None:
+    """S65 (T473): `T<n>` when `sender` is a light task's session; it has no module merge and no declared scope."""
+    rec = store.get(db, "session", sender) or {}
+    return f"T{rec.get('task')}" if rec.get("role") == "task" else None
 
 
 def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
@@ -157,7 +164,7 @@ def _declared_scope(db: store.Store, sender: str):
     """crew-declared-scope decision 3: the sender module's declaration, read in the integration checkout, or None
     when the switch is off."""
     from module_crew import declared
-    if not declared.enabled(db):
+    if not declared.enabled(db) or _light_task(db, sender):
         return None
     module = _module_of(store.records(db, "session"), sender)
     branch = (store.get(db, "config", "main") or {}).get("integrationBranch", "")
@@ -228,6 +235,10 @@ def accept(db: store.Store, number: int, original: str) -> Reply:
     request lands with the module's merge (merge run). It stays open until then; the baseline is not touched."""
     with db.transaction(actor="coordinator") as tx:
         rec = _open_request(tx, number)
+        task = _light_task(db, rec["from"])
+        if task:
+            raise AnswerRefused(f"公共变更请求 C{number} 来自轻任务 {task}：轻任务没有模块合并，不能随合并落地；"
+                                "改由模块协调 change land 或 change answer")
         if rec.get("accepted"):
             raise AnswerRefused(f"公共变更请求 C{number} 已批准范围，待随模块合并")
         if rec.get("partial"):
@@ -400,6 +411,10 @@ def land(project: str | os.PathLike, number: int, original: str | None = None, p
     if from_module:
         if partial:
             return LandResult(3, ["--from-module 不和 --partial 一起用"])
+        task = _light_task(db, rec["from"])
+        if task:
+            return LandResult(3, [f"公共变更请求 C{number} 来自轻任务 {task}：轻任务没有预先声明的名单，不能 --from-module 提前落地；"
+                                  "由模块协调在集成 checkout 里改好后 change land"])
         module_commit, why = _from_module(db, checkout, rec, number)
         if why:
             return LandResult(3, [why])
@@ -489,8 +504,8 @@ def _notify(db: store.Store, tx, result: LandResult, basis: str, todo: str, repl
     from module_crew import merge
     skip = merge.no_sync(tx)               # same rule as merge run (0.9.3); the requester still gets its reply
     for name, sess in sorted(tx.records("session").items()):
-        if sess.get("role") != "dev" or sess.get("status") != "active":
-            continue
+        if sess.get("status") != "active" or sess.get("role") != "dev" and not (name in replies and sess.get("role") == "task"):
+            continue                       # S65 (T473): a light task gets only its own reply
         if sess.get("module") in skip and name not in replies:
             continue
         text = protocol.render_coordination_notice(kind="sync-baseline", basis=basis, todo=todo)
