@@ -51,6 +51,12 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
     task = msg.contract().get("task")
     if task and (me.get("role") != "task" or task != f"T{me.get('task')}"):
         return Outcome(msg.kind, 3, lines=[f"消息写的任务 {task} 不是 {sender} 负责的任务，拒收"])
+    if task and msg.kind == "wait-user" and msg.contract().get("waitKind") == "stuck":
+        wrong = _misread_letters(msg.contract()["options"])
+        if wrong:
+            return Outcome(msg.kind, 3, lines=[
+                "升格请求的选项字母含义固定：" + "／".join(f"{k} {v}" for k, v in TASK_LETTERS.items())
+                + "；" + "、".join(wrong) + "，请按固定含义改好重发"])
     with db.transaction(actor=sender) as tx:
         out = Outcome(msg.kind, 0)
         if any(e["actor"] == sender and e["data"].get("relayId") == relay_id for e in store.events(db)):
@@ -83,6 +89,15 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         if out.closed:
             out.lines.append("已关闭 " + "、".join(refs.wait(n) if n in out.closed_waits else refs.fmt(n) for n in out.closed))
         return out
+
+
+TASK_LETTERS = {"A": "升格", "B": "缩小", "C": "取消", "D": "扩项"}   # answer() acts on the letter alone (S64)
+
+
+def _misread_letters(options) -> list[str]:
+    """Options of an escalation request whose text does not say the letter's fixed meaning."""
+    return [f"{o['letter']} 写的是「{o['text']}」" for o in options
+            if o["letter"] in TASK_LETTERS and TASK_LETTERS[o["letter"]] not in o["text"]]
 
 
 def _close_tickets(tx, sender: str, refs, reason: int, by: int, out: Outcome) -> None:
