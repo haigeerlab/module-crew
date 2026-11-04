@@ -183,3 +183,4 @@ python3 -m unittest discover -s tests -v
 ## 变更记录
 
 - 2026-11-01：范围第 7 条与项目结构去掉 CHANGELOG（改为随 0.23.0 发版由模块协调写，与前几个模块一致），文档补 `docs/commands.md`（新命令 `start kickoff` 要进命令一览）。原因：写 Plan 时核对发版惯例（crew-final-accept-split 范围外、crew-live-rehost 文档建议都写 CHANGELOG 随发版写）；来源：本会话写 Plan 时发现，随 Plan 交审复审。
+- 2026-11-04：`start kickoff` 加 `--plan-revision C<号>` 与 `--already-sent`：C 号是本模块在提前开工之后批准的 Plan 且有用户原话时，依赖未合入也记账并生成开工通知（依据写「依赖 X 未合入，按已批 Plan 修订 C<号> 不等依赖」），C 号不合格退出码 3；`--already-sent` 只补记手工已发的开工、不生成通知。原因：依赖未合入就一律拒绝，已批准的 Plan 修订（不等依赖）无法记账，手工发出的开工也补记不了；来源：live-saas-backoffice 报告 SEAMS S78（ecosystem-lead 转来），用户批准方案甲，轻任务 T480。

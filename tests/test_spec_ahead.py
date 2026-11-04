@@ -266,6 +266,65 @@ class KickoffTest(AheadCase):
         self.assertEqual(self.run_cli("start", "kickoff", "e", "--original", "x").returncode, 3)
 
 
+class PlanRevisionTest(AheadCase):
+    """S78: a Plan revision approved after the module opened ahead lets it start before its dependencies merge."""
+
+    def unchanged(self, fn):
+        before = (store.records(self.db, "item"), store.records(self.db, "session"))
+        out = fn()
+        self.assertEqual(out.code, 3, out.lines)
+        self.assertEqual((store.records(self.db, "item"), store.records(self.db, "session")), before)
+        return out
+
+    def test_kickoff_before_dependencies_merge(self):
+        res = self.approve_e()
+        out = start.kickoff(self.repo, "e", "按修订开工", plan_revision=res.approval)
+        self.assertEqual(out.code, 0, out.lines)
+        rec = next((int(k), v) for k, v in store.records(self.db, "item").items() if v["kind"] == "start-kickoff")
+        self.assertEqual((rec[1]["planRevision"], rec[1]["answer"]["original"]), (res.approval, "按修订开工"))
+        self.assertEqual(self.dev("e")["kickoff"], rec[0])
+        [send] = out.sends
+        msg = protocol.parse(store.read_body(self.db, send["body"]))
+        self.assertFalse(msg.problems, msg.problems)
+        self.assertIn(f"依赖 b、c 未合入，按已批 Plan 修订 C{res.approval} 不等依赖，用户 C{rec[0]} 同意开工",
+                      msg.fields["依据"])
+        self.assertNotIn("e 提前开工", self.run_cli("status").stdout)
+
+    def test_already_sent_records_only(self):
+        res = self.approve_e()
+        out = start.kickoff(self.repo, "e", "手工已发开工", plan_revision=res.approval, already_sent=True)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertEqual(out.sends, [])
+        rec = next((int(k), v) for k, v in store.records(self.db, "item").items() if v["kind"] == "start-kickoff")
+        self.assertTrue(rec[1]["alreadySent"])
+        self.assertEqual(self.dev("e")["kickoff"], rec[0])
+        self.assertNotIn("e 提前开工", self.run_cli("status").stdout)
+
+    def test_refused_revisions(self):
+        res = self.approve_e()
+        since = self.dev("e")["specAhead"]["since"]
+        for c in (since, 99999):                                 # not an approval; no such item
+            self.assertIn("不是", "\n".join(self.unchanged(
+                lambda: start.kickoff(self.repo, "e", "开工", plan_revision=c)).lines))
+        s = review.add(self.db, self.spec_review("b"), "shop-b", 1).number
+        p = review.add(self.db, self.plan_review("b"), "shop-b", 2).number
+        other = review.approve(self.repo, [s, p], "b 批准").approval
+        self.unchanged(lambda: start.kickoff(self.repo, "e", "开工", plan_revision=other))     # another module's Plan
+        with self.db.transaction(actor="test") as tx:          # opened ahead after that approval
+            name, v = start.spec_ahead_session(store.records(self.db, "session"), "e")
+            tx.put("session", name, dict(v, specAhead=dict(v["specAhead"], since=res.approval + 1)), action="set")
+        self.unchanged(lambda: start.kickoff(self.repo, "e", "开工", plan_revision=res.approval))
+
+    def test_cli(self):
+        res = self.approve_e()
+        out = self.run_cli("start", "kickoff", "e", "--original", "x", "--plan-revision", "C1")
+        self.assertEqual(out.returncode, 3, out.stdout + out.stderr)
+        out = self.run_cli("start", "kickoff", "e", "--original", "按修订开工", "--plan-revision", f"C{res.approval}",
+                           "--already-sent")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertNotIn("发送", out.stdout)
+
+
 class HintTest(AheadCase):
     """Acceptance 9 (hint), 10: status (text and --json) and merge run."""
 

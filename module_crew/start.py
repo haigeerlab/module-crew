@@ -557,9 +557,27 @@ class KickoffResult:
     sends: list[dict] = field(default_factory=list)
 
 
-def kickoff(project: str | os.PathLike, module: str, original: str) -> KickoffResult:
+def _plan_revision(db: store.Store, module: str, since: int, number: int) -> str | None:
+    """S78: why C<number> is not a Plan of module approved, with the user's words, after it opened ahead; else None."""
+    items_ = store.records(db, "item")
+    rec = items_.get(str(number)) or {}
+    if rec.get("kind") != "review-approval":
+        return f"C{number} 不是批准事项"
+    if not any((items_.get(str(n)) or {}).get("module") == module and (items_.get(str(n)) or {}).get("node") == "plan"
+               for n in rec.get("reviews", [])):
+        return f"C{number} 不是 {module} 的 Plan 批准"
+    if number <= since:
+        return f"C{number} 早于 {module} 提前开工（C{since}），不是之后批准的 Plan 修订"
+    if not ((rec.get("answer") or {}).get("original") or "").strip():
+        return f"C{number} 没有用户原话"
+    return None
+
+
+def kickoff(project: str | os.PathLike, module: str, original: str, plan_revision: int | None = None,
+            already_sent: bool = False) -> KickoffResult:
     """crew-spec-ahead decision 5: the start notice of a module opened ahead, once its dependencies merged and the
-    user said so (the way offload decline sends a held start notice)."""
+    user said so (the way offload decline sends a held start notice). S78: with plan_revision (a Plan approved after
+    it opened ahead) it starts before its dependencies merge; already_sent only records a start sent by hand."""
     from module_crew import offload, protocol, review
     project = Path(project)
     db = _open_store(project)
@@ -574,27 +592,40 @@ def kickoff(project: str | os.PathLike, module: str, original: str) -> KickoffRe
     if approval is None:
         return KickoffResult(3, [f"{module} 的 Spec 与 Plan 还没都批准"])
     mapped = {m.get("id"): m for m in probe.run(project).map.get("modules") or [] if isinstance(m, dict)}
+    if plan_revision is not None:
+        why = _plan_revision(db, module, int(ahead[1]["specAhead"].get("since") or 0), plan_revision)
+        if why:
+            return KickoffResult(3, [why])
     missing = deps_missing(db, mapped, module)
-    if missing:
+    if missing and plan_revision is None:
         return KickoffResult(3, [f"{module} 的依赖 {'、'.join(missing)} 还没合入，不能发开工通知"])
     deps = "、".join(mapped.get(module, {}).get("dependsOn") or ahead[1]["specAhead"]["missing"])
+    why_now = (f"依赖 {'、'.join(missing)} 未合入，按已批 Plan 修订 C{plan_revision} 不等依赖" if missing
+               else f"依赖 {deps} 已合入")
     result = KickoffResult(0)
     with db.transaction(actor="coordinator") as tx:
-        todo = review._start_todo(tx, db, project, module, approval[0], result.lines)
-        if todo is None:                       # crew-codex-offload decision 4: the user decides first
-            result.code = 3
-            return result
+        if not already_sent:
+            todo = review._start_todo(tx, db, project, module, approval[0], result.lines)
+            if todo is None:                   # crew-codex-offload decision 4: the user decides first
+                result.code = 3
+                return result
         n = tx.allocate_number()
         tx.put("item", str(n), {"state": "closed", "kind": "start-kickoff", "closedReason": "answered", "relayId": None,
                                 "from": "coordinator", "module": module, "approval": approval[0],
+                                **({"planRevision": plan_revision} if plan_revision is not None else {}),
+                                **({"alreadySent": True} if already_sent else {}),
                                 "answer": {"original": original, "answeredAt": store.now(), **store.source_field()}},
                action="start-kickoff")
-        text = protocol.render_coordination_notice(
-            kind="start", basis=review.start_basis(db, module, approval[0], offload._approved_in(db, approval[0], module))
-                                + f"，集成分支 {str(approval[1])[:7]}；依赖 {deps} 已合入，用户 C{n} 同意开工", todo=todo)
-        body = tx.allocate_number()
-        meta = tx.write_body(body, text)
+        if not already_sent:
+            text = protocol.render_coordination_notice(
+                kind="start", basis=review.start_basis(db, module, approval[0], offload._approved_in(db, approval[0], module))
+                                    + f"，集成分支 {str(approval[1])[:7]}；{why_now}，用户 C{n} 同意开工", todo=todo)
+            body = tx.allocate_number()
+            meta = tx.write_body(body, text)
         tx.put("session", ahead[0], dict(ahead[1], kickoff=n), action="kickoff", data={"kickoff": n})
+    if already_sent:
+        result.lines.append(f"{module} 的开工已补记（事项 C{n}），没有生成开工通知")
+        return result
     result.sends.append({"kind": "coordination-notice", "to": ahead[0], "replyTo": None, "body": body,
                          "path": db.path / meta["path"]})
     result.lines += [f"{module} 的开工通知已生成（事项 C{n}）",

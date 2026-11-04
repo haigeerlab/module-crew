@@ -84,7 +84,9 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 - `start plan [--json]`：按能力图的 Build order 提议可开的模块，不超过空位（只读，任何会话）。
 - `start prepare <模块>… --original(-file) [--project-short <简称>] [--max <上限>] [--host claude|codex] [--commit-prefix <前缀>]`：为每个模块建 worktree（`<仓库名>-crew/<模块>`）、登记会话、生成开工说明（模块协调）。重开已完成的模块也用它（见使用手册「修订已完成的模块」）。`--max` 只在项目第一次落运行配置时生效；`coordinator up` 已经把上限记为默认 2，之后给不同的数退出码 3（「上限已定为 …，不能在这里改」）。
-- `start kickoff <模块> --original(-file) [--json]`：给提前开工的模块发开工通知；要依赖都已合入、Spec 与 Plan 都已批准、还没发过（模块协调，用户原话）。见使用手册「提前开工」。
+- `start kickoff <模块> --original(-file) [--plan-revision C<号>] [--already-sent] [--json]`：给提前开工的模块发开工通知；要依赖都已合入、Spec 与 Plan 都已批准、还没发过（模块协调，用户原话）。见使用手册「提前开工」。
+  - `--plan-revision C<号>`：本模块在提前开工之后批准过不等依赖的 Plan 修订时，凭它在依赖未合入时也开工；C 号要是本模块提前开工之后的 Plan 批准、带用户原话，否则退出码 3。通知依据写「依赖 X 未合入，按已批 Plan 修订 C<号> 不等依赖」。
+  - `--already-sent`：开工通知已经手工发出，只补记开工（会话登记与事项），不生成通知；依赖未合入时同时带 `--plan-revision`。
 
 ### `config`
 

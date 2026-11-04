@@ -453,10 +453,18 @@ def _start_prepare(modules: list[str], original: str | None, original_file: str 
     return res.code
 
 
-def _start_kickoff(module: str, original: str | None, as_json: bool) -> int:
+def _start_kickoff(module: str, original: str | None, as_json: bool, plan_revision: str | None = None,
+                   already_sent: bool = False) -> int:
     if original is None:
         return 2
-    res = start.kickoff(".", module, original)
+    revision = None
+    if plan_revision is not None:
+        digits = plan_revision.strip().upper().removeprefix("C")
+        if not digits.isdigit():
+            print(f"❌ --plan-revision 要写成 C<号>：{plan_revision}", file=sys.stderr)
+            return 2
+        revision = int(digits)
+    res = start.kickoff(".", module, original, revision, already_sent)
     if as_json:
         print(json.dumps({"code": res.code, "lines": res.lines,
                           "sends": [{k: str(v) if isinstance(v, Path) else v for k, v in x.items()} for x in res.sends]},
@@ -1293,6 +1301,8 @@ def _main(argv: list[str] | None = None) -> int:
     orig = spk.add_mutually_exclusive_group(required=True)
     orig.add_argument("--original")
     orig.add_argument("--original-file")
+    spk.add_argument("--plan-revision", help="C<号>：提前开工之后批准的 Plan 修订，依赖未合入也开工（S78）")
+    spk.add_argument("--already-sent", action="store_true", help="开工通知已手工发出，只记账、不生成通知")
     spk.add_argument("--json", action="store_true")
     cf = sub.add_parser("config", help="改项目配置（要用户原话）")
     cfs = cf.add_subparsers(dest="action", required=True)
@@ -1926,7 +1936,8 @@ def _run(args) -> int:
             if args.action == "plan":
                 return _start_plan(args.json)
             if args.action == "kickoff":
-                return _start_kickoff(args.module, _original(args.original, args.original_file), args.json)
+                return _start_kickoff(args.module, _original(args.original, args.original_file), args.json,
+                                     args.plan_revision, args.already_sent)
             return _start_prepare(args.modules, args.original, args.original_file, args.project_short, args.max, args.json,
                                   args.host, args.commit_prefix)
         except store.StoreError as exc:
