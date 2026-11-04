@@ -82,7 +82,7 @@ flowchart LR
 ## 消息与批准
 
 - **通道**：会话之间只经 agent-relay 收发。要回复的消息标 `expectsReply`；回复填 `replyTo`，首行写「回复：#N」；正文走 `bodyFile`，不经 shell 转义。
-- **格式**：消息以契约标签开头（【交审】【等待用户】【用户答复】【协调通知】等），字段与必填项由 session-protocol 契约规定。module-crew 钉住契约 v2.6（`interface.json` 的 `contract`）；每条消息发出前用 `protocol check` 自检。
+- **格式**：消息以契约标签开头（【交审】【等待用户】【用户答复】【协调通知】等），字段与必填项由 session-protocol 契约规定。module-crew 钉住契约 v2.8（`interface.json` 的 `contract`）；每条消息发出前用 `protocol check` 自检。决策收件箱按契约主版本判断兼容：它讲的契约与 module-crew 同为 2.x 即兼容（它的 doctor 只比主版本）；它登记的次版本较低时，较新的写法收着用，见[使用手册](guide.md#审查就近与决策收件箱)。
 - **批准链**：批准只来自用户在模块协调里亲手输入的话（`--original`／`--original-file`，原话存进状态库）。决策收件箱或审查者转来的决定，要先由用户亲口把它们登记为可信来源，批准命令再核对来源、事项号、消息号与实际发件人；别的会话转来的话一律不算批准。
 - **批准落在哪**：Spec、Plan 的批准由 `review approve` 在集成分支写 spec-guard 的批准标记并提交；模块会话 `sync` 时自动取这一版。
 - **钩子**：Claude Code 会话每次启动、每次提交提示词时，钩子按会话编号查状态库，只给登记过的会话注入它的角色、当前阶段、未关的等待记录与命令入口；没登记的会话不注入角色。
@@ -105,7 +105,7 @@ module-crew 读各依赖安装目录里的 `interface.json`，按主版本与次
 | agent-relay | 接口主版本 2：注册邮箱名、`bridge_send` 的 `bodyFile`／`replyTo`／`expectsReply`、收件箱与会话状态 |
 | spec-guard | 接口 1.1 起的规划层（spec-guard 0.68.0）：`/map --json` 的模块状态与 `moduleConcurrency`、`startable`，checkout 角色标记；1.10 的 `scopeOverlap`（并行边界比对）；1.11（spec-guard 0.85.0）的 `declaredScope`、`autonomyTier`、`scopeCheck` |
 | delegate | 只有额度外包要：接口 1.3（delegate 0.8.0 起）的接续、续跑、长期限、结果文件与写入授权能力标记 |
-| session-protocol | 消息契约，钉住 v2.6 |
+| session-protocol | 消息契约，钉住 v2.8；决策收件箱同为 2.x 即兼容 |
 
 ## 对外出口
 
