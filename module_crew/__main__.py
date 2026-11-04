@@ -413,7 +413,7 @@ def _answer_new(to: str, about: str, original: str | None, original_file: str | 
     return 0
 
 
-
+def _start_plan(as_json: bool) -> int:
     p = start.plan(".")
     if as_json:
         print(json.dumps({"slots": p.slots, "modules": p.modules, "conflicts": p.conflicts, "blockers": p.blockers,
