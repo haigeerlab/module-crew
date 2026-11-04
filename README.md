@@ -33,9 +33,9 @@ module-crew 在它之上加一层运行层：
 |---|---|
 | 宿主 | Claude Code 桌面版（Code 标签）；模块会话也可以开在 Codex 桌面版，一批收尾后模块协调可用 `coordinator handover` 整体换到 Codex 桌面版。所有会话在同一台 Mac 上 |
 | [agent-relay](https://github.com/haigeerlab/agent-relay) | 必需，接口主版本 2。会话之间用它收发消息 |
-| [spec-guard](https://github.com/haigeerlab/spec-guard-plugin) | 必需，0.68.0 起（接口 1.1 的规划层）；项目已启用 spec-guard 的本地多 Spec 约定（`spec/CAPABILITY-MAP.md`）。声明范围、自治档位、额度外包要 0.85.0 起（接口 1.11） |
+| [spec-guard](https://github.com/haigeerlab/spec-guard-plugin) | 必需，0.68.0 起（接口 1.1 的规划层）；项目已启用 spec-guard 的本地多 Spec 约定（`spec/CAPABILITY-MAP.md`）：还没启用就先在项目里跑 `/spec-guard:setup-convention local`，否则体检报阻塞、`start plan` 退出码 3。声明范围、自治档位、额度外包要 0.85.0 起（接口 1.11） |
 | [delegate](https://github.com/haigeerlab/delegate-plugin) | 可选，只有打开额度外包时才要：0.8.0 起（接口 1.3） |
-| session-protocol | 会话间消息的格式契约，module-crew 钉住 v2.8（契约本身随 module-crew 内置的解析器生效，不用另装） |
+| session-protocol | 会话间消息的格式契约，module-crew 钉住 v2.8（契约本身随 module-crew 内置的解析器生效，不用另装）；决策收件箱讲的契约与它同为 2.x 即兼容 |
 | 项目 | git 仓库，能建 worktree；有一条能在本地跑完的完整检查命令，合并后用它判断集成是否通过 |
 | 运行环境 | Python 3（只用标准库；开发与测试用 3.10） |
 
@@ -54,14 +54,20 @@ claude plugin install module-crew@module-crew-local
 也可以从本地 clone 装：`claude plugin marketplace add /path/to/module-crew`。
 
 - 首次使用时 Claude Code 会询问是否信任插件钩子，**要同意**；否则压缩、换会话后不会注入角色提示。
-- 插件更新后，在用的会话在原会话里 `/clear` 一次（或开新会话）才用上新版本的钩子与 skill。
+- 插件更新后：只升级 module-crew 时，原会话 /clear 一次即可。升级里包含 agent-relay（或别的带 MCP 工具的插件）时，Claude Code 新开会话、Codex 新开任务；重开应用和 resume 原会话都还用旧版本。新开后怎么接上原身份见[使用手册](docs/guide.md#出状况时怎么办)「插件更新后」。
 
 **Codex**（只在要开 Codex 模块会话、或把模块协调换到 Codex 时需要）：在 Codex 里装同一版本的本插件（`.codex-plugin/plugin.json`，提供 Codex 版 `crew-dev` 与 `crew-coordinator` 两个 skill），装完完全退出 ChatGPT 应用再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`。
 
-装好后在项目里体检：
+装好后在项目的 Claude Code 会话里让它跑体检（插件的 `bin/` 在会话的 PATH 上，直接写 `module-crew`）：
 
 ```bash
-bin/module-crew status
+module-crew status
+```
+
+在自己的终端里跑时用状态库里的固定入口（模块协调升级或 `permissions apply` 之后才有；之前用插件安装目录下的 `bin/module-crew`）：
+
+```bash
+"$(git rev-parse --path-format=absolute --git-common-dir)/module-crew/bin/module-crew" status
 ```
 
 它检查 git、agent-relay、spec-guard、项目是否启用 spec-guard、spec-guard 规划层、集成分支与状态库七项，任何一项阻塞都会写明原因。

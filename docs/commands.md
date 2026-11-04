@@ -5,7 +5,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 ## 用法总述
 
-**入口**：插件里的 `bin/module-crew`。开工后状态库里另有一个固定入口 `<git 公共目录>/module-crew/bin/module-crew`，它每次转给本机当前安装的 module-crew，插件升级后不用换路径；开工说明、权限规则里写的都是这个固定入口。
+**入口**：插件里的 `bin/module-crew`。开工后状态库里另有一个固定入口 `<git 公共目录>/module-crew/bin/module-crew`，它每次转给本机当前安装的 module-crew，插件升级后不用换路径；开工说明、权限规则里写的都是这个固定入口。Claude Code 会话里插件的 `bin/` 在 PATH 上，直接写 `module-crew`；在自己的终端里用固定入口 `"$(git rev-parse --path-format=absolute --git-common-dir)/module-crew/bin/module-crew"`（`coordinator up` 或 `permissions apply` 写出之后才有）。
 
 **谁能跑**：标「模块协调」的命令只有状态库里登记为模块协调的那个会话能跑，别的会话跑会被拒（退出码 7，什么都不写）；在终端里直接跑（没有会话编号）不受这条限制。
 标「任何会话」的是只读命令、模块会话那一侧的命令和钩子入口。
@@ -83,7 +83,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 ### `start`
 
 - `start plan [--json]`：按能力图的 Build order 提议可开的模块，不超过空位（只读，任何会话）。
-- `start prepare <模块>… --original(-file) [--project-short <简称>] [--max <上限>] [--host claude|codex] [--commit-prefix <前缀>]`：为每个模块建 worktree（`<仓库名>-crew/<模块>`）、登记会话、生成开工说明（模块协调）。重开已完成的模块也用它（见使用手册「修订已完成的模块」）。
+- `start prepare <模块>… --original(-file) [--project-short <简称>] [--max <上限>] [--host claude|codex] [--commit-prefix <前缀>]`：为每个模块建 worktree（`<仓库名>-crew/<模块>`）、登记会话、生成开工说明（模块协调）。重开已完成的模块也用它（见使用手册「修订已完成的模块」）。`--max` 只在项目第一次落运行配置时生效；`coordinator up` 已经把上限记为默认 2，之后给不同的数退出码 3（「上限已定为 …，不能在这里改」）。
 - `start kickoff <模块> --original(-file) [--json]`：给提前开工的模块发开工通知；要依赖都已合入、Spec 与 Plan 都已批准、还没发过（模块协调，用户原话）。见使用手册「提前开工」。
 
 ### `config`
@@ -108,7 +108,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 ### `inbox`
 
-`inbox add <文件> --from <发件人> --relay-id <消息号>`：模块协调收到消息后记账（模块协调）。
+`inbox add <文件> --from <发件人> --relay-id <消息号>`：模块协调收到消息后记账（模块协调）。退出码另有约定：0 已记账（或已记过）；3 不合格或发件人未登记，不记账；**4 合格但不归本命令记账**——【交审】改用 `review add`、【公共变更请求】改用 `change add`（参数相同），不是超时；2 参数错或未建库。
 
 ### `review`
 
