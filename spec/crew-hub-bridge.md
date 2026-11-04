@@ -101,6 +101,8 @@ bin/module-crew sessions --json
 
 0.4.0 起新增契约字段 `startedAt`、`commits`、`asks`、`returns`、`waitUser`（停滞事实），定义见 `spec/crew-stall-signals.md`；`schemaVersion` 仍为 1。0.5.0 起再加 `answers`（每次用户答复之后的提交数与 todo 勾选增量），定义同上。
 
+0.23.1 起新增顶层数组 `tasks`：在用的轻任务会话，字段见 `docs/commands.md` 的 `sessions` 一节；`sessions` 数组不变。`sessions --json --all`（不是登记的出口命令）另把已收回的轻任务会话追加到 `tasks`、已收回的模块会话追加到 `sessions` 末尾，都带 `retired: true`，读 `--all` 的一方要先看 `retired`。`schemaVersion` 仍为 1。
+
 ### interface.json（插件根目录）
 
 见关键决策 7。
@@ -180,3 +182,4 @@ README 增加「接入收件枢纽」一节：登记来源、带来源批准、�
 - 2026-10-19：交枢纽的【等待用户】改为一个模块一条、原样展示（产物、交审原文、审查原文、「待用户决定」字段、批准会发生什么），关键决策 5 与验收 7、13 标为由 crew-review-nearby 取代；`sessions --json` 加 `review` 字段；`review note` 支持多段与返工。原因：用户决定 46、47（R12），审查就近（R1）；来源：用户 2026-10-19 批准修订后的 crew-review-nearby Spec 与 Plan（决定 41、46、47、49；Task 7、9、11、13），随它的最终验收复审。
 - 2026-10-19：sessions 契约一节追加一句，指向 crew-stall-signals 新增的五个字段；原有条文不变。原因：R14 停滞检测要的只读事实；来源：用户 2026-10-19 批准的 crew-stall-signals Spec（关键决策 7）。
 - 2026-10-19：sessions 契约一节补一句 0.5.0 新增的 `answers`；原有条文不变。原因：R21 MC-3；来源：用户 2026-10-19 批准的 crew-stall-signals Spec 修订。
+- 2026-11-05：sessions 契约一节追加一段：新增顶层数组 `tasks`（轻任务会话）与 `--all`（已收回的会话带 `retired: true` 追加）；`sessions` 数组与原有条文不变，`schemaVersion` 仍为 1。原因：会话清单（轻任务 T504）；来源：用户 2026-11-04 在 mc-coord 批准收窄后的任务单。

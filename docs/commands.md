@@ -34,7 +34,9 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 ### `sessions`
 
-列出模块会话的事实（只读，任何会话）：最后动静、未关的等待记录与事项、档位、挂起原因、返工轮次。只给事实，不判断是否卡住。`--json` 是对外出口（`schemaVersion` 1，字段见[架构](architecture.md#对外出口)）。
+模块协调开过的会话清单（只读，任何会话）：每个在用模块会话的最后动静、未关的等待记录与事项、档位、挂起原因、返工轮次，以及在用的轻任务会话（T 号、任务状态、最后动静）；每个会话带类型、宿主、桌面会话编号、worktree、在用或已收回。`--all` 另列已收回的模块会话与轻任务会话。只给事实，不判断是否卡住。调研类会话不登记，不在清单里。
+
+`--json` 是对外出口（`schemaVersion` 1，字段见[架构](architecture.md#对外出口)）：`sessions` 数组只放在用的模块会话、字段不变；轻任务会话在顶层数组 `tasks`（`type`、`name`、`relayName`、`task`、`taskRef`、`taskState`、`taskStateText`、`title`、`worktree`、`host`、`desktopId`、`retired`、`lastActivity`、`ago`）。加 `--all` 时，已收回的轻任务会话追加到 `tasks`，已收回的模块会话追加到 `sessions` 末尾（只有 `type`、`module`、`name`、`relayName`、`worktree`、`host`、`desktopId`、`retired: true`、`lastActivity`、`ago`）。
 
 ### `host-check`
 
