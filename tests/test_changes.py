@@ -64,6 +64,46 @@ class AddTest(ReviewCase):
         self.assertEqual([n for n, _ in changes.pending(self.db)], [a, b])
 
 
+class LightTaskTest(ReviewCase):
+    """S65 (T473): a light task's session may send a 【公共变更请求】, like inbox already takes its other messages."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        with self.db.transaction(actor="t") as tx:
+            tx.put("session", "shop-t9", {"role": "task", "host": "claude-desktop", "status": "active", "task": 9,
+                                          "worktree": "/tmp/t9"}, action="registered")
+
+    def add(self, rid=4900):
+        out = changes.add(self.db, request(["tsconfig.base.json"]), "shop-t9", rid)
+        self.assertEqual(out.code, 0, out.lines)
+        return out.number
+
+    def test_light_task_request_lands_with_reply(self):
+        n = self.add()
+        (self.repo / "tsconfig.base.json").write_text('{"strict": true}\n')
+        res = changes.land(self.repo, n)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(store.get(self.db, "request", str(n))["state"], "closed")
+        mine = {x["to"]: x for x in res.sends}["shop-t9"]
+        self.assertEqual(mine["replyTo"], 4900)
+        self.assertTrue(protocol.parse(store.read_body(self.db, mine["body"])).ok)
+
+    def test_light_task_request_answered(self):
+        reply = changes.answer(self.db, self.add(), "不改")
+        self.assertEqual((reply.to, reply.reply_to), ("shop-t9", 4900))
+
+    def test_light_task_refuses_accept_and_from_module(self):
+        n = self.add()
+        before = files(self.db)
+        with self.assertRaisesRegex(changes.AnswerRefused, "轻任务"):
+            changes.accept(self.db, n, "范围批准，随模块合并")
+        res = changes.land(self.repo, n, from_module=True)
+        self.assertEqual(res.code, 3)
+        self.assertIn("轻任务", " ".join(res.lines))
+        self.assertEqual(files(self.db), before)
+
+
 class AnswerTest(ReviewCase):
     def test_declined(self):
         db = store.open_store(self.repo)
