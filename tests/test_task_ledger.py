@@ -93,7 +93,7 @@ class OverlapTest(ReviewCase):
         set_state(self.db, first.number, "working")
         second = add(self.db, self.repo, expect=("src/a.py", "src/z.py"))
         self.assertEqual(second.state, "queued")
-        self.assertEqual(second.clashes, [f"T{first.number}：src/a.py"])
+        self.assertEqual(second.clashes, [f"T{first.number}（在做）：src/a.py"])
         self.assertEqual(store.get(self.db, "task", str(second.number))["state"], "queued")
 
     def test_directory_contains(self):
@@ -106,6 +106,18 @@ class OverlapTest(ReviewCase):
         third = add(self.db, self.repo, expect=("lib/y.py",))
         self.assertEqual(third.state, "ready")
         self.assertEqual(add(self.db, self.repo, expect=("lib/",)).state, "ready")
+
+    def test_ready_holder_says_state_and_way_out(self):
+        # S66: a ready task holds its files; the overlap line names its state and how to free it
+        first = add(self.db, self.repo, expect=("src/a.py",))
+        second = add(self.db, self.repo, expect=("src/a.py",))
+        t = f"T{first.number}"
+        self.assertEqual(second.clashes, [f"{t}（可开）：src/a.py——{t} 可开未派出：先派出它，或 task cancel {t} 后 task next"])
+        set_state(self.db, first.number, "dispatched")
+        third = add(self.db, self.repo, expect=("src/a.py",))
+        self.assertEqual(third.clashes, [f"{t}（已派出）：src/a.py"])                 # no way-out advice once dispatched
+        plain, _ = tasks.overlaps(self.db, self.repo, ["src/a.py"])
+        self.assertEqual(plain, [f"{t}：src/a.py"])                                    # status and review keep the short form
 
     def test_returned_actual_files_count(self):
         first = add(self.db, self.repo, expect=("src/a.py",))
@@ -205,14 +217,17 @@ class CliTest(CoordCase):
         tasks.advance(self.db, first, "dispatched")
         second = self.cli_add("--json", expect="src/a.py,src/b.py", kind="bug")
         doc = json.loads(second.stdout)
-        self.assertEqual((doc["state"], doc["clashes"]), ("queued", [f"T{first}：src/a.py"]))
+        self.assertEqual((doc["state"], doc["clashes"]), ("queued", [f"T{first}（已派出）：src/a.py"]))
         listed = self.run_cli("task", "list")
         self.assertIn(f"T{first}", listed.stdout)
         self.assertIn(f"T{doc['number']}", listed.stdout)
         shown = self.run_cli("task", "show", f"T{doc['number']}")
         self.assertIn("src/b.py", shown.stdout)
         self.assertIn("排队", shown.stdout)
-        self.assertEqual(self.run_cli("task", "next").returncode, 0)
+        nxt = self.run_cli("task", "next")
+        self.assertEqual(nxt.returncode, 0)
+        self.assertIn(f"T{doc['number']} 仍排队", nxt.stdout)
+        self.assertIn(f"重叠：T{first}（已派出）：src/a.py", nxt.stdout)
         bad = self.run_cli("task", "show", "T999")
         self.assertEqual(bad.returncode, 3)
         cancel = self.run_cli("task", "cancel", f"T{doc['number']}", "--original-file", self.words("这个 bug 不修了"))
@@ -220,6 +235,18 @@ class CliTest(CoordCase):
         self.assertEqual(store.get(self.db, "task", str(doc["number"]))["state"], "cancelled")
         self.assertNotIn(f"T{doc['number']}", self.run_cli("task", "list").stdout)
         self.assertIn(f"T{doc['number']}", self.run_cli("task", "list", "--all").stdout)
+
+    def test_ready_holder_cli_lines(self):
+        # S66: task add and task next both say the holder is ready and not dispatched, and how to free it
+        self.cli_add()
+        first = int(next(iter(store.records(self.db, "task"))))
+        way_out = f"T{first}（可开）：src/a.py——T{first} 可开未派出：先派出它，或 task cancel T{first} 后 task next"
+        added = self.cli_add()
+        self.assertIn("排队", added.stdout)
+        self.assertIn(f"重叠：{way_out}", added.stdout)
+        nxt = self.run_cli("task", "next")
+        self.assertIn("提为可开：无", nxt.stdout)
+        self.assertIn(f"重叠：{way_out}", nxt.stdout)
 
     def test_refusal_exit_3(self):
         out = self.cli_add(expect="../x")

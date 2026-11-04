@@ -301,6 +301,10 @@ def _task(args) -> int:
                 print(json.dumps({"ready": promoted}, ensure_ascii=False))
             else:
                 print("提为可开：" + ("、".join(f"T{n}" for n in promoted) or "无"))
+                for n, clashes in tasks.still_queued(db, "."):
+                    print(f"  T{n} 仍排队：")
+                    for c in clashes:
+                        print(f"    重叠：{c}")
             return 0
     except tasks.TaskRefused as exc:
         print(f"❌ {exc}", file=sys.stderr)
