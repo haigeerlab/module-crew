@@ -325,6 +325,80 @@ class PlanRevisionTest(AheadCase):
         self.assertNotIn("发送", out.stdout)
 
 
+class AnsweredReviewTest(AheadCase):
+    """S81 (S78 follow-up): a Plan review the user answered with answer, not approved with review approve."""
+
+    unchanged = PlanRevisionTest.unchanged
+
+    WORDS = "批准 Plan 修订，\n不等依赖先开工"
+
+    def close_answered(self, n):
+        """The record 0.23.1 and earlier left when answer closed a review (answer now refuses reviews, S81)."""
+        with self.db.transaction(actor="test") as tx:
+            tx.put("item", str(n), dict(tx.get("item", str(n)), state="closed", closedReason="answered",
+                                        answer={"original": self.WORDS, "answeredAt": store.now()}), action="answered")
+
+    def answered_plan(self, module="e", sender="shop-e", relay=103):
+        n = review.add(self.db, self.plan_review(module), sender, relay).number
+        self.close_answered(n)
+        return n
+
+    def test_refused_without_flag_with_hint(self):
+        self.approve_e()
+        n = self.answered_plan()
+        out = self.unchanged(lambda: start.kickoff(self.repo, "e", "开工", plan_revision=n))
+        text = "\n".join(out.lines)
+        self.assertIn(f"C{n} 不是批准事项", text)
+        self.assertIn("--answered-review", text)
+
+    def test_kickoff_lists_the_answer(self):
+        self.approve_e()
+        n = self.answered_plan()
+        out = start.kickoff(self.repo, "e", "按修订开工", plan_revision=n, answered_review=True)
+        self.assertEqual(out.code, 0, out.lines)
+        text = "\n".join(out.lines)
+        self.assertIn(f"C{n} 是被 answer 关掉的 Plan 交审", text)
+        self.assertIn(self.WORDS, text)
+        rec = next((int(k), v) for k, v in store.records(self.db, "item").items() if v["kind"] == "start-kickoff")
+        self.assertEqual((rec[1]["planRevision"], rec[1]["answeredReview"]), (n, True))
+        self.assertEqual(self.dev("e")["kickoff"], rec[0])
+        [send] = out.sends
+        msg = protocol.parse(store.read_body(self.db, send["body"]))
+        self.assertFalse(msg.problems, msg.problems)
+        self.assertIn(f"依赖 b、c 未合入，按用户已答复的 Plan 交审 C{n} 不等依赖", msg.fields["依据"])
+
+    def test_answered_review_refusals(self):
+        res = self.approve_e()
+        s = review.add(self.db, self.spec_review("b"), "shop-b", 1).number
+        p = review.add(self.db, self.plan_review("b"), "shop-b", 2).number
+        review.approve(self.repo, [s, p], "b 批准")
+        other = self.answered_plan("b", "shop-b", 3)                       # another module's Plan
+        self.unchanged(lambda: start.kickoff(self.repo, "e", "开工", plan_revision=other, answered_review=True))
+        spec = review.add(self.db, self.spec_review("e"), "shop-e", 104).number    # not a Plan node
+        self.close_answered(spec)
+        self.unchanged(lambda: start.kickoff(self.repo, "e", "开工", plan_revision=spec, answered_review=True))
+        n = self.answered_plan()
+        with self.db.transaction(actor="test") as tx:          # opened ahead after that review
+            name, v = start.spec_ahead_session(store.records(self.db, "session"), "e")
+            tx.put("session", name, dict(v, specAhead=dict(v["specAhead"], since=n + 1)), action="set")
+        self.unchanged(lambda: start.kickoff(self.repo, "e", "开工", plan_revision=n, answered_review=True))
+        self.unchanged(lambda: start.kickoff(self.repo, "e", "开工", plan_revision=res.approval + 99999,
+                                             answered_review=True))
+
+    def test_answered_review_cli(self):
+        self.approve_e()
+        n = self.answered_plan()
+        out = self.run_cli("start", "kickoff", "e", "--original", "x", "--plan-revision", f"C{n}")
+        self.assertEqual(out.returncode, 3, out.stdout + out.stderr)
+        self.assertIn("--answered-review", out.stdout)
+        out = self.run_cli("start", "kickoff", "e", "--original", "x", "--answered-review")
+        self.assertEqual(out.returncode, 2, out.stdout + out.stderr)
+        out = self.run_cli("start", "kickoff", "e", "--original", "按修订开工", "--plan-revision", f"C{n}",
+                           "--answered-review", "--already-sent")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn(self.WORDS, out.stdout)
+
+
 class HintTest(AheadCase):
     """Acceptance 9 (hint), 10: status (text and --json) and merge run."""
 

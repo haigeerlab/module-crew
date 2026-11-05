@@ -2,6 +2,14 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.23.2 的变化（交审不能再用 answer 关掉；被 answer 关掉的 Plan 交审可凭确认开工）
+
+不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移。
+
+- **`answer` 拒答交审事项**（S81，T523）：`module-crew answer <号>` 遇到交审事项时退出码 3、状态库不变，提示批准改用 `review approve C<号>`、要求修改改用 `review answer C<号>`。之前 `answer` 不分事项类型，交审可以被它直接关掉，不生成批准记录，后面 `start kickoff --plan-revision` 就认不出这次批准。其他事项与 `answer --new` 不变。
+- **`start kickoff --answered-review`**（S81，S78 的补充，T524）：须与 `--plan-revision C<号>` 同用。C 号是本模块在提前开工之后、被 `answer` 关掉的 Plan 交审（0.23.1 及之前留下的记录）且记有答复原话时也放行；输出原样列出当时的答复原话与答复时间，请模块协调和用户核对确是批准再用；通知依据写「按用户已答复的 Plan 交审 C<号> 不等依赖」。不带此参数时这类 C 号仍退出码 3，并提示可加此参数。
+- 升级后：只升级 module-crew 时，原会话 /clear 一次即可。升级里包含 agent-relay（或别的带 MCP 工具的插件）时，Claude Code 新开会话、Codex 新开任务；重开应用和 resume 原会话都还用旧版本。Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
+
 ## 0.23.1 的变化（轻任务与提前开工的几处修正、会话清单、使用者文档补缺）
 
 不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移（只多一种已结事项 `direct-answer`）。`sessions --json` 只增不改：新增顶层数组 `tasks`，原 `sessions` 数组与 `schemaVersion` 1 不变。

@@ -201,6 +201,9 @@ def answer(db: store.Store, number: int, original: str, option: str | None = Non
             raise AnswerRefused(f"没有事项 C{number}")
         if item.get("state") != "open":
             raise AnswerRefused(f"事项 C{number} 已关闭（{item.get('closedReason')}），不能再答")
+        if item.get("kind") == "review":   # S81: answering here would close it with no approval recorded
+            raise AnswerRefused(f"事项 C{number} 是交审事项，不能用 answer 答：批准用 module-crew review approve C{number}，"
+                                f"要求修改用 module-crew review answer C{number}")
         option_text = None
         if option is not None:
             match = [o for o in item.get("options", []) if o["letter"] == option.strip().upper()]
