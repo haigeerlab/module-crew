@@ -71,6 +71,30 @@ def suspend(db: store.Store, module: str, reason: str, original: str) -> Changed
     return Changed(name, sends)
 
 
+def amend_reason(db: store.Store, module: str, reason: str, original: str) -> Changed:
+    """Change a suspended module's reason (S83); it stays suspended, and its suspension time and approval are kept,
+    so resume still counts what landed since the suspension. Authorized like suspend: the user's words or a source."""
+    from module_crew import protocol
+    _need(original)
+    if not reason or not reason.strip():
+        raise FailureRefused("挂起原因不能为空")
+    sends: list[dict] = []
+    with db.transaction(actor="coordinator") as tx:
+        name, rec = _dev_of(tx.records("session"), module)
+        mark = rec.get("suspended")
+        if not mark:
+            raise FailureRefused(f"模块 {module} 没有挂起：先用 suspend --reason 挂起")
+        n = _approval(tx, "suspend-reason", module, original)
+        tx.put("session", name, {**rec, "suspended": {**mark, "reason": reason.strip()}}, action="suspend-amended",
+               data={"from": mark.get("reason"), "original": original, "approval": n})
+        basis = f"用户批准事项 C{n}（改 {module} 的挂起原因）" + (f"，挂起依据 C{mark['approval']}" if mark.get("approval") else "")
+        _send(tx, db, sends, name, "suspend", protocol.render_coordination_notice(
+            kind="suspend", reason=reason.strip(), basis=basis,
+            todo=f"挂起原因已更新（原为「{mark.get('reason')}」）；仍然挂起，停在当前停点。"
+                 "在本 worktree 用 spec-guard 把挂起原因改成新原因（/spec-guard:module-suspend，原因照抄）"))
+    return Changed(name, sends)
+
+
 def _merged_name(rec: dict) -> str:
     """A merged item's name in the resume notice: light tasks keep their number in `task` (S82)."""
     return f"轻任务 T{rec['task']}" if rec.get("task") else str(rec.get("module"))
