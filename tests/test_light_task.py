@@ -493,6 +493,22 @@ class EscalationTest(TaskWorkCase):
         n, d = self.start_task()
         self.assertEqual(inbox.add(self.db, escalation(n + 100), d.relay, 701).code, 3)
 
+    def test_s64_letters_must_match_fixed_meanings(self):
+        """S64: A promote / B shrink / C cancel / D expand are fixed; a card with them swapped is refused."""
+        from module_crew import inbox
+        n, d = self.start_task()
+        swapped = escalation(n).replace("推荐 A：升格为模块", "推荐 A：批准扩项（继续当轻任务做）").replace(
+            "C：取消", "C：升格为模块")
+        before = len(store.events(self.db))
+        out = inbox.add(self.db, swapped, d.relay, 702)
+        self.assertEqual(out.code, 3, out.lines)
+        self.assertTrue(any("A 升格" in x and "C 取消" in x for x in out.lines), out.lines)
+        self.assertEqual(len(store.events(self.db)), before)
+        self.assertNotEqual(store.get(self.db, "task", str(n))["state"], "escalated")
+        ok = escalation(n).replace("你该回：A", "D：批准扩项（继续当轻任务做）\n  选了会怎样：按新任务单接着做\n你该回：A")
+        self.assertEqual(inbox.add(self.db, ok, d.relay, 703).code, 0)
+        self.assertEqual(store.get(self.db, "task", str(n))["state"], "escalated")
+
 
 class EndToEndTest(MergeCase):
     """Acceptance 9: the whole light flow through the command line in a real temporary repository."""

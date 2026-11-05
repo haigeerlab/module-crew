@@ -4,7 +4,7 @@ A plugin that lets several Claude Code or Codex desktop sessions **develop sever
 
 [中文](README.md) | English
 
-> Version 0.23.0 · License [MIT](LICENSE)
+> Version 0.23.1 · License [MIT](LICENSE)
 >
 > Only this README is in English. The other documents linked below (user guide, command reference, architecture, changelog) are in Chinese.
 
@@ -35,9 +35,9 @@ There are also light tasks (轻任务: a single feature or bug that skips the Sp
 |---|---|
 | Host | Claude Code desktop (Code tab); module sessions may also run in Codex desktop, and between batches the coordinator can move to Codex desktop with `coordinator handover`. All sessions on the same Mac |
 | [agent-relay](https://github.com/haigeerlab/agent-relay) | Required, interface major version 2. Sessions exchange messages through it |
-| [spec-guard](https://github.com/haigeerlab/spec-guard-plugin) | Required, 0.68.0 or later (planning layer, interface 1.1), with spec-guard's local multi-spec convention enabled in the project (`spec/CAPABILITY-MAP.md`). Declared scope, autonomy tiers and quota offload need 0.85.0 or later (interface 1.11) |
+| [spec-guard](https://github.com/haigeerlab/spec-guard-plugin) | Required, 0.68.0 or later (planning layer, interface 1.1), with spec-guard's local multi-spec convention enabled in the project (`spec/CAPABILITY-MAP.md`): if it is not enabled yet, run `/spec-guard:setup-convention local` in the project first, otherwise the health check reports a blocker and `start plan` exits with 3. Declared scope, autonomy tiers and quota offload need 0.85.0 or later (interface 1.11) |
 | [delegate](https://github.com/haigeerlab/delegate-plugin) | Optional, only for quota offload: 0.8.0 or later (interface 1.3) |
-| session-protocol | The message format contract between sessions; module-crew pins v2.8 (enforced by module-crew's built-in parser, nothing to install) |
+| session-protocol | The message format contract between sessions; module-crew pins v2.8 (enforced by module-crew's built-in parser, nothing to install); a decision inbox speaking any 2.x version of the contract is compatible |
 | Project | A git repository that can host worktrees, with one full check command that runs locally; it decides whether a merge passes |
 | Runtime | Python 3 (standard library only; developed and tested on 3.10) |
 
@@ -56,14 +56,20 @@ claude plugin install module-crew@module-crew-local
 You can also install from a local clone: `claude plugin marketplace add /path/to/module-crew`.
 
 - On first use Claude Code asks whether to trust the plugin's hooks. **Say yes**, otherwise the role hints are not injected after a compaction or a new session.
-- After a plugin update, run `/clear` once in each session in use (or open a new session) to pick up the new hooks and skills.
+- After a plugin update: if you upgraded only module-crew, run `/clear` once in the original session. If the upgrade includes agent-relay (or another plugin that provides MCP tools), open a new session in Claude Code and a new task in Codex; reopening the app or resuming the original session still uses the old version. How a new session takes over the old identity is under "After a plugin update" in the [user guide](docs/guide.md#出状况时怎么办).
 
 **Codex** (only needed for Codex module sessions, or to move the coordinator to Codex): install the same version of this plugin in Codex (`.codex-plugin/plugin.json`, which provides the Codex `crew-dev` and `crew-coordinator` skills), then quit the ChatGPT app completely and reopen it. Back up `~/.codex/config.toml` before changing Codex plugins.
 
-Then run the health check in your project:
+Then ask a Claude Code session in your project to run the health check (the plugin's `bin/` is on the session's PATH, so plain `module-crew` works):
 
 ```bash
-bin/module-crew status
+module-crew status
+```
+
+From your own terminal, use the fixed entry in the state store (it exists once a coordinator is set up or `permissions apply` has run; before that, use `bin/module-crew` in the plugin's install directory):
+
+```bash
+"$(git rev-parse --path-format=absolute --git-common-dir)/module-crew/bin/module-crew" status
 ```
 
 It checks seven things — git, agent-relay, spec-guard, whether spec-guard is enabled in the project, spec-guard's planning layer, the integration branch and the state store — and explains any blocker.

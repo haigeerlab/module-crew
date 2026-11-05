@@ -54,7 +54,7 @@ class ExpandTest(TaskWorkCase):
         holder = new_task(self.db, self.repo, expect=("src/cache.py",))
         n, _ = self.escalate()
         r = tasks.scope(self.db, n, ["docs/t.md", "src/cache.py"], "说明写好", "加上 cache", project=self.repo)
-        self.assertEqual(r.clashes, [f"T{holder}：src/cache.py"])
+        self.assertEqual(r.clashes, [f"T{holder}（可开）：src/cache.py——T{holder} 可开未派出：先派出它，或 task cancel T{holder} 后 task next"])
         self.assertEqual(store.get(self.db, "task", str(n))["state"], "working")
         self.assertEqual(store.events(self.db, key=str(n), kind="task")[-1]["data"]["clashes"], r.clashes)
 
@@ -109,6 +109,6 @@ class ExpandTest(TaskWorkCase):
         n, _ = self.escalate()
         text = self.run_cli_scope(n, ["docs/t.md", "src/cache.py"], what="补说明并修缓存")
         self.assertIn("已扩项，回到在做", text)
-        self.assertIn(f"重叠：T{holder}：src/cache.py", text)
+        self.assertIn(f"重叠：T{holder}（可开）：src/cache.py——T{holder} 可开未派出：先派出它，或 task cancel T{holder} 后 task next", text)
         self.assertNotIn("缩小", text)
 

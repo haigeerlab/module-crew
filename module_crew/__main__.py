@@ -301,6 +301,10 @@ def _task(args) -> int:
                 print(json.dumps({"ready": promoted}, ensure_ascii=False))
             else:
                 print("提为可开：" + ("、".join(f"T{n}" for n in promoted) or "无"))
+                for n, clashes in tasks.still_queued(db, "."):
+                    print(f"  T{n} 仍排队：")
+                    for c in clashes:
+                        print(f"    重叠：{c}")
             return 0
     except tasks.TaskRefused as exc:
         print(f"❌ {exc}", file=sys.stderr)
@@ -392,6 +396,23 @@ def _answer(number: int, original: str | None, original_file: str | None, option
     return 0
 
 
+def _answer_new(to: str, about: str, original: str | None, original_file: str | None) -> int:
+    if original_file is not None:
+        original = _read(original_file)
+        if original is None:
+            return 2
+    try:
+        reply = inbox.answer_new(store.open_store(), to, about, original)
+    except inbox.AnswerRefused as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 3
+    print(f"已建已结事项 C{reply.item}（{about.strip()}）")
+    print(f"收件人：{reply.to}")
+    _sent(reply.to)
+    print(f"正文文件：{reply.path}")
+    return 0
+
+
 def _start_plan(as_json: bool) -> int:
     p = start.plan(".")
     if as_json:
@@ -449,10 +470,18 @@ def _start_prepare(modules: list[str], original: str | None, original_file: str 
     return res.code
 
 
-def _start_kickoff(module: str, original: str | None, as_json: bool) -> int:
+def _start_kickoff(module: str, original: str | None, as_json: bool, plan_revision: str | None = None,
+                   already_sent: bool = False) -> int:
     if original is None:
         return 2
-    res = start.kickoff(".", module, original)
+    revision = None
+    if plan_revision is not None:
+        digits = plan_revision.strip().upper().removeprefix("C")
+        if not digits.isdigit():
+            print(f"❌ --plan-revision 要写成 C<号>：{plan_revision}", file=sys.stderr)
+            return 2
+        revision = int(digits)
+    res = start.kickoff(".", module, original, revision, already_sent)
     if as_json:
         print(json.dumps({"code": res.code, "lines": res.lines,
                           "sends": [{k: str(v) if isinstance(v, Path) else v for k, v in x.items()} for x in res.sends]},
@@ -581,10 +610,13 @@ def _failure(args) -> int:
     db = store.open_store()
     if args.group == "sessions":
         rows = failure.sessions(db)
+        light = failure.light_tasks(db, include_retired=args.all)
+        retired = failure.retired_modules(db) if args.all else None
         if args.json:
-            print(json.dumps({"schemaVersion": failure.SESSIONS_SCHEMA, "sessions": rows}, ensure_ascii=False, indent=2))
+            print(json.dumps({"schemaVersion": failure.SESSIONS_SCHEMA, "sessions": rows + (retired or []),
+                              "tasks": light}, ensure_ascii=False, indent=2))
         else:
-            print("\n".join(failure.render_sessions(rows)))
+            print("\n".join(failure.render_list(db, rows, light, retired)))
             own = inbox.own_waits(db)
             if own:
                 print("模块协调自开的等待记录：" + "、".join(f"W{n}（等 {r['about']}，邮箱 #{r['relayId']} → {r['to']}）" for n, r in own))
@@ -1265,7 +1297,10 @@ def _main(argv: list[str] | None = None) -> int:
     ib.add_argument("--from", dest="sender", required=True)
     ib.add_argument("--relay-id", type=int, required=True)
     an = sub.add_parser("answer", help="转达你的答复")
-    an.add_argument("number", type=refs.parse)
+    an.add_argument("number", type=refs.parse, nargs="?")
+    an.add_argument("--new", action="store_true", help="用户直接批准、没有收件记账的事项：新建已结事项 C<号>（S79）")
+    an.add_argument("--to", help="--new 的收件人：登记的在用会话的邮箱名")
+    an.add_argument("--about", help="--new 的事由")
     src = an.add_mutually_exclusive_group(required=True)
     src.add_argument("--original")
     src.add_argument("--original-file")
@@ -1289,6 +1324,8 @@ def _main(argv: list[str] | None = None) -> int:
     orig = spk.add_mutually_exclusive_group(required=True)
     orig.add_argument("--original")
     orig.add_argument("--original-file")
+    spk.add_argument("--plan-revision", help="C<号>：提前开工之后批准的 Plan 修订，依赖未合入也开工（S78）")
+    spk.add_argument("--already-sent", action="store_true", help="开工通知已手工发出，只记账、不生成通知")
     spk.add_argument("--json", action="store_true")
     cf = sub.add_parser("config", help="改项目配置（要用户原话）")
     cfs = cf.add_subparsers(dest="action", required=True)
@@ -1527,7 +1564,9 @@ def _main(argv: list[str] | None = None) -> int:
     rg = rs.add_mutually_exclusive_group(required=True)
     rg.add_argument("--original")
     rg.add_argument("--original-file")
-    sub.add_parser("sessions", help="列出模块会话的事实（只读）").add_argument("--json", action="store_true")
+    se = sub.add_parser("sessions", help="列出模块协调开过的会话：模块会话的事实与轻任务会话（只读）")
+    se.add_argument("--json", action="store_true")
+    se.add_argument("--all", action="store_true", help="另列出已收回的会话")
     pm = sub.add_parser("permissions", help="宿主权限预配：预览、凭用户原话写入、实测、撤销")
     pm_sub = pm.add_subparsers(dest="action", required=True)
     pm_sub.add_parser("plan", help="只读：每个 checkout 要写什么、能不能写").add_argument("--json", action="store_true")
@@ -1922,14 +1961,22 @@ def _run(args) -> int:
             if args.action == "plan":
                 return _start_plan(args.json)
             if args.action == "kickoff":
-                return _start_kickoff(args.module, _original(args.original, args.original_file), args.json)
+                return _start_kickoff(args.module, _original(args.original, args.original_file), args.json,
+                                     args.plan_revision, args.already_sent)
             return _start_prepare(args.modules, args.original, args.original_file, args.project_short, args.max, args.json,
                                   args.host, args.commit_prefix)
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 2
     if args.group == "answer":
+        if args.new != (args.number is None) or (args.new and (not args.to or args.about is None or args.option)) \
+                or (not args.new and (args.to or args.about is not None)):
+            print("❌ 写 answer <编号> --original(-file) [--option …]，或 answer --new --to <邮箱名> --about <事由> "
+                  "--original(-file)，两种不混用", file=sys.stderr)
+            return 2
         try:
+            if args.new:
+                return _answer_new(args.to, args.about, args.original, args.original_file)
             return _answer(args.number, args.original, args.original_file, args.option)
         except store.StoreError as exc:
             print(f"❌ {exc}", file=sys.stderr)

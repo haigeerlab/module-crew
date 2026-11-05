@@ -5,7 +5,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 ## 用法总述
 
-**入口**：插件里的 `bin/module-crew`。开工后状态库里另有一个固定入口 `<git 公共目录>/module-crew/bin/module-crew`，它每次转给本机当前安装的 module-crew，插件升级后不用换路径；开工说明、权限规则里写的都是这个固定入口。
+**入口**：插件里的 `bin/module-crew`。开工后状态库里另有一个固定入口 `<git 公共目录>/module-crew/bin/module-crew`，它每次转给本机当前安装的 module-crew，插件升级后不用换路径；开工说明、权限规则里写的都是这个固定入口。Claude Code 会话里插件的 `bin/` 在 PATH 上，直接写 `module-crew`；在自己的终端里用固定入口 `"$(git rev-parse --path-format=absolute --git-common-dir)/module-crew/bin/module-crew"`（`coordinator up` 或 `permissions apply` 写出之后才有）。
 
 **谁能跑**：标「模块协调」的命令只有状态库里登记为模块协调的那个会话能跑，别的会话跑会被拒（退出码 7，什么都不写）；在终端里直接跑（没有会话编号）不受这条限制。
 标「任何会话」的是只读命令、模块会话那一侧的命令和钩子入口。
@@ -34,7 +34,9 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 ### `sessions`
 
-列出模块会话的事实（只读，任何会话）：最后动静、未关的等待记录与事项、档位、挂起原因、返工轮次。只给事实，不判断是否卡住。`--json` 是对外出口（`schemaVersion` 1，字段见[架构](architecture.md#对外出口)）。
+模块协调开过的会话清单（只读，任何会话）：每个在用模块会话的最后动静、未关的等待记录与事项、档位、挂起原因、返工轮次，以及在用的轻任务会话（T 号、任务状态、最后动静）；每个会话带类型、宿主、桌面会话编号、worktree、在用或已收回。`--all` 另列已收回的模块会话与轻任务会话。只给事实，不判断是否卡住。调研类会话不登记，不在清单里。
+
+`--json` 是对外出口（`schemaVersion` 1，字段见[架构](architecture.md#对外出口)）：`sessions` 数组只放在用的模块会话、字段不变；轻任务会话在顶层数组 `tasks`（`type`、`name`、`relayName`、`task`、`taskRef`、`taskState`、`taskStateText`、`title`、`worktree`、`host`、`desktopId`、`retired`、`lastActivity`、`ago`）。加 `--all` 时，已收回的轻任务会话追加到 `tasks`，已收回的模块会话追加到 `sessions` 末尾（只有 `type`、`module`、`name`、`relayName`、`worktree`、`host`、`desktopId`、`retired: true`、`lastActivity`、`ago`）。
 
 ### `host-check`
 
@@ -83,8 +85,10 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 ### `start`
 
 - `start plan [--json]`：按能力图的 Build order 提议可开的模块，不超过空位（只读，任何会话）。
-- `start prepare <模块>… --original(-file) [--project-short <简称>] [--max <上限>] [--host claude|codex] [--commit-prefix <前缀>]`：为每个模块建 worktree（`<仓库名>-crew/<模块>`）、登记会话、生成开工说明（模块协调）。重开已完成的模块也用它（见使用手册「修订已完成的模块」）。
-- `start kickoff <模块> --original(-file) [--json]`：给提前开工的模块发开工通知；要依赖都已合入、Spec 与 Plan 都已批准、还没发过（模块协调，用户原话）。见使用手册「提前开工」。
+- `start prepare <模块>… --original(-file) [--project-short <简称>] [--max <上限>] [--host claude|codex] [--commit-prefix <前缀>]`：为每个模块建 worktree（`<仓库名>-crew/<模块>`）、登记会话、生成开工说明（模块协调）。重开已完成的模块也用它（见使用手册「修订已完成的模块」）。`--max` 只在项目第一次落运行配置时生效；`coordinator up` 已经把上限记为默认 2，之后给不同的数退出码 3（「上限已定为 …，不能在这里改」）。
+- `start kickoff <模块> --original(-file) [--plan-revision C<号>] [--already-sent] [--json]`：给提前开工的模块发开工通知；要依赖都已合入、Spec 与 Plan 都已批准、还没发过（模块协调，用户原话）。见使用手册「提前开工」。
+  - `--plan-revision C<号>`：本模块在提前开工之后批准过不等依赖的 Plan 修订时，凭它在依赖未合入时也开工；C 号要是本模块提前开工之后的 Plan 批准、带用户原话，否则退出码 3。通知依据写「依赖 X 未合入，按已批 Plan 修订 C<号> 不等依赖」。
+  - `--already-sent`：开工通知已经手工发出，只补记开工（会话登记与事项），不生成通知；依赖未合入时同时带 `--plan-revision`。
 
 ### `config`
 
@@ -108,7 +112,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 ### `inbox`
 
-`inbox add <文件> --from <发件人> --relay-id <消息号>`：模块协调收到消息后记账（模块协调）。
+`inbox add <文件> --from <发件人> --relay-id <消息号>`：模块协调收到消息后记账（模块协调）。退出码另有约定：0 已记账（或已记过）；3 不合格或发件人未登记，不记账；**4 合格但不归本命令记账**——【交审】改用 `review add`、【公共变更请求】改用 `change add`（参数相同），不是超时；2 参数错或未建库。
 
 ### `review`
 
@@ -122,6 +126,8 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 ### `answer`
 
 `answer <编号> --original(-file) [--option <选项>]`：把用户的答复转达给发起【等待用户】的会话（模块协调）。
+
+`answer --new --to <邮箱名> --about <事由> --original(-file)`：用户直接批准、没经 `inbox add` 记账的事（如用户当场直接批的）（模块协调）。新建一个已结事项 C<号>，生成带 C 号与答复时间、能通过 `protocol check` 的【用户答复】，输出收件人与正文文件（没有 replyTo）；不要手写【用户答复】。收件人须是登记的在用会话；缺原话、事由为空或收件人未登记时退出码 3，什么都不记。
 
 ### `source`
 

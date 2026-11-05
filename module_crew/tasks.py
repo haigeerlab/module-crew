@@ -90,15 +90,16 @@ def _module_files(db: store.Store, project: Path) -> tuple[dict[str, list[str]],
 
 
 def overlaps(db: store.Store, project: str | os.PathLike, files: list[str],
-             exclude: int | None = None) -> tuple[list[str], list[str]]:
-    """(clashes, notes) of `files` against tasks holding files and in-use module branches. Read-only."""
+             exclude: int | None = None, detail: bool = False) -> tuple[list[str], list[str]]:
+    """(clashes, notes) of `files` against tasks holding files and in-use module branches. Read-only.
+    `detail` names each holding task's state and how to free a ready one (task add／scope／next, S66)."""
     clashes = []
     for k, t in sorted(store.records(db, "task").items(), key=lambda kv: int(kv[0])):
         if t.get("state") not in HOLDING or (exclude is not None and int(k) == exclude):
             continue
         theirs = list(t.get("expectedFiles") or []) + list(((t.get("result") or {}).get("files")) or [])
         hit = sorted({f for f in files for o in theirs if clash(f, o)})
-        clashes += [f"{label(k)}：{f}" for f in hit]
+        clashes += [held(k, t["state"], f) if detail else f"{label(k)}：{f}" for f in hit]
     changed, notes = _module_files(db, Path(project))
     for mod, theirs in changed.items():
         hit = sorted({f for f in files for o in theirs if clash(f, o)})
@@ -106,6 +107,14 @@ def overlaps(db: store.Store, project: str | os.PathLike, files: list[str],
         if not hit:
             notes.append(f"模块 {mod} 还在开发，以后可能碰到同样的文件（只比了它已经改过的）")
     return clashes, notes
+
+
+def held(n: int | str, state: str, path: str) -> str:
+    """One overlap line: who holds `path` and in what state; a ready task not dispatched yet says how to free it (S66)."""
+    line = f"{label(n)}（{STATE_NAMES[state]}）：{path}"
+    if state == "ready":
+        line += f"——{label(n)} 可开未派出：先派出它，或 task cancel {label(n)} 后 task next"
+    return line
 
 
 def add(db: store.Store, project: str | os.PathLike, kind: str, title: str, what: str, expect: list[str], done: str,
@@ -124,7 +133,7 @@ def add(db: store.Store, project: str | os.PathLike, kind: str, title: str, what
     if bad:
         raise TaskRefused("预计文件要写仓库内的相对路径（不含 ..）：" + "、".join(bad))
     caused = _caused(caused_by)
-    clashes, notes = overlaps(db, project, files)
+    clashes, notes = overlaps(db, project, files, detail=True)
     state = "queued" if clashes else "ready"
     with db.transaction(actor="coordinator") as tx:
         n = tx.allocate_number()
@@ -184,6 +193,13 @@ def advance(db: store.Store, number: int, new_state: str, original: str | None =
 def cancel(db: store.Store, number: int, original: str) -> dict:
     """Cancel a task that has not been merged; the user's words are kept."""
     return advance(db, number, "cancelled", original=_clean(original, "用户原话"))
+
+
+def still_queued(db: store.Store, project: str | os.PathLike) -> list[tuple[int, list[str]]]:
+    """For task next: each task left queued with its detailed overlap lines. Read-only."""
+    return [(int(k), overlaps(db, project, list(t.get("expectedFiles") or []), exclude=int(k), detail=True)[0])
+            for k, t in sorted(store.records(db, "task").items(), key=lambda kv: int(kv[0]))
+            if t.get("state") == "queued"]
 
 
 def next_ready(db: store.Store, project: str | os.PathLike) -> list[int]:
@@ -356,7 +372,7 @@ def scope(db: store.Store, number: int, expect: list[str], done: str, original: 
             raise TaskRefused("新的预计文件和原来一样，没有收窄")
     elif outside:
         kind = "expanded"
-        clashes, notes = overlaps(db, project, files, exclude=number)
+        clashes, notes = overlaps(db, project, files, exclude=number, detail=True)
     else:
         kind = "adjusted" if same else "shrunk"
     head = {"narrowed": f"轻任务 {label(number)} 的预计文件已按用户的决定收窄，新的任务单：",

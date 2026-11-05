@@ -31,14 +31,36 @@
 
 没升级为模块协调的会话照常用，插件不管；项目里有了模块协调之后，别的会话会被提醒一次。
 
+**调研类会话**（只读地查资料、摸代码、复现问题）不是 module-crew 的角色：module-crew 不登记它们，`sessions` 里也不出现。
+它们只读，不在集成 checkout 改文件；要改文件的活记成轻任务或模块，从合并队列进集成分支。
+
+## 你要做的事与 AI 做的事
+
+会话之间传话、记账、合并都由 AI 做，下面几件只能你亲手做：
+
+| 你要做的事 | 在哪做 |
+|---|---|
+| 说原话：升级模块协调、开哪些模块、批准 Spec／Plan／最终验收、合并、收回、推送、打开项目开关、换宿主 | 模块协调那个会话（接了决策收件箱就在决策收件箱） |
+| 开会话：点模块协调出的开会话卡片，或自己在 worktree 里新开会话、第一条消息贴开工说明 | Claude 桌面版 |
+| 点权限弹窗与提权：某个会话停在「等待审批」时去那个会话点「允许」，不要选「本会话都允许」 | 那个会话 |
+| Codex 会话：新建任务、工作目录选 worktree、贴开工说明；ChatGPT 重启后逐个点开 | Codex 桌面版 |
+| 退役收回后的邮箱名、归档收回后的会话 | Claude Code（`/agent-relay:collaboration`）、桌面版侧栏 |
+| 远端合并 PR | 远端仓库 |
+
+AI 做的事：模块协调提议开哪些模块、建 worktree 与开工说明、收件记账、汇总交审、把你的原话交给命令、合并并跑完整检查、不过就退回、发各类通知；模块会话写 Spec、Plan、代码与测试，提交，交审。它们都不替你批准，别的会话转来的话也不算批准。
+
+- **被消息叫醒的一轮只出卡片**：模块协调这一轮是你本人发话的，它直接用桌面版开新会话；这一轮是被别的会话的消息叫醒的（例如收到交审、合并通知后接着开工），桌面版不让它开会话，只出一张开会话卡片，要你点了才开。卡片没点，模块会话就不会出现。
+- **退役邮箱名**：入口是 Claude Code 的 `/agent-relay:collaboration`（Codex 用 agent-relay 的 collaboration-ops skill），说要退役哪个名字。那个名字还有未确认的消息（过期的不算）时退役会被拒，别的会话也不能替它确认（ack）。这时三选一：回到那个会话（停了就点开，归档了先取消归档），说「查看联调消息，处理完确认」，然后再退役；那个会话已经不在了，就新开一个会话，经你同意用 takeover 接管这个名字，读完、确认，然后再退役；不急的话，等消息过期（默认 24 小时）再退役。
+- **合入后的会话**：`merge cleanup` 收回 worktree 后，那个模块或轻任务的桌面版会话就用不上了（目录已删、邮箱名待退役）：先退役它的邮箱名，再在桌面版侧栏把会话归档（归档不删对话记录），不要在里面接着做事。以后要修订这个模块会开新会话、用带轮次后缀的新名字。
+
 ## 一次完整流程
 
-0. **升级模块协调**：在你想让它统筹的会话里明说「把本会话升级为模块协调」，它运行 `module-crew coordinator up --short <项目简称> --original-file <原话文件>`。
+0. **升级模块协调**：前提是项目已启用 spec-guard 的本地多 Spec 约定（`.agent/config.json`、`spec/CAPABILITY-MAP.md`），没启用先在项目里跑 `/spec-guard:setup-convention local`，否则体检报阻塞、`start plan` 退出码 3。在你想让它统筹的会话里明说「把本会话升级为模块协调」，它运行 `module-crew coordinator up --short <项目简称> --original-file <原话文件>`。
 1. **开工**（模块协调）
    - `module-crew start plan`：按能力图的 Build order 提议可开的模块（不超过空位，默认同时最多 2 个）。
    - 只问用户一次「开这 N 个吗？」，用户答应后
      `module-crew start prepare <模块>… --original-file <原话文件> --project-short <简称>`：为每个模块建 worktree、登记会话、生成开工说明。
-   - 用桌面版在每个 worktree 里开新会话，第一条消息用开工说明全文。
+   - 用桌面版在每个 worktree 里开新会话，第一条消息用开工说明全文。模块协调这一轮是被别的会话消息叫醒的，就只出开会话卡片，你点了才开（见上文「你要做的事与 AI 做的事」）。
 2. **写 Spec 与 Plan**（模块会话）：注册邮箱名、`module-crew bind <邮箱名>` 登记身份后，写好 Spec 发【交审】；收到开工类【协调通知】之前不构建。
    评审节奏由 spec-guard 的项目配置 `reviewCadence` 决定：`separate`（默认）先只交 Spec，批准后再交 Plan；`combined` 一起交。
 3. **批量批准**（模块协调）
@@ -59,7 +81,7 @@
    - 完整检查可能很慢：模块协调把 `merge run` 放后台跑，照常回话（Codex 上用 `merge run --detach` 再 `merge result` 取结果）；跑的时候别的写集成 checkout 的命令会被合并锁挡住（退出码 6），`status` 显示正在跑的合并。
    - 完整检查的时限默认 1800 秒，全量测试慢的项目凭用户原话 `config set --check-timeout <秒>` 调大。
 6. **收尾与推送**
-   - 用户同意后 `module-crew merge cleanup <模块> --original-file <原话文件>` 收回 worktree（分支保留）。
+   - 用户同意后 `module-crew merge cleanup <模块> --original-file <原话文件>` 收回 worktree（分支保留），输出列出待退役的邮箱名。用户确认后照上文「退役邮箱名」用 `/agent-relay:collaboration` 退役；退役后在桌面版侧栏归档那个会话。
    - `module-crew merge push-plan` 预告；用户明确授权后 `module-crew merge push --original-file <原话文件>`，推到远端新分支 `crew/batch-<号>` 并开一个 PR。
      远端是刚建的空仓库时，`push-plan` 会提示首次发布要你自己在终端运行 `git push --no-verify -u <远端> <集成分支>`（module-crew 不替你推）；推完后的批次再走 `merge push`。
    - **远端合并始终由用户做**。
@@ -121,7 +143,7 @@ Claude 额度紧张时，先打开检查记账，再由模块协调凭用户原�
 
 ### 并行与串行
 
-同时开发的模块数默认最多 2 个。想收手、不再并行：`module-crew serial --original-file <原话文件>`——不再开新模块，已开的模块照常交审、合并、收尾；再用 `/spec-guard:config` 关掉 `moduleConcurrency`。恢复用 `serial --off`。
+同时开发的模块数默认最多 2 个。这个上限在项目第一次落运行配置时定下（`coordinator up` 记为默认 2）；之后 `start prepare --max <N>` 给别的数会被拒（「上限已定为 2，不能在这里改」），`config set` 也没有这一项，目前没有改它的命令（见「已知限制」）。上限只管同时开发的模块：轻任务不占名额，已合入的模块一合入就让出名额，挂起的模块不占名额。想收手、不再并行：`module-crew serial --original-file <原话文件>`——不再开新模块，已开的模块照常交审、合并、收尾；再用 `/spec-guard:config` 关掉 `moduleConcurrency`。恢复用 `serial --off`。
 
 ## 轻任务
 
@@ -130,10 +152,10 @@ Claude 额度紧张时，先打开检查记账，再由模块协调凭用户原�
 1. **记任务**（模块协调）：用户明说要做后 `module-crew task add --type feature|bug --title … --what … --expect <预计文件> --done <完成标准> --original-file <原话文件>`。
    预计文件和在做的任务或模块分支已改的文件重叠就排队，`task next` 按 bug 在前提为可开。两个点名的文件相同才算重叠；目录（如 `tests/`）只和同一目录或嵌套目录算重叠，不和点名的文件算。
    在做的任务凭用户原话可以用 `task scope` 收窄预计文件，再 `task next` 放行排队的任务。
-2. **派出**：`module-crew task dispatch T<号>` 建 `task/t<号>` 分支与 worktree、登记轻任务会话（不占多模块名额）、生成开工说明；模块协调用桌面版开会话，第一条消息用开工说明全文。
+2. **派出**：`module-crew task dispatch T<号>` 建 `task/t<号>` 分支与 worktree、登记轻任务会话（不占多模块名额）、生成开工说明；模块协调用桌面版开会话，第一条消息用开工说明全文；被别的会话消息叫醒的那一轮只出开会话卡片，要你点。
 3. **做与交回**（轻任务会话，`crew-dev` skill 的「轻任务」一节）：bug 先补复现测试、确认它失败再修；检查通过后发最终验收【交审】（`模块：无`，带「任务：T<号>」）。
    `review add` 会比对实际改动和任务单，多改的文件和越界重叠写进交审。交回后分支又多了提交（如同步）时重新发最终验收【交审】，旧交审与合并批准作废，用户重新批准。
-4. **批准与合并**：用户点一次批准，`merge approve` → `merge run`。队列顺序：bug 任务、模块（Build order）、需求任务。合入后在用的模块和在做的任务收到同步通知；`merge cleanup T<号>` 收回 worktree（分支保留）。
+4. **批准与合并**：用户点一次批准，`merge approve` → `merge run`。队列顺序：bug 任务、模块（Build order）、需求任务。合入后在用的模块和在做的任务收到同步通知；`merge cleanup T<号>` 收回 worktree（分支保留），之后照「合入后的会话」退役邮箱名、归档会话。
 5. **做大了**：轻任务会话停下发升格请求（【等待用户】「卡住选做法」），用户选 A 升格（`/spec-guard:add-module`）、B 缩小（`task scope`）或 C 取消（`task cancel`）。
 
 决策收件箱登记的契约版本低于 2.5 时，轻任务的提请批准不经过它，模块协调在会话里直接问用户。
@@ -146,7 +168,7 @@ Claude 额度紧张时，先打开检查记账，再由模块协调凭用户原�
 2. **确认旧一轮已收回**：`merge cleanup <模块 id>` 做过；没做 `start prepare` 会拒绝。
 3. **用户点名后开会话**：`module-crew start prepare <模块 id> --original-file <原话文件>`。旧模块分支已合入就快进到集成分支再开 worktree，有没合进来的提交就拒绝、交用户决定；
    新邮箱名带轮次后缀（`<简称>-<模块 id>-r2`），开工说明写明「只做 todo 新加的未勾项」。Spec、Plan 都还是批准状态时点名即开工；Plan 要重新交审时先交审；todo 新加的第一项是修订 Spec 时先改 Spec、交 Spec 节点。
-4. **退役旧邮箱名**：由用户在 agent-relay 里退役第一轮的名字（新名字不用 `reactivate`）。之后的交审、合并、收回和新模块一样，旧一轮的批准与合并记录不算进新一轮。
+4. **退役旧邮箱名**：由用户退役第一轮的名字（新名字不用 `reactivate`）：照上文「退役邮箱名」用 `/agent-relay:collaboration` 退役。之后的交审、合并、收回和新模块一样，旧一轮的批准与合并记录不算进新一轮。
 
 ## 提前开工（依赖没做完先写 Spec）
 
@@ -237,6 +259,7 @@ Codex 版 `crew-coordinator` skill 管下面这些与 Claude 不同的地方，�
 
 **接入决策收件箱**：
 
+0. 决策收件箱本身是另一个会话，由 decision-inbox 插件管：先在那个会话里跑 `/decision-inbox:hub-setup` 建好决策收件箱；再在模块协调里用 `/decision-inbox:join` 按开发线接入并加 `--crew-coordinator`（协作规则段会多一节模块协调的约定，要你确认后写入）。怎么建、怎么接以 decision-inbox 的 README 为准。决策收件箱讲的契约与 module-crew 同为 2.x 即兼容。
 1. 在模块协调里由用户亲口登记可信批准来源：`module-crew source add <决策收件箱邮箱名> --kind hub --original-file <原话>`；审查者登记为 `--kind lead`（要写 `--modules`、`--nodes`）。
 2. 提请批准的正文逐条用 `bodyFile` 原样发给决策收件箱；要用户决定的事只在那里问，会话里不放可以点的决定按钮。
 3. 决策收件箱转来【用户答复】后，批准命令带 `--source <决策收件箱> --source-item <H> --source-relay-id <消息号> --source-from <实际发件人> --original-file <那条消息>`，用户原话从消息里读出；实际发件人不是来源本身或是模块会话时拒收。
@@ -273,13 +296,13 @@ Codex 版 `crew-coordinator` skill 管下面这些与 Claude 不同的地方，�
 
 | 情况 | 做法 |
 |---|---|
-| 不知道哪个会话停下了 | `module-crew sessions` 列出每个模块会话的最后动静、未关的等待记录与事项、当前档位、挂起原因；只列事实，结合 agent-relay 在线状态自己判断 |
+| 不知道哪个会话停下了 | `module-crew sessions` 列出每个模块会话的最后动静、未关的等待记录与事项、当前档位、挂起原因，以及在用的轻任务会话（T 号、任务状态）；每个会话带类型、宿主、桌面会话编号、worktree；`--all` 另列已收回的。只列事实，结合 agent-relay 在线状态自己判断 |
 | 某个模块会话在「等待审批」 | 权限弹窗只能用户去那个会话亲手点；模块协调醒来时会提醒，并核对各模块会话的权限模式有没有变宽 |
 | 集成分支上有不经合并队列的提交 | `status` 会显示数量；`module-crew unqueued` 列出（短号、作者、时间、标题），`--notify` 给在开发的模块与在做的轻任务发同步通知，同一批只报一次；`merge run` 合并前也会自动做这一步。插件不拦、不撤回 |
 | 消息发出去对方没反应 | 桌面版会停掉空闲会话，agent-relay 叫不醒（`pendingReason: offline`）；用桌面版跨会话消息发一句「去读 agent-relay 收件箱」 |
 | 模块在等外部条件（设计稿、别人交付） | 用户同意后 `module-crew suspend <模块> --reason "<原因>" --original-file <原话文件>`，不再占名额；按输出把挂起正文发给模块会话，它在自己的 worktree 里用 spec-guard 挂起。条件满足、用户同意后 `module-crew resume <模块> --original-file <原话文件>` |
 | 会话崩溃或要换新会话 | `module-crew resume-kit <模块>` 生成恢复说明；用户同意后 `module-crew takeover <邮箱名> --original-file <原话文件>`，在原 worktree 开新会话，第一条消息用恢复说明，新会话用同一个邮箱名重新注册 |
-| 模块协调要重开或换会话 | 在原会话里 `/clear`，或退出应用再打开，身份会自动接上；不要新开会话。已经新开了：用户同意后在新会话运行 `module-crew bind <邮箱名> --takeover --original-file <原话文件>`（同一仓库任一目录），旧会话随即失效；模块协调的写命令只有登记的会话能跑（别的会话退出码 7），`status` 里标着「← 本会话」 |
+| 模块协调要重开或换会话 | 在原会话里 `/clear`，或退出应用再打开，身份会自动接上；不要新开会话（升级了带 MCP 工具的插件时除外，见下文「插件更新后」）。已经新开了：用户同意后在新会话运行 `module-crew bind <邮箱名> --takeover --original-file <原话文件>`（同一仓库任一目录），旧会话随即失效；模块协调的写命令只有登记的会话能跑（别的会话退出码 7），`status` 里标着「← 本会话」 |
 | 会话被压缩 | 钩子会提醒先跑 `module-crew status`、以状态库为准，不按压缩前的记忆重做 |
 | 合并被退回 | 集成分支已回到合并前、模块分支不动；模块修好后重新发最终验收【交审】（不用撤销任何提交）。退回原因判错了，模块协调用 `merge renotice` 按另一种原因重发 |
 | 用户只接受验收、暂不合并 | `merge accept <C号> --original-file <原话文件>` 记下原话；事项不关闭、不排合并，模块停在原地、不收同步通知，`status` 显示「已接受验收、待授权合并」。用户补一句授权合并时对同一编号 `merge approve`；改主意要修改就 `review answer` 退回 |
@@ -289,9 +312,11 @@ Codex 版 `crew-coordinator` skill 管下面这些与 Claude 不同的地方，�
 
 一个模块挂起、退回或崩溃，不影响其他模块的交审、合并与通知。
 
-插件更新后：在用的 Claude 会话在原会话里 `/clear` 一次；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对，不要接着装。
+插件更新后：只升级 module-crew 时，原会话 /clear 一次即可。升级里包含 agent-relay（或别的带 MCP 工具的插件）时，Claude Code 新开会话、Codex 新开任务；重开应用和 resume 原会话都还用旧版本。新开会话时：先在桌面版归档旧会话（agent-relay 不让接管还在运行的 Claude 会话），模块协调新开会话后由你同意、运行 `module-crew bind <邮箱名> --takeover --original-file <原话文件>`，再用原名 `takeover:true, wake:"auto"` 重新注册；模块会话、轻任务会话按上表「会话崩溃或要换新会话」用 `resume-kit` 与 `takeover` 换。Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对，不要接着装。
 
 ## 已知限制与尚未验证
+
+已知限制：多模块并行上限在 `coordinator up` 时定下（默认 2），之后没有命令可改。
 
 已经实地验证过的：真实 spec-guard 与 agent-relay、会话间真实收发、开工、批量批准、审查就近与决策收件箱转达、合并与退回、挂起与恢复、换模块协调与换模块会话、退回串行、收尾与推送到本机远端；权限预配的禁止规则（编辑 worktree 里的 `.claude/` 被拒）；钩子按会话认身份、给真实桌面会话注入角色与命令入口。还没验证的：
 

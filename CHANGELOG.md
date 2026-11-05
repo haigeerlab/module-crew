@@ -2,6 +2,30 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.23.1 的变化（轻任务与提前开工的几处修正、会话清单、使用者文档补缺）
+
+不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移（只多一种已结事项 `direct-answer`）。`sessions --json` 只增不改：新增顶层数组 `tasks`，原 `sessions` 数组与 `schemaVersion` 1 不变。
+
+- **轻任务「卡住选做法」的字母含义固定**（S64，T472）：`inbox add` 收到带「任务」的「卡住选做法」时，核对 A～D 的选项文字与固定含义（A 升格／B 缩小／C 取消／D 扩项），对不上就退出码 3 拒收、什么都不记，并写明正确含义。之前会照收，答复时按字母执行，选项写错位会把「缩小」执行成「已升格」。以前因此残留为「已升格」的任务，用户同意后用现有的 `merge cleanup T<号>` 收回（分支保留）。
+- **`change add` 收轻任务会话的公共变更请求**（S65，T473）：发件人判定与 `inbox add` 一致，模块会话与轻任务会话都收；轻任务的请求可以 `change land`／`change answer`。`change accept`（随模块合并落地）与 `change land --from-module`（名单内提前落地）对轻任务退出码 3，写明原因。
+- **排队提示写明对方状态与办法**（S66，T474）：可开任务照旧占着自己的文件；`task add`／`task scope` 的重叠行写成「T<号>（<状态>）：<文件>」，对方可开未派出时接「先派出它，或 `task cancel` 后 `task next`」；`task next` 列出仍排队的任务和它们的重叠行。
+- **提前开工的模块可按已批 Plan 修订开工**（S78，T480）：`start kickoff` 加 `--plan-revision C<号>`：这个 C 号是本模块在提前开工之后批准的 Plan、且带用户原话时，依赖没合入也记账并生成开工通知（依据写「依赖 X 未合入，按已批 Plan 修订 C<号> 不等依赖」）；加 `--already-sent` 只补记手工已发的开工、不生成通知。C 号不合格退出码 3。
+- **用户直接批准时生成合格的【用户答复】**（S79，T481）：新命令 `answer --new --to <邮箱名> --about <事由> --original(-file)`，一步建一个已结事项 C<号>，生成带 C 号与答复时间、能过 `protocol check` 的【用户答复】；缺原话、事由为空或收件人不是登记的在用会话时退出码 3。
+- **会话清单**（T504）：`sessions` 在模块会话之后列出在用的轻任务会话；每个会话写类型、宿主、桌面会话编号、worktree、在用还是已收回；新增 `--all` 列出已收回的会话。`--json` 新增顶层数组 `tasks`，`--all` 时已收回的会话带 `retired: true` 追加。协调技能与使用手册写明调研类会话只读、不在集成 checkout 改文件，module-crew 不登记它们。
+
+以下是使用者文档补缺（S72、S77，T475）：
+
+- **契约版本**：架构文档的「钉住契约」从 v2.6 改为实际的 v2.8，README、架构文档写明决策收件箱讲的契约与 module-crew 同为 2.x 即兼容。
+- **体检命令**：README 不再写插件目录下的相对路径 `bin/module-crew status`；改为在 Claude Code 会话里直接跑 `module-crew status`（插件的 `bin/` 在会话 PATH 上），终端里用状态库的固定入口。命令参考的入口说明同步补上。
+- **前提补入口**：项目还没启用 spec-guard 约定时先跑 `/spec-guard:setup-convention local`，否则体检阻塞、`start plan` 退出码 3（README 与使用手册）。
+- **使用手册新增「你要做的事与 AI 做的事」**：分开列出只能用户亲手做的（说原话、开会话、点权限弹窗、开 Codex 会话、退役与归档、远端合并）和 AI 做的。同一节写明：模块协调被别的会话消息叫醒的那一轮开不了会话，只出开会话卡片要用户点；`merge cleanup` 收回后先退役邮箱名、再在桌面版侧栏归档那个会话。
+- **并发上限**：写明上限在 `coordinator up` 时定为默认 2，之后 `start prepare --max` 给别的数退出码 3、`config set` 也没有这一项，目前没有改它的命令（列入已知限制）；轻任务、已合入与挂起的模块不占名额。
+- **退役邮箱名**：写明入口是 Claude Code 的 `/agent-relay:collaboration`（Codex 用 collaboration-ops skill）；名字还有未确认的消息（过期的不算）时退役会被拒，别的会话也不能替它确认，用户三选一：回到那个会话处理完确认、新开会话经同意 takeover 接管后确认、或等消息过期（默认 24 小时）再退役。措辞与 agent-relay 的说明一致。
+- **接决策收件箱**：先在决策收件箱会话跑 `/decision-inbox:hub-setup`，模块协调用 `/decision-inbox:join` 按开发线接入并加 `--crew-coordinator`，再 `source add`。
+- **命令参考**：`inbox add` 的退出码 4 是「合格但不归本命令记账，改用 `review add`／`change add`」，不是通用表里的超时；`start prepare --max` 只在第一次落配置时生效。
+- **升级后会话怎么处理**（S77，与 agent-relay 统一说法）：「只升级 module-crew 时，原会话 /clear 一次即可。升级里包含 agent-relay（或别的带 MCP 工具的插件）时，Claude Code 新开会话、Codex 新开任务；重开应用和 resume 原会话都还用旧版本。」使用手册写明新开后模块协调用 `bind --takeover`、模块会话用 `resume-kit` 与 `takeover` 接上原身份。
+- 升级后：只升级 module-crew 时，原会话 /clear 一次即可。升级里包含 agent-relay（或别的带 MCP 工具的插件）时，Claude Code 新开会话、Codex 新开任务；重开应用和 resume 原会话都还用旧版本。Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
+
 ## 0.23.0 的变化（依赖没做完时提前开工，只写 Spec 与 Plan）
 
 不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移（模块会话登记只增可选的 `specAhead`、`kickoff` 两项）。
