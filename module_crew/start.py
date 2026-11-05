@@ -557,14 +557,22 @@ class KickoffResult:
     sends: list[dict] = field(default_factory=list)
 
 
-def _plan_revision(db: store.Store, module: str, since: int, number: int) -> str | None:
-    """S78: why C<number> is not a Plan of module approved, with the user's words, after it opened ahead; else None."""
+def _plan_revision(db: store.Store, module: str, since: int, number: int,
+                   answered_review: bool = False) -> str | None:
+    """S78: why C<number> is not a Plan of module approved, with the user's words, after it opened ahead; else None.
+
+    S81: with answered_review a Plan review of module the user answered with answer (no review approve) also counts."""
     items_ = store.records(db, "item")
     rec = items_.get(str(number)) or {}
-    if rec.get("kind") != "review-approval":
-        return f"C{number} 不是批准事项"
-    if not any((items_.get(str(n)) or {}).get("module") == module and (items_.get(str(n)) or {}).get("node") == "plan"
-               for n in rec.get("reviews", [])):
+    answered = rec.get("kind") == "review" and rec.get("node") == "plan" and rec.get("closedReason") == "answered"
+    if answered and answered_review:
+        if rec.get("module") != module:
+            return f"C{number} 不是 {module} 的 Plan 交审"
+    elif rec.get("kind") != "review-approval":
+        return f"C{number} 不是批准事项" + ("；它是被 answer 关掉的 Plan 交审，核对答复原话确是批准后可加 --answered-review"
+                                          if answered else "")
+    elif not any((items_.get(str(n)) or {}).get("module") == module and (items_.get(str(n)) or {}).get("node") == "plan"
+                 for n in rec.get("reviews", [])):
         return f"C{number} 不是 {module} 的 Plan 批准"
     if number <= since:
         return f"C{number} 早于 {module} 提前开工（C{since}），不是之后批准的 Plan 修订"
@@ -574,10 +582,11 @@ def _plan_revision(db: store.Store, module: str, since: int, number: int) -> str
 
 
 def kickoff(project: str | os.PathLike, module: str, original: str, plan_revision: int | None = None,
-            already_sent: bool = False) -> KickoffResult:
+            already_sent: bool = False, answered_review: bool = False) -> KickoffResult:
     """crew-spec-ahead decision 5: the start notice of a module opened ahead, once its dependencies merged and the
     user said so (the way offload decline sends a held start notice). S78: with plan_revision (a Plan approved after
-    it opened ahead) it starts before its dependencies merge; already_sent only records a start sent by hand."""
+    it opened ahead) it starts before its dependencies merge; already_sent only records a start sent by hand.
+    S81: answered_review lets plan_revision be a Plan review closed by answer, listing the words recorded then."""
     from module_crew import offload, protocol, review
     project = Path(project)
     db = _open_store(project)
@@ -592,17 +601,26 @@ def kickoff(project: str | os.PathLike, module: str, original: str, plan_revisio
     if approval is None:
         return KickoffResult(3, [f"{module} 的 Spec 与 Plan 还没都批准"])
     mapped = {m.get("id"): m for m in probe.run(project).map.get("modules") or [] if isinstance(m, dict)}
+    if answered_review and plan_revision is None:
+        return KickoffResult(3, ["--answered-review 要与 --plan-revision 同用"])
+    answered: dict | None = None
     if plan_revision is not None:
-        why = _plan_revision(db, module, int(ahead[1]["specAhead"].get("since") or 0), plan_revision)
+        why = _plan_revision(db, module, int(ahead[1]["specAhead"].get("since") or 0), plan_revision, answered_review)
         if why:
             return KickoffResult(3, [why])
+        rec = store.get(db, "item", str(plan_revision)) or {}
+        answered = rec.get("answer") if rec.get("kind") == "review" else None
     missing = deps_missing(db, mapped, module)
     if missing and plan_revision is None:
         return KickoffResult(3, [f"{module} 的依赖 {'、'.join(missing)} 还没合入，不能发开工通知"])
     deps = "、".join(mapped.get(module, {}).get("dependsOn") or ahead[1]["specAhead"]["missing"])
-    why_now = (f"依赖 {'、'.join(missing)} 未合入，按已批 Plan 修订 C{plan_revision} 不等依赖" if missing
+    basis = f"用户已答复的 Plan 交审 C{plan_revision}" if answered else f"已批 Plan 修订 C{plan_revision}"
+    why_now = (f"依赖 {'、'.join(missing)} 未合入，按{basis} 不等依赖" if missing
                else f"依赖 {deps} 已合入")
     result = KickoffResult(0)
+    if answered:
+        result.lines += [f"C{plan_revision} 是被 answer 关掉的 Plan 交审，没有批准记录；当时记下的答复原话"
+                         f"（{answered.get('answeredAt') or '时间未记'}），请模块协调与用户核对：", answered["original"]]
     with db.transaction(actor="coordinator") as tx:
         if not already_sent:
             todo = review._start_todo(tx, db, project, module, approval[0], result.lines)
@@ -613,6 +631,7 @@ def kickoff(project: str | os.PathLike, module: str, original: str, plan_revisio
         tx.put("item", str(n), {"state": "closed", "kind": "start-kickoff", "closedReason": "answered", "relayId": None,
                                 "from": "coordinator", "module": module, "approval": approval[0],
                                 **({"planRevision": plan_revision} if plan_revision is not None else {}),
+                                **({"answeredReview": True} if answered else {}),
                                 **({"alreadySent": True} if already_sent else {}),
                                 "answer": {"original": original, "answeredAt": store.now(), **store.source_field()}},
                action="start-kickoff")
