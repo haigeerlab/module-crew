@@ -2,6 +2,15 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.23.3 的变化（恢复通知认得轻任务、可不同步；已挂起模块可改原因；提前开工放行的输出改说法）
+
+不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移。
+
+- **恢复通知认得轻任务，`resume --no-sync`**（S82，T539）：挂起期间合入的是轻任务时，恢复通知写「轻任务 T<号>」，不再显示 None。`module-crew resume <模块> --no-sync`（仍须用户原话）时，通知照样列出挂起期间合入了什么，但写「按用户批准不同步」，不要求先同步、跑完整检查；不带时行为不变。
+- **`suspend --amend-reason`**（S83，T544）：模块已挂起时，`module-crew suspend <模块> --amend-reason <新原因>` 改挂起原因，与 `--reason` 二选一；授权和挂起一样（用户原话或 `--source`），另记一条批准事项，挂起状态、挂起时间与原挂起依据不变，恢复时仍从原挂起时刻统计合入。发给模块会话的挂起类【协调通知】写新旧原因，请它在自己的 worktree 用 spec-guard 同步改原因。模块没挂起时退出码 3。
+- **`start kickoff --answered-review` 的输出**（S84，T549）：改为「已按以下答复原话（时间）放行，记为 C<号>；如果不是批准，请用 module-crew suspend <模块> 让模块会话停在原地，再问用户」，不再写「请模块协调与用户核对」；行为不变。
+- 升级后：只升级 module-crew 时，原会话 /clear 一次即可。升级里包含 agent-relay（或别的带 MCP 工具的插件）时，Claude Code 新开会话、Codex 新开任务；重开应用和 resume 原会话都还用旧版本。Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
+
 ## 0.23.2 的变化（交审不能再用 answer 关掉；被 answer 关掉的 Plan 交审可凭确认开工）
 
 不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移。
