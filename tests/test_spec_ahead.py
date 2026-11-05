@@ -362,6 +362,10 @@ class AnsweredReviewTest(AheadCase):
         rec = next((int(k), v) for k, v in store.records(self.db, "item").items() if v["kind"] == "start-kickoff")
         self.assertEqual((rec[1]["planRevision"], rec[1]["answeredReview"]), (n, True))
         self.assertEqual(self.dev("e")["kickoff"], rec[0])
+        self.assertRegex(text, rf"已按以下答复原话（[^）]*）放行，记为 C{rec[0]}；")   # S84: reads as done, not pending
+        self.assertIn("如果不是批准", text)
+        self.assertIn("module-crew suspend e", text)
+        self.assertNotIn("请模块协调与用户核对", text)
         [send] = out.sends
         msg = protocol.parse(store.read_body(self.db, send["body"]))
         self.assertFalse(msg.problems, msg.problems)
