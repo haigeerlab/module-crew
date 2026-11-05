@@ -636,7 +636,10 @@ def _failure(args) -> int:
     if original is None:
         return 2
     if args.group in ("suspend", "resume"):
-        if args.group == "suspend":
+        if args.group == "suspend" and args.amend_reason is not None:
+            out = failure.amend_reason(db, args.module, args.amend_reason, original)
+            print(f"已改挂起原因：{out.name}（仍然挂起；spec-guard 里的原因由模块会话在自己的 worktree 里改）")
+        elif args.group == "suspend":
             out = failure.suspend(db, args.module, args.reason, original)
             print(f"已挂起：{out.name}（不占名额；spec-guard 的挂起由模块会话在自己的 worktree 里做）")
         else:
@@ -1560,7 +1563,9 @@ def _main(argv: list[str] | None = None) -> int:
     tg.add_argument("--original-file")
     ss = sub.add_parser("suspend", help="挂起模块会话（等外部条件，不占名额）")
     ss.add_argument("module")
-    ss.add_argument("--reason", required=True)
+    sr = ss.add_mutually_exclusive_group(required=True)
+    sr.add_argument("--reason")
+    sr.add_argument("--amend-reason", help="模块已挂起时改挂起原因（仍然挂起；授权同挂起）")
     sg = ss.add_mutually_exclusive_group(required=True)
     sg.add_argument("--original")
     sg.add_argument("--original-file")

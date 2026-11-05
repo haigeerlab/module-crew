@@ -269,6 +269,8 @@ module-crew change accept <编号> --original-file <用户原话文件>     # �
   结合 agent-relay 在线状态自己判断，拿不准就问那个会话或问用户，不要替用户认定它已停下。
 - **等外部条件**（等设计稿、等别人交付）：用户同意后 `module-crew suspend <模块> --reason "<原因>" --original-file <原话文件>`，
   它不再占名额；把输出的挂起类【协调通知】原样发给那个模块会话，它会停在当前停点、在自己的 worktree 里用 spec-guard 挂起。
+  挂起后要改原因（等的东西变了）：用户同意后 `module-crew suspend <模块> --amend-reason "<新原因>" --original-file <原话文件>`，
+  授权和挂起一样；仍然挂起，把输出的协调通知原样发给那个模块会话。
   条件满足、用户同意恢复后 `module-crew resume <模块> --original-file <原话文件>`，按输出发恢复类【协调通知】；挂起期间有模块合入时，通知里已写明先同步。
   用户的原话明确说恢复时不同步（如「不合 main」）才加 `--no-sync`：通知照样列出合入了什么，改写「按用户批准不同步」。
 - **已合入的模块**：一合入就不再占名额，不用等 `merge cleanup`。`start plan` 没有可开的模块时会逐个写出原因，照着告诉用户。
