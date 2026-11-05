@@ -4,7 +4,7 @@ A plugin that lets several Claude Code or Codex desktop sessions **develop sever
 
 [中文](README.md) | English
 
-> Version 0.23.2 · License [MIT](LICENSE)
+> Version 0.23.3 · License [MIT](LICENSE)
 >
 > Only this README is in English. The other documents linked below (user guide, command reference, architecture, changelog) are in Chinese.
 

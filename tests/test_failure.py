@@ -72,6 +72,65 @@ class SuspendTest(FailureCase):
         self.assertEqual(store.get(self.db, "item", str(refs[0]))["answer"]["original"], "设计稿到了，恢复 b")
         self.assertNotIn("集成分支在挂起期间", msg.fields["要你做什么"])   # nothing merged meanwhile
 
+    def test_amend_reason(self):
+        failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        mark = self.session("shop-b")["suspended"]
+        out = failure.amend_reason(self.db, "b", "等接口文档", "原因改成等接口文档")
+        rec = self.session("shop-b")
+        self.assertEqual(rec["suspended"]["reason"], "等接口文档")
+        self.assertEqual((rec["suspended"]["at"], rec["suspended"]["approval"]), (mark["at"], mark["approval"]))
+        self.assertEqual(start.plan(self.repo).slots, 2)                  # still suspended
+        last = store.events(self.db, key="shop-b")[-1]
+        self.assertEqual((last["type"], last["data"]["from"]), ("session.suspend-amended", "等设计稿"))
+        [note] = out.sends
+        self.assertEqual((note["to"], note["kind"]), ("shop-b", "suspend"))
+        msg = self.notice(note)
+        self.assertEqual((msg.contract()["notice"]["kind"], msg.fields["原因"]), ("suspend", "等接口文档"))
+        self.assertIn("挂起原因已更新", msg.fields["要你做什么"])
+        refs = [int(x) for x in re.findall(r"C(\d+)", msg.fields["依据"])]
+        self.assertEqual(refs[1], mark["approval"])
+        rec = store.get(self.db, "item", str(refs[0]))
+        self.assertEqual((rec["kind"], rec["answer"]["original"]), ("suspend-reason", "原因改成等接口文档"))
+        # resume still lists what landed since the suspension, not since the amendment
+        res = failure.resume(self.db, "b", "恢复 b")
+        self.assertIn(f"挂起依据 C{mark['approval']}", self.notice(res.sends[0]).fields["依据"])
+
+    def test_amend_reason_refusals(self):
+        before = store.events(self.db)
+        with self.assertRaises(failure.FailureRefused) as cm:
+            failure.amend_reason(self.db, "b", "等接口文档", "改原因")
+        self.assertIn("没有挂起", str(cm.exception))
+        self.assertEqual(store.events(self.db), before)
+        failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        before = store.events(self.db)
+        for args in (("b", "等接口文档", " "), ("b", " ", "改原因"), ("d", "等接口文档", "改原因")):
+            with self.assertRaises(failure.FailureRefused):
+                failure.amend_reason(self.db, *args)
+        self.assertEqual(store.events(self.db), before)
+
+    def test_amend_reason_cli(self):
+        from module_crew import sources
+        failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        out = self.run_cli("suspend", "c", "--amend-reason", "等接口文档", "--original", "改原因", cwd=self.repo)
+        self.assertEqual(out.returncode, 3, out.stderr)                   # c is not suspended
+        self.assertIn("没有挂起", out.stderr)
+        out = self.run_cli("suspend", "b", "--amend-reason", "等接口文档", cwd=self.repo)
+        self.assertEqual(out.returncode, 2)                               # no user's words
+        out = self.run_cli("suspend", "b", "--reason", "x", "--amend-reason", "y", "--original", "改", cwd=self.repo)
+        self.assertEqual(out.returncode, 2)                               # one or the other
+        sources.add(self.db, "live-saas-hub", "hub", "登记收件枢纽")
+        msg = self.tmp / "hub.txt"
+        msg.write_text(protocol.render_user_reply(120, "原因改成等接口文档", "2026-10-18T12:00:00+08:00", source_relay_id=6100),
+                       encoding="utf-8")
+        out = self.run_cli("suspend", "b", "--amend-reason", "等接口文档", "--source", "live-saas-hub", "--source-item", "120",
+                           "--source-relay-id", "6100", "--source-from", "live-saas-hub", "--original-file", str(msg),
+                           cwd=self.repo)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("已改挂起原因", out.stdout)
+        rec = self.session("shop-b")
+        self.assertEqual(rec["suspended"]["reason"], "等接口文档")
+        self.assertEqual(store.events(self.db, key="shop-b")[-1]["data"]["source"]["item"], 120)
+
     def test_resume_sends_sync_when_baseline_moved(self):
         failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
         n = self.approve_final("c", 70)
