@@ -332,10 +332,15 @@ class AnsweredReviewTest(AheadCase):
 
     WORDS = "批准 Plan 修订，\n不等依赖先开工"
 
+    def close_answered(self, n):
+        """The record 0.23.1 and earlier left when answer closed a review (answer now refuses reviews, S81)."""
+        with self.db.transaction(actor="test") as tx:
+            tx.put("item", str(n), dict(tx.get("item", str(n)), state="closed", closedReason="answered",
+                                        answer={"original": self.WORDS, "answeredAt": store.now()}), action="answered")
+
     def answered_plan(self, module="e", sender="shop-e", relay=103):
-        from module_crew import inbox
         n = review.add(self.db, self.plan_review(module), sender, relay).number
-        inbox.answer(self.db, n, self.WORDS)
+        self.close_answered(n)
         return n
 
     def test_refused_without_flag_with_hint(self):
@@ -369,9 +374,8 @@ class AnsweredReviewTest(AheadCase):
         review.approve(self.repo, [s, p], "b 批准")
         other = self.answered_plan("b", "shop-b", 3)                       # another module's Plan
         self.unchanged(lambda: start.kickoff(self.repo, "e", "开工", plan_revision=other, answered_review=True))
-        from module_crew import inbox
         spec = review.add(self.db, self.spec_review("e"), "shop-e", 104).number    # not a Plan node
-        inbox.answer(self.db, spec, self.WORDS)
+        self.close_answered(spec)
         self.unchanged(lambda: start.kickoff(self.repo, "e", "开工", plan_revision=spec, answered_review=True))
         n = self.answered_plan()
         with self.db.transaction(actor="test") as tx:          # opened ahead after that review
