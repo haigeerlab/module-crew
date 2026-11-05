@@ -71,8 +71,14 @@ def suspend(db: store.Store, module: str, reason: str, original: str) -> Changed
     return Changed(name, sends)
 
 
-def resume(db: store.Store, module: str, original: str) -> Changed:
-    """Lift the suspension; the notice says to sync first when modules were merged meanwhile."""
+def _merged_name(rec: dict) -> str:
+    """A merged item's name in the resume notice: light tasks keep their number in `task` (S82)."""
+    return f"轻任务 T{rec['task']}" if rec.get("task") else str(rec.get("module"))
+
+
+def resume(db: store.Store, module: str, original: str, no_sync: bool = False) -> Changed:
+    """Lift the suspension; the notice says to sync first when modules were merged meanwhile,
+    unless the user approved resuming without syncing (no_sync, S82): then it only lists what landed."""
     from module_crew import protocol
     _need(original)
     sends: list[dict] = []
@@ -93,12 +99,15 @@ def resume(db: store.Store, module: str, original: str) -> Changed:
         if merged or landed:
             parts = []
             if merged:
-                parts.append("合入了 " + "、".join(f"{r.get('module')}（合并批准事项 C{k}，{(r.get('mergeCommit') or '')[:7]}）"
+                parts.append("合入了 " + "、".join(f"{_merged_name(r)}（合并批准事项 C{k}，{(r.get('mergeCommit') or '')[:7]}）"
                                                 for k, r in merged))
             if landed:      # crew-routing-fixes: change land skipped this module while it was suspended
                 parts.append("落地了公共变更 " + "、".join(f"C{k}（{c[:7]}）" for k, c in landed))
-            from module_crew import checks
-            todo = f"集成分支在挂起期间{'，'.join(parts)}：先{sync.STEP}、{checks.after_sync(tx.get('config', 'main'))}，再{RESUME_TODO}"
+            if no_sync:
+                todo = f"集成分支在挂起期间{'，'.join(parts)}：按用户批准不同步，{RESUME_TODO}"
+            else:
+                from module_crew import checks
+                todo = f"集成分支在挂起期间{'，'.join(parts)}：先{sync.STEP}、{checks.after_sync(tx.get('config', 'main'))}，再{RESUME_TODO}"
         _send(tx, db, sends, name, "resume", protocol.render_coordination_notice(kind="resume", basis=basis, todo=todo))
     return Changed(name, sends)
 

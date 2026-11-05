@@ -83,6 +83,38 @@ class SuspendTest(FailureCase):
         self.assertIn(f"C{n}", todo)
         self.assertIn("先跑 `module-crew sync`", todo)
 
+    def merge_light_task(self, task: int, commit: str) -> int:
+        """A light task's merge approval merged meanwhile: its number sits in `task`, `module` is None (S82)."""
+        with self.db.transaction(actor="coordinator") as tx:
+            n = tx.allocate_number()
+            tx.put("item", str(n), {"state": "closed", "kind": "merge-approval", "module": None, "task": task,
+                                    "mergeCommit": commit}, action="merged", data={"commit": commit})
+        return n
+
+    def test_resume_names_merged_light_task(self):
+        failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        n = self.merge_light_task(782, "abcdef1234")
+        [note] = failure.resume(self.db, "b", "恢复 b").sends
+        todo = self.notice(note).fields["要你做什么"]
+        self.assertIn(f"轻任务 T782（合并批准事项 C{n}，abcdef1）", todo)
+        self.assertNotIn("None", todo)
+
+    def test_resume_no_sync(self):
+        failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        n = self.merge_light_task(782, "abcdef1234")
+        [note] = failure.resume(self.db, "b", "恢复 b，不合 main", no_sync=True).sends
+        todo = self.notice(note).fields["要你做什么"]
+        self.assertIn(f"轻任务 T782（合并批准事项 C{n}，abcdef1）", todo)
+        self.assertIn("按用户批准不同步", todo)
+        self.assertNotIn("module-crew sync", todo)
+        self.assertNotIn("完整检查", todo)
+        self.assertIn(failure.RESUME_TODO, todo)
+
+    def test_resume_no_sync_needs_original(self):
+        failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        with self.assertRaises(failure.FailureRefused):
+            failure.resume(self.db, "b", " ", no_sync=True)
+
     def test_suspended_session_keeps_its_identity(self):
         failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
         role = hooks.detect(self.wt["b"])
@@ -239,6 +271,10 @@ class CliTest(FailureCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("发送 【协调通知】 → shop-b", out.stdout)
         self.assertEqual(run("resume", "b", "--original", "再恢复").returncode, 3)
+        run("suspend", "b", "--reason", "等设计稿", "--original", "再挂起 b")
+        out = run("resume", "b", "--no-sync", "--original", "恢复 b，不合 main")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("已取消挂起：shop-b", out.stdout)
         kit = run("resume-kit", "b")
         self.assertEqual(kit.returncode, 0, kit.stderr)
         self.assertIn("shop-b", kit.stdout)
