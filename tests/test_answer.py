@@ -1,8 +1,8 @@
 import unittest
 
-from helpers import RepoCase, seed_sessions, wait_user
+from helpers import RepoCase, ReviewCase, seed_sessions, wait_user
 
-from module_crew import inbox, probe, protocol, store
+from module_crew import inbox, probe, protocol, review, store
 
 
 def files(db):
@@ -112,3 +112,21 @@ class AnswerNewTest(RepoCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AnswerReviewRefusedTest(ReviewCase):
+    """S81: a 【交审】 item must go through review approve / review answer, or no approval is recorded."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+
+    def test_answer_on_review_item_exits_3_and_store_unchanged(self):
+        n = review.add(self.db, self.spec_review("b"), "shop-b", 1).number
+        before = files(self.db)
+        r = self.run_cli("answer", str(n), "--original", "批准")
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        self.assertIn(f"review approve C{n}", r.stderr)
+        self.assertIn(f"review answer C{n}", r.stderr)
+        self.assertEqual(files(self.db), before)
+        self.assertEqual(store.get(self.db, "item", str(n))["state"], "open")
