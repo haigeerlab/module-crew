@@ -618,9 +618,6 @@ def kickoff(project: str | os.PathLike, module: str, original: str, plan_revisio
     why_now = (f"依赖 {'、'.join(missing)} 未合入，按{basis} 不等依赖" if missing
                else f"依赖 {deps} 已合入")
     result = KickoffResult(0)
-    if answered:
-        result.lines += [f"C{plan_revision} 是被 answer 关掉的 Plan 交审，没有批准记录；当时记下的答复原话"
-                         f"（{answered.get('answeredAt') or '时间未记'}），请模块协调与用户核对：", answered["original"]]
     with db.transaction(actor="coordinator") as tx:
         if not already_sent:
             todo = review._start_todo(tx, db, project, module, approval[0], result.lines)
@@ -628,6 +625,10 @@ def kickoff(project: str | os.PathLike, module: str, original: str, plan_revisio
                 result.code = 3
                 return result
         n = tx.allocate_number()
+        if answered:
+            result.lines += [f"C{plan_revision} 是被 answer 关掉的 Plan 交审，没有批准记录；已按以下答复原话"
+                             f"（{answered.get('answeredAt') or '时间未记'}）放行，记为 C{n}；如果不是批准，"
+                             f"请用 module-crew suspend {module} 让模块会话停在原地，再问用户：", answered["original"]]
         tx.put("item", str(n), {"state": "closed", "kind": "start-kickoff", "closedReason": "answered", "relayId": None,
                                 "from": "coordinator", "module": module, "approval": approval[0],
                                 **({"planRevision": plan_revision} if plan_revision is not None else {}),
