@@ -352,5 +352,39 @@ class CliTest(FailureCase):
         self.assertEqual((out.returncode, out.stdout.strip()), (0, "没有在用的模块会话"))
 
 
+class DoneSessionsTest(FailureCase):
+    """S67 (T563): status puts merged-but-not-taken-back sessions on one line of their own."""
+
+    def section(self):
+        out = self.run_cli("status", cwd=self.repo)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        lines = out.stdout.splitlines()
+        start = lines.index("会话与待办")
+        end = next(i for i in range(start + 1, len(lines)) if not lines[i].startswith("  "))
+        return lines[start + 1:end]
+
+    def test_merged_module_listed_apart(self):
+        self.approve_final("b", 1)
+        self.assertEqual(merge.run(self.repo, check_command="python3 -c pass").code, 0)
+        rows = self.section()
+        self.assertIn("  已做完待收回：shop-b（b）（merge cleanup 收回）", rows)
+        self.assertFalse(any(r.startswith("  shop-b") for r in rows), rows)
+        self.assertTrue(any(r.startswith("  shop-c（dev，c）") for r in rows), rows)
+
+    def test_finished_task_listed_apart(self):
+        from test_light_task import new_task, register_task
+        done, working = new_task(self.db, self.repo), new_task(self.db, self.repo, expect=("docs/u.md",))
+        with self.db.transaction(actor="t") as tx:
+            tx.put("task", str(done), dict(tx.get("task", str(done)), state="merged"), action="merged")
+        register_task(self.db, done, "/nowhere/a")
+        register_task(self.db, working, "/nowhere/b")
+        rows = self.section()
+        self.assertIn(f"  已做完待收回：shop-t{done}（T{done}）（merge cleanup 收回）", rows)
+        self.assertTrue(any(r.startswith(f"  shop-t{working}（task）") for r in rows), rows)
+
+    def test_nothing_done(self):
+        self.assertFalse(any("已做完待收回" in r for r in self.section()))
+
+
 if __name__ == "__main__":
     unittest.main()

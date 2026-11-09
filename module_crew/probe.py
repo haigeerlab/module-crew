@@ -430,7 +430,12 @@ def summarize_store(project: Path) -> tuple[Check, dict | None]:
         return Check("store", "warning", f"状态库读不出：{exc}", "运行 module-crew store check 排查"), None
     from module_crew.hooks import own_session_id     # crew-session-handover: which row is the calling conversation
     me = own_session_id()
-    active = [{"name": name, **{k: rec.get(k) for k in ("role", "module", "worktree")}, "bound": bool(rec.get("hostSession")),
+    try:
+        done = _done_sessions(db, sessions)
+    except store.StoreError as exc:
+        return Check("store", "warning", f"状态库读不出：{exc}", "运行 module-crew store check 排查"), None
+    active = [{"name": name, **{k: rec.get(k) for k in ("role", "module", "worktree", "task")},
+               "bound": bool(rec.get("hostSession")), "done": name in done,
                "self": bool(me) and (rec.get("hostSession") or {}).get("sessionId") == me}
               for name, rec in sorted(sessions.items()) if rec.get("status") == "active"]
     coord_rec = next((r for r in sessions.values() if r.get("role") == "coordinator" and r.get("status") == "active"), None)
@@ -460,6 +465,25 @@ def summarize_store(project: Path) -> tuple[Check, dict | None]:
                                                 "codexSelf": codex_self(sessions), **_handover_state(db),
                                                 "rehostPending": sorted(n for n, r in sessions.items() if r.get("status") == "active"
                                                                         and (r.get("rehost") or {}).get("inventory") == "pending")}
+
+
+def _done_sessions(db: store.Store, sessions: dict) -> set[str]:
+    """S67: active sessions whose work is finished and that only wait for merge cleanup: a module merged in its current
+    round, or a light task merged, cancelled or promoted."""
+    items = store.records(db, "item")
+    task_states = {k: v.get("state") for k, v in store.records(db, "task").items()}
+    done = set()
+    for name, rec in sessions.items():
+        if rec.get("status") != "active":
+            continue
+        if rec.get("role") == "dev" and rec.get("module"):
+            mod = rec["module"]
+            if any(v.get("kind") == "merge-approval" and v.get("module") == mod and v.get("closedReason") == "merged"
+                   for v in store.round_items(items, sessions, mod).values()):
+                done.add(name)
+        elif rec.get("role") == "task" and task_states.get(str(rec.get("task"))) in ("merged", "cancelled", "promoted"):
+            done.add(name)
+    return done
 
 
 def codex_self(sessions: dict) -> dict | None:

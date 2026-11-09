@@ -866,7 +866,8 @@ def _cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
                          (None, None))
     if session is None:
         return Simple(3, [f"模块 {module} 没有在用的会话登记"])
-    taken = _take_back(project, db, Path(session["worktree"]), name, check_merged=True)
+    landed = [v.get("mergeCommit") for v in merged] + [f"refs/heads/{module}"]
+    taken = _take_back(project, db, Path(session["worktree"]), name, check_merged=True, landed=landed)
     if isinstance(taken, Simple):
         return taken
     worktree = Path(session["worktree"])
@@ -910,13 +911,34 @@ def _resume_refusal(project: Path, db: store.Store, worktree: Path, name: str, s
     return None
 
 
-def _take_back(project: Path, db: store.Store, worktree: Path, name: str, check_merged: bool) -> list[str] | Simple:
+def _on_integration(project: Path, db: store.Store, landed: list[str]) -> str | None:
+    """S85: the first of `landed` (merge commits, then the branch) that is on the integration branch; None when none is."""
+    branch = (store.get(db, "config", "main") or {}).get("integrationBranch") or ""
+    for ref in landed:
+        if ref and branch and _git(project, "merge-base", "--is-ancestor", ref, f"refs/heads/{branch}").returncode == 0:
+            return ref
+    return None
+
+
+def _take_back(project: Path, db: store.Store, worktree: Path, name: str, check_merged: bool,
+               landed: list[str] | None = None) -> list[str] | Simple:
     """Remove a finished worktree; the lines to show, or the refusal. S39: waits as long as checkTimeout, and finishes
-    what an interrupted remove left (only deleted tracked files, or a directory git still lists)."""
+    what an interrupted remove left (only deleted tracked files, or a directory git still lists). S85: a directory
+    that is gone and that git no longer lists is skipped when `landed` (a merged unit's merge commits and branch)
+    shows the work is on the integration branch."""
     limit = commit_timeout(store.get(db, "config", "main") or {})
     if not worktree.is_dir():
-        if os.path.lexists(worktree) or not _registered(project, worktree):
-            return Simple(3, [f"{worktree} 不存在或不是目录，没有收回"])
+        if os.path.lexists(worktree):
+            return Simple(3, [f"{worktree} 不是目录，没有收回"])
+        if not _registered(project, worktree):
+            branch = (store.get(db, "config", "main") or {}).get("integrationBranch") or "?"
+            if not landed:
+                return Simple(3, [f"{worktree} 不存在、git 也没登记，又没有合入记录可核对：没有收回"])
+            hit = _on_integration(project, db, landed)
+            if hit is None:
+                return Simple(3, [f"{worktree} 不存在、git 也没登记，但合并提交和分支都不在集成分支 {branch} 上：没有收回"])
+            what = f"分支 {hit[len('refs/heads/'):]}" if hit.startswith("refs/heads/") else f"合并提交 {hit[:7]}"
+            return [f"{worktree} 不存在、git 也没登记；已核对{what}在集成分支 {branch} 上：worktree 已不在，跳过删除"]
         try:
             pruned = _git(project, "worktree", "prune", timeout=limit)
         except subprocess.TimeoutExpired as exc:
@@ -954,7 +976,11 @@ def _cleanup_task(project: Path, db: store.Store, n: int, original: str) -> Simp
         return Simple(3, [f"T{n} 没有在用的会话登记"])
     worktree = Path(session["worktree"])
     # a cancelled or promoted task's branch is kept unmerged on purpose: its commits are not lost, so no ancestor check
-    taken = _take_back(project, db, worktree, name, check_merged=t["state"] == "merged")
+    landed = None
+    if t["state"] == "merged":      # S85: what shows the task is on the integration branch when its worktree is gone
+        landed = [v.get("mergeCommit") for v in store.records(db, "item").values() if v.get("kind") == "merge-approval"
+                  and v.get("task") == n and v.get("closedReason") == "merged"] + [f"refs/heads/{t.get('branch') or f'task/t{n}'}"]
+    taken = _take_back(project, db, worktree, name, check_merged=t["state"] == "merged", landed=landed)
     if isinstance(taken, Simple):
         return taken
     with db.transaction(actor="coordinator") as tx:
