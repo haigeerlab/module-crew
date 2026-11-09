@@ -776,24 +776,49 @@ def _tick(project: Path, checkout: Path, module: str, approval: int,
     done_line = next((x for x in reversed(out) if x.startswith("ticked;")), None)
     if done_line is None:
         return "refused", None, f"gateTick 的输出看不懂，没有提交：{first}", []
-    _git(checkout, "add", "--", rel)
+    paths = [rel] + ([STATE_FILE] if _clear_active(checkout, module) else [])
+    _git(checkout, "add", "--", *paths)
     try:
         done = probe._git(checkout, "commit", "-q", "-m",
                           commits.message(f"合并批准事项 C{approval}：勾选 {module} 的最终验收", prefix), timeout=timeout)
     except subprocess.TimeoutExpired:
-        _git(checkout, "reset", "-q", "--", rel)
-        _git(checkout, "checkout", "--", rel)
+        _git(checkout, "reset", "-q", "--", *paths)
+        _git(checkout, "checkout", "--", *paths)
         raise
     if done.returncode != 0:
-        _git(checkout, "reset", "-q", "--", rel)
-        _git(checkout, "checkout", "--", rel)
+        _git(checkout, "reset", "-q", "--", *paths)
+        _git(checkout, "checkout", "--", *paths)
         return "commit-failed", None, commits.failure(checkout, done, f"勾选 {rel} 失败"), commits.hook_lines(checkout, done)
     commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
     from module_crew import unqueued
     unqueued.mark(store.open_store(project), checkout, "merge-tick")
     left = done_line.split(";", 1)[1].strip()
-    return "ticked", commit, f"已在集成分支勾选 {module} 的最终验收 {commit[:7]}" + (f"（spec-guard：{left}）" if left else ""), \
-        commits.hook_lines(checkout, done)
+    line = f"已在集成分支勾选 {module} 的最终验收 {commit[:7]}" + (f"（spec-guard：{left}）" if left else "")
+    if len(paths) > 1:
+        line += f"；已清空 spec-guard 当前模块 {module}"
+    return "ticked", commit, line, commits.hook_lines(checkout, done)
+
+
+STATE_FILE = ".agent/state.json"
+
+
+def _clear_active(checkout: Path, module: str) -> bool:
+    """S70 (T565): with moduleConcurrency on, a module branch leaves .agent/state.json's activeModule pointing at itself;
+    once that module's final gate is ticked, set it to null (the key stays: phase-guard.sh looks for it; every other
+    field is kept). Returns whether the file was rewritten; anything unexpected leaves it untouched."""
+    try:
+        config = json.loads((checkout / ".agent" / "config.json").read_text(encoding="utf-8"))
+        path = checkout / STATE_FILE
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(config, dict) or config.get("moduleConcurrency") != "on":
+        return False
+    if not isinstance(state, dict) or state.get("activeModule") != module:
+        return False
+    state["activeModule"] = None
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return True
 
 
 def tick(project: str | os.PathLike, module: str, original: str) -> str:
