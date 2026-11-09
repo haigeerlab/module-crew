@@ -174,6 +174,45 @@ class SuspendTest(FailureCase):
         with self.assertRaises(failure.FailureRefused):
             failure.resume(self.db, "b", " ", no_sync=True)
 
+    def test_resume_scope(self):
+        failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        scope = "只改 checkout 页的按钮文案（C803 第 2 条）"
+        [note] = failure.resume(self.db, "b", "恢复 b，只做按钮文案", scope=scope).sends
+        todo = self.notice(note).fields["要你做什么"]
+        self.assertTrue(todo.endswith(f"在本 worktree 取消 spec-guard 的挂起，按用户批准只做：{scope}；范围外的不做，做完停下报模块协调"), todo)
+        self.assertNotIn("从原停点继续", todo)
+
+    def test_resume_scope_with_no_sync(self):
+        failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        n = self.merge_light_task(782, "abcdef1234")
+        [note] = failure.resume(self.db, "b", "恢复 b，不合 main，只做 X", no_sync=True, scope="X 与 Y").sends
+        todo = self.notice(note).fields["要你做什么"]
+        self.assertIn(f"轻任务 T782（合并批准事项 C{n}，abcdef1）", todo)
+        self.assertIn("按用户批准不同步", todo)
+        self.assertNotIn("module-crew sync", todo)
+        self.assertTrue(todo.endswith("按用户批准只做：X 与 Y；范围外的不做，做完停下报模块协调"), todo)
+        self.assertNotIn("从原停点继续", todo)
+
+    def test_resume_scope_with_sync(self):
+        failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        self.merge_light_task(782, "abcdef1234")
+        [note] = failure.resume(self.db, "b", "恢复 b，只做 X", scope="X").sends
+        todo = self.notice(note).fields["要你做什么"]
+        self.assertIn("module-crew sync", todo)
+        self.assertTrue(todo.endswith("按用户批准只做：X；范围外的不做，做完停下报模块协调"), todo)
+
+    def test_resume_without_scope_unchanged(self):
+        failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+        [note] = failure.resume(self.db, "b", "恢复 b").sends
+        self.assertEqual(self.notice(note).fields["要你做什么"], failure.RESUME_TODO)
+
+    def test_resume_empty_scope_refused(self):
+        for scope in ("", "  "):
+            failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
+            with self.assertRaises(failure.FailureRefused):
+                failure.resume(self.db, "b", "恢复 b", scope=scope)
+            failure.resume(self.db, "b", "恢复 b")      # the refusal left b suspended
+
     def test_suspended_session_keeps_its_identity(self):
         failure.suspend(self.db, "b", "等设计稿", "先挂起 b")
         role = hooks.detect(self.wt["b"])
@@ -334,6 +373,10 @@ class CliTest(FailureCase):
         out = run("resume", "b", "--no-sync", "--original", "恢复 b，不合 main")
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("已取消挂起：shop-b", out.stdout)
+        run("suspend", "b", "--reason", "等设计稿", "--original", "再挂起 b")
+        self.assertEqual(run("resume", "b", "--scope", "", "--original", "恢复 b").returncode, 3)
+        out = run("resume", "b", "--no-sync", "--scope", "只做 X", "--original", "恢复 b，不合 main，只做 X")
+        self.assertEqual(out.returncode, 0, out.stderr)
         kit = run("resume-kit", "b")
         self.assertEqual(kit.returncode, 0, kit.stderr)
         self.assertIn("shop-b", kit.stdout)
