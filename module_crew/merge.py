@@ -776,24 +776,49 @@ def _tick(project: Path, checkout: Path, module: str, approval: int,
     done_line = next((x for x in reversed(out) if x.startswith("ticked;")), None)
     if done_line is None:
         return "refused", None, f"gateTick 的输出看不懂，没有提交：{first}", []
-    _git(checkout, "add", "--", rel)
+    paths = [rel] + ([STATE_FILE] if _clear_active(checkout, module) else [])
+    _git(checkout, "add", "--", *paths)
     try:
         done = probe._git(checkout, "commit", "-q", "-m",
                           commits.message(f"合并批准事项 C{approval}：勾选 {module} 的最终验收", prefix), timeout=timeout)
     except subprocess.TimeoutExpired:
-        _git(checkout, "reset", "-q", "--", rel)
-        _git(checkout, "checkout", "--", rel)
+        _git(checkout, "reset", "-q", "--", *paths)
+        _git(checkout, "checkout", "--", *paths)
         raise
     if done.returncode != 0:
-        _git(checkout, "reset", "-q", "--", rel)
-        _git(checkout, "checkout", "--", rel)
+        _git(checkout, "reset", "-q", "--", *paths)
+        _git(checkout, "checkout", "--", *paths)
         return "commit-failed", None, commits.failure(checkout, done, f"勾选 {rel} 失败"), commits.hook_lines(checkout, done)
     commit = _git(checkout, "rev-parse", "HEAD").stdout.strip()
     from module_crew import unqueued
     unqueued.mark(store.open_store(project), checkout, "merge-tick")
     left = done_line.split(";", 1)[1].strip()
-    return "ticked", commit, f"已在集成分支勾选 {module} 的最终验收 {commit[:7]}" + (f"（spec-guard：{left}）" if left else ""), \
-        commits.hook_lines(checkout, done)
+    line = f"已在集成分支勾选 {module} 的最终验收 {commit[:7]}" + (f"（spec-guard：{left}）" if left else "")
+    if len(paths) > 1:
+        line += f"；已清空 spec-guard 当前模块 {module}"
+    return "ticked", commit, line, commits.hook_lines(checkout, done)
+
+
+STATE_FILE = ".agent/state.json"
+
+
+def _clear_active(checkout: Path, module: str) -> bool:
+    """S70 (T565): with moduleConcurrency on, a module branch leaves .agent/state.json's activeModule pointing at itself;
+    once that module's final gate is ticked, set it to null (the key stays: phase-guard.sh looks for it; every other
+    field is kept). Returns whether the file was rewritten; anything unexpected leaves it untouched."""
+    try:
+        config = json.loads((checkout / ".agent" / "config.json").read_text(encoding="utf-8"))
+        path = checkout / STATE_FILE
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(config, dict) or config.get("moduleConcurrency") != "on":
+        return False
+    if not isinstance(state, dict) or state.get("activeModule") != module:
+        return False
+    state["activeModule"] = None
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return True
 
 
 def tick(project: str | os.PathLike, module: str, original: str) -> str:
@@ -866,7 +891,8 @@ def _cleanup(project: str | os.PathLike, module: str, original: str) -> Simple:
                          (None, None))
     if session is None:
         return Simple(3, [f"模块 {module} 没有在用的会话登记"])
-    taken = _take_back(project, db, Path(session["worktree"]), name, check_merged=True)
+    landed = [v.get("mergeCommit") for v in merged] + [f"refs/heads/{module}"]
+    taken = _take_back(project, db, Path(session["worktree"]), name, check_merged=True, landed=landed)
     if isinstance(taken, Simple):
         return taken
     worktree = Path(session["worktree"])
@@ -910,13 +936,34 @@ def _resume_refusal(project: Path, db: store.Store, worktree: Path, name: str, s
     return None
 
 
-def _take_back(project: Path, db: store.Store, worktree: Path, name: str, check_merged: bool) -> list[str] | Simple:
+def _on_integration(project: Path, db: store.Store, landed: list[str]) -> str | None:
+    """S85: the first of `landed` (merge commits, then the branch) that is on the integration branch; None when none is."""
+    branch = (store.get(db, "config", "main") or {}).get("integrationBranch") or ""
+    for ref in landed:
+        if ref and branch and _git(project, "merge-base", "--is-ancestor", ref, f"refs/heads/{branch}").returncode == 0:
+            return ref
+    return None
+
+
+def _take_back(project: Path, db: store.Store, worktree: Path, name: str, check_merged: bool,
+               landed: list[str] | None = None) -> list[str] | Simple:
     """Remove a finished worktree; the lines to show, or the refusal. S39: waits as long as checkTimeout, and finishes
-    what an interrupted remove left (only deleted tracked files, or a directory git still lists)."""
+    what an interrupted remove left (only deleted tracked files, or a directory git still lists). S85: a directory
+    that is gone and that git no longer lists is skipped when `landed` (a merged unit's merge commits and branch)
+    shows the work is on the integration branch."""
     limit = commit_timeout(store.get(db, "config", "main") or {})
     if not worktree.is_dir():
-        if os.path.lexists(worktree) or not _registered(project, worktree):
-            return Simple(3, [f"{worktree} 不存在或不是目录，没有收回"])
+        if os.path.lexists(worktree):
+            return Simple(3, [f"{worktree} 不是目录，没有收回"])
+        if not _registered(project, worktree):
+            branch = (store.get(db, "config", "main") or {}).get("integrationBranch") or "?"
+            if not landed:
+                return Simple(3, [f"{worktree} 不存在、git 也没登记，又没有合入记录可核对：没有收回"])
+            hit = _on_integration(project, db, landed)
+            if hit is None:
+                return Simple(3, [f"{worktree} 不存在、git 也没登记，但合并提交和分支都不在集成分支 {branch} 上：没有收回"])
+            what = f"分支 {hit[len('refs/heads/'):]}" if hit.startswith("refs/heads/") else f"合并提交 {hit[:7]}"
+            return [f"{worktree} 不存在、git 也没登记；已核对{what}在集成分支 {branch} 上：worktree 已不在，跳过删除"]
         try:
             pruned = _git(project, "worktree", "prune", timeout=limit)
         except subprocess.TimeoutExpired as exc:
@@ -954,7 +1001,11 @@ def _cleanup_task(project: Path, db: store.Store, n: int, original: str) -> Simp
         return Simple(3, [f"T{n} 没有在用的会话登记"])
     worktree = Path(session["worktree"])
     # a cancelled or promoted task's branch is kept unmerged on purpose: its commits are not lost, so no ancestor check
-    taken = _take_back(project, db, worktree, name, check_merged=t["state"] == "merged")
+    landed = None
+    if t["state"] == "merged":      # S85: what shows the task is on the integration branch when its worktree is gone
+        landed = [v.get("mergeCommit") for v in store.records(db, "item").values() if v.get("kind") == "merge-approval"
+                  and v.get("task") == n and v.get("closedReason") == "merged"] + [f"refs/heads/{t.get('branch') or f'task/t{n}'}"]
+    taken = _take_back(project, db, worktree, name, check_merged=t["state"] == "merged", landed=landed)
     if isinstance(taken, Simple):
         return taken
     with db.transaction(actor="coordinator") as tx:

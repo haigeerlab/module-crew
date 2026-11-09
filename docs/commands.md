@@ -30,7 +30,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 ### `status`
 
-体检与全貌（只读，任何会话）。检查 git、agent-relay、spec-guard、项目是否启用 spec-guard、spec-guard 规划层、集成分支、状态库，再列出会话与待办、模块协调、任务、模块进度与评审节奏。`--json` 输出机器可读版本。
+体检与全貌（只读，任何会话）。检查 git、agent-relay、spec-guard、项目是否启用 spec-guard、spec-guard 规划层、集成分支、状态库，再列出会话与待办、模块协调、任务、模块进度与评审节奏。「会话与待办」里已合入（模块）或已合入、取消、升格（轻任务）但还没收回的会话归成一行「已做完待收回：…（merge cleanup 收回）」，不和在开发的会话混在一起。`--json` 输出机器可读版本。
 
 ### `sessions`
 
@@ -167,10 +167,11 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 - `merge queue [--json]`：合并队列（只读，任何会话）。顺序：bug 任务、模块（按 Build order）、需求任务。
 - `merge run [--check-command "<完整检查命令>"] [--replace-check] [--detach]`：一次合一个：`--no-ff` 合入本地集成分支后跑完整检查；不过就把集成分支重置回合并前、退回该模块，冲突就中止并退回（模块协调）。第一次要给 `--check-command`。
   退出码 5：模块被退回；6：合并锁被占。`--detach` 交给后台进程、立即返回（Codex 上的模块协调用）。
+  模块合入后由 spec-guard 勾选最终验收、单独提交；`.agent/config.json` 的 `moduleConcurrency` 为 `on` 且集成分支 `.agent/state.json` 的 `activeModule` 正是这次合入的模块时，把它置为 `null`（保留这个键与其他字段）、写进同一个勾选提交，输出「已清空 spec-guard 当前模块 <id>」；指向别的模块、并行开关关着、轻任务合入时都不动（S70）。
 - `merge result [<C号>] [--wait <分钟>] [--json]`：取后台合并的结果（模块协调），单次最多等 8 分钟；跑完时输出与前台 `merge run` 相同、退出码相同，还在跑时退出码 6。
 - `merge renotice <C号> --env|--module`：按另一种原因重发退回通知（模块协调判断，不用用户原话）：`--env` 检查环境出了问题、模块不用改代码；`--module` 模块要修改。
-- `merge cleanup <模块或 T号> --original(-file)`：收回 worktree（分支保留），列出要退役的邮箱名（模块协调）。本批最后一个会话收回时输出「本批已收尾，具备换宿主的条件」。
-- `merge tick <模块> --original(-file)`：补勾漏勾的最终验收（模块协调）。
+- `merge cleanup <模块或 T号> --original(-file)`：收回 worktree（分支保留），列出要退役的邮箱名（模块协调）。本批最后一个会话收回时输出「本批已收尾，具备换宿主的条件」。worktree 目录已不在、git 也没登记时，先核对确已合入（合并批准已合入，且合并提交或分支在集成分支上）：通过就提示「worktree 已不在，跳过删除」，照常改为退役、列出待退役的邮箱名，退出码 0；没核对到合入（含已取消、已升格的轻任务）或路径在但不是目录仍拒绝（退出码 3）。
+- `merge tick <模块> --original(-file)`：补勾漏勾的最终验收（模块协调）；`activeModule` 的清空规则同 `merge run`。
 - `merge record <C号> --original(-file)`：合并收尾超时、状态库没记下合并时补记（模块协调）。
 - `merge push-plan [--pr-base <分支>] [--json]`：预告要推什么（只读，任何会话）。
   远端是空仓库（没有任何分支）时没有 PR 目标，预告会写明首次发布的做法：由用户自己在终端运行 `git push --no-verify -u <远端> <集成分支>`，推完后的批次再走 `merge push`；module-crew 不放行也不替用户推送。
@@ -207,7 +208,7 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 ### `resume`
 
-`resume <模块> --original(-file) [--no-sync]`：撤销挂起（模块协调）。挂起期间集成分支合入了模块或轻任务（轻任务写「轻任务 T<号>」）、落地了公共变更时，恢复通知照样列出，并要求先同步、跑检查；用户原话批准不同步时加 `--no-sync`，通知改写「按用户批准不同步」，不要求同步和检查。
+`resume <模块> --original(-file) [--no-sync] [--scope "<范围>"]`：撤销挂起（模块协调）。挂起期间集成分支合入了模块或轻任务（轻任务写「轻任务 T<号>」）、落地了公共变更时，恢复通知照样列出，并要求先同步、跑检查；用户原话批准不同步时加 `--no-sync`，通知改写「按用户批准不同步」，不要求同步和检查。用户原话只批准了部分范围时加 `--scope "<范围>"`：通知末句由「在本 worktree 取消 spec-guard 的挂起，从原停点继续」改为「在本 worktree 取消 spec-guard 的挂起，按用户批准只做：<范围>；范围外的不做，做完停下报模块协调」，范围照抄不解释；可与 `--no-sync` 同用，空范围拒绝。
 
 ### `wait`
 

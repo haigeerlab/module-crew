@@ -1,5 +1,6 @@
 """Fixes from the stage-7 pilot (docs/pilot-report.md): sync recipients, final-acceptance tick, multi approve."""
 
+import json
 import unittest
 
 from helpers import spec_guard_interface, MergeCase, git
@@ -153,6 +154,150 @@ class BatchOutputTest(PilotCase):
         # crew-review-display: b's Spec is still under review and spec-guard here has no scopeOverlap — never 「无」
         self.assertIn("未比对：b 的 Spec 还在交审中", out.stdout)
         self.assertNotIn("并行边界重叠：无", out.stdout)
+
+
+class GoneWorktreeTest(PilotCase):
+    """S85 (T563): merge cleanup takes back a merged session whose worktree directory and git registration are gone."""
+
+    def setUp(self):
+        super().setUp()
+        from module_crew import hooks
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+
+    def merged_task(self):
+        from test_light_task import TaskMergeTest
+        n, d, _ = TaskMergeTest.approve_task(self)
+        res = merge.run(self.repo, self.check)
+        self.assertEqual(res.code, 0, res.lines)
+        return n, d
+
+    start_task = __import__("test_light_task").TaskWorkCase.start_task
+
+    def drop(self, worktree):
+        import shutil
+        shutil.rmtree(worktree)
+        git(self.repo, "worktree", "prune")
+        self.assertNotIn(str(worktree), git(self.repo, "worktree", "list"))
+
+    def test_task_worktree_gone(self):
+        n, d = self.merged_task()
+        self.drop(d.worktree)
+        res = merge.cleanup(self.repo, f"T{n}", "收回")
+        self.assertEqual(res.code, 0, res.lines)
+        text = "\n".join(res.lines)
+        self.assertIn("worktree 已不在，跳过删除", text)
+        self.assertIn(f"待退役的邮箱名：{d.relay}", text)
+        rec = store.get(self.db, "session", d.relay)
+        self.assertEqual(rec["status"], "retired")
+
+    def test_module_worktree_gone(self):
+        self.approve_final("b", 1)
+        self.assertEqual(merge.run(self.repo, self.check).code, 0)
+        self.drop(self.wt["b"])
+        res = merge.cleanup(self.repo, "b", "b 可以收回")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertIn("worktree 已不在，跳过删除", "\n".join(res.lines))
+        self.assertIn("待退役的邮箱名：shop-b", "\n".join(res.lines))
+        self.assertEqual(store.get(self.db, "session", "shop-b")["status"], "retired")
+
+    def test_refused_when_not_on_integration_branch(self):
+        n, d = self.merged_task()
+        before = git(self.repo, "rev-parse", "main~1").strip()
+        git(self.repo, "reset", "-q", "--hard", before)        # the merge commit is no longer on main
+        self.drop(d.worktree)
+        res = merge.cleanup(self.repo, f"T{n}", "收回")
+        self.assertEqual(res.code, 3, res.lines)
+        self.assertEqual(store.get(self.db, "session", d.relay)["status"], "active")
+
+    def test_refused_when_cancelled(self):
+        n, d = self.start_task()
+        with self.db.transaction(actor="t") as tx:
+            tx.put("task", str(n), dict(tx.get("task", str(n)), state="cancelled"), action="cancelled")
+        self.drop(d.worktree)
+        res = merge.cleanup(self.repo, f"T{n}", "收回")
+        self.assertEqual(res.code, 3, res.lines)
+        self.assertEqual(store.get(self.db, "session", d.relay)["status"], "active")
+
+    def test_refused_when_not_a_directory(self):
+        from pathlib import Path
+        n, d = self.merged_task()
+        self.drop(d.worktree)
+        Path(d.worktree).write_text("x", encoding="utf-8")
+        res = merge.cleanup(self.repo, f"T{n}", "收回")
+        self.assertEqual(res.code, 3, res.lines)
+        self.assertIn("不是目录", "\n".join(res.lines))
+        self.assertEqual(store.get(self.db, "session", d.relay)["status"], "active")
+
+
+class ActiveModuleTest(PilotCase):
+    """S70 (T565): with moduleConcurrency on, the tick commit clears an activeModule left pointing at the merged module."""
+
+    STATE = ".agent/state.json"
+    start_task = __import__("test_light_task").TaskWorkCase.start_task
+
+    def concurrency(self, on=True):
+        (self.repo / ".agent" / "config.json").write_text(
+            json.dumps({"version": 1, "moduleConcurrency": "on" if on else "off"}) + "\n", encoding="utf-8")
+        git(self.repo, "commit", "-q", "-am", "config")
+
+    def set_active(self, wt, value, **extra):
+        (wt / ".agent" / "state.json").write_text(
+            json.dumps({"schemaVersion": 1, "activeModule": value, **extra}, indent=2) + "\n", encoding="utf-8")
+        git(wt, "add", self.STATE)
+        git(wt, "commit", "-q", "-m", f"active {value}")
+
+    def main_state(self):
+        return json.loads((self.repo / ".agent" / "state.json").read_text(encoding="utf-8"))
+
+    def merge_b(self):
+        todo(self.wt["b"], "b", (True, "Task 1"), (False, "最终验收（gate）"))
+        self.approve_final("b", 1)
+        res = merge.run(self.repo, self.check)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertIn("- [x] 最终验收（gate）", self.main_todo("b"))
+        return res
+
+    def test_cleared_in_tick_commit(self):
+        self.concurrency()
+        self.set_active(self.wt["b"], "b", extra={"keep": [1, 2]})
+        res = self.merge_b()
+        state = self.main_state()
+        self.assertIn("activeModule", state)
+        self.assertIsNone(state["activeModule"])
+        self.assertEqual(state["extra"], {"keep": [1, 2]})
+        self.assertEqual(state["schemaVersion"], 1)
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD^").strip(), res.merge_commit)     # no extra commit
+        tick_files = git(self.repo, "show", "--name-only", "--format=", "HEAD").split()
+        self.assertEqual(sorted(tick_files), [self.STATE, "tasks/b/todo.md"])
+        self.assertIn("已清空 spec-guard 当前模块 b", "\n".join(res.lines))
+        self.assertEqual(git(self.repo, "status", "--porcelain"), "")
+
+    def test_other_module_left_alone(self):
+        self.concurrency()
+        self.set_active(self.wt["b"], "c")
+        res = self.merge_b()
+        self.assertEqual(self.main_state()["activeModule"], "c")
+        self.assertNotIn("已清空", "\n".join(res.lines))
+        self.assertEqual(git(self.repo, "show", "--name-only", "--format=", "HEAD").split(), ["tasks/b/todo.md"])
+
+    def test_concurrency_off_left_alone(self):
+        self.concurrency(on=False)
+        self.set_active(self.wt["b"], "b")
+        res = self.merge_b()
+        self.assertEqual(self.main_state()["activeModule"], "b")
+        self.assertNotIn("已清空", "\n".join(res.lines))
+
+    def test_light_task_left_alone(self):
+        from test_light_task import TaskMergeTest
+        from module_crew import hooks
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+        self.concurrency()
+        self.set_active(self.repo, "b")
+        TaskMergeTest.approve_task(self)
+        res = merge.run(self.repo, self.check)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(self.main_state()["activeModule"], "b")
+        self.assertNotIn("已清空", "\n".join(res.lines))
 
 
 if __name__ == "__main__":
