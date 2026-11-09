@@ -100,12 +100,16 @@ def _status(as_json: bool) -> int:
         from module_crew import permissions
         facts = {r["name"]: r for r in failure.sessions(store.open_store())}
         perm = permissions.read_record(store.open_store())
-        for s in report.store["sessions"] or [{"name": "（没有在用的会话）"}]:
+        finished = [s for s in report.store["sessions"] if s.get("done")]      # S67: apart from the ones still working
+        for s in [s for s in report.store["sessions"] if not s.get("done")] or ([] if finished else [{"name": "（没有在用的会话）"}]):
             extra = f"（{s.get('role')}{'，' + s['module'] if s.get('module') else ''}）" if s.get("role") else ""
             perm_fact = ("　" + permissions.status_fact(perm, s["name"])) if s.get("role") == "dev" else ""
             unbound = "　未登记身份（该会话运行 module-crew bind）" if s.get("role") and not s.get("bound") else ""
             me = "　← 本会话" if s.get("self") else ""
             print(f"  {s['name']}{extra}{me}{unbound}{_stall_facts(facts.get(s['name']))}{perm_fact}")
+        if finished:
+            print("  已做完待收回：" + "、".join(f"{s['name']}（{s.get('module') or 'T' + str(s.get('task'))}）" for s in finished)
+                  + "（merge cleanup 收回）")
         coord_row = next((s for s in report.store["sessions"] if s.get("role") == "coordinator" and s.get("bound")), None)
         if coord_row and report.store.get("selfIsCoordinator") is False and not any(s.get("self") for s in report.store["sessions"]):
             print(f"  本会话不是登记的模块协调 {coord_row['name']}（它登记在另一个会话上）：模块协调的写命令在这里会被拒；"
