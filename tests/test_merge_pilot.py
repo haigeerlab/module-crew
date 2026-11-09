@@ -1,5 +1,6 @@
 """Fixes from the stage-7 pilot (docs/pilot-report.md): sync recipients, final-acceptance tick, multi approve."""
 
+import json
 import unittest
 
 from helpers import spec_guard_interface, MergeCase, git
@@ -226,6 +227,77 @@ class GoneWorktreeTest(PilotCase):
         self.assertEqual(res.code, 3, res.lines)
         self.assertIn("不是目录", "\n".join(res.lines))
         self.assertEqual(store.get(self.db, "session", d.relay)["status"], "active")
+
+
+class ActiveModuleTest(PilotCase):
+    """S70 (T565): with moduleConcurrency on, the tick commit clears an activeModule left pointing at the merged module."""
+
+    STATE = ".agent/state.json"
+    start_task = __import__("test_light_task").TaskWorkCase.start_task
+
+    def concurrency(self, on=True):
+        (self.repo / ".agent" / "config.json").write_text(
+            json.dumps({"version": 1, "moduleConcurrency": "on" if on else "off"}) + "\n", encoding="utf-8")
+        git(self.repo, "commit", "-q", "-am", "config")
+
+    def set_active(self, wt, value, **extra):
+        (wt / ".agent" / "state.json").write_text(
+            json.dumps({"schemaVersion": 1, "activeModule": value, **extra}, indent=2) + "\n", encoding="utf-8")
+        git(wt, "add", self.STATE)
+        git(wt, "commit", "-q", "-m", f"active {value}")
+
+    def main_state(self):
+        return json.loads((self.repo / ".agent" / "state.json").read_text(encoding="utf-8"))
+
+    def merge_b(self):
+        todo(self.wt["b"], "b", (True, "Task 1"), (False, "最终验收（gate）"))
+        self.approve_final("b", 1)
+        res = merge.run(self.repo, self.check)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertIn("- [x] 最终验收（gate）", self.main_todo("b"))
+        return res
+
+    def test_cleared_in_tick_commit(self):
+        self.concurrency()
+        self.set_active(self.wt["b"], "b", extra={"keep": [1, 2]})
+        res = self.merge_b()
+        state = self.main_state()
+        self.assertIn("activeModule", state)
+        self.assertIsNone(state["activeModule"])
+        self.assertEqual(state["extra"], {"keep": [1, 2]})
+        self.assertEqual(state["schemaVersion"], 1)
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD^").strip(), res.merge_commit)     # no extra commit
+        tick_files = git(self.repo, "show", "--name-only", "--format=", "HEAD").split()
+        self.assertEqual(sorted(tick_files), [self.STATE, "tasks/b/todo.md"])
+        self.assertIn("已清空 spec-guard 当前模块 b", "\n".join(res.lines))
+        self.assertEqual(git(self.repo, "status", "--porcelain"), "")
+
+    def test_other_module_left_alone(self):
+        self.concurrency()
+        self.set_active(self.wt["b"], "c")
+        res = self.merge_b()
+        self.assertEqual(self.main_state()["activeModule"], "c")
+        self.assertNotIn("已清空", "\n".join(res.lines))
+        self.assertEqual(git(self.repo, "show", "--name-only", "--format=", "HEAD").split(), ["tasks/b/todo.md"])
+
+    def test_concurrency_off_left_alone(self):
+        self.concurrency(on=False)
+        self.set_active(self.wt["b"], "b")
+        res = self.merge_b()
+        self.assertEqual(self.main_state()["activeModule"], "b")
+        self.assertNotIn("已清空", "\n".join(res.lines))
+
+    def test_light_task_left_alone(self):
+        from test_light_task import TaskMergeTest
+        from module_crew import hooks
+        hooks.bind(self.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+        self.concurrency()
+        self.set_active(self.repo, "b")
+        TaskMergeTest.approve_task(self)
+        res = merge.run(self.repo, self.check)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(self.main_state()["activeModule"], "b")
+        self.assertNotIn("已清空", "\n".join(res.lines))
 
 
 if __name__ == "__main__":
