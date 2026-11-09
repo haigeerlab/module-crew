@@ -647,7 +647,7 @@ def _failure(args) -> int:
             out = failure.suspend(db, args.module, args.reason, original)
             print(f"已挂起：{out.name}（不占名额；spec-guard 的挂起由模块会话在自己的 worktree 里做）")
         else:
-            out = failure.resume(db, args.module, original, no_sync=args.no_sync)
+            out = failure.resume(db, args.module, original, no_sync=args.no_sync, scope=args.scope)
             print(f"已取消挂起：{out.name}（重新占名额）")
         for x in out.sends:
             print(f"发送 【协调通知】 → {x['to']}：bridge_send bodyFile={x['path']}")
@@ -1576,6 +1576,7 @@ def _main(argv: list[str] | None = None) -> int:
     rs = sub.add_parser("resume", help="撤销挂起（要用户原话）")
     rs.add_argument("module")
     rs.add_argument("--no-sync", action="store_true", help="按用户批准不同步：恢复通知只列合入了什么，不要求先同步、跑检查")
+    rs.add_argument("--scope", help="用户只批准了部分范围：恢复通知末句改写「按用户批准只做：<范围>」，范围照抄（不能为空）")
     rg = rs.add_mutually_exclusive_group(required=True)
     rg.add_argument("--original")
     rg.add_argument("--original-file")

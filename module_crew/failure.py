@@ -35,6 +35,7 @@ class Changed:
 SUSPEND_TODO = ("停在当前停点，不构建、不发交审；挂起期间收到同步基线也先不动。"
                 "在本 worktree 用 spec-guard 挂起（/spec-guard:module-suspend，原因照抄）")
 RESUME_TODO = "在本 worktree 取消 spec-guard 的挂起，从原停点继续"
+RESUME_SCOPED = "在本 worktree 取消 spec-guard 的挂起，按用户批准只做：{scope}；范围外的不做，做完停下报模块协调"
 
 
 def _approval(tx, kind: str, module: str, original: str) -> int:
@@ -100,11 +101,15 @@ def _merged_name(rec: dict) -> str:
     return f"轻任务 T{rec['task']}" if rec.get("task") else str(rec.get("module"))
 
 
-def resume(db: store.Store, module: str, original: str, no_sync: bool = False) -> Changed:
+def resume(db: store.Store, module: str, original: str, no_sync: bool = False, scope: str | None = None) -> Changed:
     """Lift the suspension; the notice says to sync first when modules were merged meanwhile,
-    unless the user approved resuming without syncing (no_sync, S82): then it only lists what landed."""
+    unless the user approved resuming without syncing (no_sync, S82): then it only lists what landed.
+    scope (S86): the user approved only part of the remaining work; the last sentence names it verbatim."""
     from module_crew import protocol
     _need(original)
+    if scope is not None and not scope.strip():
+        raise FailureRefused("--scope 不能为空：写用户批准的范围，或去掉 --scope")
+    step = RESUME_TODO if scope is None else RESUME_SCOPED.format(scope=scope)
     sends: list[dict] = []
     with db.transaction(actor="coordinator") as tx:
         name, rec = _dev_of(tx.records("session"), module)
@@ -119,7 +124,7 @@ def resume(db: store.Store, module: str, original: str, no_sync: bool = False) -
         merged = [(e["key"], items.get(e["key"]) or {}) for e in log if e["type"] == "item.merged" and e["seq"] > since]
         landed = [(e["key"], e["data"].get("commit") or "") for e in log if e["type"] == "request.landed" and e["seq"] > since]
         basis = f"用户批准事项 C{n}（恢复 {module}）" + (f"，挂起依据 C{mark['approval']}" if mark.get("approval") else "")
-        todo = RESUME_TODO
+        todo = step
         if merged or landed:
             parts = []
             if merged:
@@ -128,10 +133,10 @@ def resume(db: store.Store, module: str, original: str, no_sync: bool = False) -
             if landed:      # crew-routing-fixes: change land skipped this module while it was suspended
                 parts.append("落地了公共变更 " + "、".join(f"C{k}（{c[:7]}）" for k, c in landed))
             if no_sync:
-                todo = f"集成分支在挂起期间{'，'.join(parts)}：按用户批准不同步，{RESUME_TODO}"
+                todo = f"集成分支在挂起期间{'，'.join(parts)}：按用户批准不同步，{step}"
             else:
                 from module_crew import checks
-                todo = f"集成分支在挂起期间{'，'.join(parts)}：先{sync.STEP}、{checks.after_sync(tx.get('config', 'main'))}，再{RESUME_TODO}"
+                todo = f"集成分支在挂起期间{'，'.join(parts)}：先{sync.STEP}、{checks.after_sync(tx.get('config', 'main'))}，再{step}"
         _send(tx, db, sends, name, "resume", protocol.render_coordination_notice(kind="resume", basis=basis, todo=todo))
     return Changed(name, sends)
 
