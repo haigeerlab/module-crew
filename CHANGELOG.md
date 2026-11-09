@@ -2,6 +2,16 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.23.4 的变化（收回 worktree 已不在的会话、status 单列待收回；合入时清空 spec-guard 当前模块；resume 可限定范围）
+
+不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移。
+
+- **`merge cleanup` 收回 worktree 已不在的会话**（S85，T563）：worktree 目录已经不在、git 也没登记时，先核对合并提交或分支在集成分支上，核对通过就提示「worktree 已不在，跳过删除」，照常改为退役、记原话、列出待退役的邮箱名，退出码 0；没有合入记录、合并已不在集成分支上、轻任务已取消或升格、路径在但不是目录时仍退出码 3。模块与轻任务都适用。
+- **`status` 单列已做完待收回的会话**（S67，T563）：「会话与待办」把已合入的模块会话、已合入／取消／升格的轻任务会话归成一行「已做完待收回：…（merge cleanup 收回）」，在开发的照旧逐行列。只改显示；`status --json` 的会话行多了 `task`、`done` 两个字段。
+- **合入时清空 spec-guard 当前模块**（S70，T565）：多模块并行开关（`moduleConcurrency`）打开时，`merge run`／`merge tick` 勾上最终验收后，若集成分支 `.agent/state.json` 的 `activeModule` 正是这次合入的模块，就把它写成 null（保留这个键与其他字段），与勾选一起进同一个提交；输出加一句「已清空 spec-guard 当前模块 <id>」。不是本次合入的模块、并行开关关着、轻任务合入时都不动。
+- **`resume --scope`**（S86，T574）：用户只批准了部分范围时，`module-crew resume <模块> --scope "<范围>"`（仍须用户原话）把恢复通知末句换成「在本 worktree 取消 spec-guard 的挂起，按用户批准只做：<范围>；范围外的不做，做完停下报模块协调」，范围照抄；可与 `--no-sync` 同用；不带时不变；范围为空退出码 3。
+- 升级后：只升级 module-crew 时，原会话 /clear 一次即可。升级里包含 agent-relay（或别的带 MCP 工具的插件）时，Claude Code 新开会话、Codex 新开任务；重开应用和 resume 原会话都还用旧版本。Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
+
 ## 0.23.3 的变化（恢复通知认得轻任务、可不同步；已挂起模块可改原因；提前开工放行的输出改说法）
 
 不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移。
