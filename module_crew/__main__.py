@@ -1090,7 +1090,8 @@ _ANY_SESSION = {("status", None), ("sessions", None), ("protocol", None), ("hook
                 ("change", "list"), ("merge", "queue"), ("merge", "push-plan"), ("source", "list"), ("source", "map"),
                 ("task", "list"), ("task", "show"), ("task", "next"), ("permissions", "plan"), ("coordinator", "up"),
                 ("offload", "show"), ("rehost", "show"), ("offload", "start"), ("offload", "settle"),
-                ("offload", "resume"), ("offload", "takeover"), ("check", "quick"), ("check", "show"), ("check", "list")}
+                ("offload", "resume"), ("offload", "takeover"), ("check", "quick"), ("check", "show"), ("check", "list"),
+                ("tier", "degrade")}
 
 
 # crew-live-rehost decision 5: module-side writes a conversation moved away from Codex may no longer run
@@ -1224,7 +1225,7 @@ def _rehost_after(args) -> int:
 
 
 def _tier(args) -> int:
-    """crew-autonomy-tier: `tier [--json] | --preflight | restore | digest`."""
+    """crew-autonomy-tier: `tier [--json] | --preflight | restore | degrade | digest`."""
     from module_crew import autonomy
     try:
         db = store.open_store()
@@ -1235,6 +1236,10 @@ def _tier(args) -> int:
         if args.action == "digest":
             code, doc, lines = autonomy.digest(db, ".", args.mark_told)
             print(json.dumps(doc, ensure_ascii=False, indent=2) if args.json else "\n".join(lines))
+            return code
+        if args.action == "degrade":
+            code, line = autonomy.degrade(db, ".", args.reason, args.ref)
+            print(line)
             return code
         if args.action == "restore":
             original = _original(args.original, args.original_file)
@@ -1625,6 +1630,9 @@ def _main(argv: list[str] | None = None) -> int:
     tirg = tir.add_mutually_exclusive_group(required=True)
     tirg.add_argument("--original")
     tirg.add_argument("--original-file")
+    tig = tis.add_parser("degrade", help="外部信号降一档（任何调用方，不要用户原话；恢复仍要原话）")
+    tig.add_argument("--reason", required=True, help="降档原因（原样写进降档记录，不解析）")
+    tig.add_argument("--ref", required=True, help="外部事项链接或编号；同一个 --ref 只降一次")
     tid = tis.add_parser("digest", help="relaxed 档的收尾汇总：同步、检查账、不经队列的提交、提前落地")
     tid.add_argument("--json", action="store_true")
     tid.add_argument("--mark-told", action="store_true", help="记为已汇总给用户（只是记账，不是批准）")

@@ -5,7 +5,7 @@ import io
 import json
 import os
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from helpers import MergeCase, ReviewCase, StartCase, git
@@ -330,6 +330,64 @@ class IncidentTest(IncidentBase):
     def test_strict_tier_never_lowers(self):
         self.set_tier("strict")
         self.assertIsNone(autonomy.incident(self.db, self.repo, "revoked", "9"))
+
+
+class ExternalDegradeTest(IncidentBase):
+    """S95: `tier degrade --reason --ref` lowers one step on an outside signal; `tier --json` shows lastIncident."""
+
+    def test_no_incident_is_null(self):
+        code, out = self.cli("tier", "--json")
+        self.assertEqual(code, 0)
+        self.assertIsNone(json.loads(out)["lastIncident"])
+
+    def test_standard_degrades_to_strict_and_json_shows_it(self):
+        self.set_tier("standard")
+        code, out = self.cli("tier", "degrade", "--reason", "CI 连红", "--ref", "https://example.test/i/7")
+        self.assertEqual(code, 0)
+        self.assertIn("自治档位已从 standard 降到 strict：外部信号（CI 连红）", out)
+        self.assertIn("恢复要用户原话", out)
+        self.assertEqual(self.effective(), "strict")
+        code, out = self.cli("tier", "--json")
+        doc = json.loads(out)
+        last = doc["lastIncident"]
+        self.assertEqual(set(last), {"kind", "reason", "ref", "at"})
+        self.assertEqual((last["kind"], last["ref"]), ("external", "https://example.test/i/7"))
+        self.assertIn("CI 连红", last["reason"])
+        self.assertTrue(last["at"])
+        self.assertEqual(doc["effective"], "strict")        # the other fields stay as they were
+
+    def test_already_strict_does_not_lower_and_is_not_an_error(self):
+        self.set_tier("strict")
+        code, out = self.cli("tier", "degrade", "--reason", "r", "--ref", "x")
+        self.assertEqual(code, 0)
+        self.assertIn("没降", out)
+        self.assertEqual(self.lowered(), [])
+
+    def test_same_ref_lowers_once(self):
+        code, _ = self.cli("tier", "degrade", "--reason", "r", "--ref", "issue-1")
+        self.assertEqual((code, self.effective()), (0, "standard"))
+        code, out = self.cli("tier", "degrade", "--reason", "r again", "--ref", "issue-1")
+        self.assertEqual(code, 0)
+        self.assertIn("没降", out)
+        self.assertEqual((self.effective(), len(self.lowered())), ("standard", 1))
+
+    def test_empty_reason_or_ref_refused(self):
+        for argv in (("--reason", " ", "--ref", "x"), ("--reason", "r", "--ref", ""), ("--reason", "r")):
+            with redirect_stderr(io.StringIO()):
+                try:
+                    code, _ = self.cli("tier", "degrade", *argv)
+                except SystemExit as exc:
+                    code = exc.code
+            self.assertIn(code, (2, 3), argv)
+        self.assertEqual((self.effective(), self.lowered()), ("relaxed", []))
+
+    def test_restore_after_degrade_still_needs_words(self):
+        self.cli("tier", "degrade", "--reason", "r", "--ref", "x")
+        with redirect_stderr(io.StringIO()):
+            code, _ = self.cli("tier", "restore", "--original", " ")
+        self.assertEqual((code, self.effective()), (3, "standard"))
+        code, out = self.cli("tier", "restore", "--original", "恢复吧")
+        self.assertEqual((code, self.effective()), (0, "relaxed"))
 
 
 class ReworkIncidentTest(IncidentBase):

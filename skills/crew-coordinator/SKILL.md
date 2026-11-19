@@ -247,7 +247,7 @@ module-crew change accept <编号> --original-file <用户原话文件>     # �
 - **standard**：Spec 与 Plan 一起交审；`declaredScope` 没设过时按声明范围处理公共文件（用户显式设过的开关优先）。`tier` 或 `status` 提示「reviewCadence 是 separate」时转告用户，用户同意再改。
 - **relaxed**：同步通知、快检查与检查账、不经队列的提交、提前落地这几类不再逐条告诉用户；**给用户发批量交审、最终验收，或 `merge cleanup` 本批收尾时**，先 `module-crew tier digest`，把正文写进那条消息，再 `module-crew tier digest --mark-told`（只是记账）。
   降档通知、【等待用户】、修基线任务、权限弹窗和任何要用户决定的事不进汇总，照常立刻告诉用户。
-- **出事自动降一档**：输出里出现「自治档位已从 X 降到 Y」（合并因模块原因退回、撤销合并批准、返工满 3 次、基线新跑出失败）就马上告诉用户，在哪个档位都一样。
+- **出事自动降一档**：输出里出现「自治档位已从 X 降到 Y」（合并因模块原因退回、撤销合并批准、返工满 3 次、基线新跑出失败，或外部程序用 `module-crew tier degrade --reason … --ref …` 报来的外部信号）就马上告诉用户，在哪个档位都一样。
   恢复要用户原话：`module-crew tier restore --original-file <原话文件>`，一次抬一档。
 - **升档只建议**：`tier`、`status` 或 `merge run` 输出「可以建议升到 X」时转告用户；用户一句话确认后，有降档上限的用 `tier restore`，没有的照上面设档位的步骤写 spec-guard。不要自己升。
 - **底线**：任何档位下能力图、Spec（可以和 Plan 一起批）、最终验收都要用户批；测试改不红、Spec 没覆盖的决策、高风险不可逆改动三种情况必停；合并队列里照样跑完整检查。
