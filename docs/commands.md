@@ -84,8 +84,8 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 ### `start`
 
-- `start plan [--json]`：按能力图的 Build order 提议可开的模块，不超过空位（只读，任何会话）。
-- `start prepare <模块>… --original(-file) [--project-short <简称>] [--max <上限>] [--host claude|codex] [--commit-prefix <前缀>]`：为每个模块建 worktree（`<仓库名>-crew/<模块>`）、登记会话、生成开工说明（模块协调）。重开已完成的模块也用它（见使用手册「修订已完成的模块」）。`--max` 只在项目第一次落运行配置时生效；`coordinator up` 已经把上限记为默认 2，之后给不同的数退出码 3（「上限已定为 …，不能在这里改」）。
+- `start plan [--json]`：按能力图的 Build order 提议可开的模块，不超过空位（只读，任何会话）。`/map --json` 有里程碑停点（`milestoneStop`，spec-guard 接口 1.13 起）时不提议任何模块，阻塞项写「里程碑停点：<里程碑> 还没确认（<文件>），用户确认后再开」，退出码 3；停点读不出时照常提议，另列「⚠️ 停点读不出（<detail>），先跑 /spec-guard:verify-artifacts」（`--json` 的 `warnings`）。
+- `start prepare <模块>… --original(-file) [--project-short <简称>] [--max <上限>] [--host claude|codex] [--commit-prefix <前缀>]`：为每个模块建 worktree（`<仓库名>-crew/<模块>`）、登记会话、生成开工说明（模块协调）。重开已完成的模块也用它（见使用手册「修订已完成的模块」）。有里程碑停点或停点读不出时一律退出码 3（含提前开工与重开），原因同 `start plan`。`--max` 只在项目第一次落运行配置时生效；`coordinator up` 已经把上限记为默认 2，之后给不同的数退出码 3（「上限已定为 …，不能在这里改」）。
 - `start kickoff <模块> --original(-file) [--plan-revision C<号> [--answered-review]] [--already-sent] [--json]`：给提前开工的模块发开工通知；要依赖都已合入、Spec 与 Plan 都已批准、还没发过（模块协调，用户原话）。见使用手册「提前开工」。
   - `--plan-revision C<号>`：本模块在提前开工之后批准过不等依赖的 Plan 修订时，凭它在依赖未合入时也开工；C 号要是本模块提前开工之后的 Plan 批准、带用户原话，否则退出码 3。通知依据写「依赖 X 未合入，按已批 Plan 修订 C<号> 不等依赖」。
   - `--answered-review`：与 `--plan-revision` 同用。C 号是本模块在提前开工之后、被 `answer` 关掉的 Plan 交审（没有 `review approve` 的批准记录）时也放行，输出原样列出当时记下的答复原话，模块协调与用户核对确是批准再发；通知依据写「按用户已答复的 Plan 交审 C<号> 不等依赖」。不带它时这类 C 号退出码 3 并提示可加此参数；单独使用退出码 2。

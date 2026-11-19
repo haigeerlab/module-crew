@@ -103,5 +103,47 @@ class PilotRound2Test(StartCase):
         self.assertEqual({x["module"] for x in doc["reasons"]}, {"b", "e"})
 
 
+STOP = {"file": "docs/usage-draft.md", "milestone": "M1 下单跑通", "modules": ["a"], "usages": ["U1"]}
+
+
+class MilestoneStopPlanTest(StartCase):
+    """S92: spec-guard 0.88.0 (interface 1.13) /map --json milestoneStop."""
+
+    def test_stop_proposes_nothing(self):
+        from helpers import START_MAP
+        self.set_map(dict(START_MAP, milestoneStop=STOP))
+        p = start.plan(self.repo)
+        self.assertEqual(p.modules, [])
+        self.assertTrue(any("里程碑停点：M1 下单跑通 还没确认（docs/usage-draft.md），用户确认后再开" in b
+                            for b in p.blockers), p.blockers)
+        r = self.run_cli("start", "plan")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("里程碑停点", r.stdout)
+        self.assertNotIn("提议：", r.stdout)
+
+    def test_unreadable_still_proposes_with_note(self):
+        from helpers import START_MAP
+        self.set_map(dict(START_MAP, milestoneStop={"error": "unreadable", "detail": "草案缺表头"}))
+        p = start.plan(self.repo)
+        self.assertEqual(p.blockers, [])
+        self.assertEqual([m["id"] for m in p.modules], ["b", "c"])
+        note = "停点读不出（草案缺表头），先跑 /spec-guard:verify-artifacts"
+        self.assertEqual(p.warnings, [note])
+        r = self.run_cli("start", "plan")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(note, r.stdout)
+        import json
+        self.assertEqual(json.loads(self.run_cli("start", "plan", "--json").stdout)["warnings"], [note])
+
+    def test_null_or_absent_unchanged(self):
+        from helpers import START_MAP
+        for doc in (dict(START_MAP, milestoneStop=None), START_MAP):
+            with self.subTest(doc="milestoneStop" in doc):
+                self.set_map(doc)
+                p = start.plan(self.repo)
+                self.assertEqual((p.blockers, p.warnings), ([], []))
+                self.assertEqual([m["id"] for m in p.modules], ["b", "c"])
+
+
 if __name__ == "__main__":
     unittest.main()
