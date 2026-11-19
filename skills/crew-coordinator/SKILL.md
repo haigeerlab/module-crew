@@ -64,7 +64,7 @@ description: 本会话是 module-crew 的模块协调时使用：开工说明点
 ## 开工（扩张点）
 
 1. `module-crew start plan`：退出码 3 就把阻塞项告诉用户，停下；0 就把提议的模块（及冲突，如有）列给用户。
-   - **里程碑停点**（spec-guard 接口 1.13 起，`/map --json` 的 `milestoneStop`）：有停点时阻塞项写「里程碑停点：<里程碑> 还没确认（<草案文件>），用户确认后再开」，一个新模块都不开（提前开工、重开也一样），`start prepare` 退出码 3；请用户确认那个里程碑（`/spec-guard:milestone-mark`）后再跑。已在做的模块、`review approve`、`merge`、`start kickoff` 和轻任务照常。停点读不出时 `start plan` 照常提议，但带「⚠️ 停点读不出（…），先跑 /spec-guard:verify-artifacts」，把这句一并告诉用户；`start prepare` 在读出来之前退出码 3。
+   - **里程碑停点**（spec-guard 接口 1.13 起，`/map --json` 的 `milestoneStop`）：有停点时阻塞项写「里程碑停点：<里程碑> 还没确认（<草案文件>），用户确认后再开」，一个新模块都不开（提前开工、重开也一样），第 3 步的开工命令退出码 3；请用户确认那个里程碑（`/spec-guard:milestone-mark`）后再跑。已在做的模块、`review approve`、`merge`、`start kickoff` 和轻任务照常。停点读不出时 `start plan` 照常提议，但带「⚠️ 停点读不出（…），先跑 /spec-guard:verify-artifacts」，把这句一并告诉用户；读出来之前第 3 步的开工命令退出码 3。
 2. 只问用户一次：「开这 N 个吗？」用户可以删减，不能超出提议。
 3. 用户答应后，把用户的决定交给命令（第一次要给项目简称）：本会话亲手输入的原话直接给；经决策收件箱或审查者转来的，按「接入决策收件箱」带 `--source`：
 
