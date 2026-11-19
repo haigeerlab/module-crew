@@ -101,7 +101,7 @@ module-crew start prepare <模块 id>… --original-file <原话文件> [--proje
    用户亲手同意后 `module-crew permissions apply --original-file <原话文件>`。之后新开的模块 `start prepare` 会自动写同一份；写不上会在输出与 `status` 里标出。
 2. 开好每个模块会话后跑 `module-crew permissions verify`（Codex 加 `--host codex`），把清单发给模块会话照跑；同时看它在线状态有没有「等待审批」。
    看完记下：`module-crew permissions verify --record <会话名> --allowed ok|prompted --denied ok|ran`。弹了确认或没拦住，原样告诉用户，由用户决定。
-3. 推送只走 `module-crew merge push`（要用户原话）：它推送前写一次性放行凭证，钩子只认这个。你和模块会话都不直接 `git push`；钩子拒绝时把原因原样告诉用户。
+3. 推送只走 `module-crew merge push`（分支）和 `module-crew merge push-tag <标签>`（版本标签），都要用户原话：它们推送前写只放行那一个 ref 的一次性凭证，钩子只认这个。你和模块会话都不直接 `git push`；钩子拒绝时把原因原样告诉用户。
 4. Codex 模块的规则写在 `.codex/rules/module-crew.rules`，项目被 Codex 信任才生效；`plan` 说「规则不会生效」时，请用户在 Codex 里信任该项目，你不改用户的全局配置。
 5. 不再需要时 `module-crew permissions remove --original-file <原话文件>`：只撤 module-crew 加的条目，钩子改成空操作。
 
@@ -225,6 +225,7 @@ module-crew change accept <编号> --original-file <用户原话文件>     # �
 5. 一批合完：`module-crew merge push-plan` 把远端、新分支、提交与 PR 正文给用户看；用户明确授权后 `module-crew merge push --original-file <原话文件>`。
    push-plan 会写明 PR 开向哪个分支、是从哪里取的；集成分支只在本地、又读不出远端默认分支时它会停下，请用户说 PR 开向哪里，两条命令都带 `--pr-base <分支>`。项目的 pre-push 钩子会跑检查时推送要等较久（超时同完整检查），`merge push` 用后台方式运行；退出码 4 就把原因照实告诉用户。
    推送去的是新分支 `crew/batch-<号>`，PR 由用户在远端合并；不开自动合并，不推集成分支本身。
+   发版要推版本标签时：标签打在已进远端集成分支的提交上（附注标签，`git tag -a`），用户明确授权后 `module-crew merge push-tag <标签> --original-file <原话文件>`，同样用后台方式运行；不要让用户加 `--no-verify`。退出码 0 且写「已推送」表示远端早已有同一标签；退出码 3 照输出原因告诉用户（远端同名标签指向不同提交时由用户决定，module-crew 不覆盖）。
 6. **合并前先复述**：每次 `merge run` 前，先把队首要合并的模块向用户复述一句（有决策收件箱时写进状态即可，不另问）。
    用户答错了、要收回还没合并的批准：用户同意后 `module-crew merge revoke <C号> --original-file <原话文件>`，把输出的撤销批准通知发给模块；已合并的撤不回，告诉用户只能另走回退。
 

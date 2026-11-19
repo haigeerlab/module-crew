@@ -1190,3 +1190,81 @@ def push(project: str | os.PathLike, original: str, pr_base: str | None = None) 
     if f"batch-{number}" not in plan.branch:
         result.lines.append(f"注意：分支名用的是 {plan.branch}，推送记录编号是 C{number}（期间有其他写入）")
     return result
+
+
+def _remote_tag_commit(project: Path, remote: str, tag: str) -> tuple[bool, str | None]:
+    """(reachable, commit the remote's refs/tags/<tag> points at — peeled for an annotated tag; None when absent)."""
+    try:
+        listed = _git(project, "ls-remote", "--tags", remote, timeout=60)
+    except subprocess.TimeoutExpired:
+        return False, None
+    if listed.returncode != 0:
+        return False, None
+    refs_ = dict(reversed(line.split("\t", 1)) for line in listed.stdout.splitlines() if "\t" in line)
+    return True, refs_.get(f"refs/tags/{tag}^{{}}") or refs_.get(f"refs/tags/{tag}")
+
+
+def push_tag(project: str | os.PathLike, tag: str, original: str) -> PushResult:
+    """T583: with the user's words, push one annotated release tag whose commit is already on the remote integration
+    branch; the pre-push guard gets a one-time pass for refs/tags/<tag> only."""
+    project = Path(project)
+    if not original or not original.strip():
+        return PushResult(3, ["用户原话不能为空：推送标签要用户明确授权"])
+    db = store.open_store(project)
+    cfg = store.get(db, "config", "main") or {}
+    remote = cfg.get("remote") or "origin"
+    integration = cfg.get("integrationBranch")
+    if not integration:
+        return PushResult(3, ["还没有运行配置（先 start prepare）"])
+    if _git(project, "remote", "get-url", remote).returncode != 0:
+        return PushResult(3, [f"没有远端 {remote}：推送交用户自己处理"])
+    ref = f"refs/tags/{tag}"
+    if not tag or _git(project, "check-ref-format", ref).returncode != 0:
+        return PushResult(3, [f"标签名不合法：{tag!r}"])
+    if _git(project, "rev-parse", "--verify", "--quiet", ref).returncode != 0:
+        return PushResult(3, [f"标签 {tag} 不存在：先在集成分支上用 git tag -a {tag} -m <说明> 打附注标签"])
+    if _git(project, "cat-file", "-t", ref).stdout.strip() != "tag":
+        return PushResult(3, [f"{tag} 是轻量标签：版本标签要用附注标签（git tag -a），module-crew 不推轻量标签"])
+    commit = _git(project, "rev-parse", f"{ref}^{{commit}}").stdout.strip()
+    tracking = f"refs/remotes/{remote}/{integration}"
+    limit = push_timeout(cfg)
+    try:
+        fetched = _git(project, "fetch", "-q", remote, f"+refs/heads/{integration}:{tracking}", timeout=limit)
+    except subprocess.TimeoutExpired:
+        return PushResult(4, [f"取远端 {remote}/{integration} 超时（{limit} 秒）：没有推送"])
+    if fetched.returncode != 0:
+        why = (fetched.stderr.strip() or f"git 退出码 {fetched.returncode}")[:300]
+        return PushResult(4, [f"取不到远端 {remote}/{integration}：{why}；没有推送"])
+    if _git(project, "merge-base", "--is-ancestor", commit, tracking).returncode != 0:
+        return PushResult(3, [f"标签 {tag} 指向的提交 {commit[:7]} 不在远端集成分支 {remote}/{integration} 上："
+                              f"先让包含它的 PR 在远端合并（merge push），再推标签"])
+    reachable, there = _remote_tag_commit(project, remote, tag)
+    if not reachable:
+        return PushResult(4, [f"读不到远端 {remote} 的标签（ls-remote 失败）：没有推送"])
+    if there == commit:
+        return PushResult(0, [f"远端 {remote} 已有标签 {tag}，指向同一提交 {commit[:7]}：已推送，不用再推"])
+    if there is not None:
+        return PushResult(3, [f"远端 {remote} 已有标签 {tag}，但指向不同的提交 {there[:7]}（本地是 {commit[:7]}）："
+                              f"module-crew 不覆盖远端标签，请用户决定"])
+    from module_crew import prepush
+    prepush.write_token(db.path, ref)       # one-time pass for this tag only, spent whatever happens
+    try:
+        pushed = subprocess.run(["git", "-C", str(project), "push", remote, ref],
+                                capture_output=True, text=True, timeout=limit)
+    except subprocess.TimeoutExpired:
+        return PushResult(4, [f"推送标签超时（{limit} 秒）：多半是项目的 pre-push 钩子在跑检查，git 已被停下；"
+                              f"先用 git ls-remote --tags {remote} 看远端有没有 {tag}，再决定重推，或把 checkTimeout 调大"])
+    except OSError as exc:
+        return PushResult(4, [f"推送没有跑起来：{exc}"])
+    finally:
+        prepush.spend_token(db.path)
+    if pushed.returncode != 0:
+        why = (pushed.stderr.strip() or pushed.stdout.strip() or f"git 退出码 {pushed.returncode}")[:300]
+        return PushResult(4, [f"推送标签失败：{why}"])
+    reachable, there = _remote_tag_commit(project, remote, tag)
+    if there != commit:
+        got = there[:7] if there else ("读不到" if not reachable else "没有")
+        return PushResult(4, [f"推送命令成功，但远端 {remote} 的标签 {tag} 核对不上：远端 {got}，本地 {commit[:7]}"])
+    tag_object = _git(project, "rev-parse", ref).stdout.strip()
+    return PushResult(0, [f"已推送标签 {tag} 到 {remote}（标签对象 {tag_object[:7]}，指向提交 {commit[:7]}）",
+                          f"ls-remote 核对：远端 {ref} 指向提交 {commit[:7]}，与本地一致"])
