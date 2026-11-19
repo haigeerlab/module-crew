@@ -1,6 +1,7 @@
 import unittest
 
 from helpers import START_MAP, StartCase, git
+from test_spec_ahead import AheadCase
 
 import os
 
@@ -98,6 +99,56 @@ class RoleMarkerTest(StartCase):
         self.assertIn("没有 checkoutRole 入口", res.prepared[0]["role"])
         self.assertTrue(any(line.startswith("集成 checkout 角色标记未设") for line in res.lines))
 
+
+STOP = {"file": "docs/usage-draft.md", "milestone": "M1 下单跑通", "modules": ["a"], "usages": ["U1"]}
+STOP_WORDS = "里程碑停点：M1 下单跑通 还没确认（docs/usage-draft.md），用户确认后再开"
+
+
+class MilestoneStopPrepareTest(StartCase):
+    """S92: while a milestone stop stands, no new module opens (spec-guard 0.88.0, interface 1.13)."""
+
+    def refused(self, modules, words):
+        before = snapshot(self)
+        res = start.prepare(self.repo, modules, "开吧", short="shop")
+        self.assertEqual(res.code, 3, res.lines)
+        self.assertIn(words, " ".join(res.lines))
+        self.assertEqual(snapshot(self), before)
+
+    def test_stop_refuses_startable_ahead_and_reopen(self):
+        from test_reopen_module import reopened_map
+        self.set_map(dict(START_MAP, milestoneStop=STOP))
+        self.refused(["b"], STOP_WORDS)
+        self.refused(["e"], STOP_WORDS)                      # opened ahead (not_ready)
+        self.set_map(dict(reopened_map(), milestoneStop=STOP))
+        self.refused(["a"], STOP_WORDS)                      # reopened finished module
+        r = self.run_cli("start", "prepare", "b", "--original", "开 b")
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        self.assertIn(STOP_WORDS, r.stdout)
+
+    def test_unreadable_refuses(self):
+        self.set_map(dict(START_MAP, milestoneStop={"error": "unreadable", "detail": "草案缺表头"}))
+        self.refused(["b"], "停点读不出（草案缺表头），先跑 /spec-guard:verify-artifacts")
+
+    def test_null_or_absent_unchanged(self):
+        self.set_map(dict(START_MAP, milestoneStop=None))
+        self.assertEqual(start.prepare(self.repo, ["b"], "开 b", short="shop").code, 0)
+        self.set_map(START_MAP)
+        self.assertEqual(start.prepare(self.repo, ["c"], "开 c", short="shop").code, 0)
+
+
+class MilestoneStopUnaffectedTest(AheadCase):
+    """S92: a module already opened goes on to start kickoff, and light tasks dispatch, during a milestone stop."""
+
+    def test_kickoff_and_light_task(self):
+        from module_crew import tasks
+        self.approve_e()
+        self.merged("b", "c")
+        self.set_map(dict(START_MAP, milestoneStop=STOP))
+        self.assertEqual(start.plan(self.repo).modules, [])
+        out = start.kickoff(self.repo, "e", "可以开工")
+        self.assertEqual(out.code, 0, out.lines)
+        n = tasks.add(self.db, self.repo, "bug", "修文档", "补一段", ["docs/t.md"], "写好", "修一下").number
+        self.assertEqual(tasks.dispatch(self.db, self.repo, n).branch, f"task/t{n}")
 
 if __name__ == "__main__":
     unittest.main()

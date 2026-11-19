@@ -26,6 +26,18 @@ class Proposal:
     cadence: str = "separate"                                 # effective reviewCadence (from /map when it has one)
     reopen: dict = field(default_factory=dict)              # module -> {"round", "branch", "review", "info"} (prepare only)
     spec_ahead: dict = field(default_factory=dict)          # module -> {"missing", "info"} (prepare only, crew-spec-ahead)
+    warnings: list[str] = field(default_factory=list)        # S92: shown with the proposal; prepare refuses on them
+
+
+def milestone_stop(map_doc: dict | None) -> tuple[str | None, str | None]:
+    """S92 (spec-guard interface 1.13): /map --json milestoneStop -> (blocker, warning). spec-guard opens no new module
+    while a stop stands, so neither the usage draft nor its `modules` (the finished ones) is read here."""
+    stop = (map_doc or {}).get("milestoneStop")
+    if not isinstance(stop, dict):
+        return None, None
+    if stop.get("error") == "unreadable":
+        return None, f"停点读不出（{stop.get('detail')}），先跑 /spec-guard:verify-artifacts"
+    return f"里程碑停点：{stop.get('milestone')} 还没确认（{stop.get('file')}），用户确认后再开", None
 
 
 def _open_store(project: Path) -> store.Store | None:
@@ -135,6 +147,8 @@ def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal
     if _config(db).get("mode") == "serial":
         from module_crew.failure import SERIAL_BLOCKER
         blockers.append(SERIAL_BLOCKER)
+    stop, warning = milestone_stop(report.map)
+    blockers += [stop] if stop else []
     if blockers:
         return Proposal(slots, blockers=blockers, cadence=cadence)
     modules = {m.get("id"): m for m in report.map.get("modules") or [] if isinstance(m, dict)}
@@ -152,7 +166,8 @@ def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal
                 reasons.append({"module": mid, "reason": why})
     else:
         reasons = [{"module": mid, "reason": why} for mid, why in held.items()]   # shown as 暂不提议
-    return Proposal(slots, picked, list((report.startable or {}).get("conflicts", [])), reasons=reasons, cadence=cadence)
+    return Proposal(slots, picked, list((report.startable or {}).get("conflicts", [])), reasons=reasons, cadence=cadence,
+                    warnings=[warning] if warning else [])
 
 
 HOSTS = {"claude": "claude-desktop", "codex": "codex-desktop"}
@@ -361,8 +376,8 @@ def validate(project: Path, modules: list[str], original: str, short: str | None
     cfg, cfg_reasons = _settings(project, db, short, max_modules)
     reasons += cfg_reasons
     proposal = plan(project, cfg.get("maxModules"))
-    reasons += proposal.blockers
-    if proposal.blockers:
+    reasons += proposal.blockers + proposal.warnings     # S92: an unreadable milestone stop refuses prepare too
+    if proposal.blockers or proposal.warnings:
         return reasons, cfg, proposal
     report = probe.run(project)
     startable = (report.startable or {}).get("modules", [])

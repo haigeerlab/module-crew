@@ -421,12 +421,14 @@ def _start_plan(as_json: bool) -> int:
     p = start.plan(".")
     if as_json:
         print(json.dumps({"slots": p.slots, "modules": p.modules, "conflicts": p.conflicts, "blockers": p.blockers,
-                          "reasons": p.reasons},
+                          "reasons": p.reasons, "warnings": p.warnings},
                          ensure_ascii=False, indent=2))
     else:
         print(f"空位：{p.slots}")
         for b in p.blockers:
             print(f"❌ {b}")
+        for w in p.warnings:
+            print(f"⚠️ {w}")
         for m in p.modules:
             print(f"  {m['id']}（{m['responsibility']}）")
         for c in p.conflicts:
@@ -1047,6 +1049,8 @@ def _merge(args) -> int:
         return res.code
     if args.action == "cleanup":
         res = merge.cleanup(".", args.module, original)
+    elif args.action == "push-tag":
+        res = merge.push_tag(".", args.tag, original)
     else:
         res = merge.push(".", original, args.pr_base)
     for line in res.lines:
@@ -1437,7 +1441,7 @@ def _main(argv: list[str] | None = None) -> int:
     for name, positional in (("approve", ("numbers", refs.parse)), ("accept", ("numbers", refs.parse)),
                              ("revoke", ("number", refs.parse)),
                              ("cleanup", ("module", str)), ("tick", ("module", str)), ("record", ("number", refs.parse)),
-                             ("push", None)):
+                             ("push", None), ("push-tag", ("tag", str))):
         c = mgs.add_parser(name)
         if positional:
             c.add_argument(positional[0], type=positional[1], **({"nargs": "+"} if name in ("approve", "accept") else {}))

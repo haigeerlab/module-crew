@@ -2,6 +2,14 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.23.5 的变化（版本标签由模块协调推送；里程碑停点期间不开新模块）
+
+不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移。
+
+- **`merge push-tag`**（T583）：`module-crew merge push-tag <标签> --original-file <原话文件>` 凭用户原话推送版本标签。先核对标签存在且是附注标签、它指向的提交已在远端集成分支上（先 fetch 再核对）、远端没有同名标签；远端已有且指向同一提交时报「已推送」退出码 0，指向不同提交时退出码 3、不覆盖；不过时退出码 3、不写凭证。通过后写一张只放行 `refs/tags/<标签>` 的一次性凭证再推送，推完用 ls-remote 核对远端指向；超时、失败、核对不上时退出码 4。推送守门拒绝时的提示改为「分支用 merge push，版本标签用 merge push-tag」，`--no-verify` 放到最后；放行规则不变。已装的 pre-push 钩子是安装时写下的脚本，要换上新提示需凭用户原话重跑一次 `module-crew permissions apply`（不重跑也能用 push-tag）。
+- **里程碑停点期间不开新模块**（S92，T585）：读 spec-guard（接口 1.13 起）`/map --json` 的 `milestoneStop`。有停点时 `start plan` 不提议任何模块（列为阻塞项，退出码 3），`start prepare` 退出码 3，提前开工与重开已完成模块也拦；停点读不出（`{error: "unreadable"}`）时 `start plan` 照常提议但加警告「先跑 /spec-guard:verify-artifacts」（`--json` 多 `warnings` 字段），`start prepare` 退出码 3。没有停点或接口低于 1.13 时不变；已开的模块、`start kickoff`、审批、合并与轻任务不受影响。
+- 升级后：只升级 module-crew 时，原会话 /clear 一次即可。升级里包含 agent-relay（或别的带 MCP 工具的插件）时，Claude Code 新开会话、Codex 新开任务；重开应用和 resume 原会话都还用旧版本。Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
+
 ## 0.23.4 的变化（收回 worktree 已不在的会话、status 单列待收回；合入时清空 spec-guard 当前模块；resume 可限定范围）
 
 不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移。
