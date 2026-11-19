@@ -44,7 +44,8 @@ try:
         token = json.load(f)
 except (OSError, ValueError):
     token = None
-why = "推送只经模块协调的 module-crew merge push（要用户原话）；你自己在终端推送可以加 --no-verify。"
+why = ("推送经模块协调按用户原话做：分支用 module-crew merge push，版本标签用 module-crew merge push-tag <标签>。"
+       "确实要绕过守门时，你自己在终端推送可以加 --no-verify。")
 if not token or token.get("used"):
     deny("没有放行凭证。" + why)
 if token.get("expires", 0) < time.time():

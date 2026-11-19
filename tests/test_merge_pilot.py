@@ -300,5 +300,105 @@ class ActiveModuleTest(PilotCase):
         self.assertNotIn("已清空", "\n".join(res.lines))
 
 
+class PushTagTest(MergeCase):
+    """T583: merge push-tag pushes one annotated release tag with the user's words and a one-time pass for that tag only."""
+
+    def setUp(self):
+        super().setUp()
+        import subprocess
+        from module_crew import permissions
+        self.db = store.open_store(self.repo)
+        (self.repo / ".git" / "info").mkdir(exist_ok=True)
+        (self.repo / ".git" / "info" / "exclude").write_text(".claude/settings.local.json\n.codex/\n", encoding="utf-8")
+        self.remote = self.tmp / "remote.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(self.remote)], check=True)
+        git(self.repo, "remote", "add", "origin", str(self.remote))
+        git(self.repo, "push", "-q", "origin", "main")       # before the guard exists
+        permissions.apply(self.repo, "预配")
+        self.head = git(self.repo, "rev-parse", "main").strip()
+
+    def token_path(self):
+        from module_crew import prepush
+        return self.db.path / prepush.TOKEN
+
+    def remote_tags(self):
+        import subprocess
+        out = subprocess.run(["git", "ls-remote", "--tags", str(self.remote)], capture_output=True, text=True).stdout
+        return dict(reversed(line.split("\t")) for line in out.splitlines())
+
+    def test_annotated_tag_on_remote_integration_is_pushed(self):
+        import json
+        git(self.repo, "tag", "-a", "v9.0.0", "-m", "v9.0.0")
+        res = merge.push_tag(self.repo, "v9.0.0", "推 v9.0.0 标签")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(self.remote_tags().get("refs/tags/v9.0.0^{}"), self.head)
+        self.assertTrue(json.loads(self.token_path().read_text(encoding="utf-8"))["used"])
+        text = "\n".join(res.lines)
+        self.assertIn("已推送标签 v9.0.0", text)
+        self.assertIn(self.head[:7], text)
+
+    def test_refusals_write_no_pass(self):
+        git(self.repo, "tag", "light")
+        (self.repo / "new.txt").write_text("x\n", encoding="utf-8")
+        git(self.repo, "add", "new.txt")
+        git(self.repo, "commit", "-q", "-m", "local only")
+        git(self.repo, "tag", "-a", "v-local", "-m", "v-local")
+        for tag, word in (("nope", "不存在"), ("light", "轻量标签"), ("v-local", "不在远端集成分支")):
+            res = merge.push_tag(self.repo, tag, "推")
+            self.assertEqual(res.code, 3, (tag, res.lines))
+            self.assertIn(word, "\n".join(res.lines))
+            self.assertFalse(self.token_path().exists(), tag)
+        self.assertEqual(self.remote_tags(), {})
+
+    def test_remote_already_has_the_tag(self):
+        import subprocess
+        git(self.repo, "tag", "-a", "v1", "-m", "v1")
+        subprocess.run(["git", "-C", str(self.repo), "push", "--no-verify", "-q", "origin", "refs/tags/v1"], check=True)
+        res = merge.push_tag(self.repo, "v1", "推")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertIn("已推送", "\n".join(res.lines))
+        self.assertFalse(self.token_path().exists())
+        (self.repo / "next.txt").write_text("x\n", encoding="utf-8")
+        git(self.repo, "add", "next.txt")
+        git(self.repo, "commit", "-q", "-m", "next")
+        subprocess.run(["git", "-C", str(self.repo), "push", "--no-verify", "-q", "origin", "main"], check=True)
+        git(self.repo, "tag", "-a", "v2", "-m", "v2")
+        git(self.remote, "tag", "v2", self.head)
+        res = merge.push_tag(self.repo, "v2", "推")
+        self.assertEqual(res.code, 3, res.lines)
+        self.assertIn("不同的提交", "\n".join(res.lines))
+        self.assertFalse(self.token_path().exists())
+
+    def test_original_required(self):
+        git(self.repo, "tag", "-a", "v3", "-m", "v3")
+        self.assertEqual(merge.push_tag(self.repo, "v3", "  ").code, 3)
+        r = self.run_cli("merge", "push-tag", "v3")
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertFalse(self.token_path().exists())
+        words = self.tmp / "words.txt"
+        words.write_text("推 v3", encoding="utf-8")
+        r = self.run_cli("merge", "push-tag", "v3", "--original-file", str(words))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("refs/tags/v3", self.remote_tags())
+
+    def test_guard_hint_and_pass_scope(self):
+        import subprocess
+        from module_crew import prepush
+        out = subprocess.run(["git", "-C", str(self.repo), "push", "origin", "main:refs/heads/try"],
+                             capture_output=True, text=True)
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("merge push-tag", out.stderr)
+        self.assertIn("merge push", out.stderr)
+        self.assertLess(out.stderr.index("merge push-tag"), out.stderr.index("--no-verify"))
+        git(self.repo, "tag", "-a", "v4", "-m", "v4")
+        prepush.write_token(self.db.path, "refs/tags/v4")
+        for ref in ("main:refs/heads/try", "refs/tags/v4:refs/tags/v5"):
+            out = subprocess.run(["git", "-C", str(self.repo), "push", "origin", ref], capture_output=True, text=True)
+            self.assertNotEqual(out.returncode, 0, ref)
+            self.assertIn("不符", out.stderr)
+        out = subprocess.run(["git", "-C", str(self.repo), "push", "origin", "refs/tags/v4"], capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0, out.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
