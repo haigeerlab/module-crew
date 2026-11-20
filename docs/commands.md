@@ -234,9 +234,10 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 ### `tier`
 
-- `tier [--json]`：设的档位、降档上限、生效档位、证据与升档建议（只读，任何会话）。
+- `tier [--json]`：设的档位、降档上限、生效档位、证据与升档建议（只读，任何会话）。`--json` 另有 `lastIncident`：最近一次降档 `{kind, reason, ref, at}`，没降过为 `null`。
 - `tier --preflight`：写 `autonomyTier` 之前核对 spec-guard 版本与接口（只读）。
 - `tier restore --original(-file)`：降档后恢复一档（模块协调）。
+- `tier degrade --reason <文字> --ref <链接>`：外部信号降一档（任何调用方，不要用户原话）。规则同出事降档：已是 strict 不降（退出码 0，说明没降）、同一个 `--ref` 只降一次；`--reason` 或 `--ref` 为空拒绝（退出码 3）。module-crew 不认调用方、不读 `--ref` 指向的内容、不解析 `--reason`；恢复仍要用户原话（`tier restore`）。
 - `tier digest [--json] [--mark-told]`：relaxed 档的收尾汇总（同步、检查账、不经队列的提交、提前落地）；只读查看任何会话都能跑，`--mark-told` 记为已汇总给用户（只是记账，不是批准）由模块协调跑。
 
 ## 额度外包

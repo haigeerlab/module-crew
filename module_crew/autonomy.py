@@ -198,7 +198,7 @@ def report(db: store.Store, project: str | os.PathLike) -> tuple[dict, list[str]
     t = eff.configured
     doc = {"configured": {"value": t.value, "source": t.source, "usable": t.usable, "reason": t.reason},
            "explicit": eff.explicit, "cap": eff.cap, "effective": eff.value, "cadence": None, "cadenceHint": None,
-           "evidence": [], "suggest": None}
+           "evidence": [], "suggest": None, "lastIncident": last_incident(db)}
     lines = [describe(eff)]
     if eff.active:
         from module_crew import start
@@ -254,7 +254,8 @@ def preflight(db: store.Store, project: str | os.PathLike) -> tuple[int, list[st
 
 
 INCIDENT_NAMES = {"merge-returned": "合并因模块的原因退回", "revoked": "用户撤销合并批准",
-                  "rework-over-limit": "返工满 3 次", "baseline-red": "基线完整检查新跑出失败"}
+                  "rework-over-limit": "返工满 3 次", "baseline-red": "基线完整检查新跑出失败",
+                  "external": "外部信号"}
 
 
 def incident(db: store.Store, project: str | os.PathLike, kind: str, ref: str, reason: str = "") -> str | None:
@@ -272,7 +273,7 @@ def incident(db: store.Store, project: str | os.PathLike, kind: str, ref: str, r
             if key in (rec.get("incidentKeys") or []):
                 return None
             rec.update(cap=new, capFor=eff.configured.value, seen=new, seenAt=store.now(),
-                       incident={"kind": kind, "key": key, "reason": what, "at": store.now()},
+                       incident={"kind": kind, "key": key, "ref": ref, "reason": what, "at": store.now()},
                        incidentKeys=((rec.get("incidentKeys") or []) + [key])[-50:])
             _put(tx, rec, "tier-lowered", {"from": eff.value, "to": new, "kind": kind, "key": key, "reason": what})
     except (store.StoreError, OSError) as exc:
@@ -282,6 +283,33 @@ def incident(db: store.Store, project: str | os.PathLike, kind: str, ref: str, r
 
 class Refused(Exception):
     pass
+
+
+def degrade(db: store.Store, project: str | os.PathLike, reason: str | None, ref: str | None) -> tuple[int, str]:
+    """S95: an outside signal lowers one step by the same rules as incident(); module-crew does not know the caller
+    and does not read or parse anything behind --ref or --reason. No user words needed (restoring still needs them)."""
+    reason, ref = (reason or "").strip(), (ref or "").strip()
+    if not reason or not ref:
+        raise Refused("--reason 和 --ref 都不能为空")
+    what = f"{INCIDENT_NAMES['external']}（{reason}）"
+    eff = effective(db, project)
+    if eff.value == "strict":
+        return 0, f"自治档位已是 strict，没降：{what}"
+    if f"external:{ref}" in (state(db).get("incidentKeys") or []):
+        return 0, f"同一个 --ref 已经降过档，这次没降：{ref}"
+    line = incident(db, project, "external", ref, reason)
+    if line is None:
+        return 0, f"没降（档位或降档记录刚变过）：{what}"
+    return (2 if "没能降档" in line else 0), line
+
+
+def last_incident(db: store.Store) -> dict | None:
+    """S95: the most recent step-down as {kind, reason, ref, at}; older records keep the ref only inside their key."""
+    inc = state(db).get("incident")
+    if not inc:
+        return None
+    ref = inc.get("ref") or (inc.get("key") or "").partition(":")[2]
+    return {"kind": inc.get("kind"), "reason": inc.get("reason"), "ref": ref, "at": inc.get("at")}
 
 
 def restore(db: store.Store, project: str | os.PathLike, original: str | None) -> list[str]:
