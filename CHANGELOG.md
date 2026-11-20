@@ -2,6 +2,14 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.23.6 的变化（外部信号降档入口；tier --json 带最近一次降档）
+
+不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移。
+
+- **`tier degrade`**（S95，T595）：`module-crew tier degrade --reason <文字> --ref <链接>` 让外部调用方（例如本机的编排程序）凭一个外部信号把自治档位降一档，规则与现有的自动降档相同：已是 strict 不降（退出码 0，输出说明没降）；同一个 `--ref` 只降一次；`--reason` 或 `--ref` 为空退出码 3。不要用户原话，任何会话都能运行；恢复仍要用户原话（`tier restore`）。module-crew 不认识调用方、不读 GitHub、不解析原因。
+- **`tier --json` 新增 `lastIncident`**（S95，T595）：最近一次降档的 `{kind, reason, ref, at}`，没有降档记录时为 null；其他字段不变。
+- 升级后：只升级 module-crew 时，原会话 /clear 一次即可。升级里包含 agent-relay（或别的带 MCP 工具的插件）时，Claude Code 新开会话、Codex 新开任务；重开应用和 resume 原会话都还用旧版本。Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`；`codex plugin marketplace remove` 报「not configured」时停下核对。
+
 ## 0.23.5 的变化（版本标签由模块协调推送；里程碑停点期间不开新模块）
 
 不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移。
