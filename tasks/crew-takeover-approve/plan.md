@@ -1,5 +1,7 @@
 # Implementation Plan: crew-takeover-approve
 
+<!-- spec-guard: review approved -->
+
 > 依据：`spec/crew-takeover-approve.md`（用户 2026-11-21 批准，事项 C607「C607 A」）。任务清单：`tasks/crew-takeover-approve/todo.md`。
 
 ## Overview
