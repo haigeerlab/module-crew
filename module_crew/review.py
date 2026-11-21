@@ -379,13 +379,16 @@ def _points(text: str) -> str:
     return protocol.parse(text).fields.get("要点", "")
 
 
+APPROVAL_KINDS = ("review-approval", "codex-approval")     # crew-takeover-approve decision 7: counted apart
+
+
 def _approved_nodes(db: store.Store) -> dict[str, set[str]]:
-    """Modules -> nodes already approved through a review-approval."""
+    """Modules -> nodes already approved through a review-approval (or Codex's codex-approval)."""
     items = store.records(db, "item")
     sessions = store.records(db, "session")
     approved: dict[str, set[str]] = {}
     for rec in items.values():
-        if rec.get("kind") == "review-approval":
+        if rec.get("kind") in APPROVAL_KINDS:
             for n in rec.get("reviews", []):
                 r = items.get(str(n)) or {}
                 if n > store.round_since(sessions, r.get("module")):     # crew-reopen-module: this round only
@@ -393,24 +396,25 @@ def _approved_nodes(db: store.Store) -> dict[str, set[str]]:
     return approved
 
 
-def start_basis(db: store.Store, module: str, approval: int, nodes: set[str]) -> str:
+def start_basis(db: store.Store, module: str, approval: int, nodes: set[str], codex: bool = False) -> str:
     """S53: what a start notice rests on — the nodes approved in C<approval>, and the earlier record of the rest."""
     items = store.records(db, "item")
     since = store.round_since(store.records(db, "session"), module)
-    earlier: dict[str, tuple[int, str]] = {}
+    earlier: dict[str, tuple[int, str, str]] = {}
     for key, rec in items.items():
-        if rec.get("kind") != "review-approval" or int(key) >= approval:
+        if rec.get("kind") not in APPROVAL_KINDS or int(key) >= approval:
             continue
         for n in rec.get("reviews", []):
             r = items.get(str(n)) or {}
             target = MARK_TARGET.get(r.get("node"))
-            if r.get("module") == module and n > since and target and int(key) > earlier.get(target, (0, ""))[0]:
-                earlier[target] = (int(key), r["node"])
+            if r.get("module") == module and n > since and target and int(key) > earlier.get(target, (0, "", ""))[0]:
+                earlier[target] = (int(key), r["node"], rec["kind"])
     here = " 与 ".join(NODE_NAME[n] for n in sorted(nodes, key=NODE_RANK.get))
     covered = {MARK_TARGET.get(n) for n in nodes}
-    rest = [f"{NODE_NAME[earlier[t][1]]} 以前批准于 C{earlier[t][0]}" for t in ("spec", "plan")
-            if t not in covered and t in earlier]
-    return f"用户批准事项 C{approval}（{module} 的 {here}" + ("；" + "，".join(rest) if rest else "") + "）"
+    rest = [f"{NODE_NAME[earlier[t][1]]} 以前" + ("由 Codex 放行于" if earlier[t][2] == "codex-approval" else "批准于")
+            + f" C{earlier[t][0]}" for t in ("spec", "plan") if t not in covered and t in earlier]
+    return (f"{'Codex 放行事项' if codex else '用户批准事项'} C{approval}（{module} 的 {here}"
+            + ("；" + "，".join(rest) if rest else "") + "）")
 
 
 NODE_RANK = {"spec": 0, "interface": 1, "plan": 2, "final": 3}
@@ -1127,19 +1131,41 @@ def _mark_command(project: Path) -> tuple[Path, dict] | str:
         return doc
     if "reviewMark" not in doc:
         return "spec-guard 的 interface.json 没有 reviewMark 入口（需要 interface 1.1）"
-    probe_cmd = probe.safe_command(found.root, doc, "reviewMark", _mark_fill(Path("."), "m", "spec"))
+    probe_cmd = mark_args(found.root, doc, Path("."), "m", "spec")
     if isinstance(probe_cmd, str):
         return probe_cmd
-    left = [x for x in probe_cmd if x.startswith("<") and x.endswith(">")]
-    if left:
-        return f"reviewMark.command 有不认识的占位符 {'、'.join(left)}（按 interface 1.1 应为 <spec|plan|both>、<pending|approved>），没有运行"
     return found.root, doc
 
 
-def _mark_fill(checkout: Path, module: str, target: str) -> dict[str, str]:
-    """Placeholders of interface 1.1 reviewMark.command."""
+def _mark_fill(checkout: Path, module: str, target: str, state: str = "approved") -> dict[str, str]:
+    """Placeholders of reviewMark.command: interface 1.1, and 1.15 (crew-takeover-approve: Codex states, acceptance)."""
     return {"<project-root>": str(checkout), "<module-id>": module,
-            "<spec|plan|both>": target, "<pending|approved>": "approved"}
+            "<spec|plan|both>": target, "<pending|approved>": state,
+            "<spec|plan|both|acceptance>": target, "<pending|approved|codex-approved|codex-reviewed>": state}
+
+
+def mark_args(root: Path, doc: dict, checkout: Path, module: str, target: str, state: str = "approved",
+              review_file: str | os.PathLike | None = None) -> list[str] | str:
+    """reviewMark.command filled in; 1.15's optional `[--review <report file>]` is expanded only with a report.
+    A str says why it cannot run (an unknown placeholder or optional part)."""
+    cmd = probe.safe_command(root, doc, "reviewMark", _mark_fill(checkout, module, target, state))
+    if isinstance(cmd, str):
+        return cmd
+    out = []
+    for x in cmd:
+        if x.startswith("[") and x.endswith("]"):
+            inner = x[1:-1].split()
+            if inner[:1] != ["--review"]:
+                return f"reviewMark.command 有不认识的可选项 {x}，没有运行"
+            out += ["--review", str(review_file)] if review_file else []
+        else:
+            out.append(x)
+    left = [x for x in out if x.startswith("<") and x.endswith(">")]
+    if left:
+        return (f"reviewMark.command 有不认识的占位符 {'、'.join(left)}（认得 interface 1.1 与 1.15 的写法），没有运行")
+    if review_file and "--review" not in out:
+        return "装的 spec-guard 的 reviewMark 不收 --review（Codex 放行要 interface 1.15），没有运行"
+    return out
 
 
 def _record_lead(db: store.Store, picked: list, original: str, reasons: list[str]) -> ApproveResult:
@@ -1208,12 +1234,14 @@ def approve(project: str | os.PathLike, numbers: list[int], original: str) -> Ap
     return res
 
 
-def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
-    """Land the approved Spec/Plan files on the integration baseline and prepare all replies and notices."""
+def _approve(project: Path, numbers: list[int], original: str, codex: dict | None = None) -> ApproveResult:
+    """Land the approved Spec/Plan files on the integration baseline and prepare all replies and notices.
+    crew-takeover-approve decision 5: with `codex` ({report, rounds, suggestions}) the same landing records Codex's
+    approval instead (codex-approved marker, a codex-approval record, no 【用户答复】)."""
     db = store.open_store(project)
     items = store.records(db, "item")
     reasons = []
-    if not original or not original.strip():
+    if codex is None and (not original or not original.strip()):
         reasons.append("用户原话不能为空：只记用户在本会话亲手输入的话")
     picked = []
     for n in numbers:
@@ -1227,9 +1255,11 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
                            "要求修改用 review answer")
         else:
             picked.append((n, rec))
-    src = store.source_field().get("source") or {}
+    src = (store.source_field().get("source") or {}) if codex is None else {}
     if src.get("kind") == "lead":
         return _record_lead(db, picked, original, reasons)
+    if codex is not None and any(rec["node"] == "plan" and rec.get("specRevised") for _, rec in picked):
+        reasons.append("Plan 带着构建中修订过的 Spec：Codex 只能分别放行 Spec、Plan，这一项交用户批")
     baseline = probe.check_baseline(project)
     if baseline.state != "ok":
         reasons.append(baseline.reason)
@@ -1264,7 +1294,11 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
         written.append(path)
     for n, rec in picked:
         target = "both" if rec["node"] == "plan" and rec.get("specRevised") else MARK_TARGET[rec["node"]]   # decision 7
-        cmd = probe.safe_command(root, doc, "reviewMark", _mark_fill(checkout, rec["module"], target)) + ["--confirm"]
+        cmd = mark_args(root, doc, checkout, rec["module"], target, "codex-approved" if codex else "approved",
+                        codex["report"] if codex else None)
+        if isinstance(cmd, str):
+            return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{cmd}"] + _restore(checkout))
+        cmd = cmd + ["--confirm"]
         ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
         if ran.returncode != 0:
             return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{(ran.stderr.strip() or ran.stdout.strip())[:200]}"]
@@ -1281,7 +1315,8 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
         from module_crew import merge
         try:
             commit_run = probe._git(checkout, "commit", "-q", "-m",
-                                    commits.message(f"用户批准事项 C{approval_no}{hub}：批准 {nodes}", commits.prefix_of(db)),
+                                    commits.message(f"Codex 放行事项 C{approval_no}：放行 {nodes}" if codex else
+                                                    f"用户批准事项 C{approval_no}{hub}：批准 {nodes}", commits.prefix_of(db)),
                                     timeout=merge.commit_timeout(cfg))
         except subprocess.TimeoutExpired as exc:
             return ApproveResult(4, [probe.timed_out("集成分支提交", exc)] + _restore(checkout))
@@ -1297,11 +1332,21 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
     mapped = None                                 # crew-spec-ahead: the capability map, read only when a module needs it
     with db.transaction(actor="coordinator") as tx:
         approval = tx.allocate_number()
-        tx.put("item", str(approval), {
-            "state": "closed", "kind": "review-approval", "closedReason": "answered", "relayId": None,
-            "from": "coordinator", "reviews": [n for n, _ in picked], "baselineCommit": commit,
-            "answer": {"original": original, "answeredAt": answered_at, **store.source_field()}}, action="review-approved")
-        for group in _reply_groups(picked):
+        if codex is not None:
+            tx.put("item", str(approval), {
+                "state": "closed", "kind": "codex-approval", "closedReason": "answered", "relayId": None,
+                "from": "coordinator", "reviews": [n for n, _ in picked], "baselineCommit": commit,
+                "codex": {**codex, "nodes": [rec["node"] for _, rec in picked], "at": answered_at}}, action="codex-approved")
+            for n, rec in picked:
+                tx.put("item", str(n), dict(rec, state="closed", closedReason="codex-approved",
+                                            answer={"codex": codex["report"], "approval": approval, "answeredAt": answered_at}),
+                       action="codex-closed", data={"approval": approval})
+        else:
+            tx.put("item", str(approval), {
+                "state": "closed", "kind": "review-approval", "closedReason": "answered", "relayId": None,
+                "from": "coordinator", "reviews": [n for n, _ in picked], "baselineCommit": commit,
+                "answer": {"original": original, "answeredAt": answered_at, **store.source_field()}}, action="review-approved")
+        for group in (_reply_groups(picked) if codex is None else []):
             body = tx.allocate_number()
             meta = tx.write_body(body, _group_reply_text(group, original, answered_at))
             for n, rec in group:
@@ -1312,7 +1357,8 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
             result.sends.append({"kind": "user-reply", "to": group[0][1]["from"], "replyTo": group[0][1]["relayId"],
                                  "alsoAnswers": relays[1:],     # one reply answering several requests (agent-relay)
                                  "body": body, "path": db.path / meta["path"]})
-        _closing_send(tx, db, result.sends, modules, [n for n, _ in picked])
+        if codex is None:
+            _closing_send(tx, db, result.sends, modules, [n for n, _ in picked])
         for m in modules:
             nodes_here = {rec["node"] for _, rec in picked if rec["module"] == m}
             nodes_now = approved_before.get(m, set()) | nodes_here
@@ -1336,7 +1382,7 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
             if todo is None:                      # crew-codex-offload decision 4: held until the user decides
                 continue
             text = protocol.render_coordination_notice(
-                kind="start", basis=start_basis(db, m, approval, nodes_here) + "，"
+                kind="start", basis=start_basis(db, m, approval, nodes_here, codex is not None) + "，"
                                     + (f"集成分支 {commit[:7]} 已是批准内容" if empty else f"已提交到集成分支 {commit[:7]}"),
                 todo=(todo + "".join(f"\n审查原文：module-crew review show C{k}（写 Plan、构建时吸收遗留建议）"
                                      for k, rec in picked if rec["module"] == m and rec.get("reviews"))))
@@ -1348,9 +1394,9 @@ def _approve(project: Path, numbers: list[int], original: str) -> ApproveResult:
                 tx.put("session", ahead[0], dict(ahead[1], kickoff=approval), action="kickoff", data={"kickoff": approval})
     result.approval = approval
     if empty:
-        result.lines.append(f"批准记录 C{approval}；集成分支已是批准内容、没有差异，未提交，基线记为 HEAD {commit[:7]}")
+        result.lines.append(f"{'Codex 放行记录' if codex else '批准记录'} C{approval}；集成分支已是批准内容、没有差异，未提交，基线记为 HEAD {commit[:7]}")
         return result
-    result.lines.append(f"批准记录 C{approval}；集成分支提交 {commit[:7]}")
+    result.lines.append(f"{'Codex 放行记录' if codex else '批准记录'} C{approval}；集成分支提交 {commit[:7]}")
     result.lines.append(probe.took_line(commit_run, merge.commit_timeout(cfg)))
     if approval != approval_no:
         result.lines.append(f"注意：提交信息里写的是 C{approval_no}，实际批准事项是 C{approval}（期间有其他写入）")

@@ -698,7 +698,7 @@ def _mark_spec(project: Path, checkout: Path, module: str, approval: int, merge_
     if isinstance(got, str):
         return f"{missed}：{got}{later}"
     root, doc = got
-    cmd = probe.safe_command(root, doc, "reviewMark", review._mark_fill(checkout, module, "spec")) + ["--confirm"]
+    cmd = review.mark_args(root, doc, checkout, module, "spec") + ["--confirm"]
     try:
         ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
     except (OSError, subprocess.TimeoutExpired) as exc:
