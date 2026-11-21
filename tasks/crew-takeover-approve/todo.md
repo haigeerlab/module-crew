@@ -6,8 +6,8 @@
 - [x] Checkpoint 1（report）：退役就位——本模块与旧档位测试 36 个通过；声明范围、开工、合并、提前开工、批量交审与批准等回归测试 182 个通过
 - [x] Checkpoint 0（gate）：上游发版（spec-guard 0.91.0／interface 1.15、delegate 接口 1.5）——本机已装 spec-guard 0.91.0、delegate 0.10.0（接口 1.5），恢复依据 C626；按真实接口修订 Spec（9e235b2，「上游实测」一节与变更记录），并按用户「批草案并改边界」改并行边界（09050b2），两处随最终验收复审
 - [x] Task 2：`takeover.py` 读档位、`tier`／`--preflight`、`status` 接管一段（Spec 决策 1、2；验收 1、2）——实现先于测试，测试一次通过；临时去掉强制人批后测试转红，确认测到；每模块档位读 `/map --json`，项目档位读 `project_config.py show`；旧 `autonomy.preflight` 及 PreflightTest（3 个）删除，由新 preflight 两个测试覆盖；本模块与 probe／status 回归 68 个通过
-- [ ] Task 3：显示批准方式、批量交审排除 Codex 项、批准人不同自动分开批（Spec 决策 2、8；验收 3、8）
-- [ ] Checkpoint 2（report）：读档位与显示就位
+- [x] Task 3：显示批准方式、批量交审排除 Codex 项、批准人不同自动分开批（Spec 决策 2、8；验收 3、8）——实现先于测试；`review add` 对 Codex 节点记虚拟审查者 `codex`（不发邮箱、不超时），`review batch`／`for_hub` 不提请 Codex 项、末尾加告知行，`start.review_cadence` 加模块参数、开工说明在批准人不同时写 separate 并加批准方式一行；回归时 `test_review_nearby` 一个用例转红（开工说明绕过了 /map 的节奏），已改为沿用 /map 读到的节奏
+- [x] Checkpoint 2（report）：读档位与显示就位——本模块 17 个通过；交审、批量、收件箱、开工、提前开工、外包、轻任务、重开、契约等回归 299 个中 1 个失败已修，复跑本模块与审查就近 59 个通过
 - [ ] Task 4：`review codex`／`codex-note`：返工、超限、对得上（Spec 决策 3、4；验收 4、6）
 - [ ] Task 5：放行落地与记账、Codex 不可用、`review approve` 的回退（Spec 决策 5、6、7；验收 5、7、10）
 - [ ] Checkpoint 3（report）：Codex 放行链路就位
