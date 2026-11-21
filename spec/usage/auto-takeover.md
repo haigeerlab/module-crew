@@ -49,3 +49,7 @@ module-crew 调 spec-guard 收窄入口，「接管到合并」降为「只接�
 |---|---|---|
 | M1 | U1, U3 | crew-takeover-approve |
 | M2 | U1, U2, U3 | crew-takeover-merge |
+
+## 评审记录
+
+- 2026-11-21：用户在 mc-coord 会话批准本草案（原话「批草案并改边界」）。补写于两个模块 Spec、Plan 批准之后；拆分核对：无。
