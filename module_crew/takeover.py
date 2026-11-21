@@ -489,3 +489,82 @@ def codex_fallback(db: store.Store, n: int, original: str) -> list[str]:
         tx.put("item", str(n), dict(cur, reviewer="human", fallback=why), action="codex-fallback",
                data={"original": original, **store.source_field()})
     return [f"C{n} 改由用户批（{why}）：照人批流程，用户答复后 review approve C{n} 或 review answer C{n}"]
+
+
+# ---------------------------------------------------------------- narrowing after an incident (decision 9)
+
+class NarrowFailed(Exception):
+    pass
+
+
+def _narrow_args(root: Path, doc: dict, where: Path, module_id: str | None, reason: str) -> list[str]:
+    """takeoverNarrow.command filled in: --source module-crew, the optional --module, --confirm."""
+    cmd = probe.safe_command(root, doc, "takeoverNarrow", {"<project-root>": str(where), "<source>": "module-crew"})
+    if isinstance(cmd, str):
+        raise NarrowFailed(cmd)
+    out = []
+    for x in cmd:
+        if x == "[--module <module-id>]":
+            out += ["--module", module_id] if module_id else []
+        elif x == "[--confirm]":
+            out.append("--confirm")
+        elif x.startswith("<one line"):
+            out.append(" ".join(reason.split())[:200])
+        elif x.startswith("<") or x.startswith("["):
+            raise NarrowFailed(f"takeoverNarrow.command 有不认识的占位符 {x}，没有运行")
+        else:
+            out.append(x)
+    return out
+
+
+def _taken(value) -> bool:
+    if isinstance(value, dict):
+        return any(v != "human" for v in value.values())
+    return value not in (None, "none")
+
+
+def narrow(db: store.Store, project: str | os.PathLike, module_id: str | None, reason: str) -> dict | None:
+    """One step stricter through spec-guard (merge → Plan → Spec): the project, and the module too when it has its own
+    entry. None when nothing is taken over. Commits .agent/config.json on the integration branch."""
+    from module_crew import commits, unqueued
+    where = checkout(db, project)
+    got = _interface(where)
+    if isinstance(got, str):
+        raise NarrowFailed(got)
+    found, doc = got
+    if not isinstance(doc.get("takeoverNarrow"), dict):
+        raise NarrowFailed("装的 spec-guard 没有 takeoverNarrow")
+    setting = project_setting(db, project)
+    if not setting["usable"]:
+        raise NarrowFailed(setting["reason"])
+    mod = module(db, project, module_id) if module_id else None
+    targets = ([None] if _taken(setting["value"]) else []) + \
+              ([module_id] if mod and mod.usable and mod.source.startswith("moduleTakeover")
+               and any(getattr(mod, k) != "human" for k in ITEMS) else [])
+    if not targets:
+        return None
+    before = {"项目": describe_value(setting["value"])}
+    if mod and module_id in targets:
+        before[module_id] = line(mod)
+    for target in targets:
+        cmd = _narrow_args(found.root, doc, where, target, reason)
+        try:
+            ran = subprocess.run(cmd, cwd=found.root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise NarrowFailed(f"收窄命令没跑成（{exc}）") from exc
+        if ran.returncode != 0:
+            raise NarrowFailed(f"收窄命令退出码 {ran.returncode}：{(ran.stderr or ran.stdout).strip()[:200]}")
+    after = {"项目": describe_value(project_setting(db, project)["value"])}
+    if mod and module_id in targets:
+        after[module_id] = line(module(db, project, module_id))
+    rel = ".agent/config.json"
+    if probe._git(where, "diff", "--quiet", "--", rel).returncode == 0:
+        return None                                   # already the strictest: spec-guard wrote nothing
+    probe._git(where, "add", "--", rel)
+    ran = probe._git(where, "commit", "-q", "-m",
+                     commits.message(f"接管档位收窄：{reason}", commits.prefix_of(db)), "--", rel)
+    if ran.returncode != 0:
+        raise NarrowFailed(f".agent/config.json 已收窄但提交失败：{(ran.stderr or ran.stdout).strip()[:200]}；请把它单独提交")
+    unqueued.mark(db, where, "takeover-narrow")
+    commit = probe._git(where, "rev-parse", "HEAD").stdout.strip()
+    return {"before": before, "after": after, "commit": commit, "targets": [t or "项目" for t in targets]}

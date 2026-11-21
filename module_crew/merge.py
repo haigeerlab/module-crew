@@ -183,7 +183,8 @@ def revoke(db: store.Store, approval: int, original: str) -> Revoked:
         meta = tx.write_body(body, protocol.render_coordination_notice(
             "approval-revoked", f"C{approval}（用户撤回批准 C{record}；交审 C{rec['review']}）", REVOKE_TODO))
     from module_crew import autonomy
-    line = autonomy.incident(db, autonomy.project_of(db), "revoked", str(approval), f"C{approval}，{rec['module']}")
+    line = autonomy.incident(db, autonomy.project_of(db), "revoked", str(approval), f"C{approval}，{rec['module']}",
+                              module=rec.get("module"))
     return Revoked(rec["from"], None, body, db.path / meta["path"], superseded_by=max(newer) if newer else None,
                    tier_line=line)
 
@@ -586,7 +587,8 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
             result.lines += tick_hooks
     if reason and kind == "module":          # crew-autonomy-tier decision 8, after the merge is recorded
         from module_crew import autonomy
-        line = autonomy.incident(db, project, "merge-returned", str(n), f"C{n}，{unit}")
+        line = autonomy.incident(db, project, "merge-returned", str(n), f"C{n}，{unit}",
+                                 module=None if task else rec["module"])
         result.lines += [line] if line else []
     if task:
         from module_crew import tasks

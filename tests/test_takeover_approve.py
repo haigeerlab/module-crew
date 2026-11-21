@@ -514,3 +514,198 @@ class SpecRevision115Test(_spec_revision.SpecRevisionTest):
     def setUp(self):
         super().setUp()
         use_template_115(self)
+
+
+# ---------------------------------------------------------------- Task 6: narrowing after an incident
+
+FAKE_CONFIG_115 = '''import json, os, sys
+args = sys.argv[1:]
+project = args[args.index("--project") + 1]
+path = os.path.join(project, ".agent", "config.json")
+cfg = json.load(open(path))
+if args[0] == "show":
+    value = cfg.get("takeover", "none")
+    print(json.dumps({"items": [{"key": "takeover", "value": value,
+                                 "source": ".agent/config.json" if "takeover" in cfg else "default"}], "problems": []}))
+    sys.exit(0)
+with open(os.environ["FAKE_NARROW_LOG"], "a", encoding="utf-8") as log:
+    log.write(json.dumps(args) + "\\n")
+if os.environ.get("FAKE_NARROW_FAIL"):
+    sys.exit(2)
+def step(v):
+    if isinstance(v, dict):
+        for k in ("release", "merge", "plan", "spec"):
+            if v.get(k, "human") != "human":
+                v = dict(v, **{k: "human"})
+                return v if any(x != "human" for x in v.values()) else "none"
+        return "none"
+    return {"merge": "plan", "plan": "none"}.get(v, "none")
+if "--module" in args:
+    m = args[args.index("--module") + 1]
+    mods = cfg.setdefault("moduleTakeover", {})
+    mods[m] = step(mods.get(m, cfg.get("takeover", "none")))
+else:
+    before = cfg.get("takeover", "none")
+    if before == "none":
+        sys.exit(0)
+    cfg["takeover"] = step(before)
+json.dump(cfg, open(path, "w"))
+'''
+
+
+class NarrowMixin(TakeoverMixin):
+    def with_narrow(self, value="merge", module_entry: dict | None = None, spec: str = "codex"):
+        import os
+        from pathlib import Path
+        self.with_takeover()
+        root = Path(self.plugins.entries["spec-guard@m"][-1]["installPath"])
+        (root / "hooks" / "project_config.py").write_text(FAKE_CONFIG_115)
+        self.narrow_log = self.tmp / "narrow.jsonl"
+        os.environ["FAKE_NARROW_LOG"] = str(self.narrow_log)
+        self.addCleanup(lambda: [os.environ.pop(k, None) for k in ("FAKE_NARROW_LOG", "FAKE_NARROW_FAIL")])
+        path = self.repo / ".agent" / "config.json"
+        cfg = json.loads(path.read_text())
+        cfg["takeover"] = value
+        if module_entry:
+            cfg["moduleTakeover"] = module_entry
+        path.write_text(json.dumps(cfg))
+        git(self.repo, "commit", "-qam", "takeover")
+        rows = {m: takeover_row(spec=spec, plan="codex", merge="auto",
+                                source=f"moduleTakeover.{m}" if m in (module_entry or {}) else ".agent/config.json")
+                for m in ("b", "c")}
+        self.set_takeover(value, rows)
+
+    def calls(self):
+        return [json.loads(x) for x in self.narrow_log.read_text().splitlines()] if self.narrow_log.exists() else []
+
+    def project_value(self):
+        return json.loads((self.repo / ".agent" / "config.json").read_text()).get("takeover")
+
+
+class NarrowTest(TierMixin, NarrowMixin, MergeCase):
+    """Task 6, acceptance 9."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+
+    def test_merge_returned_narrows_once_and_commits(self):
+        from module_crew import autonomy, merge
+        self.with_narrow("merge")
+        n = self.approve_final("b", 1)
+        res = merge.run(self.repo, check_command=self.check_script(fail_if="src/b.py"))
+        self.assertEqual(res.code, 5)
+        text = "\n".join(res.lines)
+        self.assertIn("接管档位已收窄（项目 接管到合并 → 只接管 Plan）：合并因模块的原因退回", text)
+        self.assertIn("马上告诉用户", text)
+        self.assertEqual(self.project_value(), "plan")
+        args = self.calls()[0]
+        self.assertEqual(args[args.index("--source") + 1], "module-crew")
+        self.assertIn("--confirm", args)
+        self.assertNotIn("--module", args)
+        self.assertIn("接管档位收窄", git(self.repo, "log", "-1", "--format=%s"))
+        self.assertEqual(git(self.repo, "status", "--porcelain", "--", ".agent/config.json").strip(), "")
+        self.assertIsNone(autonomy.incident(self.db, self.repo, "merge-returned", str(n)))    # same item: once
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_env_return_does_not_narrow(self):
+        from module_crew import merge
+        self.with_narrow("merge")
+        self.approve_final("b", 1)
+        res = merge.run(self.repo, check_command=self.check_script(sleep=3))
+        self.assertNotIn("接管档位", "\n".join(res.lines))
+        self.assertEqual(self.calls(), [])
+
+    def test_revoke_and_order(self):
+        from module_crew import autonomy, merge
+        self.with_narrow({"spec": "codex", "plan": "codex", "merge": "auto"})
+        n = self.approve_final("b", 1)
+        note = merge.revoke(self.db, n, "撤回")
+        self.assertIn("用户撤销合并批准", note.tier_line)
+        self.assertEqual(self.project_value(), {"spec": "codex", "plan": "codex", "merge": "human"})
+        autonomy.incident(self.db, self.repo, "baseline-red", "t1")
+        self.assertEqual(self.project_value(), {"spec": "codex", "plan": "human", "merge": "human"})
+        self.assertIsNone(autonomy.incident(self.db, self.repo, "baseline-red", "t2"))   # same red, no new commit
+        autonomy.incident(self.db, self.repo, "external", "x3")             # all human: written as none
+        self.assertEqual(self.project_value(), "none")
+        self.assertIsNone(autonomy.incident(self.db, self.repo, "external", "x4"))       # nothing taken over
+
+    def test_module_entry_narrowed_too(self):
+        from module_crew import autonomy
+        self.with_narrow("plan", {"b": "merge"})
+        line = autonomy.incident(self.db, self.repo, "rework-over-limit", "77", "C77，b", module="b")
+        self.assertIsNotNone(line)
+        targets = [a[a.index("--module") + 1] if "--module" in a else "项目" for a in self.calls()]
+        self.assertEqual(targets, ["项目", "b"])
+        cfg = json.loads((self.repo / ".agent" / "config.json").read_text())
+        self.assertEqual((cfg["takeover"], cfg["moduleTakeover"]["b"]), ("none", "plan"))
+
+    def test_nothing_taken_over_never_calls(self):
+        from module_crew import autonomy
+        self.with_narrow("none")
+        self.assertIsNone(autonomy.incident(self.db, self.repo, "revoked", "9"))
+        self.assertEqual(self.calls(), [])
+
+    def test_failure_only_costs_the_line(self):
+        import os
+        from module_crew import autonomy
+        self.with_narrow("merge")
+        os.environ["FAKE_NARROW_FAIL"] = "1"
+        line = autonomy.incident(self.db, self.repo, "revoked", "9")
+        self.assertIn("接管档位没能收窄", line)
+
+    def test_degrade_cli(self):
+        self.with_narrow("merge")
+        code, out = self.cli("tier", "degrade", "--reason", "CI 连红", "--ref", "https://example.test/i/7")
+        self.assertEqual(code, 0, out)
+        self.assertIn("外部信号（CI 连红）", out)
+        doc = json.loads(self.cli("tier", "--json")[1])
+        self.assertEqual((doc["lastIncident"]["kind"], doc["lastIncident"]["ref"]), ("external", "https://example.test/i/7"))
+        code, out = self.cli("tier", "degrade", "--reason", "again", "--ref", "https://example.test/i/7")
+        self.assertEqual(code, 0)
+        self.assertIn("已经收窄过", out)
+        self.assertEqual(len(self.calls()), 1)
+        import io
+        from contextlib import redirect_stderr
+        with redirect_stderr(io.StringIO()):
+            self.assertEqual(self.cli("tier", "degrade", "--reason", " ", "--ref", "x")[0], 3)
+
+
+class ReworkNarrowTest(TierMixin, NarrowMixin, MergeCase):
+    def test_rework_over_limit_narrows(self):
+        from module_crew import review, sources
+        from test_review_nearby import CHANGES, conclusion
+        self.with_narrow("merge", spec="human")         # the Spec goes to the human reviewer here
+        db = store.open_store(self.repo)
+        sources.add(db, "arch", "lead", "登记审查会话", scope=sources.ALL_SCOPE)
+        rid = 5000
+
+        def submit():
+            nonlocal rid
+            rid += 1
+            return review.add(db, self.spec_review("b"), "shop-b", rid).number
+        n = submit()
+        for _ in range(3):
+            review.note(db, n, "arch", conclusion("有须修改项2条", CHANGES))
+            n = submit()
+        res = review.note(db, n, "arch", conclusion("有须修改项2条", CHANGES))
+        self.assertIn("接管档位已收窄", "\n".join(res.lines))
+        self.assertIn("返工满 3 次", "\n".join(res.lines))
+
+
+class BaselineNarrowTest(TierMixin, NarrowMixin, MergeCase):
+    def test_new_red_baseline_narrows_old_record_does_not(self):
+        import test_check_ledger as tcl
+        from module_crew import hooks
+        self.with_narrow("merge")
+        ledger = tcl.BaselineTest.__new__(tcl.BaselineTest)
+        ledger.__dict__.update(self.__dict__)
+        ledger.db = store.open_store(self.repo)
+        hooks.bind(ledger.db, "shop-coord", "sid-coord", self.repo, original="你来做模块协调")
+        ledger.red_switch()
+        ledger.commit_main("fail.flag")
+        out = ledger.baseline()
+        self.assertEqual(out.returncode, 5, out.stdout + out.stderr)
+        self.assertIn("接管档位已收窄（项目 接管到合并 → 只接管 Plan）：基线完整检查新跑出失败", out.stdout)
+        out = ledger.baseline()
+        self.assertNotIn("接管档位", out.stdout)

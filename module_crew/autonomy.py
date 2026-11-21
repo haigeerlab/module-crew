@@ -207,8 +207,7 @@ def report(db: store.Store, project: str | os.PathLike) -> tuple[dict, list[str]
     """`tier` (read only): the retired-tier hint, the digest switch, the last step-down."""
     eff = effective(db, project)
     old = retired(eff)
-    doc = {"retiredTier": old, "digest": "on" if digest_on(db) else "off", "cap": eff.cap, "effective": eff.value,
-           "lastIncident": last_incident(db)}
+    doc = {"retiredTier": old, "digest": "on" if digest_on(db) else "off", "lastIncident": last_incident(db)}
     lines = ([retired_line(old)] if old else []) + [f"收尾汇总：{'开' if doc['digest'] == 'on' else '关'}"
                                                     "（config set --digest on|off，要用户原话）"]
     return doc, lines
@@ -219,27 +218,33 @@ INCIDENT_NAMES = {"merge-returned": "合并因模块的原因退回", "revoked":
                   "external": "外部信号"}
 
 
-def incident(db: store.Store, project: str | os.PathLike, kind: str, ref: str, reason: str = "") -> str | None:
-    """Decision 8: one step down per incident (never below strict, never twice for the same item); the line the
-    calling command prints so the coordinator tells the user at once. Errors only cost the line, never the caller."""
+def incident(db: store.Store, project: str | os.PathLike, kind: str, ref: str, reason: str = "",
+             module: str | None = None) -> str | None:
+    """crew-takeover-approve decision 9: one step stricter through spec-guard's narrowing entry (never twice for the
+    same item); the line the calling command prints so the coordinator tells the user at once. Errors only cost the
+    line, never the caller."""
+    from module_crew import takeover
+    key = f"{kind}:{ref}"
+    what = INCIDENT_NAMES.get(kind, kind) + (f"（{reason}）" if reason else "")
     try:
-        eff = effective(db, project)
-        if eff.value == "strict":
+        if key in (state(db).get("incidentKeys") or []):
             return None
-        key = f"{kind}:{ref}"
-        new = _lower(eff.value)
-        what = INCIDENT_NAMES.get(kind, kind) + (f"（{reason}）" if reason else "")
+        last = state(db).get("incident") or {}
+        if kind == "baseline-red" and last.get("kind") == kind and last.get("commit") and \
+                last.get("commit") == probe._git(takeover.checkout(db, project), "rev-parse", "HEAD").stdout.strip():
+            return None             # the same red baseline, re-run only because the narrowing commit changed the tree
+        got = takeover.narrow(db, project, module, what)
+        if got is None:
+            return None
         with db.transaction(actor="autonomy") as tx:
             rec = _state(tx)
-            if key in (rec.get("incidentKeys") or []):
-                return None
-            rec.update(cap=new, capFor=eff.configured.value, seen=new, seenAt=store.now(),
-                       incident={"kind": kind, "key": key, "ref": ref, "reason": what, "at": store.now()},
+            rec.update(incident={"kind": kind, "key": key, "ref": ref, "reason": what, "at": store.now(), **got},
                        incidentKeys=((rec.get("incidentKeys") or []) + [key])[-50:])
-            _put(tx, rec, "tier-lowered", {"from": eff.value, "to": new, "kind": kind, "key": key, "reason": what})
-    except (store.StoreError, OSError) as exc:
-        return f"自治档位没能降档（{exc}）：请告诉用户，由用户决定是否用 /spec-guard:config 调低档位"
-    return f"自治档位已从 {eff.value} 降到 {new}：{what}。马上告诉用户；恢复要用户原话（module-crew tier restore）"
+            _put(tx, rec, "takeover-narrowed", {"kind": kind, "key": key, "reason": what, **got})
+    except (store.StoreError, OSError, takeover.NarrowFailed) as exc:
+        return f"接管档位没能收窄（{exc}）：请告诉用户，由用户决定是否用 /spec-guard:config 调低"
+    change = "；".join(f"{k} {got['before'][k]} → {got['after'].get(k)}" for k in got["before"])
+    return f"接管档位已收窄（{change}）：{what}。马上告诉用户；恢复要用户原话，经 /spec-guard:config 一次升一档"
 
 
 class Refused(Exception):
@@ -247,21 +252,18 @@ class Refused(Exception):
 
 
 def degrade(db: store.Store, project: str | os.PathLike, reason: str | None, ref: str | None) -> tuple[int, str]:
-    """S95: an outside signal lowers one step by the same rules as incident(); module-crew does not know the caller
-    and does not read or parse anything behind --ref or --reason. No user words needed (restoring still needs them)."""
+    """S95, parameters unchanged: an outside signal narrows one step by the same rules as incident(); module-crew does
+    not read or parse anything behind --ref or --reason. No user words needed (widening still needs them)."""
     reason, ref = (reason or "").strip(), (ref or "").strip()
     if not reason or not ref:
         raise Refused("--reason 和 --ref 都不能为空")
     what = f"{INCIDENT_NAMES['external']}（{reason}）"
-    eff = effective(db, project)
-    if eff.value == "strict":
-        return 0, f"自治档位已是 strict，没降：{what}"
     if f"external:{ref}" in (state(db).get("incidentKeys") or []):
-        return 0, f"同一个 --ref 已经降过档，这次没降：{ref}"
+        return 0, f"同一个 --ref 已经收窄过，这次没收窄：{ref}"
     line = incident(db, project, "external", ref, reason)
     if line is None:
-        return 0, f"没降（档位或降档记录刚变过）：{what}"
-    return (2 if "没能降档" in line else 0), line
+        return 0, f"没有收窄（没有接管的项，或已是最严）：{what}"
+    return (2 if "没能收窄" in line else 0), line
 
 
 def last_incident(db: store.Store) -> dict | None:

@@ -613,7 +613,7 @@ def note(db: store.Store, number: int | None, sender: str, text: str) -> NoteRes
     if over:                                # crew-autonomy-tier decision 8, once the conclusions are recorded
         from module_crew import autonomy
         for n, module in over:
-            line = autonomy.incident(db, autonomy.project_of(db), "rework-over-limit", str(n), f"C{n}，{module}")
+            line = autonomy.incident(db, autonomy.project_of(db), "rework-over-limit", str(n), f"C{n}，{module}", module=module)
             res.lines += [line] if line else []
     return res
 
