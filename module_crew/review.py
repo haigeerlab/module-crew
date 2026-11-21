@@ -1362,6 +1362,7 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
                                  "body": body, "path": db.path / meta["path"]})
         if codex is None:
             _closing_send(tx, db, result.sends, modules, [n for n, _ in picked])
+        started: set[str] = set()
         for m in modules:
             nodes_here = {rec["node"] for _, rec in picked if rec["module"] == m}
             nodes_now = approved_before.get(m, set()) | nodes_here
@@ -1393,8 +1394,25 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
             meta = tx.write_body(body, text)
             result.sends.append({"kind": "coordination-notice", "to": sender, "replyTo": None, "body": body,
                                  "path": db.path / meta["path"]})
+            started.add(m)
             if ahead:
                 tx.put("session", ahead[0], dict(ahead[1], kickoff=approval), action="kickoff", data={"kickoff": approval})
+        for n, rec in (picked if codex is not None else []):   # crew-takeover-approve decision 12, contract v2.9
+            if rec["module"] in started:
+                continue
+            what = NODE_NAME[rec["node"]]
+            nxt = {"spec": f"写 tasks/{rec['module']}/plan.md、todo.md 交审（节点 Plan）",
+                   "interface": f"写 tasks/{rec['module']}/plan.md、todo.md 交审（节点 Plan）",
+                   "plan": "等 Spec 的批准到了再开工"}[rec["node"]]
+            text = protocol.render_coordination_notice(
+                kind="approved-by-review",
+                basis=f"C{approval}（{rec['module']} 的 {what} 由 Codex 审过放行；交审 C{n}）",
+                todo=f"{what} 已由 Codex 放行（效力等同这一节点的批准，只限它）：先 {sync.STEP}，再{nxt}"
+                     f"\n审查原文：module-crew review show C{n}（建议由你决定吸收与否）")
+            body = tx.allocate_number()
+            meta = tx.write_body(body, text)
+            result.sends.append({"kind": "coordination-notice", "to": rec["from"], "replyTo": None, "body": body,
+                                 "path": db.path / meta["path"]})
     result.approval = approval
     if empty:
         result.lines.append(f"{'Codex 放行记录' if codex else '批准记录'} C{approval}；集成分支已是批准内容、没有差异，未提交，基线记为 HEAD {commit[:7]}")

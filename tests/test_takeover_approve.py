@@ -2,6 +2,7 @@
 and the retirement of autonomyTier (see spec/crew-takeover-approve.md)."""
 
 import json
+import unittest
 
 from helpers import MergeCase, ReviewCase, StartCase, git
 
@@ -709,3 +710,76 @@ class BaselineNarrowTest(TierMixin, NarrowMixin, MergeCase):
         self.assertIn("接管档位已收窄（项目 接管到合并 → 只接管 Plan）：基线完整检查新跑出失败", out.stdout)
         out = ledger.baseline()
         self.assertNotIn("接管档位", out.stdout)
+
+
+# ---------------------------------------------------------------- Task 7: the 放行 notice (contract v2.9)
+
+class ReleaseNoticeTest(CodexReviewTest):
+    """Codex releases only the Spec: a 放行 notice names it, no start notice; the module accepts it."""
+
+    def setUp(self):
+        ReviewCase.setUp(self)
+        import os
+        from pathlib import Path
+        self.with_takeover()
+        root = Path(self.plugins.entries["spec-guard@m"][-1]["installPath"])
+        doc = json.loads((root / "interface.json").read_text())
+        doc["reviewMark"] = {"command": REVIEW_MARK_115}
+        (root / "interface.json").write_text(json.dumps(doc))
+        (root / "hooks" / "review_mark.py").write_text(FAKE_MARK_115)
+        self.mark_log = self.tmp / "marks.jsonl"
+        os.environ["FAKE_MARK_LOG"] = str(self.mark_log)
+        self.addCleanup(lambda: os.environ.pop("FAKE_MARK_LOG", None))
+        self.set_takeover({"spec": "codex"}, {"b": takeover_row(spec="codex")})
+        from module_crew import review
+        self.db = store.open_store(self.repo)
+        self.n = review.add(self.db, self.spec_review("b"), "shop-b", 1).number
+
+    def test_spec_release_notice(self):
+        from pathlib import Path
+        from module_crew import protocol
+        code, out = self.note(report(self.files()))
+        self.assertEqual(code, 0, out)
+        import re
+        bodies = [Path(x).read_text(encoding="utf-8") for x in re.findall(r"正文文件：(\S+)", out)]
+        notices = [protocol.parse(b) for b in bodies if b.startswith("【协调通知】")]
+        kinds = [m.fields.get("类型") for m in notices]
+        self.assertIn("放行", kinds)
+        self.assertNotIn("开工", kinds)
+        rel = next(m for m in notices if m.fields.get("类型") == "放行")
+        self.assertEqual(rel.problems, ())
+        self.assertEqual(rel.contract()["notice"]["node"], "spec")
+        self.assertIn("写 tasks/b/plan.md、todo.md 交审", rel.fields["要你做什么"])
+        self.assertEqual(self.marks()[-1]["state"], "codex-approved")
+
+    # the inherited Plan cases do not apply to this setup
+    test_command = test_blocking_twice_then_the_user = test_suggestions_only_lands_as_codex_approval = None
+    test_mismatch_is_refused = test_no_conclusion_stops_and_approve_needs_the_users_choice = None
+
+
+class NoticeRenderTest(ReviewCase):
+    def test_render_needs_ref_and_node(self):
+        from module_crew import protocol
+        text = protocol.render_coordination_notice("approved-by-review", "C7（b 的 Plan 由 Codex 审过放行；交审 C3）", "等")
+        self.assertEqual(protocol.parse(text).contract()["notice"]["node"], "plan")
+        for basis in ("b 的 Spec 由 Codex 放行", "C7（b 由 Codex 放行）", "C7（SPEC.md）"):
+            with self.assertRaises(ValueError):
+                protocol.render_coordination_notice("approved-by-review", basis, "等")
+
+
+class SkillTest(unittest.TestCase):
+    """Acceptance 12 (replaces crew-autonomy-tier's skill test)."""
+
+    def test_coordinator_and_dev_skills(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent
+        for d in ("skills", "codex-skills"):
+            coord = (root / d / "crew-coordinator" / "SKILL.md").read_text(encoding="utf-8")
+            for words in ("module-crew tier --preflight", "/spec-guard:config", "review codex C<n>", "review codex-note",
+                          "review codex-fallback", "绝不自己审", "马上告诉用户", "一次升一档", "config set --digest",
+                          "module-crew tier digest", "能力图永远人批"):
+                self.assertIn(words, coord, (d, words))
+            self.assertNotIn("自治档位已从", coord)
+            dev = (root / d / "crew-dev" / "SKILL.md").read_text(encoding="utf-8")
+            for words in ("不改变你的停点", "gate", "--state codex-reviewed", "「放行」类【协调通知】"):
+                self.assertIn(words, dev, (d, words))

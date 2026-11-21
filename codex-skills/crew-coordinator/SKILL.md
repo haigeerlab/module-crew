@@ -108,7 +108,7 @@ module-crew start prepare <模块 id>… --original-file <原话文件> [--proje
    - 照第 3 步运行 `start prepare <id>`：能力图状态为 not_ready 的模块照常占名额，输出写「<id>：提前开工（依赖 … 未完成），只写 Spec 与 Plan」；同一次点名的模块之间有依赖也可以一起开（打开了 `declaredScope` 也放行）；名额、已有会话、目录或分支已存在等挡住条件照旧；
    - 它的交审在 `review batch` 里显示「依赖未就绪」是预期的，不挡批准；
    - Plan 批准时依赖还没合入，`review approve` 不生成开工通知，模块会话停住等；
-   - 依赖都合入后 `status` 与 `merge run` 提示「<id> 的依赖已就位，可以发开工通知」：问用户一次，同意后运行 `module-crew start kickoff <id> --original-file <原话文件>`，按输出 `bridge_send` 开工通知；任何自治档位都不自动发。
+   - 依赖都合入后 `status` 与 `merge run` 提示「<id> 的依赖已就位，可以发开工通知」：问用户一次，同意后运行 `module-crew start kickoff <id> --original-file <原话文件>`，按输出 `bridge_send` 开工通知；任何接管档位都不自动发。
 
 ## 权限预配
 
@@ -252,18 +252,25 @@ module-crew change accept <编号> --original-file <用户原话文件>     # �
 - **公共变更落地**：开关打开时 `change land` 提交前先对暂存的文件跑快检查；失败退出码 5、不提交、文件保持暂存、请求仍开着，交用户：修好再落地，或用户同意后加 `--skip-quick-check --original-file <原话文件>`。
 - Codex 上 `check baseline` 没有 `--detach`，前台运行，申请在沙箱外运行（写状态库）；`config set` 照旧申请。
 
-## 自治档位（spec-guard autonomyTier，第十版）
+## 接管档位（spec-guard takeover，S101）
 
-- **档位存在 spec-guard 的 `.agent/config.json`**：`strict`（默认，等于今天）、`standard`、`relaxed`。没设时 module-crew 一切照今天，连升档建议都不给；`module-crew tier` 看设的档位、来源、降档上限和生效档位。
-- **设或改档位要用户原话**：先 `module-crew tier --preflight`（退出码 3 就把原因告诉用户、不写）；通过后在回复里引用用户原话，在集成 checkout 用 `/spec-guard:config` 写 `autonomyTier`。
-  要设成 `standard` 或 `relaxed` 时，同一句原话里一并设 `reviewCadence=combined`（spec-guard 不联动它）；写完立刻把 `.agent/config.json` 单独提交，按不经队列的提交通知各模块同步。module-crew 自己不写这个文件。
-- **standard**：Spec 与 Plan 一起交审；`declaredScope` 没设过时按声明范围处理公共文件（用户显式设过的开关优先）。`tier` 或 `status` 提示「reviewCadence 是 separate」时转告用户，用户同意再改。
-- **relaxed**：同步通知、快检查与检查账、不经队列的提交、提前落地这几类不再逐条告诉用户；**给用户发批量交审、最终验收，或 `merge cleanup` 本批收尾时**，先 `module-crew tier digest`，把正文写进那条消息，再 `module-crew tier digest --mark-told`（只是记账）。
-  降档通知、【等待用户】、修基线任务、权限弹窗和任何要用户决定的事不进汇总，照常立刻告诉用户。
-- **出事自动降一档**：输出里出现「自治档位已从 X 降到 Y」（合并因模块原因退回、撤销合并批准、返工满 3 次、基线新跑出失败）就马上告诉用户，在哪个档位都一样。
-  恢复要用户原话：`module-crew tier restore --original-file <原话文件>`，一次抬一档。
-- **升档只建议**：`tier`、`status` 或 `merge run` 输出「可以建议升到 X」时转告用户；用户一句话确认后，有降档上限的用 `tier restore`，没有的照上面设档位的步骤写 spec-guard。不要自己升。
-- **底线**：任何档位下能力图、Spec（可以和 Plan 一起批）、最终验收都要用户批；测试改不红、Spec 没覆盖的决策、高风险不可逆改动三种情况必停；合并队列里照样跑完整检查。
+- **档位存在 spec-guard 的 `.agent/config.json`**：项目 `takeover`（不接管／只接管 Plan／接管到合并／自定义 Spec、Plan、合并三项），模块可单独设 `moduleTakeover`。没设或读不到时一律人批，一切照今天。
+  `module-crew tier` 看项目档位和每个在用模块的「批准方式：Spec …、Plan …、合并 …」；`status` 只在有接管时多一段。
+- **设或改档位要用户原话**：先 `module-crew tier --preflight`（spec-guard 0.91.0、delegate 接口 1.5；退出码 3 就把原因告诉用户、不写）；通过后引用用户原话，在集成 checkout 用 `/spec-guard:config` 写，写完把 `.agent/config.json` 单独提交。
+  放宽也一样要原话、一次升一档（`tier restore` 已退役，只给指引）。
+- **能力图永远人批**；spec-guard 判为重要需求的 Spec、Plan 有「预先声明」时，不管勾选都由用户批（批准方式里写原因）。最终验收照旧要用户答复。
+- **Codex 放行的节点**（交审登记时写「Codex 放行：下一步 review codex C<n>」，不进给用户的批次）：
+  1. `module-crew review codex C<n>` 给出这一轮的 `/delegate:review --backend codex …` 命令，照它在本会话跑，把标准输出的 JSON 原样存到它给的文件；
+  2. `module-crew review codex-note C<n> --report <文件>`，按退出码：`0` 已发返工通知（照输出 `bridge_send`）或已放行（Spec、Plan 都批了发开工通知，只放了一个节点发「放行」类【协调通知】）；
+     `3` 报告和交审对不上，重跑第 1 步；`4` 落地失败，原因照抄给用户；`5` Codex 没跑成或两轮返工后仍有阻断：输出末尾是一份【等待用户】草稿，自检后照现有规则交给用户。
+  3. **Codex 不可用就停下等用户，绝不自己审、不换后端。** 用户选「这一项改由我批」时，先 `module-crew review codex-fallback C<n> --original-file <原话文件>`，之后照人批流程 `review approve`／`review answer`。
+  - Codex 放行记成单独的 `codex-approval`，对用户一律说「Codex 放行」，不说成用户批准，也不发【用户答复】。
+- **出事自动收窄**：输出里出现「接管档位已收窄（…）」（合并因模块原因退回、撤销合并批准、返工满 3 次、基线新跑出失败，或外部程序用 `module-crew tier degrade --reason … --ref …` 报来的外部信号）就马上告诉用户。
+  module-crew 调 spec-guard 的只许收窄入口，按「合并 → Plan → Spec」一次一格，并已在集成分支单独提交 `.agent/config.json`；出现「没能收窄」时照原文告诉用户，由用户决定。
+- **autonomyTier 已退役**：旧值不映射、不再生效（`tier`、`status` 会提示）。它原来顺带打开的三项各自独立：评审节奏照 spec-guard 的 `reviewCadence`（Spec、Plan 批准人不同的模块自动按 separate）；声明范围只认 `config set --declared-scope`；
+  收尾汇总是新开关 `config set --digest on|off`（要用户原话）——打开时同步通知、快检查与检查账、不经队列的提交、提前落地这几类不逐条告诉用户，**给用户发批量交审、最终验收，或 `merge cleanup` 本批收尾时**，先 `module-crew tier digest`，把正文写进那条消息，再 `module-crew tier digest --mark-told`（只是记账）；
+  收窄通知、【等待用户】、修基线任务、权限弹窗和任何要用户决定的事不进汇总。
+- **底线**：三种必停情况（测试改不红、Spec 没覆盖的决策、高风险不可逆改动）照旧；合并队列里照样跑完整检查。
 
 ## 额度外包（项目开关 codexOffload，第十版第 2 轮）
 

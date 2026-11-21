@@ -60,7 +60,8 @@ flowchart LR
 | `checks.py` | 快检查与完整检查分开、按树哈希记的检查账、修基线任务 |
 | `unqueued.py` | 集成分支上不经合并队列的提交 |
 | `tasks.py` | 轻任务记录（T 编号）：重叠判断、排队、派出、收窄 |
-| `autonomy.py` | 自治档位：每档放松什么、升档证据、出事降档 |
+| `autonomy.py` | autonomyTier 退役提示、出事收窄的去重与记账、收尾汇总（`tier digest`） |
+| `takeover.py` | 接管档位：读 spec-guard 的 takeover、每模块批准方式、Codex 当审查者（`review codex`／`codex-note`）、调 spec-guard 收窄 |
 | `offload.py` | 额度外包：派出 Task、读 delegate 的结果、核对后提交 |
 | `failure.py` | 挂起、`sessions` 事实、恢复说明、退回串行 |
 | `stall.py` | 给决策收件箱看的停滞事实（只读，不判断是否卡住） |
