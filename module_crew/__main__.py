@@ -667,6 +667,35 @@ def _failure(args) -> int:
     return 0
 
 
+def _review_codex(args, db) -> int:
+    """crew-takeover-approve decisions 3 to 6: Codex as the reviewer of a Spec or Plan the takeover gives it."""
+    from module_crew import takeover
+    try:
+        if args.action == "codex":
+            lines, _ = takeover.codex_command(db, args.number)
+            print("\n".join(lines))
+            return 0
+        if args.action == "codex-fallback":
+            original = _original(args.original, args.original_file)
+            if original is None:
+                return 2
+            print("\n".join(takeover.codex_fallback(db, args.number, original)))
+            return 0
+        res = takeover.codex_note(".", args.number, args.report)
+    except takeover.CodexRefused as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 3
+    for line in res.lines:
+        print(line)
+    if res.draft:
+        print(res.draft, end="")
+    for x in res.sends:
+        kind = {"rework": "【协调通知】（返工）", "coordination-notice": "【协调通知】"}.get(x["kind"], "【协调通知】")
+        print(f"发送 {kind} → {x['to']}，正文文件：{x['path']}")
+        _sent(x["to"])
+    return res.code
+
+
 def _review(args) -> int:
     db = store.open_store()
     if args.action == "add":
@@ -681,6 +710,8 @@ def _review(args) -> int:
             print(f"发送 【交审】 → {x['to']}（送审），正文文件：{x['path']}")
             _sent(x['to'])
         return out.code
+    if args.action in ("codex", "codex-note", "codex-fallback"):        # crew-takeover-approve
+        return _review_codex(args, db)
     if args.action == "show":
         try:
             print("\n".join(review.show(db, args.number, args.submission, args.spec_diff)))
@@ -1398,6 +1429,16 @@ def _main(argv: list[str] | None = None) -> int:
     rsh.add_argument("number", type=refs.parse)
     rsh.add_argument("--submission", action="store_true", help="另外输出交审原文")
     rsh.add_argument("--spec-diff", action="store_true", help="只输出最终验收时 Spec 相对集成分支的改动差异")
+    rcx = rvs.add_parser("codex", help="只读：给出这一轮交 Codex 审的 /delegate:review 命令（crew-takeover-approve）")
+    rcx.add_argument("number", type=refs.parse)
+    rcn = rvs.add_parser("codex-note", help="记下 Codex 的审查报告：返工、放行或交用户")
+    rcn.add_argument("number", type=refs.parse)
+    rcn.add_argument("--report", required=True, help="/delegate:review 标准输出的 JSON 文件")
+    rcf = rvs.add_parser("codex-fallback", help="Codex 不可用或两轮仍阻断，用户决定这一项改由自己批（要用户原话）")
+    rcf.add_argument("number", type=refs.parse)
+    rcfg = rcf.add_mutually_exclusive_group(required=True)
+    rcfg.add_argument("--original")
+    rcfg.add_argument("--original-file")
     for name in ("approve", "answer"):
         r = rvs.add_parser(name)
         if name == "approve":

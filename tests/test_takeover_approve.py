@@ -296,3 +296,221 @@ class KickoffTakeoverTest(TierMixin, TakeoverMixin, StartCase):
         self.assertIn("批准方式：Spec 人批、Plan Codex 放行、合并 人合", texts["b"])
         self.assertIn("项目评审节奏：combined", texts["c"])
         self.assertNotIn("批准方式", texts["c"])
+
+
+# ---------------------------------------------------------------- Tasks 4 and 5: Codex as the reviewer
+
+REVIEW_MARK_115 = ["python3", "-B", "hooks/review_mark.py", "--project", "<project-root>", "--module", "<module-id>",
+                   "--target", "<spec|plan|both|acceptance>", "--state", "<pending|approved|codex-approved|codex-reviewed>",
+                   "[--review <report file>]"]
+
+FAKE_MARK_115 = '''import argparse, json, os, sys
+from pathlib import Path
+p = argparse.ArgumentParser()
+for a in ("--project", "--module", "--target", "--state"):
+    p.add_argument(a, required=True)
+p.add_argument("--review")
+p.add_argument("--confirm", action="store_true")
+a = p.parse_args()
+with open(os.environ["FAKE_MARK_LOG"], "a", encoding="utf-8") as log:
+    log.write(json.dumps(vars(a)) + "\\n")
+if os.environ.get("FAKE_REVIEW_FAIL") == a.module or not a.confirm:
+    sys.exit(2)
+f = Path(a.project) / (("spec/%s.md" if a.target == "spec" else "tasks/%s/plan.md") % a.module)
+lines = f.read_text(encoding="utf-8").splitlines(keepends=True)
+mark = "<!-- spec-guard: review %s -->\\n" % a.state
+if lines and lines[0].startswith("<!-- spec-guard: review"):
+    lines[0] = mark
+else:
+    lines.insert(0, mark)
+f.write_text("".join(lines), encoding="utf-8")
+'''
+
+
+def report(files: dict, findings=(), status="completed", outcome=None, backend="codex", recheck=None) -> dict:
+    return {"schema_version": 1, "execution_status": status, "backend": backend,
+            "review_outcome": outcome or ("findings" if findings else "no_findings_in_scope"),
+            "scope": {"paths": list(files), "files": files}, "unreviewed": [], "findings": list(findings),
+            "recheck": recheck, "limitations": []}
+
+
+def finding(title, severity="blocking", **kw):
+    out = {"title": title, "file": "tasks/b/plan.md", "line": 2, "trigger": "", "impact": "", "evidence": "",
+           "suggestion": kw.pop("suggestion", "改掉")}
+    if severity is not None:
+        out["severity"] = severity
+    return {**out, **kw}
+
+
+class CodexReviewTest(TierMixin, TakeoverMixin, ReviewCase):
+    """Task 4 (acceptance 4, 6) and Task 5 (acceptance 5, 7, 10)."""
+
+    def setUp(self):
+        import os
+        from pathlib import Path
+        super().setUp()
+        self.with_takeover()
+        root = Path(self.plugins.entries["spec-guard@m"][-1]["installPath"])
+        doc = json.loads((root / "interface.json").read_text())
+        doc["reviewMark"] = {"command": REVIEW_MARK_115}
+        (root / "interface.json").write_text(json.dumps(doc))
+        (root / "hooks" / "review_mark.py").write_text(FAKE_MARK_115)
+        self.mark_log = self.tmp / "marks.jsonl"
+        os.environ["FAKE_MARK_LOG"] = str(self.mark_log)
+        self.addCleanup(lambda: os.environ.pop("FAKE_MARK_LOG", None))
+        self.set_takeover("plan", {"b": takeover_row(plan="codex")})
+        from module_crew import review
+        self.db = store.open_store(self.repo)
+        spec = review.add(self.db, self.spec_review("b"), "shop-b", 1).number
+        res = review.approve(self.repo, [spec], "批 b 的 Spec")
+        assert res.code == 0, res.lines
+        self.n = review.add(self.db, self.plan_review("b"), "shop-b", 2).number
+
+    def files(self, n=None):
+        import hashlib
+        rec = store.get(self.db, "item", str(n or self.n))
+        out = {}
+        for f in rec["files"]:
+            import subprocess
+            data = subprocess.run(["git", "-C", str(self.wt["b"]), "show", f"{rec['commit']}:{f['path']}"],
+                                  capture_output=True, check=True).stdout
+            out[f["path"]] = hashlib.sha256(data).hexdigest()
+        return out
+
+    def note(self, doc, n=None) -> tuple[int, str]:
+        path = self.tmp / f"report-{len(list(self.tmp.glob('report-*')))}.json"
+        path.write_text(json.dumps(doc))
+        return self.cli("review", "codex-note", f"C{n or self.n}", "--report", str(path))
+
+    def marks(self):
+        return [json.loads(x) for x in self.mark_log.read_text().splitlines()] if self.mark_log.exists() else []
+
+    def test_command(self):
+        code, out = self.cli("review", "codex", f"C{self.n}")
+        self.assertEqual(code, 0, out)
+        self.assertIn("/delegate:review --backend codex --repo", out)
+        self.assertIn("--paths tasks/b/plan.md --paths tasks/b/todo.md --spec spec/b.md", out)
+        self.assertNotIn("--previous-report", out)
+        self.assertIn(f"codex/C{self.n}-r1.json", out)
+
+    def test_blocking_twice_then_the_user(self):
+        from module_crew import review
+        code, out = self.note(report(self.files(), [finding("缺回滚步骤"), finding("缺字段", severity=None)]))
+        self.assertEqual(code, 0, out)
+        self.assertIn("返工第 1 轮", out)
+        rec = store.get(self.db, "item", str(self.n))
+        self.assertEqual(review.review_state(self.db, self.n), "rework")
+        body = [e for e in store.events(self.db, kind="item") if e["type"] == "item.rework-sent"][-1]["data"]["body"]
+        text = store.read_body(self.db, body)
+        self.assertIn("--state codex-reviewed --review", text)
+        self.assertIn("2. 缺字段", text)                   # missing severity is blocking
+        self.assertIn("--previous-report", self.cli("review", "codex", f"C{self.n}")[1])
+        code, out = self.note(report(self.files(), [finding("还缺")]))
+        self.assertIn("返工第 2 轮", out)
+        code, out = self.note(report(self.files(), [finding("仍缺")]))
+        self.assertEqual(code, 5, out)
+        self.assertIn("交用户决定（不降档）", out)
+        self.assertIn("【等待用户】", out)
+        self.assertIn("类型：卡住选做法", out)
+        self.assertTrue(store.get(self.db, "item", str(self.n))["overLimit"])
+        self.assertEqual(self.cli("review", "codex", f"C{self.n}")[0], 3)
+        self.assertNotIn("tier-lowered", "".join(e["type"] for e in store.events(self.db)))
+        self.assertEqual(rec["reviewer"], "codex")
+
+    def test_suggestions_only_lands_as_codex_approval(self):
+        code, out = self.note(report(self.files(), [finding("可以更短", severity="suggestion")]))
+        self.assertEqual(code, 0, out)
+        self.assertIn("Codex 放行记录", out)
+        marks = self.marks()
+        self.assertEqual((marks[-1]["state"], marks[-1]["target"]), ("codex-approved", "plan"))
+        self.assertTrue(marks[-1]["review"].endswith(f"C{self.n}-r1.json"))
+        approvals = [v for v in store.records(self.db, "item").values() if v.get("kind") == "codex-approval"]
+        self.assertEqual(len(approvals), 1)
+        self.assertEqual(approvals[0]["codex"]["suggestions"], 1)
+        self.assertIn("Codex 放行事项", git(self.repo, "log", "-1", "--format=%s"))
+        self.assertIn("发送 【协调通知】 → shop-b", out)        # start notice: Spec by the user, Plan by Codex
+        self.assertNotIn("【用户答复】", out)
+        notice = [e for e in store.events(self.db, kind="item") if e["type"] == "item.created"]
+        self.assertTrue(notice)
+        self.assertEqual(json.loads(self.cli("status", "--json")[1])["store"]["takeover"]["codex"]["plan"], 1)
+
+    def test_mismatch_is_refused(self):
+        files = self.files()
+        files["tasks/b/plan.md"] = "0" * 64
+        code, _ = self.note(report(files))
+        self.assertEqual(code, 3)
+        self.assertEqual([m["state"] for m in self.marks()], ["approved"])      # only the Spec from setUp
+        code, _ = self.note(report({"tasks/b/todo.md": self.files()["tasks/b/todo.md"]}))
+        self.assertEqual(code, 3)
+
+    def test_no_conclusion_stops_and_approve_needs_the_users_choice(self):
+        from module_crew import review
+        for doc in (report(self.files(), status="failed"), report(self.files(), outcome="inconclusive"),
+                    report(self.files(), backend="claude-code")):
+            code, out = self.note(doc)
+            self.assertEqual(code, 5, out)
+            self.assertIn("不会改由 Claude 自己审", out)
+        bad = self.tmp / "garbage.json"
+        bad.write_text("not json")
+        self.assertEqual(self.cli("review", "codex-note", f"C{self.n}", "--report", str(bad))[0], 5)
+        self.assertEqual(store.get(self.db, "item", str(self.n)).get("reviews"), None)
+        res = review.approve(self.repo, [self.n], "批")
+        self.assertNotEqual(res.code, 0)
+        self.assertEqual(self.marks()[-1]["state"], "approved")       # only the earlier Spec approval
+        self.assertEqual(self.cli("review", "codex-fallback", f"C{self.n}", "--original", " ")[0], 3)
+        code, out = self.cli("review", "codex-fallback", f"C{self.n}", "--original", "这次我来批")
+        self.assertEqual(code, 0, out)
+        res = review.approve(self.repo, [self.n], "这次我来批")
+        self.assertEqual(res.code, 0, res.lines)
+        rec = store.get(self.db, "item", str(self.n))
+        self.assertEqual((rec["reviewer"], rec["fallback"]), ("human", "codex-unavailable"))
+        self.assertEqual(self.marks()[-1]["state"], "approved")
+
+
+# ---------------------------------------------------------------- spec-guard 0.91.0 reviewMark template (mc-coord #22000)
+
+import test_spec_revision as _spec_revision        # module attribute, so its own tests are not collected twice here
+
+
+def use_template_115(case):
+    """Install spec-guard 0.91.0's real reviewMark.command (copied from its interface.json) and a fake 1.15 script."""
+    import os
+    from pathlib import Path
+    root = Path(case.plugins.entries["spec-guard@m"][-1]["installPath"])
+    doc = json.loads((root / "interface.json").read_text())
+    doc["reviewMark"] = {"command": REVIEW_MARK_115}
+    (root / "interface.json").write_text(json.dumps(doc))
+    (root / "hooks" / "review_mark.py").write_text(FAKE_MARK_115)
+    case.mark_log = case.tmp / "marks.jsonl"
+    os.environ["FAKE_MARK_LOG"] = str(case.mark_log)
+    case.addCleanup(lambda: os.environ.pop("FAKE_MARK_LOG", None))
+
+
+class Template115Test(ReviewCase):
+    """review approve with 0.91.0's template: no placeholder left, the optional --review dropped."""
+
+    def test_args_and_review_approve(self):
+        from pathlib import Path
+        from module_crew import review
+        root = Path(self.plugins.entries["spec-guard@m"][-1]["installPath"])
+        doc = {"reviewMark": {"command": REVIEW_MARK_115}}
+        args = review.mark_args(root, doc, Path("/x"), "b", "spec")
+        self.assertEqual(args[-6:], ["--module", "b", "--target", "spec", "--state", "approved"])
+        self.assertFalse([a for a in args if a.startswith("<") or a.startswith("[")])
+        args = review.mark_args(root, doc, Path("/x"), "b", "plan", "codex-approved", "/r.json")
+        self.assertEqual(args[-4:], ["--state", "codex-approved", "--review", "/r.json"])
+        use_template_115(self)
+        db = store.open_store(self.repo)
+        n = review.add(db, self.spec_review("b"), "shop-b", 1).number
+        res = review.approve(self.repo, [n], "批 b 的 Spec")
+        self.assertEqual(res.code, 0, res.lines)
+        logged = [json.loads(x) for x in self.mark_log.read_text().splitlines()]
+        self.assertEqual((logged[-1]["state"], logged[-1]["review"]), ("approved", None))
+
+
+class SpecRevision115Test(_spec_revision.SpecRevisionTest):
+    """merge run records a revised Spec's approval with 0.91.0's template (the inherited cases, template swapped)."""
+
+    def setUp(self):
+        super().setUp()
+        use_template_115(self)

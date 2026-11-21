@@ -457,7 +457,7 @@ def batch(project: str | os.PathLike) -> dict:
         items.append({"number": n, "ref": f"C{n}", "module": v["module"], "task": v.get("task"), "node": v["node"], "from": v["from"],
                       "files": v["files"], "points": _points(v["text"]), "reviews": list(v.get("reviews") or []),
                       "reviewState": state, "round": _rounds(db, v["module"], v["node"]),
-                      "ready": state in READY and (v.get("reviewer") != "codex" or state == "decide"),
+                      "ready": state in READY and v.get("reviewer") != "codex",
                       **({"reviewer": "codex"} if v.get("reviewer") == "codex" else {}),
                       "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state),
                       **({"checks": v["checks"]} if "checks" in v else {}),
@@ -1250,6 +1250,9 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
             reasons.append(f"没有交审事项 C{n}")
         elif rec.get("state") != "open":
             reasons.append(f"交审事项 C{n} 已关闭（{rec.get('closedReason')}）")
+        elif rec.get("reviewer") == "codex" and codex is None:      # crew-takeover-approve decision 6
+            reasons.append(f"交审事项 C{n} 由 Codex 放行：先 review codex C{n}；Codex 不可用或两轮仍阻断、用户决定自己批时，"
+                           f"先 review codex-fallback C{n} --original-file <用户原话>")
         elif rec.get("node") not in APPROVABLE:
             reasons.append(f"交审事项 C{n} 是最终验收：批准合并用 merge approve，只接受验收用 merge accept，"
                            "要求修改用 review answer")

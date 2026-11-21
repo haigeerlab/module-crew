@@ -3,6 +3,7 @@ after an incident (see spec/crew-takeover-approve.md)."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -263,3 +264,228 @@ def preflight(db: store.Store, project: str | os.PathLike) -> tuple[int, list[st
         return 3, ["不能写 takeover：", *(f"- {r}" for r in reasons)]
     return 0, [f"可以写 takeover：本机 spec-guard {found.version}（接口有 takeover、takeoverNarrow），delegate 接口 ≥ 1.5。"
                "引用用户原话后用 /spec-guard:config 写入，写完把 .agent/config.json 单独提交"]
+
+
+# ---------------------------------------------------------------- Codex as a reviewer (decisions 3 to 6)
+
+CODEX_REWORK_LIMIT = 2                 # spec-guard: two rounds with blocking findings, then the user
+CODEX_DIR = "codex"
+DONE_OUTCOMES = ("findings", "no_findings_in_scope")
+TASK_TEXT = ("按 spec-guard 对 {what} 的要求审这份文件；阻断意见（severity: blocking）只限「照这份文件做会做错或做不成」，"
+             "其余写成建议（severity: suggestion）")
+
+
+class CodexRefused(Exception):
+    """Nothing recorded (exit 3)."""
+
+
+@dataclass
+class CodexResult:
+    code: int = 0
+    lines: list[str] = field(default_factory=list)
+    sends: list[dict] = field(default_factory=list)
+    draft: str | None = None
+
+
+def _codex_item(db: store.Store, n: int) -> dict:
+    rec = store.get(db, "item", str(n))
+    if rec is None or rec.get("kind") != "review":
+        raise CodexRefused(f"没有交审事项 C{n}")
+    if rec.get("state") != "open":
+        raise CodexRefused(f"交审事项 C{n} 已关闭（{rec.get('closedReason')}）")
+    if rec.get("reviewer") != "codex":
+        raise CodexRefused(f"C{n} 不是 Codex 放行的节点（照人批流程走 review approve）")
+    if rec.get("overLimit"):
+        raise CodexRefused(f"C{n} Codex 已审满两轮仍有阻断：交用户决定，不再交 Codex")
+    return rec
+
+
+def _target(rec: dict) -> str:
+    return "plan" if rec["node"] == "plan" else "spec"
+
+
+def codex_command(db: store.Store, n: int) -> tuple[list[str], Path]:
+    """`review codex C<n>` (read only): the /delegate:review line for this round and where to save its stdout."""
+    rec = _codex_item(db, n)
+    reports = list(rec.get("codexReports") or [])
+    path = db.path / CODEX_DIR / f"C{n}-r{len(reports) + 1}.json"
+    session = store.get(db, "session", rec["from"]) or {}
+    worktree = session.get("worktree", "")
+    args = ["/delegate:review", "--backend", "codex", "--repo", worktree]
+    for f in rec["files"]:
+        args += ["--paths", f["path"]]
+    if rec["node"] == "plan":
+        args += ["--spec", f"spec/{rec['module']}.md"]
+    if reports:
+        args += ["--previous-report", reports[-1]]
+    what = {"spec": "Spec", "interface": "接口提案", "plan": "Plan"}[rec["node"]]
+    args.append(json.dumps(TASK_TEXT.format(what=what), ensure_ascii=False))
+    lines = [f"C{n}（{rec['module']} 的 {what}）第 {len(reports) + 1} 次交 Codex 审：在模块协调会话里运行",
+             "  " + " ".join(args),
+             f"把标准输出的那份 JSON 原样存到 {path}，再运行 module-crew review codex-note C{n} --report {path}",
+             "Codex 跑不成也照样交给 codex-note（它会停下、给出问用户的草稿）；不要自己审，也不要换后端"]
+    head = probe._git(Path(worktree), "rev-parse", "HEAD").stdout.strip() if worktree else ""
+    if head and head != rec["commit"]:
+        lines.append(f"注意：模块 worktree 的 HEAD（{head[:7]}）不是交审提交（{rec['commit'][:7]}）；审的内容对不上时 codex-note 会拒收")
+    return lines, path
+
+
+def _report(path: str | os.PathLike) -> tuple[dict | None, str | None]:
+    """The report, or why there is no conclusion (spec-guard codex-approval assumption 2)."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return None, f"审查报告读不出（{exc.__class__.__name__}）"
+    if not isinstance(doc, dict):
+        return None, "审查报告不是 JSON 对象"
+    if doc.get("backend") != "codex":
+        return None, f"审查后端不是 codex（{doc.get('backend')}）"
+    if doc.get("execution_status") != "completed":
+        return None, f"Codex 审查没跑完（execution_status：{doc.get('execution_status')}）"
+    if doc.get("review_outcome") not in DONE_OUTCOMES:
+        return None, f"Codex 审查没有结论（review_outcome：{doc.get('review_outcome')}）"
+    if doc.get("unreviewed"):
+        return None, "Codex 审查只覆盖了一部分文件"
+    return doc, None
+
+
+def _mismatch(rec: dict, doc: dict, worktree: Path) -> list[str]:
+    """Decision 4 as measured: every submitted file is in scope.files with the sha256 of the submitted commit."""
+    files = ((doc.get("scope") or {}).get("files")) or {}
+    out = []
+    for f in rec["files"]:
+        shown = subprocess.run(["git", "-C", str(worktree), "show", f"{rec['commit']}:{f['path']}"], capture_output=True)
+        want = hashlib.sha256(shown.stdout).hexdigest() if shown.returncode == 0 else None
+        got = files.get(f["path"]) if isinstance(files, dict) else None
+        if got is None:
+            out.append(f"{f['path']} 不在审查报告的范围里")
+        elif want != got:
+            out.append(f"{f['path']} 审的不是交审提交 {rec['commit'][:7]} 里的内容")
+    return out
+
+
+def _blocking(doc: dict) -> tuple[list[str], list[str]]:
+    """(blocking, suggestions) as one-line texts; a missing severity is blocking; an unresolved recheck item too."""
+    block, advice = [], []
+    for f in doc.get("findings") or []:
+        if not isinstance(f, dict):
+            continue
+        where = f"{f.get('file') or ''}{':' + str(f['line']) if f.get('line') else ''}"
+        text = (f.get("title") or "").strip() + (f"（{where}）" if where else "")
+        fix = (f.get("suggestion") or "").strip()
+        (advice if f.get("severity") == "suggestion" else block).append(text + (f"：{fix}" if fix else ""))
+    for item in ((doc.get("recheck") or {}).get("items")) or []:
+        if isinstance(item, dict) and item.get("status") == "unresolved":
+            block.append("上一轮的阻断意见没解决：" + ((item.get("finding") or {}).get("title") or "").strip())
+    return block, advice
+
+
+WHAT = {"spec": "Spec", "interface": "接口提案", "plan": "Plan"}
+
+
+def _coordinator(db: store.Store) -> str:
+    return next((name for name, r in store.records(db, "session").items()
+                 if r.get("role") == "coordinator" and r.get("status") == "active"), "模块协调")
+
+
+def unavailable_draft(db: store.Store, rec: dict, n: int, why: str) -> str:
+    from module_crew import offload
+    what = WHAT[rec["node"]]
+    return "\n".join(offload.draft(
+        _coordinator(db), rec["module"], f"{rec['module']} 的 {what}（交审 C{n}）Codex 审查没跑成，下一步怎么办",
+        f"Codex 审查没跑成：{why}。这一项由 Codex 放行，Codex 不可用时停下等你，不会改由 Claude 自己审",
+        [("A", f"等 Codex 恢复后重跑", f"运行 review codex C{n}，照它给的命令重跑"),
+         ("B", "这一项这次改由你批", f"之后照人批流程：review codex-fallback C{n} --original-file <答复>，再 review approve C{n}")])) + "\n"
+
+
+def over_limit_draft(db: store.Store, rec: dict, n: int, block: list[str]) -> str:
+    from module_crew import offload
+    what = WHAT[rec["node"]]
+    return "\n".join(offload.draft(
+        _coordinator(db), rec["module"], f"{rec['module']} 的 {what}（交审 C{n}）Codex 两轮后仍有阻断，怎么办",
+        f"Codex 审了 {CODEX_REWORK_LIMIT} 轮返工后仍有 {len(block)} 条阻断意见：" + "；".join(block[:5]),
+        [("A", "你来批这一版", f"review codex-fallback C{n} --original-file <答复>，再 review approve C{n}"),
+         ("B", "照阻断意见再改一轮，改完交你批", f"review codex-fallback C{n} --original-file <答复> 后用 review answer C{n} 退回")])) + "\n"
+
+
+def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) -> CodexResult:
+    """`review codex-note C<n> --report <json>`: record Codex's conclusion; blocking → rework (two rounds at most),
+    none → land as Codex's approval; no conclusion → stop and ask the user. Never a review of Claude's own."""
+    from module_crew import protocol, review
+    project = Path(project)
+    db = store.open_store(project)
+    rec = _codex_item(db, n)
+    doc, why = _report(report)
+    if doc is None:
+        with db.transaction(actor="coordinator") as tx:
+            tx.put("item", str(n), tx.get("item", str(n)), action="codex-unavailable", data={"reason": why,
+                                                                                            "report": str(report)})
+        return CodexResult(5, [f"C{n} 没有记结论：{why}", "把下面这份【等待用户】自检后发给用户（照现有规则转）；不要自己审：", ""],
+                           draft=unavailable_draft(db, rec, n, why))
+    worktree = Path((store.get(db, "session", rec["from"]) or {}).get("worktree", "/nonexistent"))
+    bad = _mismatch(rec, doc, worktree)
+    if bad:
+        raise CodexRefused("审查报告和交审对不上，没有记：" + "；".join(bad) + f"。重跑 review codex C{n}")
+    block, advice = _blocking(doc)
+    saved = db.path / CODEX_DIR / f"C{n}-r{len(rec.get('codexReports') or []) + 1}.json"
+    if Path(report).resolve() != saved.resolve():
+        saved.parent.mkdir(parents=True, exist_ok=True)
+        saved.write_bytes(Path(report).read_bytes())
+    rounds = len(rec.get("codexReports") or []) + 1
+    verdict = f"有须修改项{len(block)}条" if block else (f"通过，附建议{len(advice)}条" if advice else "通过")
+    row = {"from": "codex", "ref": f"R-{rounds}", "verdict": verdict, "at": store.now(), "report": str(saved),
+           "points": "\n".join([f"须修改：{x}" for x in block] + [f"建议{i}：{x}" for i, x in enumerate(advice, 1)]),
+           "text": f"Codex 审查第 {rounds} 次（报告 {saved}）：{verdict}", "suggestions": advice}
+    if block:
+        row["changes"] = block
+    res = CodexResult()
+    with db.transaction(actor="coordinator") as tx:
+        cur = tx.get("item", str(n))
+        cur = dict(cur, reviews=list(cur.get("reviews") or []) + [row],
+                   codexReports=list(cur.get("codexReports") or []) + [str(saved)])
+        tx.put("item", str(n), cur, action="codex-noted", data={"round": rounds, "blocking": len(block)})
+        if block:
+            done = review._rounds(db, cur["module"], cur["node"])
+            if done >= CODEX_REWORK_LIMIT:
+                tx.put("item", str(n), dict(cur, overLimit=True), action="codex-over-limit")
+                res.code = 5
+                res.draft = over_limit_draft(db, cur, n, block)
+                res.lines += [f"C{n} Codex 审了 {CODEX_REWORK_LIMIT} 轮返工后仍有阻断：不再返工，交用户决定（不降档）",
+                              "把下面这份【等待用户】自检后发给用户：", ""]
+                return res
+            target = _target(cur)
+            todo = (f"先在你的 worktree 运行 /spec-guard:review-mark --target {target} --state codex-reviewed "
+                    f"--review {saved} --confirm（把这一轮记进文件），再按阻断意见改：\n"
+                    + "\n".join(f"{i}. {x}" for i, x in enumerate(block, 1))
+                    + ("\n建议（自己决定吸收与否，在文件「外部审查意见」一节每条写一句理由）：" + "；".join(advice) if advice else "")
+                    + "\n改完提交、重新发【交审】；不同意就在【交审】里写「不同意：R-" + str(rounds) + "：<理由>」"
+                    + f"\n审查原文：module-crew review show C{n}")
+            body = tx.allocate_number()
+            meta = tx.write_body(body, protocol.render_coordination_notice(
+                "rework", f"Codex 审查 R-{rounds}（交审 C{n}）", todo, round=done + 1))
+            tx.put("item", str(n), cur, action="rework-sent",
+                   data={"module": cur["module"], "node": cur["node"], "round": done + 1, "body": body, "reviewer": "codex"})
+            res.sends.append({"kind": "rework", "to": cur["from"], "replyTo": None, "body": body, "path": db.path / meta["path"]})
+            res.lines.append(f"C{n} Codex 有 {len(block)} 条阻断：返工第 {done + 1} 轮，通知 {cur['from']}")
+            return res
+    landed = review._approve(project, [n], "", codex={"report": str(saved), "rounds": rounds, "suggestions": len(advice)})
+    res.code = landed.code if landed.code in (0, 3) else 4
+    res.lines += [f"C{n} Codex 没有阻断意见（建议 {len(advice)} 条）：放行"] + landed.lines
+    res.sends += landed.sends
+    return res
+
+
+def codex_fallback(db: store.Store, n: int, original: str) -> list[str]:
+    """Decision 6: the user chose to approve this one themselves (Codex unavailable or over the limit)."""
+    if not original or not original.strip():
+        raise CodexRefused("用户原话不能为空：改由用户批要用户明确说")
+    rec = store.get(db, "item", str(n))
+    if rec is None or rec.get("kind") != "review" or rec.get("state") != "open" or rec.get("reviewer") != "codex":
+        raise CodexRefused(f"C{n} 不是未答的 Codex 放行交审")
+    why = "codex-over-limit" if rec.get("overLimit") else "codex-unavailable"
+    with db.transaction(actor="coordinator") as tx:
+        cur = tx.get("item", str(n))
+        cur = {k: v for k, v in cur.items() if k not in ("sentTo", "sentAt")}
+        tx.put("item", str(n), dict(cur, reviewer="human", fallback=why), action="codex-fallback",
+               data={"original": original, **store.source_field()})
+    return [f"C{n} 改由用户批（{why}）：照人批流程，用户答复后 review approve C{n} 或 review answer C{n}"]
