@@ -8,9 +8,9 @@
 - [x] Task 2：`takeover.py` 读档位、`tier`／`--preflight`、`status` 接管一段（Spec 决策 1、2；验收 1、2）——实现先于测试，测试一次通过；临时去掉强制人批后测试转红，确认测到；每模块档位读 `/map --json`，项目档位读 `project_config.py show`；旧 `autonomy.preflight` 及 PreflightTest（3 个）删除，由新 preflight 两个测试覆盖；本模块与 probe／status 回归 68 个通过
 - [x] Task 3：显示批准方式、批量交审排除 Codex 项、批准人不同自动分开批（Spec 决策 2、8；验收 3、8）——实现先于测试；`review add` 对 Codex 节点记虚拟审查者 `codex`（不发邮箱、不超时），`review batch`／`for_hub` 不提请 Codex 项、末尾加告知行，`start.review_cadence` 加模块参数、开工说明在批准人不同时写 separate 并加批准方式一行；回归时 `test_review_nearby` 一个用例转红（开工说明绕过了 /map 的节奏），已改为沿用 /map 读到的节奏
 - [x] Checkpoint 2（report）：读档位与显示就位——本模块 17 个通过；交审、批量、收件箱、开工、提前开工、外包、轻任务、重开、契约等回归 299 个中 1 个失败已修，复跑本模块与审查就近 59 个通过
-- [ ] Task 4：`review codex`／`codex-note`：返工、超限、对得上（Spec 决策 3、4；验收 4、6）
-- [ ] Task 5：放行落地与记账、Codex 不可用、`review approve` 的回退（Spec 决策 5、6、7；验收 5、7、10）
-- [ ] Checkpoint 3（report）：Codex 放行链路就位
+- [x] Task 4：`review codex`／`codex-note`：返工、超限、对得上（Spec 决策 3、4；验收 4、6）——实现先于测试；虚拟审查者 `codex`，阻断返工两轮、第 3 次仍阻断退出码 5 给【等待用户】草稿且不降档，缺 severity 按阻断，复审命令带 `--previous-report`，按 `scope.files` 的 sha256 对交审提交核对、对不上退出码 3；返工通知让模块会话先 `review-mark --state codex-reviewed` 记这一轮
+- [x] Task 5：放行落地与记账、Codex 不可用、`review approve` 的回退（Spec 决策 5、6、7；验收 5、7、10）——`review._approve` 参数化共用落地（单独提交 bda2b32），写 `codex-approved --review`、记 `codex-approval`、不发【用户答复】；Codex 没结论退出码 5；`review approve` 对 Codex 项拒绝，新增 `review codex-fallback`（要原话）后照人批（Spec 已补变更记录）；按 mc-coord #22000（用户「取消 T628」）修好 spec-guard 0.91.0 新模板下 `review approve` 与 `merge run` 记 Spec 修订批准两处，复现测试 Template115Test、SpecRevision115Test 在修复前代码上分别报「不认识的占位符」与没记下修订批准，修复后通过
+- [x] Checkpoint 3（report）：Codex 放行链路就位——本模块 26 个通过；交审、合并、收件箱、开工、提前开工、外包、轻任务、重开、最终验收拆分、旧档位、声明范围、检查账等回归 463 个通过
 - [ ] Task 6：出事收窄与 `tier degrade`（Spec 决策 9、10；验收 9）
 - [ ] Checkpoint 4（gate）：契约「放行」类型已发版
 - [ ] Task 7：认「放行」通知、只放行 Spec 时发它（Spec 决策 12）
