@@ -194,9 +194,10 @@ PYTHONPATH=tests python3 -m unittest test_takeover_merge
 
 ## 并行边界
 
-- 独占：`tests/test_takeover_merge.py`。
-- 共享（`crew-takeover-approve` 先合入，本模块在它之上改）：`module_crew/takeover.py`、`review.py`、`merge.py`、`checks.py`、`probe.py`、`__main__.py`、两份 `crew-coordinator`、两份 `crew-dev`。
-- 公共：`interface.json`（插件对外接口，改动随本模块最终验收审）、测试资源、`docs/`。
+- 独占：`tests/test_takeover_merge.py`
+- 共享（`crew-takeover-approve` 先合入，本模块在它之上改）：`module_crew/takeover.py`、`module_crew/review.py`、`module_crew/merge.py`、`module_crew/checks.py`、`module_crew/probe.py`、`module_crew/__main__.py`、
+  `skills/crew-coordinator/SKILL.md`、`codex-skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`codex-skills/crew-dev/SKILL.md`、`docs/guide.md`、`docs/commands.md`、`README.md`
+- 公共：`interface.json`（插件对外接口，改动随本模块最终验收审）、测试资源
 
 ## 未决问题
 
@@ -207,3 +208,7 @@ PYTHONPATH=tests python3 -m unittest test_takeover_merge
 ## 文档建议
 
 `docs/guide.md` 加一节「自动合（合并第一段）」：勾了「合并：自动」后最终验收怎么走、三样证据、Codex 不可用或超限会怎样、出事先撤合并、推送与远端合并归 autopilot；`docs/commands.md` 补 `merge auto`、`check evidence`；README 的接管档位一节（`crew-takeover-approve` 改写的那节）补一句合并第一段。CHANGELOG 随发版写。
+
+## 变更记录
+
+- 2026-11-21：「并行边界」改成每个文件写完整的仓库相对路径（`module_crew/review.py` 等，照 `spec/crew-autonomy-tier.md` 的写法），`docs/` 两个文档与 README 从「公共」移到「共享」并写全路径；内容范围不变。原因：`module-crew review batch` 对简写路径报 bad-path、spec-guard 读不了；来源：mc-coord 2026-11-21 提醒（#21930），随 Plan 交审一并复审。
