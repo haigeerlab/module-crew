@@ -560,9 +560,9 @@ def _config_set(args) -> int:
     needs the user's words."""
     protected = [] if args.clear_protected_files else args.protected_file     # 0.17.0: None when not given
     if all(v is None for v in (args.commit_prefix, args.check_timeout, args.declared_scope, args.quick_check_command,
-                               args.check_ledger, args.codex_offload, protected)):
+                               args.check_ledger, args.codex_offload, args.digest, protected)):
         print("❌ 至少给一项：--commit-prefix、--check-timeout、--declared-scope、--quick-check-command、--check-ledger"
-              "、--codex-offload、--protected-file 或 --clear-protected-files", file=sys.stderr)
+              "、--codex-offload、--digest、--protected-file 或 --clear-protected-files", file=sys.stderr)
         return 2
     if args.check_timeout is not None and args.check_timeout < 1:
         print("❌ --check-timeout 要是正整数（秒）", file=sys.stderr)
@@ -593,7 +593,8 @@ def _config_set(args) -> int:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
     changed = {k: v for k, v in (("commitPrefix", args.commit_prefix), ("checkTimeout", args.check_timeout),
-                                 ("declaredScope", args.declared_scope), (changes.PROTECTED, protected)) if v is not None}
+                                 ("declaredScope", args.declared_scope), ("digest", args.digest),
+                                 (changes.PROTECTED, protected)) if v is not None}
     if not changed:
         return 0
     with db.transaction(actor="coordinator") as tx:
@@ -605,6 +606,9 @@ def _config_set(args) -> int:
         print(f"已改检查时限：{args.check_timeout} 秒（完整检查、提交与推送都用它）")
     if protected is not None:
         print("已登记保护文件：" + "、".join(protected) if protected else "已清空保护文件名单")
+    if args.digest is not None:                                 # crew-takeover-approve decision 11
+        print("已打开收尾汇总：同步、检查账、不经队列的提交、提前落地不逐条告诉用户，收尾时用 tier digest 一次说明"
+              if args.digest == "on" else "已关闭收尾汇总：这几类消息照常逐条告诉用户")
     if args.declared_scope is not None:
         from module_crew import declared
         print("已打开声明范围：Plan「预先声明」名单内的公共文件由模块直接改，名单外照旧发【公共变更请求】"
@@ -1358,6 +1362,7 @@ def _main(argv: list[str] | None = None) -> int:
     cfset.add_argument("--quick-check-command", help="快检查命令（项目脚本，只跑受影响部分；不经 shell）")
     cfset.add_argument("--check-ledger", choices=("on", "off"), help="检查记账开关：平时快检查、完整检查只在合并队列与基线检查里跑")
     cfset.add_argument("--codex-offload", choices=("on", "off"), help="额度外包开关：Spec、Plan 批准后把 Task 经 delegate 交给 Codex")
+    cfset.add_argument("--digest", choices=("on", "off"), help="收尾汇总开关：几类记账消息不逐条告诉用户、收尾时 tier digest 一次说明")
     cfp = cfset.add_mutually_exclusive_group()
     cfp.add_argument("--protected-file", action="append", metavar="路径",
                      help="随锁文件校验的保护文件（可重复，整份替换）：change add 遇到锁文件改动时提示要不要连带改")
@@ -1626,7 +1631,7 @@ def _main(argv: list[str] | None = None) -> int:
     ti.add_argument("--json", action="store_true")
     ti.add_argument("--preflight", action="store_true", help="写 autonomyTier 之前核对 spec-guard 版本与接口（只读）")
     tis = ti.add_subparsers(dest="action")
-    tir = tis.add_parser("restore", help="降档后恢复一档（要用户原话）")
+    tir = tis.add_parser("restore", help="已退役：放宽档位用 /spec-guard:config（要用户原话）")
     tirg = tir.add_mutually_exclusive_group(required=True)
     tirg.add_argument("--original")
     tirg.add_argument("--original-file")

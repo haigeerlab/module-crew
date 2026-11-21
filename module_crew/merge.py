@@ -594,9 +594,6 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
     if not reason:                  # crew-unqueued-commits: the merge (and tick) commits are module-crew's own
         from module_crew import unqueued
         unqueued.mark(db, checkout, "merge-run")
-        from module_crew import autonomy          # crew-autonomy-tier decision 7: advice only, never a step up
-        advice = autonomy.suggestion_line(db, project, once=True)
-        result.lines += [advice] if advice else []
         if not task:                # crew-spec-ahead decision 6: modules opened ahead that this merge made ready
             from module_crew import start
             result.lines += start.merged_lines(db, project, m)

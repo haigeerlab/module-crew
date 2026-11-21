@@ -8,10 +8,9 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from helpers import MergeCase, ReviewCase, StartCase, git
+from helpers import MergeCase, ReviewCase, git
 
-from module_crew import autonomy, declared, merge, review, sources, start, store
-from test_declared_scope import DeclaredMixin, request, usable
+from module_crew import autonomy, merge, review, sources, start, store
 
 READ_FROM = ("python3 -B hooks/project_config.py show --project <project-root> --format json: the item whose key is "
              "autonomyTier, with value and source")
@@ -131,7 +130,7 @@ class ReadTest(TierMixin, ReviewCase):
         self.assertNotIn("autonomy", store.get(db, "config", "main") or {})
         code, out = self.cli("tier")
         self.assertEqual(code, 0)
-        self.assertIn("档位没设（spec-guard 默认 strict），module-crew 照今天做", out)
+        self.assertNotIn("autonomyTier 已退役", out)        # crew-takeover-approve: no hint while unset
         self.assertNotIn("autonomy", store.get(self.db(), "config", "main") or {})
 
     def test_set_tier_is_seen_once(self):
@@ -144,8 +143,7 @@ class ReadTest(TierMixin, ReviewCase):
         self.assertEqual(len(seen), 1)
         code, out = self.cli("tier", "--json")
         doc = json.loads(out)
-        self.assertEqual((doc["configured"]["value"], doc["effective"], doc["explicit"], doc["cap"]),
-                         ("standard", "standard", True, None))
+        self.assertEqual((doc["retiredTier"], doc["effective"], doc["cap"]), ("standard", "standard", None))
 
     def test_cap_lowers_and_clears_when_configured_changes(self):
         self.with_tier()
@@ -197,66 +195,6 @@ def cap(db, to: str, configured: str):
         tx.put("config", "main", {**cfg, "autonomy": {"cap": to, "capFor": configured}}, action="tier-lowered")
 
 
-class StandardTest(TierMixin, DeclaredMixin, ReviewCase):
-    """Acceptance 4 and the cadence part of 6."""
-
-    def test_declared_scope_follows_the_tier_unless_set(self):
-        self.with_declared({"b": usable()})
-        self.with_tier()
-        db = self.db()
-        self.assertFalse(declared.enabled(db))                     # tier unset
-        self.set_tier("strict")
-        self.assertFalse(declared.enabled(db))
-        self.set_tier("standard", "combined")
-        self.assertTrue(declared.enabled(db))
-        from module_crew import changes
-        out = changes.add(db, request(["config/app.json"]), "shop-b", 1)
-        self.assertIs(store.get(db, "request", str(out.number))["declared"], True)
-        self.switch("off")
-        self.assertFalse(declared.enabled(db))                     # the user's own switch wins
-        self.switch("on")
-        self.set_tier(None)
-        self.assertTrue(declared.enabled(db))
-
-    def test_combined_cadence_and_the_hint(self):
-        self.with_tier()
-        self.set_tier("standard", "combined")
-        self.assertEqual(start.review_cadence(self.repo), "combined")
-        code, out = self.cli("tier")
-        self.assertNotIn("reviewCadence 是 separate", out)
-        self.set_tier("standard", "separate")
-        self.assertEqual(start.review_cadence(self.repo), "separate")
-        code, out = self.cli("tier", "--json")
-        doc = json.loads(out)
-        self.assertEqual(doc["cadence"], "separate")
-        self.assertIn("档位 standard 要 Spec 与 Plan 一起审，但 reviewCadence 是 separate", doc["cadenceHint"])
-
-    def test_cap_to_strict_reads_as_separate(self):
-        self.with_tier()
-        self.set_tier("standard", "combined")
-        cap(self.db(), "strict", "standard")
-        value, source, _ = start.cadence_info(self.repo)
-        self.assertEqual(value, "separate")
-        self.assertIn("降到 strict", source)
-        self.set_tier("strict", "combined")                        # the user said something new: cap cleared
-        self.assertEqual(start.review_cadence(self.repo), "combined")
-
-
-class StandardKickoffTest(TierMixin, StartCase):
-    def kickoff(self, module):
-        res = start.prepare(self.repo, [module], f"开 {module}", short="shop", max_modules=3)
-        assert res.code == 0, res.lines
-        return store.read_body(store.open_store(self.repo), res.prepared[0]["kickoff"])
-
-    def test_kickoff_cadence(self):
-        self.with_tier()
-        self.set_tier("standard", "combined")
-        git(self.repo, "commit", "-qam", "tier")
-        self.assertIn("项目评审节奏：combined", self.kickoff("b"))
-        cap(store.open_store(self.repo), "strict", "standard")
-        self.assertIn("项目评审节奏：separate", self.kickoff("c"))
-
-
 class IncidentBase(TierMixin, MergeCase):
     def setUp(self):
         super().setUp()
@@ -303,29 +241,6 @@ class IncidentTest(IncidentBase):
         self.assertEqual(self.effective(), "strict")
         self.assertIsNone(autonomy.incident(self.db, self.repo, "baseline-red", "t3"))
         self.assertEqual(len(self.lowered()), 2)
-        self.assertEqual(start.review_cadence(self.repo), "separate")
-
-    def test_restore(self):
-        with self.assertRaises(autonomy.Refused):
-            autonomy.restore(self.db, self.repo, "恢复")              # no cap yet
-        autonomy.incident(self.db, self.repo, "revoked", "1")
-        autonomy.incident(self.db, self.repo, "revoked", "2")
-        with self.assertRaises(autonomy.Refused):
-            autonomy.restore(self.db, self.repo, " ")
-        self.assertIn("恢复到 standard", autonomy.restore(self.db, self.repo, "恢复一档")[0])
-        self.assertEqual(self.effective(), "standard")
-        self.assertIn("降档上限清掉", autonomy.restore(self.db, self.repo, "再恢复")[0])
-        self.assertEqual((self.effective(), autonomy.state(self.db).get("cap")), ("relaxed", None))
-        restored = [e for e in autonomy.marks(self.db) if e["type"] == "config.tier-restored"]
-        self.assertEqual(restored[0]["data"]["original"], "恢复一档")
-
-    def test_restore_cli_needs_words(self):
-        autonomy.incident(self.db, self.repo, "revoked", "1")
-        code, _ = self.cli("tier", "restore", "--original", " ")
-        self.assertEqual(code, 3)
-        code, out = self.cli("tier", "restore", "--original", "恢复")
-        self.assertEqual(code, 0)
-        self.assertIn("恢复到 relaxed", out)
 
     def test_strict_tier_never_lowers(self):
         self.set_tier("strict")
@@ -386,8 +301,9 @@ class ExternalDegradeTest(IncidentBase):
         with redirect_stderr(io.StringIO()):
             code, _ = self.cli("tier", "restore", "--original", " ")
         self.assertEqual((code, self.effective()), (3, "standard"))
-        code, out = self.cli("tier", "restore", "--original", "恢复吧")
-        self.assertEqual((code, self.effective()), (0, "relaxed"))
+        with redirect_stderr(io.StringIO()):                        # crew-takeover-approve decision 10: retired
+            code, out = self.cli("tier", "restore", "--original", "恢复吧")
+        self.assertEqual((code, self.effective()), (3, "standard"))
 
 
 class ReworkIncidentTest(IncidentBase):
@@ -441,58 +357,6 @@ def fake_merged(db, module: str, rework: int = 0):
                                 "closedReason": "merged"}, action="merged")
 
 
-class AdviceTest(IncidentBase):
-    """Acceptance 8."""
-
-    def setUp(self):
-        super().setUp()
-        self.set_tier("standard", "combined")
-        git(self.repo, "commit", "-qam", "tier standard")
-        autonomy.effective(self.db, self.repo)                     # the start of the evidence
-
-    def test_three_good_modules_advise_once(self):
-        fake_merged(self.db, "x")
-        fake_merged(self.db, "y", rework=1)
-        code, out = self.cli("tier")
-        self.assertNotIn("可以建议升到", out)
-        fake_merged(self.db, "z")
-        code, out = self.cli("tier", "--json")
-        doc = json.loads(out)
-        self.assertEqual(doc["suggest"], "relaxed")
-        self.assertEqual([r["module"] for r in doc["evidence"]], ["x", "y", "z"])
-        code, out = self.cli("tier")
-        self.assertIn("可以建议升到 relaxed：最近 3 个模块（x、y、z）", out)
-        self.assertIn("不自动升", out)
-        self.cli("tier")
-        self.assertEqual(len([e for e in store.events(self.db, key="main", kind="config")
-                              if e["type"] == "config.tier-suggested"]), 1)
-        self.assertEqual(autonomy.effective(self.db, self.repo).value, "standard")   # never a step up by itself
-
-    def test_two_rework_rounds_break_the_streak(self):
-        for m, r in (("x", 0), ("y", 2), ("z", 0)):
-            fake_merged(self.db, m, rework=r)
-        self.assertIsNone(json.loads(self.cli("tier", "--json")[1])["suggest"])
-
-    def test_unset_tier_never_advises(self):
-        self.set_tier(None)
-        for m in ("x", "y", "z"):
-            fake_merged(self.db, m)
-        self.assertIsNone(json.loads(self.cli("tier", "--json")[1])["suggest"])
-
-    def test_merge_run_prints_the_advice(self):
-        fake_merged(self.db, "x")
-        fake_merged(self.db, "y")
-        self.approve_final("b", 1)
-        res = merge.run(self.repo, check_command="python3 -c pass")
-        self.assertEqual(res.code, 0, res.lines)
-        self.assertIn("可以建议升到 relaxed：最近 3 个模块（x、y、b）", "\n".join(res.lines))
-        self.approve_final("c", 2)
-        res = merge.run(self.repo)
-        self.assertEqual(res.code, 0, res.lines)
-        self.assertNotIn("可以建议升到", "\n".join(res.lines))          # pushed once per start
-        self.assertIn("可以建议升到 relaxed", self.cli("tier")[1])      # still shown when asked
-
-
 class DigestTest(IncidentBase):
     """Acceptance 5."""
 
@@ -540,18 +404,13 @@ class StatusTest(TierMixin, ReviewCase):
         code, out = self.cli("status", "--json")
         self.assertIsNone(json.loads(out)["store"]["autonomy"])
 
-    def test_set_tier_and_cap(self):
+    def test_old_tier_shows_the_retirement(self):
         self.with_tier()
         self.set_tier("relaxed", "combined")
         code, out = self.cli("status")
-        self.assertIn("自治档位：设的 relaxed（.agent/config.json），生效 relaxed", out)
-        cap(self.db(), "standard", "relaxed")
-        code, out = self.cli("status", "--json")
-        doc = json.loads(out)["store"]["autonomy"]
-        self.assertEqual((doc["configured"], doc["cap"], doc["effective"]), ("relaxed", "standard", "standard"))
-        code, out = self.cli("status")
-        self.assertIn("生效 standard", out)
-        self.assertIn("恢复要用户原话", out)
+        self.assertIn("autonomyTier 已退役、不再生效（旧值 relaxed 不映射为接管档位）", out)
+        doc = json.loads(self.cli("status", "--json")[1])["store"]["autonomy"]
+        self.assertEqual(doc["retiredTier"], "relaxed")
 
 
 class FloorTest(TierMixin, MergeCase):

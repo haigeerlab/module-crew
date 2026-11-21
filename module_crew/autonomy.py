@@ -11,12 +11,11 @@ from pathlib import Path
 
 from module_crew import probe, store
 
+DIGEST = "digest"                     # config/main.digest: on | off (crew-takeover-approve)
 FIELD = "autonomy"                    # config/main.autonomy: cap, capFor, incident, seen, suggestedFor, toldSeq
 TIERS = ("strict", "standard", "relaxed")
 READ_FROM = ("python3", "-B", "hooks/project_config.py", "show", "--project", "<project-root>", "--format", "json")
 MIN_VERSION = (0, 85, 0)
-STREAK = 3                            # assumption 6: merged modules in a row that meet the bar
-MAX_REWORK = 1
 INCIDENTS = ("merge-returned", "revoked", "rework-over-limit", "baseline-red")
 _MARKS = ("config.tier-seen", "config.tier-lowered", "config.tier-restored", "config.tier-cap-cleared")
 
@@ -57,10 +56,6 @@ def rank(tier: str) -> int:
 
 def _lower(tier: str) -> str:
     return TIERS[max(rank(tier) - 1, 0)]
-
-
-def _higher(tier: str) -> str:
-    return TIERS[min(rank(tier) + 1, len(TIERS) - 1)]
 
 
 def integration_checkout(db: store.Store, project: str | os.PathLike) -> Path:
@@ -192,32 +187,32 @@ def describe(eff: Effective) -> str:
     return line
 
 
-def report(db: store.Store, project: str | os.PathLike) -> tuple[dict, list[str]]:
-    """`tier`: the configured tier, the cap, the effective tier, the evidence and the advice (read only)."""
-    eff = effective(db, project)
+def retired(eff: Effective) -> str | None:
+    """crew-takeover-approve decision 11: an old autonomyTier still written in .agent/config.json (not strict)."""
     t = eff.configured
-    doc = {"configured": {"value": t.value, "source": t.source, "usable": t.usable, "reason": t.reason},
-           "explicit": eff.explicit, "cap": eff.cap, "effective": eff.value, "cadence": None, "cadenceHint": None,
-           "evidence": [], "suggest": None, "lastIncident": last_incident(db)}
-    lines = [describe(eff)]
-    if eff.active:
-        from module_crew import start
-        doc["cadence"] = start.review_cadence(project)
-        doc["cadenceHint"] = cadence_hint(eff, doc["cadence"])
-        lines += [doc["cadenceHint"]] if doc["cadenceHint"] else []
-        doc["evidence"] = evidence(db)
-        doc["suggest"] = suggestion(db, eff, doc["evidence"])
-        advice = suggestion_line(db, project) if doc["suggest"] else None
-        lines += [advice] if advice else []
+    return t.value if t.explicit and t.value != "strict" else None
+
+
+def retired_line(value: str) -> str:
+    return (f"autonomyTier 已退役、不再生效（旧值 {value} 不映射为接管档位）：要接管用 /spec-guard:config 设 takeover；"
+            "原来顺带打开的评审节奏（reviewCadence）、声明范围（config set --declared-scope）、"
+            "收尾汇总（config set --digest）请分别设")
+
+
+def digest_on(db: store.Store) -> bool:
+    """crew-takeover-approve decision 11: the wrap-up digest is its own switch now."""
+    return (store.get(db, "config", "main") or {}).get(DIGEST) == "on"
+
+
+def report(db: store.Store, project: str | os.PathLike) -> tuple[dict, list[str]]:
+    """`tier` (read only): the retired-tier hint, the digest switch, the last step-down."""
+    eff = effective(db, project)
+    old = retired(eff)
+    doc = {"retiredTier": old, "digest": "on" if digest_on(db) else "off", "cap": eff.cap, "effective": eff.value,
+           "lastIncident": last_incident(db)}
+    lines = ([retired_line(old)] if old else []) + [f"收尾汇总：{'开' if doc['digest'] == 'on' else '关'}"
+                                                    "（config set --digest on|off，要用户原话）"]
     return doc, lines
-
-
-def cadence_hint(eff: Effective, cadence: str) -> str | None:
-    """Decision 4: spec-guard does not link reviewCadence to the tier; module-crew only points it out."""
-    if rank(eff.value) >= rank("standard") and cadence != "combined":
-        return (f"档位 {eff.value} 要 Spec 与 Plan 一起审，但 reviewCadence 是 {cadence}："
-                "请用户确认后用 /spec-guard:config 设成 combined（在那之前照 separate 交审）")
-    return None
 
 
 def _version(text: str | None) -> tuple[int, ...] | None:
@@ -313,88 +308,8 @@ def last_incident(db: store.Store) -> dict | None:
 
 
 def restore(db: store.Store, project: str | os.PathLike, original: str | None) -> list[str]:
-    """Decision 3: one step back up toward the configured tier, on the user's words."""
-    if not original or not original.strip():
-        raise Refused("用户原话不能为空：恢复降档要用户明确说")
-    eff = effective(db, project)
-    if not eff.cap:
-        raise Refused("现在没有降档上限：要升到设的档位以上，先 module-crew tier --preflight，再引用用户原话用 /spec-guard:config")
-    up = _higher(eff.cap)
-    with db.transaction(actor="coordinator") as tx:
-        rec = _state(tx)
-        if rank(up) >= rank(eff.configured.value):
-            rec.pop("cap", None)
-            rec.pop("capFor", None)
-            up = eff.configured.value
-        else:
-            rec["cap"] = up
-        rec.update(seen=up, seenAt=store.now())
-        _put(tx, rec, "tier-restored", {"from": eff.value, "to": up, "original": original, **store.source_field()})
-    return [f"自治档位已从 {eff.value} 恢复到 {up}" + ("（已回到设的档位，降档上限清掉）" if up == eff.configured.value else "")]
-
-
-def _start(db: store.Store) -> int:
-    """Assumption 6: the evidence counts from the last change of the effective tier."""
-    found = marks(db)
-    return found[-1]["seq"] if found else 0
-
-
-def evidence(db: store.Store) -> list[dict]:
-    """Per module merged since the start, in merge order: merge returns (module's fault), revocations, rework rounds,
-    the user's own returns of a submission; `ok` when it meets the bar (light tasks are not counted)."""
-    since = _start(db)
-    events = [e for e in store.events(db, kind="item") if e["seq"] > since]
-    rec_of = lambda e: (e.get("data") or {}).get("record") or {}
-    merged = [rec_of(e)["module"] for e in events if e["type"] == "item.merged"
-              and rec_of(e).get("kind") == "merge-approval" and not rec_of(e).get("task") and rec_of(e).get("module")]
-    rows = []
-    for m in dict.fromkeys(merged):
-        mine = lambda e: rec_of(e).get("module") == m
-        row = {"module": m,
-               "returned": sum(1 for e in events if e["type"] == "item.returned" and mine(e)
-                               and rec_of(e).get("returnKind") == "module"),
-               "revoked": sum(1 for e in events if e["type"] == "item.revoked" and mine(e)),
-               "rework": sum(1 for e in events if e["type"] == "item.rework-sent" and (e.get("data") or {}).get("module") == m),
-               "userReturned": sum(1 for e in events if e["type"] == "item.answered" and mine(e)
-                                   and rec_of(e).get("kind") == "review"
-                                   and not (rec_of(e).get("answer") or {}).get("approval"))}
-        row["ok"] = row["returned"] == 0 and row["revoked"] == 0 and row["rework"] <= MAX_REWORK and row["userReturned"] == 0
-        rows.append(row)
-    return rows
-
-
-def suggestion(db: store.Store, eff: Effective, rows: list[dict]) -> str | None:
-    """Decision 7: the next tier once the last STREAK merged modules all met the bar; advice only."""
-    if not eff.explicit or eff.value == "relaxed":
-        return None
-    last = rows[-STREAK:]
-    if len(last) < STREAK or not all(r["ok"] for r in last):
-        return None
-    return _higher(eff.value)
-
-
-def suggestion_line(db: store.Store, project: str | os.PathLike, once: bool = False) -> str | None:
-    """The advice line for `tier`, `status` and a merge; the first time for a start it is also recorded, once.
-    `once` (a merge pushing it unasked): only that first time, so advice the user let pass is not repeated."""
-    eff = effective(db, project)
-    rows = evidence(db)
-    up = suggestion(db, eff, rows)
-    if up is None:
-        return None
-    names = "、".join(r["module"] for r in rows[-STREAK:])
-    how = "用户确认后用 module-crew tier restore（要原话）" if eff.cap else \
-        "用户确认后先 module-crew tier --preflight，再引用原话用 /spec-guard:config"
-    since = _start(db)
-    if once and state(db).get("suggestedFor") == since:
-        return None
-    try:
-        if state(db).get("suggestedFor") != since:
-            with db.transaction(actor="autonomy") as tx:
-                _put(tx, dict(_state(tx), suggestedFor=since), "tier-suggested", {"to": up, "modules": names})
-    except store.StoreError:
-        pass
-    return (f"可以建议升到 {up}：最近 {STREAK} 个模块（{names}）合并退回 0、撤销 0、返工 ≤ {MAX_REWORK}、用户退回 0。"
-            f"只是建议，不自动升；{how}")
+    """crew-takeover-approve decision 10: retired; widening is spec-guard's, on the user's words."""
+    raise Refused("tier restore 已退役：放宽档位要用户原话、一次升一档，用 /spec-guard:config 写（module-crew 不再存降档上限）")
 
 
 INTEGRATION = "集成分支"
@@ -452,13 +367,11 @@ def digest(db: store.Store, project: str | os.PathLike, mark_told: bool = False)
 
 
 def status(db: store.Store, project: str | os.PathLike) -> dict | None:
-    """Decision 9: `status --json` store.autonomy; None while the tier is unset and nothing is capped."""
-    eff = effective(db, project)
-    if not eff.active:
-        return None
+    """`status --json` store.autonomy: None unless an old tier is still written or the digest switch is on."""
     doc, lines = report(db, project)
-    return {"configured": doc["configured"]["value"], "source": doc["configured"]["source"], "cap": doc["cap"],
-            "effective": doc["effective"], "suggest": doc["suggest"], "evidence": doc["evidence"], "lines": lines}
+    if not doc["retiredTier"] and doc["digest"] != "on":
+        return None
+    return {**doc, "lines": lines}
 
 
 def status_lines(doc: dict | None) -> list[str]:
