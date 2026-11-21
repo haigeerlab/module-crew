@@ -212,8 +212,13 @@ PYTHONPATH=tests python3 -m unittest test_takeover_approve
 ## 并行边界
 
 - 独占：`module_crew/takeover.py`、`tests/test_takeover_approve.py`
-- 共享（和 `crew-takeover-merge` 同批，它排在后面、依赖本模块）：`module_crew/review.py`（`_land`）、`module_crew/merge.py`、`module_crew/__main__.py`、`module_crew/probe.py`、两份 `crew-coordinator` skill、两份 `crew-dev` skill、README。`crew-takeover-merge` 读 `takeover.module(...).merge` 与 `codex-approval` 的记账口径，本模块先合入定形。
-- 公共：测试资源；session-protocol 契约（经需求流程）。
+- 公共：测试资源
+
+## 并行说明
+
+本模块和 `crew-takeover-merge` 同批：本模块先合入定形，`crew-takeover-merge` 排在后面、依赖本模块，`module-crew sync` 后在它之上改这些共享文件：`module_crew/review.py`（`_land`）、`module_crew/merge.py`、`module_crew/__main__.py`、`module_crew/probe.py`、
+`skills/crew-coordinator/SKILL.md`、`codex-skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`codex-skills/crew-dev/SKILL.md`、`README.md`。`crew-takeover-merge` 读 `takeover.module(...).merge` 与 `codex-approval` 的记账口径。
+session-protocol 契约的改动（决策 12 的「放行」类型）经契约需求流程，不在本仓库改。
 
 ## 未决问题
 
@@ -224,3 +229,7 @@ PYTHONPATH=tests python3 -m unittest test_takeover_approve
 ## 文档建议
 
 README 的「自治档位」一节改写为「接管档位」：三项各由谁批、Codex 放行怎么走、Codex 不可用会怎样、出事收窄顺序、恢复要原话；写明 autonomyTier 已退役与三个开关怎么分别设；「命令一览」补 `review codex`、`review codex-note`、`config --digest`，标 `tier restore` 退役。CHANGELOG 随发版写。
+
+## 变更记录
+
+- 2026-11-22：「并行边界」去掉「共享：」一行，共享文件清单与契约的说明挪到紧跟其后的新节「并行说明」；「公共」行只留类别「测试资源」；内容范围不变。原因：spec-guard verify-artifacts 只认「独占」「公共」两种行，「共享」行与带说明的公共行判为 unknown-line；来源：用户 2026-11-21 在 mc-coord 会话答复「批草案并改边界」（mc-coord 转达 #21948、#21951），随最终验收附 Spec 差异一并复审。
