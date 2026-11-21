@@ -87,3 +87,139 @@ class RetireMergeTest(MergeCase):
         from module_crew import autonomy, merge
         self.assertNotIn("suggestion_line", inspect.getsource(merge))
         self.assertFalse(hasattr(autonomy, "suggestion_line"))
+
+
+# ---------------------------------------------------------------- Task 2: reading the takeover
+
+FAKE_SHOW = '''import json, os, sys
+if os.environ.get("FAKE_SHOW_FAIL"):
+    sys.exit(int(os.environ["FAKE_SHOW_FAIL"]))
+value = json.loads(os.environ.get("FAKE_TAKEOVER", '"none"'))
+source = os.environ.get("FAKE_TAKEOVER_SOURCE", "default")
+print(json.dumps({"items": [{"key": "reviewCadence", "value": "separate", "source": "default"},
+                            {"key": "takeover", "value": value, "source": source}], "problems": []}))
+'''
+
+NARROW_COMMAND = ["python3", "-B", "hooks/project_config.py", "narrow", "--project", "<project-root>",
+                  "[--module <module-id>]", "--source", "<source>", "--reason", "<one line, at most 200 characters>",
+                  "[--confirm]"]
+
+
+def takeover_row(spec="human", plan="human", merge="human", source=".agent/config.json", reasons=()):
+    return {"takeover": {"spec": spec, "plan": plan, "merge": merge, "release": "human", "source": source,
+                         "widerThanProject": False, "narrowed": None},
+            "important": {"reasons": list(reasons)}}
+
+
+class TakeoverMixin:
+    """A fake spec-guard 0.91.0 (interface 1.15) and delegate 1.5; each module's takeover lives in the fake /map."""
+
+    def with_takeover(self, version: str = "1.15", plugin_version: str = "0.91.0", delegate: str | None = "1.5"):
+        import os
+        from pathlib import Path
+        entry = self.plugins.entries["spec-guard@m"][-1]
+        entry["version"] = plugin_version
+        self.plugins.write()
+        root = Path(entry["installPath"])
+        doc = json.loads((root / "interface.json").read_text())
+        doc["interface"] = version
+        if version >= "1.15":
+            doc["takeover"] = {"key": "takeover", "default": "none"}
+            doc["takeoverNarrow"] = {"command": NARROW_COMMAND}
+        else:
+            doc.pop("takeover", None)
+            doc.pop("takeoverNarrow", None)
+        (root / "interface.json").write_text(json.dumps(doc))
+        (root / "hooks" / "project_config.py").write_text(FAKE_SHOW)
+        if delegate is not None:
+            report = {"schemaVersion": 1, "severity": {"field": "findings[].severity"}} if delegate >= "1.5" else {"schemaVersion": 1}
+            self.plugins.install("delegate", {"interface": delegate, "review": {"command": "/delegate:review",
+                                                                               "report": report}})
+        for k in ("FAKE_TAKEOVER", "FAKE_TAKEOVER_SOURCE", "FAKE_SHOW_FAIL"):
+            self.addCleanup(lambda k=k: os.environ.pop(k, None))
+
+    def set_takeover(self, value, rows: dict | None = None, source: str = ".agent/config.json"):
+        """Project value for `show`, and per-module rows merged into the fake /map."""
+        import os
+        from helpers import START_MAP
+        os.environ["FAKE_TAKEOVER"] = json.dumps(value)
+        os.environ["FAKE_TAKEOVER_SOURCE"] = source
+        doc = json.loads(json.dumps(START_MAP))
+        for m in doc["modules"]:
+            m.update((rows or {}).get(m["id"], takeover_row(source="default")))
+        self.set_map(doc)
+        (self.repo / ".agent" / "config.json").touch()     # a new mtime: no cached /map
+
+
+class ReadTakeoverTest(TierMixin, TakeoverMixin, ReviewCase):
+    """Task 2, acceptance 1 and 2."""
+
+    def db(self):
+        return store.open_store(self.repo)
+
+    def test_presets_custom_module_and_forced(self):
+        from module_crew import takeover
+        self.with_takeover()
+        self.set_takeover("plan", {"b": takeover_row(plan="codex"),
+                                   "c": takeover_row(spec="codex", plan="codex", merge="auto", reasons=["multi-module"],
+                                                     source="moduleTakeover.c")})
+        db = self.db()
+        b = takeover.module(db, self.repo, "b")
+        self.assertEqual((b.spec, b.plan, b.merge, b.usable), ("human", "codex", "human", True))
+        c = takeover.module(db, self.repo, "c")
+        self.assertEqual(c.forced, {"spec": "重要需求：跨模块"})
+        self.assertEqual(takeover.approver(db, self.repo, "c", "spec"), "human")
+        self.assertEqual(takeover.approver(db, self.repo, "c", "plan"), "codex")
+        self.assertEqual(takeover.approver(db, self.repo, "c", "final"), "human")
+        self.assertEqual(takeover.line(c), "批准方式：Spec 人批（重要需求：跨模块）、Plan Codex 放行、合并 自动合")
+        plan = "# Plan\n\n## 预先声明\n\n- 公共路径：`config/app.json`\n\n## Task List\n"
+        self.assertEqual(takeover.approver(db, self.repo, "c", "plan", plan), "human")
+        self.assertEqual(takeover.approver(db, self.repo, "c", "plan", plan.replace("- 公共路径：`config/app.json`", "无")), "codex")
+        doc = json.loads(self.cli("tier", "--json")[1])
+        self.assertEqual(doc["takeover"]["value"], "plan")
+        self.assertEqual({m["module"]: m["plan"] for m in doc["modules"]}, {"b": "codex", "c": "codex"})
+        out = self.cli("tier")[1]
+        self.assertIn("接管档位：只接管 Plan（.agent/config.json）", out)
+        self.assertIn("c：批准方式：Spec 人批（重要需求：跨模块）、Plan Codex 放行、合并 自动合（模块单独设", out)
+        self.set_takeover({"spec": "codex", "plan": "human"})
+        self.assertIn("接管档位：自定义（spec=codex、plan=human）", self.cli("tier")[1])
+
+    def test_unreadable_is_human(self):
+        from module_crew import takeover
+        self.with_takeover(version="1.14")
+        b = takeover.module(self.db(), self.repo, "b")
+        self.assertEqual((b.usable, b.spec, b.plan), (False, "human", "human"))
+        self.assertIn("低于 1.15", b.reason)
+        self.assertEqual(takeover.approver(self.db(), self.repo, "b", "plan"), "human")
+        self.assertIn("读不到接管档位", self.cli("tier")[1])
+
+    def test_status_only_when_something_is_taken_over(self):
+        self.with_takeover()
+        self.set_takeover("none")
+        out = self.cli("status")[1]
+        self.assertNotIn("接管档位", out)
+        self.assertIsNone(json.loads(self.cli("status", "--json")[1])["store"]["takeover"])
+        self.set_takeover("plan", {"b": takeover_row(plan="codex")})
+        out = self.cli("status")[1]
+        self.assertIn("接管档位：只接管 Plan", out)
+        self.assertIn("b：批准方式：Spec 人批、Plan Codex 放行、合并 人合", out)
+        self.assertIn("Codex 放行：Spec 0 次、Plan 0 次", out)
+        doc = json.loads(self.cli("status", "--json")[1])["store"]["takeover"]
+        self.assertEqual(doc["codex"]["plan"], 0)
+
+    def test_preflight(self):
+        self.with_takeover()
+        code, out = self.cli("tier", "--preflight")
+        self.assertEqual(code, 0, out)
+        self.assertIn("可以写 takeover", out)
+        self.with_takeover(version="1.14", plugin_version="0.90.1")
+        code, out = self.cli("tier", "--preflight")
+        self.assertEqual(code, 3)
+        self.assertIn("0.90.1 低于 0.91.0", out)
+        self.assertIn("没有 takeover", out)
+
+    def test_preflight_old_delegate(self):
+        self.with_takeover(delegate="1.4")
+        code, out = self.cli("tier", "--preflight")
+        self.assertEqual(code, 3)
+        self.assertIn("低于 1.5", out)

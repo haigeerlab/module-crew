@@ -161,7 +161,9 @@ def _status(as_json: bool) -> int:
     from module_crew import checks          # crew-check-ledger
     for line in checks.status_lines((report.store or {}).get("checks")):
         print(line)
-    from module_crew import autonomy        # crew-autonomy-tier
+    from module_crew import autonomy, takeover        # crew-autonomy-tier, crew-takeover-approve
+    for line in takeover.status_lines((report.store or {}).get("takeover")):
+        print(line)
     for line in autonomy.status_lines((report.store or {}).get("autonomy")):
         print(line)
     unq = (report.store or {}).get("unqueued")
@@ -1233,8 +1235,9 @@ def _tier(args) -> int:
     from module_crew import autonomy
     try:
         db = store.open_store()
-        if args.preflight:
-            code, lines = autonomy.preflight(db, ".")
+        if args.preflight:                  # crew-takeover-approve: before /spec-guard:config writes takeover
+            from module_crew import takeover
+            code, lines = takeover.preflight(db, ".")
             print("\n".join(lines))
             return code
         if args.action == "digest":
@@ -1251,7 +1254,10 @@ def _tier(args) -> int:
                 return 2
             print("\n".join(autonomy.restore(db, ".", original)))
             return 0
-        doc, lines = autonomy.report(db, ".")
+        from module_crew import takeover
+        doc, lines = takeover.report(db, ".")
+        old_doc, old_lines = autonomy.report(db, ".")
+        doc, lines = {**doc, **old_doc}, lines + old_lines
     except autonomy.Refused as exc:
         print(f"❌ {exc}", file=sys.stderr)
         return 3
@@ -1627,9 +1633,9 @@ def _main(argv: list[str] | None = None) -> int:
     ckl = cks.add_parser("list", help="只读：最近的检查账")
     ckl.add_argument("--limit", type=int, default=20)
     ckl.add_argument("--json", action="store_true")
-    ti = sub.add_parser("tier", help="自治档位：查看、写入前核对、恢复降档、收尾汇总（crew-autonomy-tier）")
+    ti = sub.add_parser("tier", help="接管档位：查看、写入前核对、出事收窄、收尾汇总（crew-takeover-approve）")
     ti.add_argument("--json", action="store_true")
-    ti.add_argument("--preflight", action="store_true", help="写 autonomyTier 之前核对 spec-guard 版本与接口（只读）")
+    ti.add_argument("--preflight", action="store_true", help="写 takeover 之前核对 spec-guard 与 delegate 的版本和接口（只读）")
     tis = ti.add_subparsers(dest="action")
     tir = tis.add_parser("restore", help="已退役：放宽档位用 /spec-guard:config（要用户原话）")
     tirg = tir.add_mutually_exclusive_group(required=True)

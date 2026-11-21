@@ -15,7 +15,6 @@ DIGEST = "digest"                     # config/main.digest: on | off (crew-takeo
 FIELD = "autonomy"                    # config/main.autonomy: cap, capFor, incident, seen, suggestedFor, toldSeq
 TIERS = ("strict", "standard", "relaxed")
 READ_FROM = ("python3", "-B", "hooks/project_config.py", "show", "--project", "<project-root>", "--format", "json")
-MIN_VERSION = (0, 85, 0)
 INCIDENTS = ("merge-returned", "revoked", "rework-over-limit", "baseline-red")
 _MARKS = ("config.tier-seen", "config.tier-lowered", "config.tier-restored", "config.tier-cap-cleared")
 
@@ -213,39 +212,6 @@ def report(db: store.Store, project: str | os.PathLike) -> tuple[dict, list[str]
     lines = ([retired_line(old)] if old else []) + [f"收尾汇总：{'开' if doc['digest'] == 'on' else '关'}"
                                                     "（config set --digest on|off，要用户原话）"]
     return doc, lines
-
-
-def _version(text: str | None) -> tuple[int, ...] | None:
-    try:
-        return tuple(int(x) for x in (text or "").split("."))
-    except ValueError:
-        return None
-
-
-def preflight(db: store.Store, project: str | os.PathLike) -> tuple[int, list[str]]:
-    """Decision 2: before /spec-guard:config writes autonomyTier — 0.67.1 and older would call the whole file invalid."""
-    checkout = integration_checkout(db, project)
-    reasons = []
-    found = probe.find_plugin("spec-guard", checkout)
-    if isinstance(found, str):
-        reasons.append(f"找不到 spec-guard（{found}）")
-    else:
-        got = _version(found.version)
-        if got is None or got < MIN_VERSION:
-            reasons.append(f"本机 spec-guard {found.version or '版本读不出'} 低于 0.85.0："
-                           "0.68.0～0.84.2 会忽略这个键，0.67.1 及更早会把整份配置判无效；先升级")
-        got = _interface(checkout)
-        if isinstance(got, str):
-            reasons.append(got)
-    codex = sorted(n for n, s in store.records(db, "session").items()
-                   if s.get("host") == "codex-desktop" and s.get("status") == "active")
-    note = ([f"Codex 那边的 spec-guard 版本 module-crew 查不到（登记的 Codex 会话：{'、'.join(codex)}）："
-             "0.67.1 及更早会把整份配置判无效，请用户确认 Codex 也装了 0.85.0 以上"] if codex else [])
-    if reasons:
-        return 3, ["不能写 autonomyTier：", *(f"- {r}" for r in reasons), *note]
-    return 0, [f"可以写 autonomyTier：本机 spec-guard {found.version}，接口有 autonomyTier。"
-               "引用用户原话后用 /spec-guard:config 写入；要设 standard 或 relaxed 时同一句原话里一并设 reviewCadence=combined，"
-               "写完把 .agent/config.json 单独提交", *note]
 
 
 INCIDENT_NAMES = {"merge-returned": "合并因模块的原因退回", "revoked": "用户撤销合并批准",
