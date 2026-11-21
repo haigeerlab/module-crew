@@ -56,23 +56,42 @@
 
 读不到 1.15、读不到 1.5 时（假设 3）一律照「不接管」做：全部人批，不报错。
 
-## 假设（请逐条确认）
+## 上游实测（Checkpoint 0，2026-11-22）
 
-1. **（新）spec-guard 1.15 的读法**：interface.json 新增 `takeover` 一项，按 `autonomyTier` 的写法给 `readFrom`；module-crew 只认两种读法：
+本机装了 spec-guard 0.91.0（interface 1.15）与 delegate 0.10.0（接口 1.5），按真实接口修订如下；与下文假设、决策不一致处以本节为准。
+
+1. **读档位**：每个模块生效的四项从 `map_view.py --json` 每个模块的 `takeover` 读：`{"spec", "plan", "merge", "release", "source", "widerThanProject", "narrowed"}`（`release` 只显示，不由本模块处理）。
+   module-crew 已在 `probe.run` 里读这份 `/map --json`，`takeover.py` 直接用它，不另起子进程；项目档位取 `project_config.py show --format json` 里 key 为 `takeover` 的一项（预设名或自定义对象）。
+   强制人批：`important.reasons` 非空时 Spec 一律人批（原因照抄，如 `multi-module`）；Plan 的「预先声明」有任何一行不是「无」时 Plan 一律人批（spec-guard codex-approval Q6，用户选 A）。
+2. **审查报告**：`/delegate:review` 标准输出的 JSON 存成文件。没有结论 = `execution_status` 不是 `completed`，或 `review_outcome` 不是 `findings`／`no_findings_in_scope`，或 `backend` 不是 `codex`；`findings[].severity` 缺省按 `blocking`。
+   报告与文件靠 `scope.files` 里每个文件内容的 sha256 绑定（不用 `blob-pairs-v1`）。复审带 `--previous-report`，阻断项是否解决看 `recheck.items`，新问题在 `findings`。
+3. **`review codex` 给的命令**：`/delegate:review --backend codex --repo <模块 worktree> --paths <交审文件> [--spec spec/<模块>.md]（审 Plan 时带）[--previous-report <上一轮报告>] <任务说明>`，
+   读模块 worktree 的 HEAD；模块协调把标准输出存到 `review codex` 指定的文件（状态库目录下 `codex/C<n>-r<轮>.json`）。`codex-note` 用 `scope.files` 的 sha256 对交审提交里的内容逐文件核对（取代决策 4 的指纹比对）。
+4. **轮次记在文件里**：spec-guard 自己按文件「外部审查意见」一节里的轮次行计数，两轮阻断后不再接受 `codex-reviewed`。所以有阻断时，返工通知让模块会话**先**在自己的 worktree 跑
+   `/spec-guard:review-mark --target <spec|plan> --state codex-reviewed --review <报告> --confirm`（记下这一轮），再按阻断意见改、提交、重新交审；module-crew 的 `CODEX_REWORK_LIMIT = 2` 与 spec-guard 的上限一致，两边都挡。
+5. **放行写标记**：落地到集成 checkout 后跑 `reviewMark --target <spec|plan> --state codex-approved --review <报告> --confirm`；spec-guard 会再核一次报告与文件、追加这一轮的轮次行。`--target both` 对 Codex 不可用，Spec、Plan 各写一次。
+   spec-guard 拒绝（退出 2）时 module-crew 还原集成 checkout、退出码 4，原因照抄。
+6. **收窄**：调 `takeoverNarrow`：`project_config.py narrow --project <集成 checkout> [--module <模块>] --source module-crew --reason <一行> --confirm`；顺序（合并 → Plan → 不接管，自定义按 release、merge、plan、spec 取第一个非人批项）由 spec-guard 定。
+   它改 `.agent/config.json`，module-crew 随即在集成分支单独提交（提交信息写原因），按 `crew-unqueued-commits` 记为 module-crew 自己的提交。已是最严时 spec-guard 什么都不写、退出 0，module-crew 不输出收窄行。
+7. **`tier --preflight`**：核对 spec-guard ≥ 0.91.0 且接口 1.15 有 `takeover`、`takeoverNarrow`，delegate 接口 ≥ 1.5（`review.report.severity`、`recheck`）；任一不满足退出码 3。
+
+
+
+1. **（新）spec-guard 1.15 的读法**（已按发版实测改，以「上游实测」一节为准）：interface.json 新增 `takeover` 一项，按 `autonomyTier` 的写法给 `readFrom`；module-crew 只认两种读法：
    项目档位取 `project_config.py show --format json` 里 key 为 `takeover` 的一项；每个模块生效的三项取 `map_view.py --json` 每个模块的 `takeover`：
    `{"spec": "human"|"codex", "plan": "human"|"codex", "merge": "human"|"auto", "source": "...", "forcedHuman": [{"item": "spec", "reason": "新模块"}...]}`。
    字段名以 spec-guard 发版为准，构建时照真实接口改这一节与夹具，改动随最终验收复审（变更记录写明）。
-2. **（新）delegate 1.5 的报告**：`/delegate:review` 的 JSON 报告（`schemaVersion` 不变或升 2）每条发现带 `severity`；`status` 不是「完成」（权限拒绝、空／坏输出、部分覆盖、达限、失败）都算「没有结论」；`scope.fingerprint` 绑定审过的内容。
+2. **（新）delegate 1.5 的报告**（已按发版实测改，以「上游实测」一节为准）：`/delegate:review` 的 JSON 报告（`schemaVersion` 不变或升 2）每条发现带 `severity`；`status` 不是「完成」（权限拒绝、空／坏输出、部分覆盖、达限、失败）都算「没有结论」；`scope.fingerprint` 绑定审过的内容。
 3. **读不到就是不接管**：spec-guard 低于 0.91.0、接口没有 `takeover`、命令跑不成、输出缺项，一律按三项人批，`tier`、`status` 写一行原因（同 `crew-autonomy-tier` 假设 2 的安全限制：固定参数、带超时、不经 shell、脚本在安装目录内）。在集成 checkout 读（同 `crew-autonomy-tier` 假设 3）。
 4. **「两轮」的口径**：Codex 第一次审有阻断 → 返工第 1 轮 → 复审仍有阻断 → 返工第 2 轮 → 再复审仍有阻断 → 停下交用户。即最多返工 2 次、最多审 3 次。复审带 `--previous-report <上一轮报告>`。
 5. **建议意见不返工**：只有建议、没有阻断就放行；建议原样附进放行通知，模块会话在写 Plan、构建时自己决定吸收与否（同今天「吸收遗留建议」）。方向文档「建议由 Claude 自己决定并写一句理由留档」由模块会话在 Plan 或提交里写，module-crew 不检查。
 6. **谁跑 Codex**：模块协调（Claude 会话）按 `review codex` 给出的命令用 Bash 后台跑 `/delegate:review --backend codex`，跑完把报告路径交给 `review codex-note`；module-crew 自己不调 Codex，也不判断报告以外的东西。
-7. **重要需求以 spec-guard 判定为准**：spec-guard 报 `forcedHuman` 的项，不管勾选怎么写都按人批；module-crew 不自判新模块、跨模块、高风险路径。
+7. **重要需求以 spec-guard 判定为准**：spec-guard 判为重要（`/map --json` 的 `important.reasons` 非空）的 Spec，不管勾选怎么写都按人批；module-crew 不自判新模块、跨模块、高风险路径。
 8. **Codex 放行不是用户批准**：不写 `approved` 标记、不发【用户答复】、不进「用户批准事项」的编号说法；对用户说「Codex 放行」。
 
 ## 关键决策与取舍（请重点审）
 
-1. **（新）新文件 `module_crew/takeover.py`**：
+1. **（新）新文件 `module_crew/takeover.py`**（细节按「上游实测」一节修订）：
    `project(db, project) -> Setting`（`value`：`none`／`plan`／`merge`／`custom`，`source`，`usable`，`reason`）；
    `module(db, project, module_id) -> Items`（`spec`、`plan`、`merge` 三项的生效值，`forced`：`{item: reason}`，`usable`、`reason`）；
    `approver(db, project, module_id, node) -> "human" | "codex"`（`node` 为 `spec`／`plan`；`interface` 按 Spec 算；`final` 永远 `human`，留给 `crew-takeover-merge`）。同一进程读一次缓存，键含 `.agent/config.json` 的修改时间（同 `autonomy.read`）。
@@ -81,11 +100,11 @@
    - 开工说明：在「交审节奏」那行后加批准方式一行，并写「Codex 放行的节点，【交审】照常发给模块协调，结论由 Codex 给出」。
    - 交审登记行（`review add` 输出）：Codex 放行的节点写「已记为交审事项 C<n>（… Codex 放行：下一步 review codex C<n>）」，不提示问用户。
    - 批量交审（`review batch`、给决策收件箱的卡片）：Codex 放行的事项**不进**给用户的批次；批次末尾加一行「另有 k 项由 Codex 审查中／已放行：…」（只是告知）。
-3. **（新）Codex 审查接进审查者机制，用虚拟审查者 `codex`**：不经 `source add` 登记、不走邮箱；`review add` 判定节点为 Codex 放行时，在交审事项上记 `sentTo: ["codex"]`、`reviewer: "codex"`、`sentAt`，`review_state` 照旧得出「审查中」。
+3. **（新）Codex 审查接进审查者机制，用虚拟审查者 `codex`**（细节按「上游实测」一节修订）：不经 `source add` 登记、不走邮箱；`review add` 判定节点为 Codex 放行时，在交审事项上记 `sentTo: ["codex"]`、`reviewer: "codex"`、`sentAt`，`review_state` 照旧得出「审查中」。
    `review codex C<n>` 只读，输出一行可直接执行的 `/delegate:review --backend codex --base <集成分支顶端> --paths <交审文件> [--previous-report <上一轮报告>] <任务说明>`，任务说明固定写：按 spec-guard Spec／Plan 的要求审这份文件，阻断意见限于「照这份文件做会做错或做不成」。
    `review codex-note C<n> --report <json>` 把报告转成和【审查结论】同样的一行记录（`from: "codex"`、`verdict`、`changes` 取阻断项、`suggestions` 取建议项、`report`、`fingerprint`），之后走 `note` 里同一段返工逻辑，只是上限取 `CODEX_REWORK_LIMIT = 2`（假设 4），超限时记 `overLimit`、生成【等待用户】草稿（选项：A 用户来批这一版／B 照阻断意见再改一轮），**不**挂降档（AI 定不了交人是正常流程，不是出事）。
-4. **（新）报告与交审内容要对得上**：`codex-note` 核对报告 `scope.fingerprint` 覆盖的文件就是交审事项的文件、内容等于交审提交里的内容（逐文件 `git show <commit>:<path>` 比对），对不上拒收、退出码 3，提示重跑 `review codex`；防止「审的是旧版本」。
-5. **（新）放行时复用 `review approve` 的落地路径**：抽出 `_land(project, picked, mark_state, record)`：`review approve` 传 `approved` 与用户原话，Codex 放行传 `codex-approved` 与报告摘要（报告路径、指纹、轮次、建议条数）。
+4. **（新）报告与交审内容要对得上**（细节按「上游实测」一节修订）：`codex-note` 核对报告 `scope.fingerprint` 覆盖的文件就是交审事项的文件、内容等于交审提交里的内容（逐文件 `git show <commit>:<path>` 比对），对不上拒收、退出码 3，提示重跑 `review codex`；防止「审的是旧版本」。
+5. **（新）放行时复用 `review approve` 的落地路径**（细节按「上游实测」一节修订）：抽出 `_land(project, picked, mark_state, record)`：`review approve` 传 `approved` 与用户原话，Codex 放行传 `codex-approved` 与报告摘要（报告路径、指纹、轮次、建议条数）。
    集成分支提交信息写「Codex 放行事项 C<k>：放行 <模块> 的 <节点>」；回给模块会话的不是【用户答复】，而是：Spec 与 Plan 都已批准（任一方批的都算）时发开工类【协调通知】（「依据」写 Codex 放行事项号）；只放行了 Spec 时发「放行」类【协调通知】（决策 12）。
    开工通知的其余写法（提前开工、外包、`_start_todo`）全部照旧。
 6. **（新）Codex 不可用一律停**：`codex-note` 读到「没有结论」（报告缺失、坏 JSON、`status` 非完成、部分覆盖）时不记结论，退出码 5，输出一份【等待用户】草稿：「Codex 审查没跑成：<原因>」，选项 A 等 Codex 恢复后重跑 `review codex C<n>`（推荐）／B 这一项这次改由用户批（之后照人批流程 `review approve`）。模块协调照今天的【等待用户】流程转给用户。
@@ -93,7 +112,7 @@
 7. **（新）分开记账**：Codex 放行记成事项 `kind: "codex-approval"`（字段同 `review-approval`，`answer` 换成 `codex: {report, fingerprint, rounds, suggestions}`），事件 `item.codex-approved`；`_approved_nodes`、`start_basis` 认它与 `review-approval` 两种；
    `status` 的接管一段写「Codex 放行：Spec a 次、Plan b 次；其中返工后才放行 c 次；超限交用户 d 次」；`status --json` 的 `store.takeover` 给同样的数。用户批准的说法、编号、统计一处都不变。
 8. **（新）批准人不同就分开批**：`start.review_cadence` 加模块参数：该模块 Spec 与 Plan 的批准方 `approver` 不同时返回 `separate`（来源写「Spec、Plan 批准人不同，自动分开批」），相同时照 spec-guard 的 `reviewCadence`。开工说明与 `review batch` 都走它。
-9. **（新）出事收窄改调 spec-guard**：`autonomy.incident(db, project, kind, ref, reason)` 的签名与四个出口（`merge.py` 两处、`review.py` 的 `rework-over-limit`、`checks.py` 的基线失败）不动，内部改为：
+9. **（新）出事收窄改调 spec-guard**（细节按「上游实测」一节修订）：`autonomy.incident(db, project, kind, ref, reason)` 的签名与四个出口（`merge.py` 两处、`review.py` 的 `rework-over-limit`、`checks.py` 的基线失败）不动，内部改为：
    读生效档位；三项全是人批就什么都不做；否则调 spec-guard 收窄入口，按「合并 → Plan → Spec」取消最前面一个勾（预设档：接管到合并 → 只接管 Plan → 不接管），一次一格。
    作用对象：出事能归到模块（前三类）时，该模块单独设过 `moduleTakeover` 就收窄那个模块，同时收窄项目档；基线失败只收窄项目档。同一 `kind:ref` 只降一次（`incidentKeys` 照旧记在 `config/main`，只是去重用）。
    输出一行「接管档位已从 <原> 收窄到 <新>：<原因>。马上告诉用户；恢复要用户原话，经 /spec-guard:config 写」；收窄入口调用失败时输出「没能收窄（<原因>）：请告诉用户，由用户决定是否用 /spec-guard:config 调低」，不影响调用方。
@@ -233,3 +252,4 @@ README 的「自治档位」一节改写为「接管档位」：三项各由谁�
 ## 变更记录
 
 - 2026-11-22：「并行边界」去掉「共享：」一行，共享文件清单与契约的说明挪到紧跟其后的新节「并行说明」；「公共」行只留类别「测试资源」；内容范围不变。原因：spec-guard verify-artifacts 只认「独占」「公共」两种行，「共享」行与带说明的公共行判为 unknown-line；来源：用户 2026-11-21 在 mc-coord 会话答复「批草案并改边界」（mc-coord 转达 #21948、#21951），随最终验收附 Spec 差异一并复审。
+- 2026-11-22：新增「上游实测」一节，按 spec-guard 0.91.0（interface 1.15）与 delegate 0.10.0（接口 1.5）的真实接口修订假设 1、2、7 与决策 1、3、4、5、9（读法改用 `/map --json` 每模块 `takeover`，强制人批取 `important.reasons` 与 Plan 预先声明，报告按 `scope.files` 的 sha256 绑定，阻断轮次由模块会话用 `review-mark --state codex-reviewed` 记进文件，放行用 `codex-approved --review`，收窄调 `takeoverNarrow` 并由 module-crew 提交 `.agent/config.json`）；目标与范围不变。原因：Plan Checkpoint 0 要求发版后按真实接口改；来源：本模块构建 Checkpoint 0，随最终验收附 Spec 差异复审。
