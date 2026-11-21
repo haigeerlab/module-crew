@@ -4,7 +4,7 @@
 
 - [x] Task 1：autonomyTier 退役与三个开关（Spec 决策 10、11；验收 11）——测试先红（4 个失败 1 个报错）后绿；`declared.enabled` 只认显式开关，`cadence_info` 去掉降档上限分支，升档建议整段删除，`tier restore` 退出码 3 给指引，新开关 `config set --digest`（Spec 写的是 `config --digest`，实际挂在现有 `config set` 下）；`test_autonomy_tier` 改写：删 StandardTest（3 个）、StandardKickoffTest、AdviceTest（4 个）、IncidentTest 的两个 restore 用例，改 ReadTest 两个、ExternalDegradeTest 的 restore 用例、StatusTest 一个，由新文件 RetireTest 等 8 个覆盖；`incident`／`degrade` 留到 Task 6 再改
 - [x] Checkpoint 1（report）：退役就位——本模块与旧档位测试 36 个通过；声明范围、开工、合并、提前开工、批量交审与批准等回归测试 182 个通过
-- [ ] Checkpoint 0（gate）：上游发版（spec-guard 0.91.0／interface 1.15、delegate 接口 1.5）
+- [x] Checkpoint 0（gate）：上游发版（spec-guard 0.91.0／interface 1.15、delegate 接口 1.5）——本机已装 spec-guard 0.91.0、delegate 0.10.0（接口 1.5），恢复依据 C626；按真实接口修订 Spec（9e235b2，「上游实测」一节与变更记录），并按用户「批草案并改边界」改并行边界（09050b2），两处随最终验收复审
 - [ ] Task 2：`takeover.py` 读档位、`tier`／`--preflight`、`status` 接管一段（Spec 决策 1、2；验收 1、2）
 - [ ] Task 3：显示批准方式、批量交审排除 Codex 项、批准人不同自动分开批（Spec 决策 2、8；验收 3、8）
 - [ ] Checkpoint 2（report）：读档位与显示就位
