@@ -767,6 +767,8 @@ def _review(args) -> int:
                   "要退回就请用户写一句修改意见，不给占位块）：")
             print("\n".join(f"  {x}" for x in blocks))
             print()
+        if b.get("codex"):                  # crew-takeover-approve decision 2: only so the user knows
+            print(f"另有 {len(b['codex'])} 项由 Codex 审查中（不提请你批）：" + "；".join(b["codex"]))
         if not b["dependencyIssues"]:
             print("依赖：全部就绪")
         from module_crew import present

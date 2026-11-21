@@ -223,3 +223,76 @@ class ReadTakeoverTest(TierMixin, TakeoverMixin, ReviewCase):
         code, out = self.cli("tier", "--preflight")
         self.assertEqual(code, 3)
         self.assertIn("低于 1.5", out)
+
+
+# ---------------------------------------------------------------- Task 3: showing it, batches, split cadence
+
+class ShowTakeoverTest(TierMixin, TakeoverMixin, ReviewCase):
+    """Task 3, acceptance 3 and 8."""
+
+    def db(self):
+        return store.open_store(self.repo)
+
+    def test_codex_item_is_registered_and_kept_out_of_the_batch(self):
+        from module_crew import review
+        self.with_takeover()
+        self.set_takeover("plan", {"b": takeover_row(plan="codex"), "c": takeover_row(plan="codex")})
+        db = self.db()
+        out = review.add(db, self.plan_review("b"), "shop-b", 1)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertIn("Codex 放行：下一步 review codex", "\n".join(out.lines))
+        rec = store.get(db, "item", str(out.number))
+        self.assertEqual((rec["reviewer"], rec["sentTo"]), ("codex", ["codex"]))
+        self.assertEqual(out.sends, [])
+        spec_c = review.add(db, self.spec_review("c"), "shop-c", 2)        # Spec stays human
+        self.assertNotIn("reviewer", store.get(db, "item", str(spec_c.number)))
+        b = review.batch(self.repo)
+        ready = {i["number"]: i["ready"] for i in b["items"]}
+        self.assertEqual((ready[out.number], ready[spec_c.number]), (False, True))
+        self.assertEqual(len(b["codex"]), 1)
+        self.assertIn(f"C{out.number} b 的 Plan", b["codex"][0])
+        self.assertEqual(review.review_state(db, out.number, now=__import__("datetime").datetime(2100, 1, 1,
+                         tzinfo=__import__("datetime").timezone.utc)), "reviewing")    # no timeout for Codex
+        text = self.cli("review", "batch")[1]
+        self.assertIn("另有 1 项由 Codex 审查中（不提请你批）", text)
+        cards = "\n".join(t for _, _, t in review.for_hub(self.repo))
+        self.assertNotIn("b 的 Plan", cards)
+
+    def test_predeclared_plan_goes_to_the_user(self):
+        from module_crew import review
+        self.with_takeover()
+        self.set_takeover("plan", {"b": takeover_row(plan="codex")})
+        plan = self.wt["b"] / "tasks" / "b" / "plan.md"
+        plan.write_text(plan.read_text() + "\n## 预先声明\n\n- 公共路径：`config/app.json`\n", encoding="utf-8")
+        git(self.wt["b"], "commit", "-qam", "declare")
+        out = review.add(self.db(), self.plan_review("b"), "shop-b", 1)
+        self.assertNotIn("reviewer", store.get(self.db(), "item", str(out.number)))
+
+    def test_split_approvers_are_separate(self):
+        self.with_takeover()
+        self.set_takeover("plan", {"b": takeover_row(plan="codex"), "c": takeover_row()})
+        cfg = json.loads((self.repo / ".agent" / "config.json").read_text())
+        (self.repo / ".agent" / "config.json").write_text(json.dumps({**cfg, "reviewCadence": "combined"}))
+        self.assertEqual(start.review_cadence(self.repo), "combined")
+        self.assertEqual(start.review_cadence(self.repo, None, "b"), "separate")
+        self.assertEqual(start.review_cadence(self.repo, None, "c"), "combined")
+        self.set_takeover("plan", {"b": takeover_row(spec="codex", plan="codex", reasons=["new-module"])})
+        self.assertEqual(start.review_cadence(self.repo, None, "b"), "separate")    # important Spec: user; Plan: Codex
+
+
+class KickoffTakeoverTest(TierMixin, TakeoverMixin, StartCase):
+    def test_kickoff_line_and_cadence(self):
+        self.with_takeover()
+        self.set_takeover("plan", {"b": takeover_row(plan="codex")})
+        cfg = json.loads((self.repo / ".agent" / "config.json").read_text())
+        (self.repo / ".agent" / "config.json").write_text(json.dumps({**cfg, "reviewCadence": "combined"}))
+        git(self.repo, "commit", "-qam", "takeover")
+        self.set_takeover("plan", {"b": takeover_row(plan="codex")})
+        res = start.prepare(self.repo, ["b", "c"], "开 b 和 c", short="shop", max_modules=3)
+        assert res.code == 0, res.lines
+        db = store.open_store(self.repo)
+        texts = {p["id"]: store.read_body(db, p["kickoff"]) for p in res.prepared}
+        self.assertIn("项目评审节奏：separate", texts["b"])
+        self.assertIn("批准方式：Spec 人批、Plan Codex 放行、合并 人合", texts["b"])
+        self.assertIn("项目评审节奏：combined", texts["c"])
+        self.assertNotIn("批准方式", texts["c"])

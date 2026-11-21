@@ -116,9 +116,12 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         rec = {"state": "open", "kind": "review", "from": sender, "relayId": relay_id, "text": text,
                "module": sub["module"], "node": sub["node"], "files": sub["files"], "commit": commit,
                "closedReason": None, "answer": None}
-        reviewers = [] if sub.get("disputes") else _reviewers(db, sub["module"], sub["node"])
-        if not sub.get("disputes"):
+        codex = not sub.get("disputes") and codex_node(db, sub["module"], sub["node"], worktree, commit)
+        reviewers = [] if sub.get("disputes") or codex else _reviewers(db, sub["module"], sub["node"])
+        if not sub.get("disputes") and not codex:
             out.lines += _unrouted(db, sub["module"], sub["node"], reviewers)
+        if codex:                          # crew-takeover-approve decision 3: the virtual reviewer, no mailbox
+            rec.update(reviewer="codex", sentTo=["codex"], sentAt=store.now())
         if sub.get("disputes"):
             rec["disputes"] = sub["disputes"]
         if revised:
@@ -133,7 +136,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
                           for r in reviewers]
         tx.put("item", str(n), rec, action="created", data={"relayId": relay_id})
         out.number = n
-        out.lines.append(f"已记为交审事项 C{n}（{sub['module']} 的 {msg.fields.get('节点', '').strip()}）")
+        out.lines.append(f"已记为交审事项 C{n}（{sub['module']} 的 {msg.fields.get('节点', '').strip()}）"
+                         + (f"，Codex 放行：下一步 review codex C{n}，不提请用户" if codex else ""))
         if sub.get("disputes"):
             refs = "、".join(d["review"] for d in sub["disputes"])
             out.lines.append(f"模块不同意审查 {refs}：不再返工，作为待你决定（D 编号）的问题提请批准")
@@ -365,6 +369,8 @@ def review_state(db: store.Store, number: int, now: datetime | None = None) -> s
         return "rework" if verdict == "changes-required" else "passed"
     if not rec.get("sentAt"):
         return "none"
+    if rec.get("reviewer") == "codex":     # crew-takeover-approve: Codex has no timeout, only a run that fails
+        return "reviewing"
     now = now or datetime.fromisoformat(store.now())
     return "timeout" if now - datetime.fromisoformat(rec["sentAt"]) > REVIEW_TIMEOUT else "reviewing"
 
@@ -446,12 +452,30 @@ def batch(project: str | os.PathLike) -> dict:
         state = review_state(db, n)
         items.append({"number": n, "ref": f"C{n}", "module": v["module"], "task": v.get("task"), "node": v["node"], "from": v["from"],
                       "files": v["files"], "points": _points(v["text"]), "reviews": list(v.get("reviews") or []),
-                      "reviewState": state, "round": _rounds(db, v["module"], v["node"]), "ready": state in READY,
+                      "reviewState": state, "round": _rounds(db, v["module"], v["node"]),
+                      "ready": state in READY and (v.get("reviewer") != "codex" or state == "decide"),
+                      **({"reviewer": "codex"} if v.get("reviewer") == "codex" else {}),
                       "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state),
                       **({"checks": v["checks"]} if "checks" in v else {}),
                       **({"display": present.final_tables(project, db, v)} if v["node"] == "final" and v.get("module")
                          and not v.get("task") else {})})
-    return {"items": items, "groups": groups, "dependencyIssues": issues, "conflicts": conflicts, "overlap": over}
+    codex = [f"C{i['number']} {i['module']} 的 {NODE_NAME.get(i['node'], i['node'])}（{STATE_TEXT[i['reviewState']]}）"
+             for i in items if i.get("reviewer") == "codex" and not i["ready"]]
+    return {"items": items, "groups": groups, "dependencyIssues": issues, "conflicts": conflicts, "overlap": over,
+            "codex": codex}
+
+
+def codex_node(db: store.Store, module: str, node: str, worktree: Path, commit: str) -> bool:
+    """crew-takeover-approve: the module's takeover gives this node to Codex (the Plan read from the submitted commit)."""
+    from module_crew import takeover
+    if node not in ("spec", "interface", "plan"):
+        return False
+    plan = None
+    if node == "plan":
+        shown = _git(worktree, "show", f"{commit}:tasks/{module}/plan.md")
+        plan = shown.stdout if shown.returncode == 0 else None
+    from module_crew import autonomy
+    return takeover.approver(db, autonomy.project_of(db), module, node, plan) == "codex"
 
 
 READY = ("none", "timeout", "passed", "decide")   # states that may go to the user (key decision 3)
@@ -684,7 +708,7 @@ def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> lis
     db = store.open_store(project)
     b = batch(project)
     ready = {i["number"]: i for i in b["items"] if i["ready"]}
-    combined = start.review_cadence(project) == "combined"
+    combined_project = start.review_cadence(project) == "combined"
     out = []
     old_hub = _old_hub(db)
     for g in b["groups"]:
@@ -693,6 +717,8 @@ def for_hub(project: str | os.PathLike, parallel_with: int | None = None) -> lis
         mine = [ready[n] for n in g["items"] if n in ready]
         if not mine:
             continue
+        combined = combined_project and not (g.get("module") and not g.get("task")
+                                             and start.split_approvers(project, g["module"]))   # decision 8
         if not combined:
             parts = [[i] for i in mine]
         else:       # contract v2.3: one kind per card, so only a Spec and a Plan share one (「Spec 与 Plan」)
