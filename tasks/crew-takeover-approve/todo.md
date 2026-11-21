@@ -17,5 +17,3 @@
 - [ ] Task 8：skill、README、`module-crew sync` 后全量测试、本机实测（Spec 验收 12、13、1）
 - [ ] Checkpoint 5（gate）：最终验收
 - [ ] 回告：经模块协调转告 ecosystem-lead 与 autopr-design
-<!-- spec-guard: suspended -->
-<!-- spec-guard: suspended-reason: 等 spec-guard 0.91.0（interface 1.15）与 delegate 接口 1.5 发版并装到本机（W615） -->
