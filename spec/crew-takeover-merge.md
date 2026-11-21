@@ -1,5 +1,7 @@
 # Spec: crew-takeover-merge
 
+<!-- spec-guard: review approved 73bd14fc10a5 -->
+
 > 能力图模块 `crew-takeover-merge`。需求来源：接缝 S101，已批合并方案 plugin-ecosystem `research/2026-11-21-自动接管合并方案.md`（bfce091，用户 2026-11-21「按推荐批准」）
 > 第 2 节 module-crew 一行「合并第一段」、第 3 节 Q2、Q6、Q7、Q9、Q12，第 5 节「硬卡：module-crew 项目可直接用它的检查账」。开会话依据：用户批准事项 C618。
 > 依赖 `crew-takeover-approve`（读档位 `takeover.module(...).merge`、虚拟审查者 `codex`、`review codex`／`codex-note`、`_land`、`codex-approval` 记账、收窄入口 `autonomy.incident`；
