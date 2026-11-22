@@ -1,4 +1,4 @@
-"""Parse and render session-protocol v2.8 messages (see spec/crew-protocol.md).
+"""Parse and render session-protocol v2.9 messages (see spec/crew-protocol.md).
 
 Pure functions only: no file, git or agent-relay access. Field names, tags and
 problem codes follow the contract text in session-protocol PROTOCOL.md.
@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-CONTRACT_VERSION = "2.8"
+CONTRACT_VERSION = "2.9"
 
 KIND_TAGS = {
     "等待用户": "wait-user",
@@ -69,9 +69,13 @@ _PATHISH_RE = re.compile(r"/|\.[A-Za-z0-9]+$")
 _FILE_FINGERPRINT_RE = re.compile(r"(?<=\S) sha256:[0-9a-f]{12,64}$")   # S54 (v2.8): one space + lowercase digest, stripped
 REVIEW_NODES = {"Spec": "spec", "Plan": "plan", "接口提案": "interface", "最终验收": "final"}
 NOTICE_KINDS = {"开工": "start", "同步基线": "sync-baseline", "接口变更": "interface-change", "收尾": "wrap-up", "退回": "returned",
-                "挂起": "suspend", "恢复": "resume", "返工": "rework", "撤销批准": "approval-revoked"}
+                "挂起": "suspend", "恢复": "resume", "返工": "rework", "撤销批准": "approval-revoked",
+                "放行": "approved-by-review"}                                     # v2.9
 # notices whose 依据 must cite the user's approval: a hub item #N, or the coordinator's own approval C<N> (v2.0 draft)
-NEED_REF = ("start", "returned", "suspend", "resume", "approval-revoked")
+NEED_REF = ("start", "returned", "suspend", "resume", "approval-revoked", "approved-by-review")
+# v2.9: the node a 放行 notice approves — Spec / Plan (case sensitive, not touching a Latin letter) or 接口提案; the first wins
+_NOTICE_NODE_RE = re.compile(r"(?<![A-Za-z])(Spec|Plan)(?![A-Za-z])|接口提案")
+_NOTICE_NODES = {"Spec": "spec", "Plan": "plan"}
 _CREW_RE = re.compile(r"(?<![A-Za-z])C\s*(\d+)")
 _REVIEW_ID_RE = re.compile(r"(?<![A-Za-z])R-?\d+")
 _ARTIFACT_RE = re.compile(r"^(?:([^\s：:/]+)\s*[：:]\s*)?(/\S.*?)\s*[＠@]\s*([0-9a-f]{7,40})\s*(?:（\s*上一版\s*([0-9a-f]{7,40})\s*）)?$")
@@ -556,6 +560,12 @@ def parse(text: str) -> Message:
             problems.append("missing-approval-ref")
         extra = {"notice": {"kind": notice_kind, "refs": refs,
                             "localRefs": [f"C{n}" for n in _CREW_RE.findall(basis)]}}
+        if notice_kind == "approved-by-review":          # v2.9
+            hit = _NOTICE_NODE_RE.search(basis)
+            node = _NOTICE_NODES.get(hit.group(1), "interface") if hit else None
+            if node is None:
+                problems.append("missing-approval-node")
+            extra["notice"]["node"] = node
         if notice_kind == "rework":
             review_refs = _REVIEW_ID_RE.findall(basis)
             if basis.strip() and not review_refs:
@@ -706,9 +716,11 @@ def render_coordination_notice(kind: str, basis: str, todo: str, reason: str | N
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"「{name}」不能为空")
     if kind in NEED_REF and not (_NUM_RE.search(basis) or _CREW_RE.search(basis)):
-        raise ValueError("开工、退回、挂起、恢复、撤销批准类通知的「依据」必须写明批准事项编号（#N 或 C<N>）")
+        raise ValueError("开工、退回、挂起、恢复、撤销批准、放行类通知的「依据」必须写明批准事项编号（#N 或 C<N>）")
     if (kind == "rework") != (round is not None):
         raise ValueError("「轮次」只用于返工类，且返工类必填")
+    if kind == "approved-by-review" and not _NOTICE_NODE_RE.search(basis):
+        raise ValueError("放行类的「依据」必须写节点（Spec、Plan 或接口提案）")
     if kind == "rework" and (not isinstance(round, int) or round < 1 or not _REVIEW_ID_RE.search(basis)):
         raise ValueError("返工类的「轮次」必须是正整数，「依据」必须写审查编号（R-N）")
     if (kind == "suspend") != bool(reason and reason.strip()):

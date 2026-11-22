@@ -1,0 +1,45 @@
+{
+  "parse": {
+    "type": "review-request",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "模块": "crew-store",
+      "节点": "Spec",
+      "文件": "spec/crew-store/SPEC.md sha256:3f2a9c1e7b4d",
+      "要点": "- 做：状态库放仓库公共 git 目录，事务写入、统一编号、只追加事件日志\n- 不做：删除记录、跨仓库共享\n- 关键取舍：用单个 SQLite 文件，不用每类一个 JSON"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "submission": {
+      "module": "crew-store",
+      "node": "spec",
+      "files": [
+        {
+          "path": "spec/crew-store/SPEC.md",
+          "fingerprint": "sha256:3f2a9c1e7b4d"
+        }
+      ]
+    }
+  }
+}

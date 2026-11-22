@@ -33,9 +33,9 @@ module-crew 在它之上加一层运行层：
 |---|---|
 | 宿主 | Claude Code 桌面版（Code 标签）；模块会话也可以开在 Codex 桌面版，一批收尾后模块协调可用 `coordinator handover` 整体换到 Codex 桌面版。所有会话在同一台 Mac 上 |
 | [agent-relay](https://github.com/haigeerlab/agent-relay) | 必需，接口主版本 2。会话之间用它收发消息 |
-| [spec-guard](https://github.com/haigeerlab/spec-guard-plugin) | 必需，0.68.0 起（接口 1.1 的规划层）；项目已启用 spec-guard 的本地多 Spec 约定（`spec/CAPABILITY-MAP.md`）：还没启用就先在项目里跑 `/spec-guard:setup-convention local`，否则体检报阻塞、`start plan` 退出码 3。声明范围、自治档位、额度外包要 0.85.0 起（接口 1.11） |
-| [delegate](https://github.com/haigeerlab/delegate-plugin) | 可选，只有打开额度外包时才要：0.8.0 起（接口 1.3） |
-| session-protocol | 会话间消息的格式契约，module-crew 钉住 v2.8（契约本身随 module-crew 内置的解析器生效，不用另装）；决策收件箱讲的契约与它同为 2.x 即兼容 |
+| [spec-guard](https://github.com/haigeerlab/spec-guard-plugin) | 必需，0.68.0 起（接口 1.1 的规划层）；项目已启用 spec-guard 的本地多 Spec 约定（`spec/CAPABILITY-MAP.md`）：还没启用就先在项目里跑 `/spec-guard:setup-convention local`，否则体检报阻塞、`start plan` 退出码 3。声明范围、额度外包要 0.85.0 起（接口 1.11）；接管档位要 0.91.0 起（接口 1.15） |
+| [delegate](https://github.com/haigeerlab/delegate-plugin) | 可选，打开额度外包时要 0.8.0 起（接口 1.3）；接管档位里有「Codex 放行」时要接口 1.5 起 |
+| session-protocol | 会话间消息的格式契约，module-crew 钉住 v2.9（契约本身随 module-crew 内置的解析器生效，不用另装）；决策收件箱讲的契约与它同为 2.x 即兼容 |
 | 项目 | git 仓库，能建 worktree；有一条能在本地跑完的完整检查命令，合并后用它判断集成是否通过 |
 | 运行环境 | Python 3（只用标准库；开发与测试用 3.10） |
 
@@ -91,7 +91,8 @@ module-crew status
 |---|---|---|
 | `declaredScope` 声明范围 | Plan 里预先声明的公共文件，模块直接在自己分支改，最终验收一并审 | [使用手册](docs/guide.md#声明范围declaredscope) |
 | `checkLedger` 检查记账 | 平时只跑快检查、按树哈希记账；完整检查只在合并队列里跑 | [使用手册](docs/guide.md#检查记账checkledger) |
-| `autonomyTier` 自治档位 | `strict`（默认）／`standard`／`relaxed`：交审节奏与消息汇总的松紧，出事自动降档 | [使用手册](docs/guide.md#自治档位autonomytier) |
+| `takeover` 接管档位（spec-guard） | 不接管（默认）／只接管 Plan／接管到合并／自定义：Spec、Plan 勾了「Codex 放行」时由 Codex 审、没有阻断就放行（两轮返工上限，Codex 不可用就停下等用户），出事自动收窄。`autonomyTier` 已退役 | [使用手册](docs/guide.md#接管档位takeover) |
+| `digest` 收尾汇总 | 同步、检查账、不经队列的提交、提前落地不逐条说，收尾时 `tier digest` 一次说明 | [使用手册](docs/guide.md#接管档位takeover) |
 | `codexOffload` 额度外包 | Claude 额度紧张时，开工后的模块把 Task 交给同一个 Codex 会话实现，模块会话核对后提交 | [使用手册](docs/guide.md#额度外包codexoffload) |
 
 ## 文档

@@ -161,7 +161,9 @@ def _status(as_json: bool) -> int:
     from module_crew import checks          # crew-check-ledger
     for line in checks.status_lines((report.store or {}).get("checks")):
         print(line)
-    from module_crew import autonomy        # crew-autonomy-tier
+    from module_crew import autonomy, takeover        # crew-autonomy-tier, crew-takeover-approve
+    for line in takeover.status_lines((report.store or {}).get("takeover")):
+        print(line)
     for line in autonomy.status_lines((report.store or {}).get("autonomy")):
         print(line)
     unq = (report.store or {}).get("unqueued")
@@ -560,9 +562,9 @@ def _config_set(args) -> int:
     needs the user's words."""
     protected = [] if args.clear_protected_files else args.protected_file     # 0.17.0: None when not given
     if all(v is None for v in (args.commit_prefix, args.check_timeout, args.declared_scope, args.quick_check_command,
-                               args.check_ledger, args.codex_offload, protected)):
+                               args.check_ledger, args.codex_offload, args.digest, protected)):
         print("❌ 至少给一项：--commit-prefix、--check-timeout、--declared-scope、--quick-check-command、--check-ledger"
-              "、--codex-offload、--protected-file 或 --clear-protected-files", file=sys.stderr)
+              "、--codex-offload、--digest、--protected-file 或 --clear-protected-files", file=sys.stderr)
         return 2
     if args.check_timeout is not None and args.check_timeout < 1:
         print("❌ --check-timeout 要是正整数（秒）", file=sys.stderr)
@@ -593,7 +595,8 @@ def _config_set(args) -> int:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
     changed = {k: v for k, v in (("commitPrefix", args.commit_prefix), ("checkTimeout", args.check_timeout),
-                                 ("declaredScope", args.declared_scope), (changes.PROTECTED, protected)) if v is not None}
+                                 ("declaredScope", args.declared_scope), ("digest", args.digest),
+                                 (changes.PROTECTED, protected)) if v is not None}
     if not changed:
         return 0
     with db.transaction(actor="coordinator") as tx:
@@ -605,6 +608,9 @@ def _config_set(args) -> int:
         print(f"已改检查时限：{args.check_timeout} 秒（完整检查、提交与推送都用它）")
     if protected is not None:
         print("已登记保护文件：" + "、".join(protected) if protected else "已清空保护文件名单")
+    if args.digest is not None:                                 # crew-takeover-approve decision 11
+        print("已打开收尾汇总：同步、检查账、不经队列的提交、提前落地不逐条告诉用户，收尾时用 tier digest 一次说明"
+              if args.digest == "on" else "已关闭收尾汇总：这几类消息照常逐条告诉用户")
     if args.declared_scope is not None:
         from module_crew import declared
         print("已打开声明范围：Plan「预先声明」名单内的公共文件由模块直接改，名单外照旧发【公共变更请求】"
@@ -661,6 +667,35 @@ def _failure(args) -> int:
     return 0
 
 
+def _review_codex(args, db) -> int:
+    """crew-takeover-approve decisions 3 to 6: Codex as the reviewer of a Spec or Plan the takeover gives it."""
+    from module_crew import takeover
+    try:
+        if args.action == "codex":
+            lines, _ = takeover.codex_command(db, args.number)
+            print("\n".join(lines))
+            return 0
+        if args.action == "codex-fallback":
+            original = _original(args.original, args.original_file)
+            if original is None:
+                return 2
+            print("\n".join(takeover.codex_fallback(db, args.number, original)))
+            return 0
+        res = takeover.codex_note(".", args.number, args.report)
+    except takeover.CodexRefused as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 3
+    for line in res.lines:
+        print(line)
+    if res.draft:
+        print(res.draft, end="")
+    for x in res.sends:
+        kind = {"rework": "【协调通知】（返工）", "coordination-notice": "【协调通知】"}.get(x["kind"], "【协调通知】")
+        print(f"发送 {kind} → {x['to']}，正文文件：{x['path']}")
+        _sent(x["to"])
+    return res.code
+
+
 def _review(args) -> int:
     db = store.open_store()
     if args.action == "add":
@@ -675,6 +710,8 @@ def _review(args) -> int:
             print(f"发送 【交审】 → {x['to']}（送审），正文文件：{x['path']}")
             _sent(x['to'])
         return out.code
+    if args.action in ("codex", "codex-note", "codex-fallback"):        # crew-takeover-approve
+        return _review_codex(args, db)
     if args.action == "show":
         try:
             print("\n".join(review.show(db, args.number, args.submission, args.spec_diff)))
@@ -761,6 +798,8 @@ def _review(args) -> int:
                   "要退回就请用户写一句修改意见，不给占位块）：")
             print("\n".join(f"  {x}" for x in blocks))
             print()
+        if b.get("codex"):                  # crew-takeover-approve decision 2: only so the user knows
+            print(f"另有 {len(b['codex'])} 项由 Codex 审查中（不提请你批）：" + "；".join(b["codex"]))
         if not b["dependencyIssues"]:
             print("依赖：全部就绪")
         from module_crew import present
@@ -1229,8 +1268,9 @@ def _tier(args) -> int:
     from module_crew import autonomy
     try:
         db = store.open_store()
-        if args.preflight:
-            code, lines = autonomy.preflight(db, ".")
+        if args.preflight:                  # crew-takeover-approve: before /spec-guard:config writes takeover
+            from module_crew import takeover
+            code, lines = takeover.preflight(db, ".")
             print("\n".join(lines))
             return code
         if args.action == "digest":
@@ -1247,7 +1287,10 @@ def _tier(args) -> int:
                 return 2
             print("\n".join(autonomy.restore(db, ".", original)))
             return 0
-        doc, lines = autonomy.report(db, ".")
+        from module_crew import takeover
+        doc, lines = takeover.report(db, ".")
+        old_doc, old_lines = autonomy.report(db, ".")
+        doc, lines = {**doc, **old_doc}, lines + old_lines
     except autonomy.Refused as exc:
         print(f"❌ {exc}", file=sys.stderr)
         return 3
@@ -1358,6 +1401,7 @@ def _main(argv: list[str] | None = None) -> int:
     cfset.add_argument("--quick-check-command", help="快检查命令（项目脚本，只跑受影响部分；不经 shell）")
     cfset.add_argument("--check-ledger", choices=("on", "off"), help="检查记账开关：平时快检查、完整检查只在合并队列与基线检查里跑")
     cfset.add_argument("--codex-offload", choices=("on", "off"), help="额度外包开关：Spec、Plan 批准后把 Task 经 delegate 交给 Codex")
+    cfset.add_argument("--digest", choices=("on", "off"), help="收尾汇总开关：几类记账消息不逐条告诉用户、收尾时 tier digest 一次说明")
     cfp = cfset.add_mutually_exclusive_group()
     cfp.add_argument("--protected-file", action="append", metavar="路径",
                      help="随锁文件校验的保护文件（可重复，整份替换）：change add 遇到锁文件改动时提示要不要连带改")
@@ -1385,6 +1429,16 @@ def _main(argv: list[str] | None = None) -> int:
     rsh.add_argument("number", type=refs.parse)
     rsh.add_argument("--submission", action="store_true", help="另外输出交审原文")
     rsh.add_argument("--spec-diff", action="store_true", help="只输出最终验收时 Spec 相对集成分支的改动差异")
+    rcx = rvs.add_parser("codex", help="只读：给出这一轮交 Codex 审的 /delegate:review 命令（crew-takeover-approve）")
+    rcx.add_argument("number", type=refs.parse)
+    rcn = rvs.add_parser("codex-note", help="记下 Codex 的审查报告：返工、放行或交用户")
+    rcn.add_argument("number", type=refs.parse)
+    rcn.add_argument("--report", required=True, help="/delegate:review 标准输出的 JSON 文件")
+    rcf = rvs.add_parser("codex-fallback", help="Codex 不可用或两轮仍阻断，用户决定这一项改由自己批（要用户原话）")
+    rcf.add_argument("number", type=refs.parse)
+    rcfg = rcf.add_mutually_exclusive_group(required=True)
+    rcfg.add_argument("--original")
+    rcfg.add_argument("--original-file")
     for name in ("approve", "answer"):
         r = rvs.add_parser(name)
         if name == "approve":
@@ -1622,11 +1676,11 @@ def _main(argv: list[str] | None = None) -> int:
     ckl = cks.add_parser("list", help="只读：最近的检查账")
     ckl.add_argument("--limit", type=int, default=20)
     ckl.add_argument("--json", action="store_true")
-    ti = sub.add_parser("tier", help="自治档位：查看、写入前核对、恢复降档、收尾汇总（crew-autonomy-tier）")
+    ti = sub.add_parser("tier", help="接管档位：查看、写入前核对、出事收窄、收尾汇总（crew-takeover-approve）")
     ti.add_argument("--json", action="store_true")
-    ti.add_argument("--preflight", action="store_true", help="写 autonomyTier 之前核对 spec-guard 版本与接口（只读）")
+    ti.add_argument("--preflight", action="store_true", help="写 takeover 之前核对 spec-guard 与 delegate 的版本和接口（只读）")
     tis = ti.add_subparsers(dest="action")
-    tir = tis.add_parser("restore", help="降档后恢复一档（要用户原话）")
+    tir = tis.add_parser("restore", help="已退役：放宽档位用 /spec-guard:config（要用户原话）")
     tirg = tir.add_mutually_exclusive_group(required=True)
     tirg.add_argument("--original")
     tirg.add_argument("--original-file")

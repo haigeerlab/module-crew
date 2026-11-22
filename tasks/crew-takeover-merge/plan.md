@@ -1,5 +1,7 @@
 # Implementation Plan: crew-takeover-merge
 
+<!-- spec-guard: review approved -->
+
 > 依据：`spec/crew-takeover-merge.md`（用户 2026-11-21 批准，事项 C620「C620 A」）。任务清单：`tasks/crew-takeover-merge/todo.md`。
 > 本模块是提前开工：依赖 `crew-takeover-approve` 合入、收到开工类【协调通知】并 `module-crew sync` 之后才构建。
 

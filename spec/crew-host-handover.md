@@ -1,10 +1,10 @@
 # Spec: crew-host-handover
 
-<!-- spec-guard: review approved 249e3ee33e44 -->
+<!-- spec-guard: review approved f9c13c031c2e -->
 
 > 能力图模块 `crew-host-handover`（第八版）。需求来源：插件生态接缝 S13 修订版，用户 2026-10-23 在 ecosystem-lead 会话确认
 > 「只在空档整体来回换宿主，不做模块中途换」，2026-10-23 在 mc-coord 会话批准插入能力图（批准事项 C13）。
-> 宿主事实取自 decision-inbox `docs/host-differences.md`（H1–H5、H7、H8、H10–H12、H23、H25）。
+> 宿主事实取自 agent-relay `docs/host-differences.md`（H1–H5、H7、H8、H10–H12、H23、H25）。
 > 依赖 `crew-codex-host`（Codex 模块会话、`host-check`）、`crew-host-permissions`（权限规则写入与跟随）、`crew-light-task`（`task dispatch`）、
 > `crew-session-handover`（`bind --takeover`、写命令会话守门）。标「新」的是写 Spec 时补的实现取舍，请重点审。
 
@@ -173,3 +173,4 @@ CHANGELOG 随发版写。回告：发版后告诉 ecosystem-lead S13 的模块 A
 ## 变更记录
 
 - 2026-10-23：事件名由 `coordinator.handover` 改为 `session.coordinator-handover`（状态库事件一律是「记录种类.动作」）；`status --json` 的 `store` 另加 `handoverPending`（交接中）与 `handoverLine`（提示原文），只增不改。原因：构建 Task 3、Task 7 时按现有格式实现；来源：模块会话，随最终验收交用户复审。
+- 2026-11-22：开头引用的宿主差异文档改为 agent-relay `docs/host-differences.md`（agent-relay main 33e8abc，PR #190），内容不变。原因：该文档已从 decision-inbox 搬进 agent-relay 维护，旧位置不再更新（agent-relay-owner #22021）；来源：用户 2026-11-22 在 mc-coord 会话批准（「改成新路径」）。

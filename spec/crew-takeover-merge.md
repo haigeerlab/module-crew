@@ -1,6 +1,6 @@
 # Spec: crew-takeover-merge
 
-<!-- spec-guard: review approved 73bd14fc10a5 -->
+<!-- spec-guard: review approved 3df208700fcf -->
 
 > 能力图模块 `crew-takeover-merge`。需求来源：接缝 S101，已批合并方案 plugin-ecosystem `research/2026-11-21-自动接管合并方案.md`（bfce091，用户 2026-11-21「按推荐批准」）
 > 第 2 节 module-crew 一行「合并第一段」、第 3 节 Q2、Q6、Q7、Q9、Q12，第 5 节「硬卡：module-crew 项目可直接用它的检查账」。开会话依据：用户批准事项 C618。
@@ -195,13 +195,9 @@ PYTHONPATH=tests python3 -m unittest test_takeover_merge
 ## 并行边界
 
 - 独占：`tests/test_takeover_merge.py`
-- 公共：测试资源
-
-## 并行说明
-
-本模块和 `crew-takeover-approve` 同批：`crew-takeover-approve` 先合入，本模块 `module-crew sync` 后在它之上改这些共享文件：`module_crew/takeover.py`、`module_crew/review.py`、`module_crew/merge.py`、`module_crew/checks.py`、`module_crew/probe.py`、`module_crew/__main__.py`、
-`skills/crew-coordinator/SKILL.md`、`codex-skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`codex-skills/crew-dev/SKILL.md`、`docs/guide.md`、`docs/commands.md`、`README.md`。
-另改插件对外接口 `interface.json`（加 `checkEvidence` 一节，决策 8），改动随本模块最终验收审。
+- 共享（`crew-takeover-approve` 先合入，本模块在它之上改）：`module_crew/takeover.py`、`module_crew/review.py`、`module_crew/merge.py`、`module_crew/checks.py`、`module_crew/probe.py`、`module_crew/__main__.py`、
+  `skills/crew-coordinator/SKILL.md`、`codex-skills/crew-coordinator/SKILL.md`、`skills/crew-dev/SKILL.md`、`codex-skills/crew-dev/SKILL.md`、`docs/guide.md`、`docs/commands.md`、`README.md`
+- 公共：`interface.json`（插件对外接口，改动随本模块最终验收审）、测试资源
 
 ## 未决问题
 
@@ -216,4 +212,3 @@ PYTHONPATH=tests python3 -m unittest test_takeover_merge
 ## 变更记录
 
 - 2026-11-21：「并行边界」改成每个文件写完整的仓库相对路径（`module_crew/review.py` 等，照 `spec/crew-autonomy-tier.md` 的写法），`docs/` 两个文档与 README 从「公共」移到「共享」并写全路径；内容范围不变。原因：`module-crew review batch` 对简写路径报 bad-path、spec-guard 读不了；来源：mc-coord 2026-11-21 提醒（#21930），随 Plan 交审一并复审。
-- 2026-11-21：「并行边界」去掉「共享：」一行，共享文件清单与 `interface.json` 的说明挪到紧跟其后的新节「并行说明」（照 `spec/crew-autonomy-tier.md`）；「公共」行只留类别「测试资源」；内容范围不变。原因：spec-guard verify-artifacts 只认「独占」「公共」两种行，「共享」行与带说明的公共行判为 unknown-line；来源：用户 2026-11-21 在 mc-coord 会话答复「批草案并改边界」（mc-coord 转达 #21947），随最终验收附 Spec 差异一并复审。
