@@ -14,6 +14,6 @@
 - [x] Task 6：出事收窄与 `tier degrade`（Spec 决策 9、10；验收 9）——实现先于测试；`incident` 内部改调 `takeover.narrow`（`--source module-crew --confirm`，归到模块且模块单独设过时模块与项目都收），收窄后在集成分支单独提交 `.agent/config.json` 并记为 module-crew 自己的提交；`incident` 加可选参数 `module`（签名兼容）；`tier degrade` 参数与退出码不变；测试中发现收窄提交会改集成分支的树、让基线检查重跑再降一格，已加去重（同一红基线、其后没有别的提交就不再收窄）；旧档位测试里 IncidentTest 等 4 个类（13 个用例）由 NarrowTest 等 9 个用例取代
 - [x] Checkpoint 4（gate）：契约「放行」类型已发版——session-protocol v2.9 于 21eff81 发版（mc-coord #21922）；样例按用户答复 C630「甲：随模块合并」放在本分支 tests/fixtures/session-protocol/v2.9/（252 个文件，SHA256SUMS 全部通过）
 - [x] Task 7：认「放行」通知、只放行 Spec 时发它（Spec 决策 12）——`protocol.py` 认类型「放行」（approved-by-review）、`missing-approval-node`、`notice.node`，契约版本钉到 2.9；`review._approve` 在 Codex 只放行一个节点时发放行类通知；契约样例 v2.2～v2.9 全过，本模块 ReleaseNoticeTest、NoticeRenderTest 通过
-- [ ] Task 8：skill、README、`module-crew sync` 后全量测试、本机实测（Spec 验收 12、13、1）
+- [x] Task 8：skill、README、`module-crew sync` 后全量测试、本机实测（Spec 验收 12、13、1）——四份 skill 的档位一节改为接管档位，README 中英、docs/guide.md、docs/commands.md、docs/architecture.md 同步；sync 后集成分支仍是 b671c6f；第一次全量 1334 个中 2 个失败（文档里的旧称「用户答复」「协调会话」、interface.json 的 contract 仍是 2.8），修后（6a1e326）全量 1334 个全过（1774 秒）；本机实测：spec-guard 0.91.1 上 `tier --preflight` 退出码 0、`tier --json` 读到项目 none 与两个在用模块全人批；真跑一次 Codex `/delegate:review`（审本模块 Spec），报告字段与 `codex-note` 的读法一致、`scope.files` 的 sha256 等于已提交文件
 - [ ] Checkpoint 5（gate）：最终验收
 - [ ] 回告：经模块协调转告 ecosystem-lead 与 autopr-design
