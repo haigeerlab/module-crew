@@ -10,7 +10,7 @@
 - [x] Task 4：合并第一段完成记录（Spec 决策 6；验收 6）
 - [x] Checkpoint 2（report）：自动放行与合并链路就位（test_takeover_merge 15 项、test_merge_run／check_ledger 55 项通过）
 - [x] Task 5：出事收窄与 Codex 不可用的回退（Spec 决策 8、9；验收 8、10）
-- [ ] Checkpoint 3（gate）：`merge first-stage` 字段与 autopr-design 对齐
+- [x] Checkpoint 3（gate）：`merge first-stage` 字段与 autopr-design 对齐（autopr-design #22079 经 mc-coord #22080：加 repo、baseBranch、reportSha256）
 - [ ] Task 6：`merge first-stage` 与 `interface.json`（Spec 决策 7；验收 7）
 - [ ] Task 7：显示（Spec 决策 10；验收 9）
 - [ ] Checkpoint 4（report）：读接口与显示就位
