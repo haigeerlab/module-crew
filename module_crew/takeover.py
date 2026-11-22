@@ -320,7 +320,7 @@ def codex_command(db: store.Store, n: int) -> tuple[list[str], Path]:
         args += ["--previous-report", reports[-1]]
     what = {"spec": "Spec", "interface": "接口提案", "plan": "Plan"}[rec["node"]]
     args.append(json.dumps(TASK_TEXT.format(what=what), ensure_ascii=False))
-    lines = [f"C{n}（{rec['module']} 的 {what}）第 {len(reports) + 1} 次交 Codex 审：在模块协调会话里运行",
+    lines = [f"C{n}（{rec['module']} 的 {what}）第 {len(reports) + 1} 次交 Codex 审：由模块协调在本会话运行",
              "  " + " ".join(args),
              f"把标准输出的那份 JSON 原样存到 {path}，再运行 module-crew review codex-note C{n} --report {path}",
              "Codex 跑不成也照样交给 codex-note（它会停下、给出问用户的草稿）；不要自己审，也不要换后端"]
@@ -488,7 +488,7 @@ def codex_fallback(db: store.Store, n: int, original: str) -> list[str]:
         cur = {k: v for k, v in cur.items() if k not in ("sentTo", "sentAt")}
         tx.put("item", str(n), dict(cur, reviewer="human", fallback=why), action="codex-fallback",
                data={"original": original, **store.source_field()})
-    return [f"C{n} 改由用户批（{why}）：照人批流程，用户答复后 review approve C{n} 或 review answer C{n}"]
+    return [f"C{n} 改由用户批（{why}）：照人批流程，用户的答复到了再 review approve C{n} 或 review answer C{n}"]
 
 
 # ---------------------------------------------------------------- narrowing after an incident (decision 9)

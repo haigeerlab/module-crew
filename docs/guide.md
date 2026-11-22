@@ -130,7 +130,7 @@ module-crew 自己的提交信息默认以 `chore(crew): ` 开头，`config set 
 - **批准人不同就分开批**：同一模块 Spec、Plan 一个人批、一个 Codex 放行时，即使 `reviewCadence=combined` 也按 separate 交审。
 - **出事自动收窄**：合并因模块原因退回、撤销合并批准、返工满 3 次、基线新跑出失败，或外部程序用 `tier degrade` 报来的信号，module-crew 调 spec-guard 的只许收窄入口，按「合并 → Plan → Spec」一次一格，并在集成分支单独提交 `.agent/config.json`，马上告诉用户。放宽要用户原话、一次升一档，经 `/spec-guard:config` 写。
 - **autonomyTier 已退役**：旧值不映射、不再生效。评审节奏只看 `reviewCadence`；声明范围只认 `config set --declared-scope`；收尾汇总改为独立开关 `config set --digest on|off`（打开后同步、检查账、不经队列的提交、提前落地收尾时用 `tier digest` 一次说明）。
-- **底线**：三种情况必停（测试改不红、Spec 没覆盖的决策、高风险不可逆改动），最终验收要用户答复，合并队列里照样跑完整检查。
+- **底线**：三种情况必停（测试改不红、Spec 没覆盖的决策、高风险不可逆改动），最终验收要用户的答复，合并队列里照样跑完整检查。
 
 ### 额度外包（`codexOffload`）
 
