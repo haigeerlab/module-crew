@@ -3,6 +3,7 @@ and the retirement of autonomyTier (see spec/crew-takeover-approve.md)."""
 
 import json
 import unittest
+from pathlib import Path
 
 from helpers import MergeCase, ReviewCase, StartCase, git
 
@@ -132,6 +133,15 @@ class TakeoverMixin:
             doc.pop("takeoverNarrow", None)
         (root / "interface.json").write_text(json.dumps(doc))
         (root / "hooks" / "project_config.py").write_text(FAKE_SHOW)
+        if version >= "1.15":                   # Task 9: declaredScope answers "no section" unless a test says otherwise
+            from test_declared_scope import DECLARED_COMMAND, FAKE_DECLARED
+            doc["declaredScope"] = {"command": DECLARED_COMMAND}
+            (root / "interface.json").write_text(json.dumps(doc))
+            (root / "hooks" / "module_scope.py").write_text(FAKE_DECLARED)
+            out = self.tmp / "declared-out.json"
+            out.write_text("{}")
+            os.environ["FAKE_DECLARED_OUT"] = str(out)
+            self.addCleanup(lambda: os.environ.pop("FAKE_DECLARED_OUT", None))
         if delegate is not None:
             report = {"schemaVersion": 1, "severity": {"field": "findings[].severity"}} if delegate >= "1.5" else {"schemaVersion": 1}
             self.plugins.install("delegate", {"interface": delegate, "review": {"command": "/delegate:review",
@@ -152,7 +162,7 @@ class TakeoverMixin:
         (self.repo / ".agent" / "config.json").touch()     # a new mtime: no cached /map
 
 
-class ReadTakeoverTest(TierMixin, TakeoverMixin, ReviewCase):
+class ReadTakeoverTest(TierMixin, TakeoverMixin, DeclaredMixin, ReviewCase):
     """Task 2, acceptance 1 and 2."""
 
     def db(self):
@@ -173,9 +183,7 @@ class ReadTakeoverTest(TierMixin, TakeoverMixin, ReviewCase):
         self.assertEqual(takeover.approver(db, self.repo, "c", "plan"), "codex")
         self.assertEqual(takeover.approver(db, self.repo, "c", "final"), "human")
         self.assertEqual(takeover.line(c), "批准方式：Spec 人批（重要需求：跨模块）、Plan Codex 放行、合并 自动合")
-        plan = "# Plan\n\n## 预先声明\n\n- 公共路径：`config/app.json`\n\n## Task List\n"
-        self.assertEqual(takeover.approver(db, self.repo, "c", "plan", plan), "human")
-        self.assertEqual(takeover.approver(db, self.repo, "c", "plan", plan.replace("- 公共路径：`config/app.json`", "无")), "codex")
+        self.assertEqual(takeover.approver(db, self.repo, "c", "plan", self.repo), "codex")   # no section: Codex
         doc = json.loads(self.cli("tier", "--json")[1])
         self.assertEqual(doc["takeover"]["value"], "plan")
         self.assertEqual({m["module"]: m["plan"] for m in doc["modules"]}, {"b": "codex", "c": "codex"})
@@ -228,7 +236,7 @@ class ReadTakeoverTest(TierMixin, TakeoverMixin, ReviewCase):
 
 # ---------------------------------------------------------------- Task 3: showing it, batches, split cadence
 
-class ShowTakeoverTest(TierMixin, TakeoverMixin, ReviewCase):
+class ShowTakeoverTest(TierMixin, TakeoverMixin, DeclaredMixin, ReviewCase):
     """Task 3, acceptance 3 and 8."""
 
     def db(self):
@@ -259,6 +267,38 @@ class ShowTakeoverTest(TierMixin, TakeoverMixin, ReviewCase):
         cards = "\n".join(t for _, _, t in review.for_hub(self.repo))
         self.assertNotIn("b 的 Plan", cards)
 
+    def test_predeclared_reads_spec_guard(self):
+        """Task 9 (M1 notes 1, 11): spec-guard's declaredScope decides; a malformed section is human, never parsed here."""
+        from module_crew import takeover
+        from test_declared_scope import DECLARED_COMMAND
+        self.with_takeover()
+        self.set_takeover("plan", {"c": takeover_row(plan="codex")})
+        cases = {"declared": (usable(), "Plan 有预先声明"),
+                 "malformed": ({"code": 4, "out": {"error": "unknown-line"}}, "Plan 预先声明格式错误（spec-guard：unknown-line）"),
+                 "usage": ({"code": 2, "out": {}}, "读不到 spec-guard 的预先声明判定"),
+                 "empty": ({"code": 0, "out": {"declared": True, "publicPaths": [], "configs": [], "patches": [],
+                                                "dependencies": []}}, None),
+                 "none": ({"code": 0, "out": {"declared": False}}, None)}
+        for name, (answer, why) in cases.items():
+            with self.subTest(name):
+                self.with_declared({"c": answer}, version="1.15")
+                (self.repo / ".agent" / "config.json").touch()
+                c = takeover.module(self.db(), self.repo, "c", self.repo)
+                if why is None:
+                    self.assertEqual((c.plan, c.forced), ("codex", {}))
+                    self.assertEqual(takeover.approver(self.db(), self.repo, "c", "plan", self.repo), "codex")
+                else:
+                    self.assertIn(why, c.forced.get("plan", ""))
+                    self.assertEqual(takeover.approver(self.db(), self.repo, "c", "plan", self.repo), "human")
+        call = json.loads(self.args_log.read_text().splitlines()[-1])
+        self.assertEqual(call, DECLARED_COMMAND[3:5] + [str(self.repo)] + ["--module", "c"])
+        doc = json.loads((Path(self.plugins.entries["spec-guard@m"][-1]["installPath"]) / "interface.json").read_text())
+        doc.pop("declaredScope")
+        (Path(self.plugins.entries["spec-guard@m"][-1]["installPath"]) / "interface.json").write_text(json.dumps(doc))
+        (self.repo / ".agent" / "config.json").touch()
+        c = takeover.module(self.db(), self.repo, "c", self.repo)
+        self.assertIn("读不到 spec-guard 的预先声明判定", c.forced["plan"])     # no declaredScope: human
+
     def test_predeclared_plan_goes_to_the_user(self):
         from module_crew import review
         self.with_takeover()
@@ -266,8 +306,18 @@ class ShowTakeoverTest(TierMixin, TakeoverMixin, ReviewCase):
         plan = self.wt["b"] / "tasks" / "b" / "plan.md"
         plan.write_text(plan.read_text() + "\n## 预先声明\n\n- 公共路径：`config/app.json`\n", encoding="utf-8")
         git(self.wt["b"], "commit", "-qam", "declare")
+        self.with_declared({"b": {"code": 4, "out": {"error": "unknown-line"}}}, version="1.15")
         out = review.add(self.db(), self.plan_review("b"), "shop-b", 1)
-        self.assertNotIn("reviewer", store.get(self.db(), "item", str(out.number)))
+        rec = store.get(self.db(), "item", str(out.number))
+        self.assertNotIn("reviewer", rec)
+        why = "Plan 预先声明格式错误（spec-guard：unknown-line）"
+        self.assertEqual(rec["humanReason"], why)
+        self.assertIn(f"Plan 改为人批：{why}", "\n".join(out.lines))
+        call = json.loads(self.args_log.read_text().splitlines()[-1])
+        self.assertEqual(call[2], str(self.wt["b"]))                          # spec-guard reads the submitted worktree
+        b = review.batch(self.repo)
+        self.assertEqual(next(i for i in b["items"] if i["number"] == out.number)["humanReason"], why)
+        self.assertIn(f"批准方式：人批（{why}）", self.cli("review", "batch")[1])
 
     def test_split_approvers_are_separate(self):
         self.with_takeover()

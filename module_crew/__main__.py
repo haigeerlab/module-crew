@@ -776,6 +776,8 @@ def _review(args) -> int:
                 print(f"C{i['number']} {i['module']} 的 {review.NODE_NAME.get(i['node'], i['node'])}（{i['from']}）："
                       + "、".join(f["path"] for f in i["files"]))
                 print("  要点：" + i["points"].replace("\n", "\n        "))
+                if i.get("humanReason"):        # crew-takeover-approve, M1 note 1
+                    print(f"  批准方式：人批（{i['humanReason']}）")
                 if i.get("checks"):             # crew-check-ledger
                     from module_crew import checks
                     print("  " + checks.review_line(i["checks"]))

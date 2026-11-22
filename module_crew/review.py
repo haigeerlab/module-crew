@@ -116,12 +116,14 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         rec = {"state": "open", "kind": "review", "from": sender, "relayId": relay_id, "text": text,
                "module": sub["module"], "node": sub["node"], "files": sub["files"], "commit": commit,
                "closedReason": None, "answer": None}
-        codex = not sub.get("disputes") and codex_node(db, sub["module"], sub["node"], worktree, commit)
+        codex, human_why = (False, None) if sub.get("disputes") else codex_node(db, sub["module"], sub["node"], worktree, commit)
         reviewers = [] if sub.get("disputes") or codex else _reviewers(db, sub["module"], sub["node"])
         if not sub.get("disputes") and not codex:
             out.lines += _unrouted(db, sub["module"], sub["node"], reviewers)
         if codex:                          # crew-takeover-approve decision 3: the virtual reviewer, no mailbox
             rec.update(reviewer="codex", sentTo=["codex"], sentAt=store.now())
+        elif human_why:                    # M1 note 1: say why a step the takeover gives to Codex goes to the user
+            rec["humanReason"] = human_why
         if sub.get("disputes"):
             rec["disputes"] = sub["disputes"]
         if revised:
@@ -137,7 +139,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         tx.put("item", str(n), rec, action="created", data={"relayId": relay_id})
         out.number = n
         out.lines.append(f"已记为交审事项 C{n}（{sub['module']} 的 {msg.fields.get('节点', '').strip()}）"
-                         + (f"，Codex 放行：下一步 review codex C{n}，不提请用户" if codex else ""))
+                         + (f"，Codex 放行：下一步 review codex C{n}，不提请用户" if codex else "")
+                         + (f"；{NODE_NAME.get(sub['node'], sub['node'])} 改为人批：{human_why}" if human_why else ""))
         if sub.get("disputes"):
             refs = "、".join(d["review"] for d in sub["disputes"])
             out.lines.append(f"模块不同意审查 {refs}：不再返工，作为待你决定（D 编号）的问题提请批准")
@@ -459,6 +462,7 @@ def batch(project: str | os.PathLike) -> dict:
                       "reviewState": state, "round": _rounds(db, v["module"], v["node"]),
                       "ready": state in READY and v.get("reviewer") != "codex",
                       **({"reviewer": "codex"} if v.get("reviewer") == "codex" else {}),
+                      **({"humanReason": v["humanReason"]} if v.get("humanReason") else {}),
                       "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state),
                       **({"checks": v["checks"]} if "checks" in v else {}),
                       **({"display": present.final_tables(project, db, v)} if v["node"] == "final" and v.get("module")
@@ -469,17 +473,24 @@ def batch(project: str | os.PathLike) -> dict:
             "codex": codex}
 
 
-def codex_node(db: store.Store, module: str, node: str, worktree: Path, commit: str) -> bool:
-    """crew-takeover-approve: the module's takeover gives this node to Codex (the Plan read from the submitted commit)."""
-    from module_crew import takeover
+def codex_node(db: store.Store, module: str, node: str, worktree: Path, commit: str) -> tuple[bool, str | None]:
+    """crew-takeover-approve: (the module's takeover gives this node to Codex, why it goes back to the user instead).
+    spec-guard reads the Plan in the submitting worktree, which must hold the submitted Plan (M1 note 11)."""
+    from module_crew import autonomy, takeover
     if node not in ("spec", "interface", "plan"):
-        return False
-    plan = None
+        return False, None
     if node == "plan":
         shown = _git(worktree, "show", f"{commit}:tasks/{module}/plan.md")
-        plan = shown.stdout if shown.returncode == 0 else None
-    from module_crew import autonomy
-    return takeover.approver(db, autonomy.project_of(db), module, node, plan) == "codex"
+        try:
+            here = (worktree / "tasks" / module / "plan.md").read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            here = None
+        if shown.returncode != 0 or here != shown.stdout:
+            if takeover.approver(db, autonomy.project_of(db), module, node) == "codex":
+                return False, "工作区的 Plan 与交审提交不同，读不到 spec-guard 的预先声明判定"
+            return False, None
+    who, why = takeover.approval(db, autonomy.project_of(db), module, node, worktree)
+    return who == "codex", why
 
 
 READY = ("none", "timeout", "passed", "decide")   # states that may go to the user (key decision 3)
