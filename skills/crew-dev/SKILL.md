@@ -114,6 +114,8 @@ module-crew protocol check <消息文件>
 - **Codex 的返工通知**照普通返工处理，只多一步：先在你的 worktree 照通知运行 `/spec-guard:review-mark --target <spec|plan> --state codex-reviewed --review <报告> --confirm`（把这一轮记进文件），再按阻断意见改、提交、重新发【交审】；
   建议意见由你决定吸收与否，在文件「外部审查意见」一节每条写一句理由。
 - **「放行」类【协调通知】**（契约 v2.9）：Codex 放行了「依据」里点名的那个节点，效力等同那一节点的用户批准、只限它；发件人须是在用模块协调。照「要你做什么」先 `module-crew sync`，再做下一步（如写 Plan 交审）。它不是用户的话，不当作用户说过什么的依据。
+- **自动合的最终验收**（合并一项是「自动合」）：照常发最终验收【交审】，Codex 审最终补丁；它的返工通知照普通返工处理（最终验收这一轮不用 review-mark 记），改完重新交审。
+  spec-guard 的阶段提示在最终 gate 建议「交 Codex 审、等检查证据、用 review-mark 记验收」时**不照做**：在 module-crew 项目里由模块协调做 Codex 审查与合并，最终验收记录归 autopilot。获批合入后同样不勾 todo 末项、不再提交。
 - 开工说明写的评审节奏（separate／combined）照做；Spec、Plan 批准人不同时已按 separate 算好。
 
 ## 额度外包（开工通知写「本模块的实现交给 Codex」时，第十版第 2 轮）

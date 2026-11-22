@@ -417,5 +417,33 @@ class ShowTest(AutoMergeCase):
         self.assertEqual(st["merge"], {"released": 1, "merged": 1, "returned": 0})
 
 
+class SkillsDocsTest(unittest.TestCase):
+    """Task 8 (acceptance 11)."""
+
+    root = Path(review.__file__).parent.parent
+
+    def text(self, rel: str) -> str:
+        return (self.root / rel).read_text(encoding="utf-8")
+
+    def test_coordinator(self):
+        for rel in ("skills/crew-coordinator/SKILL.md", "codex-skills/crew-coordinator/SKILL.md"):
+            t = self.text(rel)
+            for words in ("自动合：下一步 review codex C<n>", "merge auto C<n>", "不问用户", "merge first-stage --json",
+                          "归 autopilot", "不调 autopilot", "不发【用户答复】", "改由用户验收"):
+                self.assertIn(words, t, (rel, words))
+
+    def test_dev(self):
+        for rel in ("skills/crew-dev/SKILL.md", "codex-skills/crew-dev/SKILL.md"):
+            t = self.text(rel)
+            for words in ("自动合的最终验收", "照普通返工处理", "不照做", "不勾 todo 末项"):
+                self.assertIn(words, t, (rel, words))
+
+    def test_docs(self):
+        self.assertIn("`merge auto C<n> [--detach]`", self.text("docs/commands.md"))
+        self.assertIn("`merge first-stage [--json]`", self.text("docs/commands.md"))
+        self.assertIn("自动合（合并第一段）", self.text("docs/guide.md"))
+        self.assertIn("合并：自动", self.text("README.md"))
+
+
 if __name__ == "__main__":
     unittest.main()

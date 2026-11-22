@@ -203,7 +203,7 @@ PYTHONPATH=tests python3 -m unittest test_takeover_merge
 ## 未决问题
 
 1. `merge first-stage` 的字段：Checkpoint 3 经模块协调与 autopr-design 对（决策 7）。
-2. （要用户定）合并前要不要在模块 worktree 另跑一次非作者完整检查（原决策 5）：推荐**不跑**（决策 5 的理由）；若要留作 module-crew 自己的双保险，代价是自动合每次多跑一次完整检查。
+2. ~~合并前要不要在模块 worktree 另跑一次非作者完整检查~~：已定不另跑（用户 2026-11-22「C640 A；不另跑」）。
 
 ## 文档建议
 
@@ -216,3 +216,4 @@ PYTHONPATH=tests python3 -m unittest test_takeover_merge
 - 2026-11-22（Checkpoint 0，按真实接口改）：spec-guard 0.91.x 的最终验收记录（`review_mark --target acceptance --state codex-approved`）要读 autopilot 编排写的 `~/.autopilot/evidence/<owner>__<repo>/<HEAD>.json`（只认 `runner: autopilot-orchestrator`），本地合入时没有 PR 也没有这份证据，原决策 7「合入后写验收标记」做不成。改为：module-crew 只放行并完成合并第一段，凭 Codex 审最终补丁无阻断且绑定 X；非作者检查就是合并队列那次完整检查（去掉原决策 5「合并前在模块 worktree 另跑」，原未决 1 随之消失）；合入后记 `firstStage`；给 autopilot 的读接口由 `check evidence` 改为 `merge first-stage`（`interface.json` 节名 `firstStage`）；最终验收记录、编排证据、推送、PR、远端合并归 autopilot。改了目标、范围、上游依赖、假设 1～4、7，决策 3～10，接口约定，AC5～AC12，边界，未决问题，文档建议。来源：autopr-design #22045、#22050（经 mc-coord #22049、#22052 告知；module-crew 不调 autopilot 的回绝照旧），spec-guard 0.91.3 `interface.json` 与 `spec/codex-final-acceptance.md`；停在 Checkpoint 0 交用户复审。
 - 2026-11-22（构建中，Task 5）：决策 9 补一句：撤销自动合的合并批准后，重新打开的交审事项改由用户验收（`fallback: "revoked"`），`merge auto` 不再放行。原因：撤销会重新打开交审事项，它仍带 Codex 无阻断的结论，不改就可能被再次自动合进去、绕过用户的撤销；取更保守的一侧。来源：构建中发现，随最终验收附 Spec 差异复审。
 - 2026-11-22（Checkpoint 3，与 autopr-design 对字段）：决策 7 的 JSON 加顶层 `repo`、`baseBranch` 与 `release.reportSha256`，其余字段名不变；`merges` 的口径写明为「已合入、还没进任何 merge push 记录」，`pushedUpTo` 只作参考。来源：autopr-design #22079（经 mc-coord #22080 转达，不是用户答复）；随最终验收附 Spec 差异复审。
+- 2026-11-22（构建中）：未决问题 2 标为已定「不另跑」。来源：用户 2026-11-22「C640 A；不另跑」（mc-coord 转达 #22061）。
