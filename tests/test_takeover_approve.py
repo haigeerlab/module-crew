@@ -60,6 +60,10 @@ class RetireTest(TierMixin, DeclaredMixin, ReviewCase):
         self.with_tier()
         code, out = self.cli("tier", "restore", "--original", "恢复")
         self.assertEqual(code, 3)
+        code, out = self.cli("tier", "restore")          # Task 11 (M1 note 4): no words needed to get the guidance
+        self.assertEqual(code, 3, out)
+        self.assertIn("tier restore 已退役", out)
+        self.assertIn("/spec-guard:config", out)
 
     def test_digest_switch(self):
         code, _ = self.cli("config", "set", "--digest", "on", "--original", " ")
