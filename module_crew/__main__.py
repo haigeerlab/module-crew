@@ -987,6 +987,20 @@ def _merge(args) -> int:
         if adopted is not None:
             _DETACHED.update(approval=adopted.approval, code=res.code)
         return res.code
+    if args.action == "first-stage":       # crew-takeover-merge decision 7: read only, for autopilot
+        doc = merge.first_stage(".")
+        if args.json:
+            print(json.dumps(doc, ensure_ascii=False, indent=2))
+        else:
+            print(f"集成分支 {doc['integrationBranch']}（{doc['repo'] or '没有远端'}，PR 目标 {doc['baseBranch'] or '取不到'}）")
+            for m in doc["merges"]:
+                check = m["check"] or {}
+                print(f"C{m['approval']} {m['module']}：合并提交 {m['mergeCommit'][:7]}，"
+                      + (f"自动合（放行事项 C{m['release']['item']}）" if m["auto"] else "人合")
+                      + f"，完整检查 {check.get('result') or '没有记录'}" + ("（非作者）" if check.get("nonAuthor") else ""))
+            if not doc["merges"]:
+                print("没有还没推送的合并")
+        return 0
     if args.action == "auto":              # crew-takeover-merge decision 4
         res = merge.auto(".", args.number, detach=args.detach)
         for line in res.lines:
@@ -1496,6 +1510,8 @@ def _main(argv: list[str] | None = None) -> int:
     mr.add_argument("--replace-check", action="store_true")
     mr.add_argument("--detach", action="store_true", help="交给后台运行、立即返回（Codex 用；跑完用 merge result 取结果）")
     mr.add_argument("--detached-child", action="store_true", help=argparse.SUPPRESS)
+    mgs.add_parser("first-stage", help="只读：已合入、还没推送的合并及其放行与检查证据（给 autopilot）").add_argument(
+        "--json", action="store_true")
     ma = mgs.add_parser("auto", help="自动合：Codex 对最终补丁无阻断后放行、排队并跑一次合并队列（放后台跑）")
     ma.add_argument("number", type=refs.parse)
     ma.add_argument("--detach", action="store_true", help="合并交给后台运行、立即返回（Codex 用；跑完用 merge result 取结果）")

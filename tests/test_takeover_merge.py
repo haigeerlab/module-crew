@@ -338,5 +338,52 @@ class FallbackTest(AutoMergeCase):
         self.assertEqual(self.cli("merge", "auto", f"C{n}")[0], 3)
 
 
+class FirstStageTest(AutoMergeCase):
+    """Task 6 (acceptance 7): the read-only record autopilot reads."""
+
+    def test_json(self):
+        git(self.repo, "remote", "add", "origin", "git@github.com:acme/shop.git")
+        with self.db.transaction(actor="t") as tx:
+            cfg = tx.get("config", "main")
+            tx.put("config", "main", dict(cfg, prBase="main"), action="t")
+        c = self.approve_final("c", 50)
+        from module_crew import merge
+        self.assertEqual(merge.run(self.repo).code, 0)
+        n = self.passed()
+        self.assertEqual(self.cli("merge", "auto", f"C{n}")[0], 0)
+        code, out = self.cli("merge", "first-stage", "--json")
+        self.assertEqual(code, 0, out)
+        doc = json.loads(out)
+        self.assertEqual((doc["schemaVersion"], doc["repo"], doc["integrationBranch"], doc["baseBranch"]),
+                         (1, "acme/shop", "main", "main"))
+        self.assertEqual(doc["head"], git(self.repo, "rev-parse", "refs/heads/main").strip())
+        self.assertIsNone(doc["pushedUpTo"])
+        human, auto = doc["merges"]
+        self.assertEqual((human["module"], human["approval"], human["auto"], human["release"]), ("c", c, False, None))
+        self.assertEqual((auto["module"], auto["auto"], auto["moduleCommit"]), ("b", True, self.x(n)))
+        report = Path(auto["release"]["report"])
+        self.assertEqual(auto["release"]["reportSha256"], hashlib.sha256(report.read_bytes()).hexdigest())
+        self.assertEqual(auto["release"]["fingerprint"], "blob-pairs-v1:fake")
+        self.assertEqual((auto["check"]["by"], auto["check"]["nonAuthor"], auto["check"]["result"]), ("merge-run", True, "pass"))
+        self.assertEqual(auto["check"]["key"], f"{auto['tree']}.full")
+        with self.db.transaction(actor="t") as tx:            # a push record takes the human merge out of the list
+            tx.put("item", str(tx.allocate_number()), {"state": "closed", "kind": "push", "closedReason": "pushed",
+                                                       "mergeCommits": [human["mergeCommit"]]}, action="pushed")
+        doc = json.loads(self.cli("merge", "first-stage", "--json")[1])
+        self.assertEqual([m["module"] for m in doc["merges"]], ["b"])
+        self.assertEqual(doc["pushedUpTo"], human["mergeCommit"])
+        text = self.cli("merge", "first-stage")[1]
+        self.assertIn("b", text)
+
+    def test_no_remote_and_interface(self):
+        doc = json.loads(self.cli("merge", "first-stage", "--json")[1])
+        self.assertEqual((doc["repo"], doc["merges"]), (None, []))
+        iface = json.loads((Path(review.__file__).parent.parent / "interface.json").read_text())
+        self.assertEqual(iface["interface"], "1.1")
+        self.assertEqual(iface["firstStage"]["schemaVersion"], 1)
+        self.assertIn("merge", iface["firstStage"]["command"])
+        self.assertEqual(iface["sessions"]["command"], ["bin/module-crew", "sessions", "--json"])
+
+
 if __name__ == "__main__":
     unittest.main()

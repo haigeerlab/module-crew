@@ -8,6 +8,7 @@ goes to a new remote branch and a PR the user merges.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import shlex
@@ -700,6 +701,55 @@ def _first_stage(db: store.Store, cfg: dict, checkout: Path, merge_commit: str, 
     return {"integrationBranch": cfg.get("integrationBranch"), "mergeCommit": merge_commit,
             "moduleCommit": rec["commit"], "tree": tree, "check": key if store.get(db, "check", key) else None,
             "at": store.now()}
+
+
+def _repo_name(url: str) -> str | None:
+    """owner/name from a git remote URL (scp-like or URL form); None when it does not look like one."""
+    import re
+    got = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?/?$", url.strip())
+    return f"{got.group(1)}/{got.group(2)}" if got and url.strip() else None
+
+
+def first_stage(project: str | os.PathLike) -> dict:
+    """`merge first-stage --json` (crew-takeover-merge decision 7, fields agreed with autopr-design #22079):
+    merges in the integration branch not yet in any `merge push` record, with their release and check evidence."""
+    from module_crew import checks
+    project = Path(project)
+    db = store.open_store(project)
+    cfg = store.get(db, "config", "main") or {}
+    remote = cfg.get("remote") or "origin"
+    integration = cfg.get("integrationBranch")
+    url = _git(project, "remote", "get-url", remote)
+    base = _pr_base(project, cfg, remote, integration, None)[0] if integration and url.returncode == 0 else None
+    items = store.records(db, "item")
+    pushes = [v for _, v in sorted(items.items(), key=lambda kv: int(kv[0])) if v.get("kind") == "push"]
+    pushed = {c for v in pushes for c in v.get("mergeCommits") or []}
+    merges = []
+    for key, v in sorted(items.items(), key=lambda kv: int(kv[0])):
+        if v.get("kind") != "merge-approval" or v.get("closedReason") != "merged" or v.get("mergeCommit") in pushed:
+            continue
+        tree = _git(project, "rev-parse", f"{v['mergeCommit']}^{{tree}}").stdout.strip()
+        entry = store.get(db, "check", checks.key(tree, "full")) if tree else None
+        release = items.get(str(v["auto"])) if v.get("auto") else None
+        report = (release or {}).get("codex", {}).get("report")
+        try:
+            digest = hashlib.sha256(Path(report).read_bytes()).hexdigest() if report else None
+        except OSError:
+            digest = None
+        author = v.get("from")          # the module's own session wrote the code
+        merges.append({
+            "approval": int(key), "module": v.get("module") or f"T{v.get('task')}", "moduleCommit": v.get("commit"),
+            "mergeCommit": v["mergeCommit"], "tree": tree, "auto": bool(v.get("auto")),
+            "release": None if release is None else {"item": int(v["auto"]), "report": report, "reportSha256": digest,
+                                                     **{x: release["codex"].get(x) for x in ("fingerprint", "rounds", "suggestions")}},
+            "check": None if entry is None else {
+                "key": checks.key(tree, "full"), "result": entry.get("result"), "by": entry.get("by"),
+                "nonAuthor": checks.non_author(entry, author), "command": entry.get("command"),
+                "exitCode": entry.get("exitCode"), "startedAt": entry.get("startedAt"), "seconds": entry.get("seconds")}})
+    head = _git(project, "rev-parse", f"refs/heads/{integration}").stdout.strip() if integration else ""
+    return {"schemaVersion": 1, "repo": _repo_name(url.stdout) if url.returncode == 0 else None,
+            "integrationBranch": integration, "baseBranch": base, "head": head or None,
+            "pushedUpTo": (pushes[-1].get("mergeCommits") or [None])[-1] if pushes else None, "merges": merges}
 
 
 def _close_merged(tx, db: store.Store, result: RunResult, n: int, rec: dict, unit: str, data: dict | None = None) -> None:
