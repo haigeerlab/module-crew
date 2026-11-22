@@ -237,6 +237,15 @@ def codex_counts(db: store.Store) -> dict:
     return out
 
 
+def merge_counts(db: store.Store) -> dict:
+    """crew-takeover-merge decision 10: auto releases and what became of their merge approvals."""
+    items = store.records(db, "item").values()
+    auto = [v for v in items if v.get("kind") == "merge-approval" and v.get("auto")]
+    return {"released": sum(1 for v in items if v.get("kind") == "auto-release"),
+            "merged": sum(1 for v in auto if v.get("closedReason") == "merged"),
+            "returned": sum(1 for v in auto if v.get("closedReason") == "returned")}
+
+
 def status(db: store.Store, project: str | os.PathLike) -> dict | None:
     """`status --json` store.takeover: None while no project or module takes anything over."""
     doc, lines = report(db, project)
@@ -245,6 +254,9 @@ def status(db: store.Store, project: str | os.PathLike) -> dict | None:
             m["spec"] != "human" or m["plan"] != "human" or m["merge"] != "human" for m in doc["modules"])):
         return None
     counts = doc["codex"]
+    merged = merge_counts(db)           # crew-takeover-merge decision 10
+    lines.append(f"自动合：已放行 {merged['released']} 次，其中合入 {merged['merged']} 次、退回 {merged['returned']} 次")
+    doc = {**doc, "merge": merged}
     lines.append(f"Codex 放行：Spec {counts['spec']} 次、Plan {counts['plan']} 次；其中返工后才放行 {counts['reworked']} 次；"
                  f"超限交用户 {counts['overLimit']} 次")
     return {**doc, "lines": lines}

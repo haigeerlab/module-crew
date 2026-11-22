@@ -471,7 +471,9 @@ def batch(project: str | os.PathLike) -> dict:
                       **({"checks": v["checks"]} if "checks" in v else {}),
                       **({"display": present.final_tables(project, db, v)} if v["node"] == "final" and v.get("module")
                          and not v.get("task") else {})})
-    codex = [f"C{i['number']} {i['module']} 的 {NODE_NAME.get(i['node'], i['node'])}（{STATE_TEXT[i['reviewState']]}）"
+    codex = [f"C{i['number']} {i['module']} 的 "
+             + (auto_progress(db, i["number"], store.get(db, "item", str(i["number"])) or {}) if i["node"] == "final"
+                else f"{NODE_NAME.get(i['node'], i['node'])}（{STATE_TEXT[i['reviewState']]}）")
              for i in items if i.get("reviewer") == "codex" and not i["ready"]]
     return {"items": items, "groups": groups, "dependencyIssues": issues, "conflicts": conflicts, "overlap": over,
             "codex": codex}
@@ -669,6 +671,8 @@ def show(db: store.Store, number: int, submission: bool = False, spec_diff: bool
         return [revised["diff"].rstrip("\n")] if revised else [f"C{number} 交审时 Spec 和集成分支上的一样，没有改动差异"]
     from module_crew import checks
     out = [checks.review_line(rec["checks"])] if rec.get("checks") else []     # crew-check-ledger
+    auto = auto_progress(db, number, rec)
+    out += [auto] if auto else []
     if submission:
         out += [f"交审原文（C{number}，{rec['module']} 的 {NODE_NAME.get(rec['node'], rec['node'])}）"
                 f" sha256:{hashlib.sha256(rec['text'].encode('utf-8')).hexdigest()}：", rec["text"].rstrip("\n"), ""]
@@ -679,6 +683,24 @@ def show(db: store.Store, number: int, submission: bool = False, spec_diff: bool
         out += [f"第 {i} 轮 · {r['ref']} · {r['from']} · {r.get('verdict')} "
                 f"sha256:{hashlib.sha256(r['text'].encode('utf-8')).hexdigest()}：", r["text"].rstrip("\n"), ""]
     return out[:-1]
+
+
+def auto_progress(db: store.Store, number: int, rec: dict) -> str | None:
+    """crew-takeover-merge decision 10: where an auto-merged final acceptance stands (None for anything else)."""
+    if rec.get("node") != "final" or (rec.get("reviewer") != "codex" and not (rec.get("answer") or {}).get("release")):
+        return None
+    release = (rec.get("answer") or {}).get("release")
+    if release:
+        step = f"已放行 C{release}"
+    elif (rec.get("codex") or {}).get("verdict") == "pass":
+        step = f"Codex 无阻断，待 merge auto C{number}"
+    elif rec.get("overLimit"):
+        step = "Codex 两轮后仍有阻断，交用户决定"
+    elif review_state(db, number) == "rework":
+        step = f"返工第 {_rounds(db, rec['module'], 'final')} 轮"
+    else:
+        step = "Codex 审查中"
+    return f"最终验收（自动合）：{step}"
 
 
 STATE_TEXT = {"reviewing": "审查中", "rework": "返工中", "timeout": "审查者无响应", "passed": "审查通过",

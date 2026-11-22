@@ -953,7 +953,8 @@ def _merge(args) -> int:
                              ensure_ascii=False, indent=2))
         else:
             for n, r in rows:
-                print(f"C{n} {r['module']}（最终验收交审 C{r['review']}）")
+                print(f"C{n} {r['module']}（最终验收交审 C{r['review']}）"
+                      + (f"（自动合，放行事项 C{r['auto']}）" if r.get("auto") else ""))
             if not rows:
                 print("合并队列是空的")
         return 0 if rows else 3

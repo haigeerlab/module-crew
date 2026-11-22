@@ -385,5 +385,37 @@ class FirstStageTest(AutoMergeCase):
         self.assertEqual(iface["sessions"]["command"], ["bin/module-crew", "sessions", "--json"])
 
 
+class ShowTest(AutoMergeCase):
+    """Task 7 (acceptance 9)."""
+
+    def test_progress_batch_queue_and_status(self):
+        from helpers import START_MAP
+        n = self.submit_final().number
+        self.assertIn("最终验收（自动合）：Codex 审查中", "\n".join(review.show(self.db, n)))
+        b = review.batch(self.repo)
+        self.assertNotIn(n, [i["number"] for i in b["items"] if i["ready"]])
+        self.assertTrue(any("自动合" in x and f"C{n}" in x for x in b["codex"]))
+        self.note(n, final_report(self.wt["b"], self.base(n), self.x(n), [finding("AC3 没做")]))
+        self.assertIn("返工第 1 轮", "\n".join(review.show(self.db, n)))
+        m = self.passed(content="VALUE = 'b2'\n")
+        self.assertIn(f"Codex 无阻断，待 merge auto C{m}", "\n".join(review.show(self.db, m)))
+        doc = json.loads(json.dumps(START_MAP))                 # c first: b's approval stays queued after merge auto
+        doc["modules"].sort(key=lambda x: "acbde".index(x["id"]))
+        for x in doc["modules"]:
+            x.update(takeover_row(merge="auto") if x["id"] == "b" else takeover_row(source="default"))
+        self.set_map(doc)
+        (self.repo / ".agent" / "config.json").touch()
+        self.approve_final("c", 60)
+        self.assertEqual(self.cli("merge", "auto", f"C{m}")[0], 0)
+        k = next(int(key) for key, v in store.records(self.db, "item").items() if v.get("kind") == "auto-release")
+        self.assertIn(f"已放行 C{k}", "\n".join(review.show(self.db, m)))
+        self.assertIn(f"（自动合，放行事项 C{k}）", self.cli("merge", "queue")[1])
+        self.assertEqual(self.cli("merge", "run")[0], 0)
+        code, out = self.cli("status")
+        self.assertIn("自动合：已放行 1 次，其中合入 1 次、退回 0 次", out)
+        st = json.loads(self.cli("status", "--json")[1])["store"]["takeover"]
+        self.assertEqual(st["merge"], {"released": 1, "merged": 1, "returned": 0})
+
+
 if __name__ == "__main__":
     unittest.main()
