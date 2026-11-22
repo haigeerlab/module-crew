@@ -465,5 +465,39 @@ class AnySessionTest(__import__("test_session_handover").HandoverCase):
         self.assertEqual(r.returncode, 7, (r.stdout, r.stderr))
 
 
+class LiveReviewFixesTest(AutoMergeCase):
+    """Fixes from the live Codex review of this module (Task 8)."""
+
+    def test_over_limit_then_user_accepts_without_asking_again(self):
+        for i in range(3):
+            n = self.submit_final(content=f"VALUE = {i}\n").number
+            self.note(n, final_report(self.wt["b"], self.base(n), self.x(n), [finding("仍缺")]))
+        self.assertEqual(self.cli("review", "codex-fallback", f"C{n}", "--original", "A，我来验收")[0], 0)
+        code, out = self.cli("merge", "approve", f"C{n}", "--original", "验收通过")
+        self.assertEqual(code, 0, out)
+
+    def test_a_later_blocking_report_withdraws_the_pass(self):
+        n = self.passed()
+        self.note(n, final_report(self.wt["b"], self.base(n), self.x(n), [finding("又发现")]))
+        self.assertNotIn("codex", store.get(self.db, "item", str(n)))
+        self.assertEqual(self.cli("merge", "auto", f"C{n}")[0], 3)
+
+    def test_first_stage_follows_merge_history(self):
+        from helpers import START_MAP
+        from module_crew import merge
+        doc = json.loads(json.dumps(START_MAP))       # c before b in Build order, but b is approved first
+        doc["modules"].sort(key=lambda m: "acbde".index(m["id"]))
+        for m in doc["modules"]:
+            m.update(takeover_row(source="default"))          # both merged by the user here
+        self.set_map(doc)
+        (self.repo / ".agent" / "config.json").touch()
+        b = self.approve_final("b", 70)
+        c = self.approve_final("c", 71)
+        self.assertEqual(merge.run(self.repo).code, 0)    # c merged first
+        self.assertEqual(merge.run(self.repo).code, 0)
+        got = [m["approval"] for m in json.loads(self.cli("merge", "first-stage", "--json")[1])["merges"]]
+        self.assertEqual(got, [c, b])
+
+
 if __name__ == "__main__":
     unittest.main()

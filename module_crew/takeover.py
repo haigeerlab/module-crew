@@ -548,6 +548,8 @@ def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) ->
         cur = tx.get("item", str(n))
         cur = dict(cur, reviews=list(cur.get("reviews") or []) + [row],
                    codexReports=list(cur.get("codexReports") or []) + [str(saved)])
+        if block:                       # crew-takeover-merge: a later blocking report withdraws an earlier pass
+            cur.pop("codex", None)
         tx.put("item", str(n), cur, action="codex-noted", data={"round": rounds, "blocking": len(block)})
         if block:
             done = review._rounds(db, cur["module"], cur["node"])
@@ -601,6 +603,8 @@ def codex_fallback(db: store.Store, n: int, original: str) -> list[str]:
     with db.transaction(actor="coordinator") as tx:
         cur = tx.get("item", str(n))
         cur = {k: v for k, v in cur.items() if k not in ("sentTo", "sentAt")}
+        if cur["node"] == "final":      # crew-takeover-merge: the user's choice already answered the over-limit question
+            cur = {k: v for k, v in cur.items() if k != "overLimit"}
         tx.put("item", str(n), dict(cur, reviewer="human", fallback=why), action="codex-fallback",
                data={"original": original, **store.source_field()})
     if rec["node"] == "final":

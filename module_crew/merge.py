@@ -394,35 +394,46 @@ def auto(project: str | os.PathLike, n: int, detach: bool = False) -> RunResult:
         if reason:
             return RunResult(6, [reason])
     codex = rec["codex"]
-    with db.transaction(actor="coordinator") as tx:
-        rec = tx.get("item", str(n))
-        k = tx.allocate_number()
-        tx.put("item", str(k), {"state": "closed", "kind": "auto-release", "closedReason": "answered", "review": n,
-                                "module": rec["module"], "commit": rec["commit"], "at": store.now(),
-                                "codex": {x: codex.get(x) for x in ("report", "fingerprint", "rounds", "suggestions")}},
-               action="auto-released")
-        approval = tx.allocate_number()
-        for key, old in sorted(tx.records("item").items(), key=lambda kv: int(kv[0])):
-            if old.get("kind") == "merge-approval" and old.get("state") == "open" and old.get("module") == rec["module"]:
-                tx.put("item", key, dict(old, state="closed", closedReason="superseded", supersededBy=approval),
-                       action="superseded", data={"by": approval})
-        now = store.now()
-        tx.put("item", str(approval), {
-            "state": "open", "kind": "merge-approval", "module": rec["module"], "task": None, "review": n,
-            "specRevisionApproved": bool(rec.get("specRevised")), "commit": rec["commit"], "from": rec["from"],
-            "relayId": rec["relayId"], "auto": k,
-            "answer": {"original": f"自动放行事项 C{k}（Codex 对最终补丁无阻断，不是用户批准）", "answeredAt": now},
-            "closedReason": None, "mergeCommit": None, "revertCommit": None, "resetTo": None, "reason": None,
-            "acceptedBy": None}, action="auto-queued", data={"release": k})
-        tx.put("item", str(n), dict(rec, state="closed", closedReason="answered",
-                                    answer={"original": f"Codex 无阻断，自动放行（事项 C{k}）", "answeredAt": now,
-                                            "approval": approval, "release": k}), action="answered", data={"release": k})
+    try:
+        with db.transaction(actor="coordinator") as tx:
+            rec = tx.get("item", str(n))
+            if rec.get("state") != "open" or rec.get("codex") != codex:    # another merge auto got here first
+                raise AnswerRefused(f"C{n} 已被处理（{rec.get('closedReason') or '结论变了'}），没有重复放行")
+            k, approval = _release(tx, n, rec, codex)
+    except AnswerRefused as exc:
+        return RunResult(3, [str(exc)])
     head = [f"C{n}（{rec['module']} 的最终验收）Codex 无阻断：记为自动放行事项 C{k}，合并批准 C{approval} 排入合并队列（不是用户批准）"]
     result = run(project, detach=detach)
     result.lines = head + result.lines
     if result.approval is not None and result.approval != approval and result.code in (0, 5):
         result.lines.append(f"队列里还有 C{approval}（{rec['module']}，自动合）：接着跑 module-crew merge run")
     return result
+
+
+def _release(tx, n: int, rec: dict, codex: dict) -> tuple[int, int]:
+    """crew-takeover-merge decision 4.3: the auto-release record, its merge approval, the review closed."""
+    k = tx.allocate_number()
+    tx.put("item", str(k), {"state": "closed", "kind": "auto-release", "closedReason": "answered", "review": n,
+                            "module": rec["module"], "commit": rec["commit"], "at": store.now(),
+                            "codex": {x: codex.get(x) for x in ("report", "fingerprint", "rounds", "suggestions")}},
+           action="auto-released")
+    approval = tx.allocate_number()
+    for key, old in sorted(tx.records("item").items(), key=lambda kv: int(kv[0])):
+        if old.get("kind") == "merge-approval" and old.get("state") == "open" and old.get("module") == rec["module"]:
+            tx.put("item", key, dict(old, state="closed", closedReason="superseded", supersededBy=approval),
+                   action="superseded", data={"by": approval})
+    now = store.now()
+    tx.put("item", str(approval), {
+        "state": "open", "kind": "merge-approval", "module": rec["module"], "task": None, "review": n,
+        "specRevisionApproved": bool(rec.get("specRevised")), "commit": rec["commit"], "from": rec["from"],
+        "relayId": rec["relayId"], "auto": k,
+        "answer": {"original": f"自动放行事项 C{k}（Codex 对最终补丁无阻断，不是用户批准）", "answeredAt": now},
+        "closedReason": None, "mergeCommit": None, "revertCommit": None, "resetTo": None, "reason": None,
+        "acceptedBy": None}, action="auto-queued", data={"release": k})
+    tx.put("item", str(n), dict(rec, state="closed", closedReason="answered",
+                                answer={"original": f"Codex 无阻断，自动放行（事项 C{k}）", "answeredAt": now,
+                                        "approval": approval, "release": k}), action="answered", data={"release": k})
+    return k, approval
 
 
 LOCK_FD_ENV = "MODULE_CREW_MERGE_LOCK_FD"
@@ -728,8 +739,10 @@ def first_stage(project: str | os.PathLike) -> dict:
     tracking = f"refs/remotes/{remote}/{base}" if base else None
     in_span = (set(_git(project, "rev-list", f"refs/heads/{integration}", f"^{tracking}").stdout.split())
                if tracking and _git(project, "rev-parse", "--verify", "--quiet", tracking).returncode == 0 else None)
+    order = {c: i for i, c in enumerate(_git(project, "rev-list", "--reverse", "--first-parent",
+                                             f"refs/heads/{integration}").stdout.split())} if integration else {}
     merges = []
-    for key, v in sorted(items.items(), key=lambda kv: int(kv[0])):
+    for key, v in sorted(items.items(), key=lambda kv: (order.get(kv[1].get("mergeCommit"), len(order)), int(kv[0]))):
         if v.get("kind") != "merge-approval" or v.get("closedReason") != "merged" or v.get("mergeCommit") in pushed:
             continue
         if in_span is not None and v.get("mergeCommit") not in in_span:
