@@ -362,7 +362,7 @@ def _auto_item(db: store.Store, project: Path, n: int) -> dict:
     if rec.get("state") != "open":
         raise AnswerRefused(f"交审事项 C{n} 已关闭（{rec.get('closedReason')}）")
     if rec.get("reviewer") != "codex":
-        raise AnswerRefused(f"C{n} 不是自动合的最终验收（照今天由用户答复）")
+        raise AnswerRefused(f"C{n} 不是自动合的最终验收（照今天由用户验收）")
     codex = rec.get("codex") or {}
     if codex.get("verdict") != "pass":
         raise AnswerRefused(f"C{n} 还没有 Codex 无阻断的结论：先 review codex C{n}，再 review codex-note")
