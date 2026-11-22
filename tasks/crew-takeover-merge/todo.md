@@ -8,7 +8,7 @@
 - [x] Checkpoint 1（report）：判定与 Codex 审查就位（test_takeover_merge 9 项、test_takeover_approve／review_approve／review_nearby／final_accept 115 项通过）
 - [x] Task 3：`merge auto` 放行加合并（Spec 决策 4、5；验收 5）
 - [x] Task 4：合并第一段完成记录（Spec 决策 6；验收 6）
-- [ ] Checkpoint 2（report）：自动放行与合并链路就位
+- [x] Checkpoint 2（report）：自动放行与合并链路就位（test_takeover_merge 15 项、test_merge_run／check_ledger 55 项通过）
 - [ ] Task 5：出事收窄与 Codex 不可用的回退（Spec 决策 8、9；验收 8、10）
 - [ ] Checkpoint 3（gate）：`merge first-stage` 字段与 autopr-design 对齐
 - [ ] Task 6：`merge first-stage` 与 `interface.json`（Spec 决策 7；验收 7）
