@@ -214,6 +214,7 @@ def report(db: store.Store, project: str | os.PathLike) -> tuple[dict, list[str]
 
 
 INCIDENT_NAMES = {"merge-returned": "合并因模块的原因退回", "revoked": "用户撤销合并批准",
+                  "auto-merge-returned": "自动合的合并因模块的原因退回",          # crew-takeover-merge decision 8
                   "rework-over-limit": "返工满 3 次", "baseline-red": "基线完整检查新跑出失败",
                   "external": "外部信号"}
 

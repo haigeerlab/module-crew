@@ -236,15 +236,21 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 - `tier [--json]`：项目的接管档位、在用模块的批准方式、Codex 放行计数，以及 autonomyTier 退役提示与收尾汇总开关（只读，任何会话）。`--json` 另有 `lastIncident`：最近一次收窄 `{kind, reason, ref, at}`，没收窄过为 `null`。
 - `tier --preflight`：写 `takeover` 之前核对 spec-guard ≥ 0.91.0（接口有 `takeover`、`takeoverNarrow`）与 delegate 接口 ≥ 1.5（只读）。
-- `tier restore …`：已退役，只给指引（退出码 3）：放宽档位要用户原话、一次升一档，用 `/spec-guard:config`。
+- `tier restore`：已退役，不要参数，只给指引（退出码 3）：放宽档位要用户原话、一次升一档，用 `/spec-guard:config`。
 - `tier degrade --reason <文字> --ref <链接>`：外部信号收窄一格（任何调用方，不要用户原话），参数与退出码不变：没有接管的项或已是最严不收窄（退出码 0，说明没收窄）、同一个 `--ref` 只收窄一次、收窄失败退出码 2；`--reason` 或 `--ref` 为空拒绝（退出码 3）。
 - `tier digest [--json] [--mark-told]`：收尾汇总（同步、检查账、不经队列的提交、提前落地）；只读查看任何会话都能跑，`--mark-told` 记为已汇总给用户（只是记账）由模块协调跑。
 
 ### `review codex`、`review codex-note`、`review codex-fallback`
 
-- `review codex C<n>`：只读，给出这一轮交 Codex 审的 `/delegate:review --backend codex` 命令与报告要存的文件（模块协调）。
+- `review codex C<n>`：只读，给出这一轮交 Codex 审的 `/delegate:review --backend codex` 命令与报告要存的文件（模块协调）。轮次按模块＋节点累计（返工重交换了 C 号也接着数，与 spec-guard 记的 round 一致），第 2 轮起命令带 `--previous-report <上一轮报告>`。
 - `review codex-note C<n> --report <json>`：记下 Codex 的审查报告。退出码 0：已发返工通知或已放行；3：报告与交审提交对不上、事项不对；4：落地失败（集成 checkout 已还原）；5：Codex 没有结论或两轮返工后仍有阻断，输出末尾是【等待用户】草稿。
 - `review codex-fallback C<n> (--original|--original-file)`：用户决定这一项改由自己批时把交审改回人批（要原话），之后照 `review approve`／`review answer`。
+- 最终验收（自动合，crew-takeover-merge）：`review codex` 给出 `--base <合并基点> --head <交审提交>` 的命令；`review codex-note` 没有阻断时只记「通过」、不落地，提示下一步 `merge auto`；`review codex-fallback` 后照 `merge approve`／`merge accept`／`review answer`。
+
+### `merge auto`、`merge first-stage`
+
+- `merge auto C<n> [--detach]`：自动合（模块协调，放后台跑）。核对 Codex 对最终补丁无阻断、报告仍对得上交审提交，记自动放行事项、建带 `auto` 的合并批准、跑一次合并队列；合入通过后在合并批准上记 `firstStage`。退出码 0：放行且这次合并成功；3：前提不过（什么都没写）；4、5：同 `merge run`；6：合并锁被占。
+- `merge first-stage [--json]`：只读（任何会话），给 autopilot：已合入、还没进任何 `merge push` 记录的合并，含 `repo`、`baseBranch`、自动合的放行证据（报告路径与 `reportSha256`、指纹、轮次）与合并树的完整检查记录（`nonAuthor`）。字段见 `interface.json` 的 `firstStage`。
 
 ## 额度外包
 

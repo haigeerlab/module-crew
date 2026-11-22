@@ -123,14 +123,16 @@ module-crew 自己的提交信息默认以 `chore(crew): ` 开头，`config set 
 
 档位存在 spec-guard 的 `.agent/config.json`：项目 `takeover`（不接管／只接管 Plan／接管到合并／自定义 Spec、Plan、合并三项），模块可单独设 `moduleTakeover`。模块协调先跑 `module-crew tier --preflight` 确认本机 spec-guard ≥ 0.91.0、delegate 接口 ≥ 1.5，再引用用户原话用 `/spec-guard:config` 写入并单独提交。没设或读不到时一律人批，一切照旧。
 
-- **看得清**：`tier`、`status`、开工说明、交审登记行写明每个模块「批准方式：Spec …、Plan …、合并 …」。能力图永远人批；spec-guard 判为重要需求的 Spec、写了「预先声明」的 Plan 不管勾选都由用户批，并写明原因。
-- **Codex 放行**：勾了「Codex 审过就算」的节点，交审不进给用户的批次。模块协调用 `review codex C<n>` 拿到 `/delegate:review --backend codex` 命令、跑完把报告交给 `review codex-note`：有阻断意见就自动返工（模块会话先用 `review-mark --state codex-reviewed` 记下这一轮），最多返工两轮；没有阻断就落地到集成分支、写 spec-guard 的 `codex-approved` 标记，Spec、Plan 都批了发开工通知，只放了一个节点发「放行」类【协调通知】（契约 v2.9）。
+- **看得清**：`tier`、`status`、开工说明、交审登记行写明每个模块「批准方式：Spec …、Plan …、合并 …」。能力图永远人批；spec-guard 判为重要需求的 Spec、写了「预先声明」的 Plan 不管勾选都由用户批，并写明原因；有没有预先声明以 spec-guard 的 `declaredScope` 为准，格式错误或读不到也算有。
+- **Codex 放行**：勾了「Codex 审过就算」的节点，交审不进给用户的批次。模块协调用 `review codex C<n>` 拿到 `/delegate:review --backend codex` 命令、跑完把报告交给 `review codex-note`：有阻断意见就自动返工（模块会话先用 `review-mark --state codex-reviewed` 记下这一轮），最多返工两轮（轮次按模块＋节点累计，重交不从 1 数，第 2 轮起带上一轮报告复核）；没有阻断就落地到集成分支、写 spec-guard 的 `codex-approved` 标记，Spec、Plan 都批了发开工通知，只放了一个节点发「放行」类【协调通知】（契约 v2.9）。
 - **Codex 不可用就停下**：报告缺失、没跑完、没结论或只审了一部分，一律停下给用户一份【等待用户】草稿（等 Codex 恢复后重跑，或这一项改由用户批：`review codex-fallback`），绝不退回 Claude 自己审。
 - **分开记账**：Codex 放行记成 `codex-approval`，`status` 单独计数，对用户说「Codex 放行」，不发【用户答复】。
 - **批准人不同就分开批**：同一模块 Spec、Plan 一个人批、一个 Codex 放行时，即使 `reviewCadence=combined` 也按 separate 交审。
 - **出事自动收窄**：合并因模块原因退回、撤销合并批准、返工满 3 次、基线新跑出失败，或外部程序用 `tier degrade` 报来的信号，module-crew 调 spec-guard 的只许收窄入口，按「合并 → Plan → Spec」一次一格，并在集成分支单独提交 `.agent/config.json`，马上告诉用户。放宽要用户原话、一次升一档，经 `/spec-guard:config` 写。
 - **autonomyTier 已退役**：旧值不映射、不再生效。评审节奏只看 `reviewCadence`；声明范围只认 `config set --declared-scope`；收尾汇总改为独立开关 `config set --digest on|off`（打开后同步、检查账、不经队列的提交、提前落地收尾时用 `tier digest` 一次说明）。
-- **底线**：三种情况必停（测试改不红、Spec 没覆盖的决策、高风险不可逆改动），最终验收要用户的答复，合并队列里照样跑完整检查。
+- **自动合（合并第一段）**：模块的合并一项是「自动合」、项目开着检查记账、Spec 与 Plan 都已批准时，最终验收不等用户：Codex 按「集成分支合并基点 → 交审提交」审最终补丁，有阻断就返工（最多两轮）；没有阻断，模块协调后台跑 `merge auto C<n>`，放行、合进本地集成分支（完整检查照跑，就是非作者检查）、勾最终验收，在合并批准上记「合并第一段完成」。
+  推 batch 分支、开 PR、spec-guard 的最终验收记录与远端合并都归 autopilot，它读 `merge first-stage --json`；module-crew 不调 autopilot。Codex 不可用或两轮后仍有阻断就停下问你；你撤销一次自动合，那份最终验收就改由你验收。自动合因模块原因被退回时按「先撤合并」收窄一格。
+- **底线**：三种情况必停（测试改不红、Spec 没覆盖的决策、高风险不可逆改动），最终验收要用户的答复（自动合的模块除外），合并队列里照样跑完整检查。
 
 ### 额度外包（`codexOffload`）
 

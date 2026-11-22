@@ -17,3 +17,11 @@
 - [x] Task 8：skill、README、`module-crew sync` 后全量测试、本机实测（Spec 验收 12、13、1）——四份 skill 的档位一节改为接管档位，README 中英、docs/guide.md、docs/commands.md、docs/architecture.md 同步；sync 后集成分支仍是 b671c6f；第一次全量 1334 个中 2 个失败（文档里的旧称「用户答复」「协调会话」、interface.json 的 contract 仍是 2.8），修后（6a1e326）全量 1334 个全过（1774 秒）；本机实测：spec-guard 0.91.1 上 `tier --preflight` 退出码 0、`tier --json` 读到项目 none 与两个在用模块全人批；真跑一次 Codex `/delegate:review`（审本模块 Spec），报告字段与 `codex-note` 的读法一致、`scope.files` 的 sha256 等于已提交文件
 - [x] Checkpoint 5（gate）：最终验收
 - [x] 回告：经模块协调转告 ecosystem-lead 与 autopr-design（已发：ecosystem-lead #22043、autopr-design #22044，2026-11-22）
+
+## 返工：M1 停点不通过（2026-11-22）
+
+- [x] Task 9：「预先声明」以 spec-guard 判定为准——Plan 有没有预先声明改为读 spec-guard（`module_scope.py declared` 或 `/map --json` 的结论），格式错误按「有预先声明、人批」处理，不再自己解析；Plan 因此改回人批时，`review add` 登记行与 `review batch` 写出原因（M1 报告注意 1、11）——测试先红（8 个报错）后绿；`takeover.predeclares` 改为调 interface.json 的 `declaredScope`（在交审 worktree 读，worktree 的 Plan 与交审提交不同也按人批），退出码 0 且四个清单任一非空、退出码 4／2、调用失败超时均人批（读法依 mc-coord #22074、#22076）；交审事项记 `humanReason`，登记行写「Plan 改为人批：…」，`review batch` 写「批准方式：人批（…）」；Spec 决策 1 与变更记录已改（d356484），本模块 39 个通过
+- [x] Task 10：Codex 轮次跨重交累计——「返工后才放行」计数、`review codex` 显示的第几次、审查编号 R-<次>、报告文件名都按模块＋节点累计，与 spec-guard 记的 round 一致；第 2 轮起命令带 `--previous-report <上一轮报告>`（M1 报告注意 2、3）——测试先红后绿；新增 `takeover._history`（同模块同节点、本轮重开之后各交审事项的 Codex 报告，按事项号排），`review codex` 的「第几次」、报告文件名、`--previous-report`，`codex-note` 的 R-<次>、放行记账的 `rounds` 都按它算，`reworked` 因此计入重交后放行；新用例 test_rounds_add_up_across_resubmissions（Plan 与只接管 Spec 两种设置下都跑）；本模块 41 个通过（fed3fc9）
+- [x] Task 11：`tier restore` 不再要求 `--original(-file)`，无条件输出指引并退出 3（M1 报告注意 4）——测试先红后绿；`--original`／`--original-file` 改为可选（照收、忽略，不在帮助里列出），在打开状态库之前处理，指引写到标准输出、退出码 3；没有状态库的目录里实测同样退出码 3；本模块 41 个通过（9825088）
+- [x] Task 12：同步 skill 与文档、`module-crew sync` 后全量测试；用安装版重跑 M1 前由模块协调安排——两份 crew-coordinator skill、docs/guide.md、docs/commands.md 同步（6ddca9c）；`module-crew sync` 后集成分支仍是 cfe3e94；6ddca9c 上全量 1337 个全过（1602 秒）；其后只删一行孤儿导入（1c9d1d7），复跑 test_takeover_approve、test_docs 47 个通过；安装版重跑 M1 由模块协调安排
+- [x] Checkpoint 6（gate）：返工最终验收

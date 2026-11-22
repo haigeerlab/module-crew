@@ -116,12 +116,15 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         rec = {"state": "open", "kind": "review", "from": sender, "relayId": relay_id, "text": text,
                "module": sub["module"], "node": sub["node"], "files": sub["files"], "commit": commit,
                "closedReason": None, "answer": None}
-        codex = not sub.get("disputes") and codex_node(db, sub["module"], sub["node"], worktree, commit)
+        codex, human_why = ((False, None) if sub.get("disputes") or sub.get("task")
+                            else codex_node(db, sub["module"], sub["node"], worktree, commit))
         reviewers = [] if sub.get("disputes") or codex else _reviewers(db, sub["module"], sub["node"])
         if not sub.get("disputes") and not codex:
             out.lines += _unrouted(db, sub["module"], sub["node"], reviewers)
         if codex:                          # crew-takeover-approve decision 3: the virtual reviewer, no mailbox
             rec.update(reviewer="codex", sentTo=["codex"], sentAt=store.now())
+        elif human_why:                    # M1 note 1: say why a step the takeover gives to Codex goes to the user
+            rec["humanReason"] = human_why
         if sub.get("disputes"):
             rec["disputes"] = sub["disputes"]
         if revised:
@@ -137,7 +140,12 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         tx.put("item", str(n), rec, action="created", data={"relayId": relay_id})
         out.number = n
         out.lines.append(f"已记为交审事项 C{n}（{sub['module']} 的 {msg.fields.get('节点', '').strip()}）"
-                         + (f"，Codex 放行：下一步 review codex C{n}，不提请用户" if codex else ""))
+                         + ((f"，自动合：下一步 review codex C{n}，不提请用户" if sub["node"] == "final" else
+                             f"，Codex 放行：下一步 review codex C{n}，不提请用户") if codex else "")
+                         + (f"；{NODE_NAME.get(sub['node'], sub['node'])} 改为人批：{human_why}"
+                            if human_why and sub["node"] != "final" else ""))
+        if human_why and sub["node"] == "final":       # crew-takeover-merge decision 1
+            out.lines.append(f"合并档位是自动，但这次照人合：{human_why}")
         if sub.get("disputes"):
             refs = "、".join(d["review"] for d in sub["disputes"])
             out.lines.append(f"模块不同意审查 {refs}：不再返工，作为待你决定（D 编号）的问题提请批准")
@@ -459,27 +467,38 @@ def batch(project: str | os.PathLike) -> dict:
                       "reviewState": state, "round": _rounds(db, v["module"], v["node"]),
                       "ready": state in READY and v.get("reviewer") != "codex",
                       **({"reviewer": "codex"} if v.get("reviewer") == "codex" else {}),
+                      **({"humanReason": v["humanReason"]} if v.get("humanReason") else {}),
                       "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state),
                       **({"checks": v["checks"]} if "checks" in v else {}),
                       **({"display": present.final_tables(project, db, v)} if v["node"] == "final" and v.get("module")
                          and not v.get("task") else {})})
-    codex = [f"C{i['number']} {i['module']} 的 {NODE_NAME.get(i['node'], i['node'])}（{STATE_TEXT[i['reviewState']]}）"
+    codex = [f"C{i['number']} {i['module']} 的 "
+             + (auto_progress(db, i["number"], store.get(db, "item", str(i["number"])) or {}) if i["node"] == "final"
+                else f"{NODE_NAME.get(i['node'], i['node'])}（{STATE_TEXT[i['reviewState']]}）")
              for i in items if i.get("reviewer") == "codex" and not i["ready"]]
     return {"items": items, "groups": groups, "dependencyIssues": issues, "conflicts": conflicts, "overlap": over,
             "codex": codex}
 
 
-def codex_node(db: store.Store, module: str, node: str, worktree: Path, commit: str) -> bool:
-    """crew-takeover-approve: the module's takeover gives this node to Codex (the Plan read from the submitted commit)."""
-    from module_crew import takeover
-    if node not in ("spec", "interface", "plan"):
-        return False
-    plan = None
+def codex_node(db: store.Store, module: str, node: str, worktree: Path, commit: str) -> tuple[bool, str | None]:
+    """crew-takeover-approve: (the module's takeover gives this node to Codex, why it goes back to the user instead).
+    spec-guard reads the Plan in the submitting worktree, which must hold the submitted Plan (M1 note 11).
+    The final acceptance follows crew-takeover-merge decision 1 (takeover.approval → final_reason)."""
+    from module_crew import autonomy, takeover
+    if node not in ("spec", "interface", "plan", "final"):
+        return False, None
     if node == "plan":
         shown = _git(worktree, "show", f"{commit}:tasks/{module}/plan.md")
-        plan = shown.stdout if shown.returncode == 0 else None
-    from module_crew import autonomy
-    return takeover.approver(db, autonomy.project_of(db), module, node, plan) == "codex"
+        try:
+            here = (worktree / "tasks" / module / "plan.md").read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            here = None
+        if shown.returncode != 0 or here != shown.stdout:
+            if takeover.approver(db, autonomy.project_of(db), module, node) == "codex":
+                return False, "工作区的 Plan 与交审提交不同，读不到 spec-guard 的预先声明判定"
+            return False, None
+    who, why = takeover.approval(db, autonomy.project_of(db), module, node, worktree)
+    return who == "codex", why
 
 
 READY = ("none", "timeout", "passed", "decide")   # states that may go to the user (key decision 3)
@@ -661,6 +680,8 @@ def show(db: store.Store, number: int, submission: bool = False, spec_diff: bool
         return [revised["diff"].rstrip("\n")] if revised else [f"C{number} 交审时 Spec 和集成分支上的一样，没有改动差异"]
     from module_crew import checks
     out = [checks.review_line(rec["checks"])] if rec.get("checks") else []     # crew-check-ledger
+    auto = auto_progress(db, number, rec)
+    out += [auto] if auto else []
     if submission:
         out += [f"交审原文（C{number}，{rec['module']} 的 {NODE_NAME.get(rec['node'], rec['node'])}）"
                 f" sha256:{hashlib.sha256(rec['text'].encode('utf-8')).hexdigest()}：", rec["text"].rstrip("\n"), ""]
@@ -671,6 +692,24 @@ def show(db: store.Store, number: int, submission: bool = False, spec_diff: bool
         out += [f"第 {i} 轮 · {r['ref']} · {r['from']} · {r.get('verdict')} "
                 f"sha256:{hashlib.sha256(r['text'].encode('utf-8')).hexdigest()}：", r["text"].rstrip("\n"), ""]
     return out[:-1]
+
+
+def auto_progress(db: store.Store, number: int, rec: dict) -> str | None:
+    """crew-takeover-merge decision 10: where an auto-merged final acceptance stands (None for anything else)."""
+    if rec.get("node") != "final" or (rec.get("reviewer") != "codex" and not (rec.get("answer") or {}).get("release")):
+        return None
+    release = (rec.get("answer") or {}).get("release")
+    if release:
+        step = f"已放行 C{release}"
+    elif (rec.get("codex") or {}).get("verdict") == "pass":
+        step = f"Codex 无阻断，待 merge auto C{number}"
+    elif rec.get("overLimit"):
+        step = "Codex 两轮后仍有阻断，交用户决定"
+    elif review_state(db, number) == "rework":
+        step = f"返工第 {_rounds(db, rec['module'], 'final')} 轮"
+    else:
+        step = "Codex 审查中"
+    return f"最终验收（自动合）：{step}"
 
 
 STATE_TEXT = {"reviewing": "审查中", "rework": "返工中", "timeout": "审查者无响应", "passed": "审查通过",

@@ -776,6 +776,8 @@ def _review(args) -> int:
                 print(f"C{i['number']} {i['module']} 的 {review.NODE_NAME.get(i['node'], i['node'])}（{i['from']}）："
                       + "、".join(f["path"] for f in i["files"]))
                 print("  要点：" + i["points"].replace("\n", "\n        "))
+                if i.get("humanReason"):        # crew-takeover-approve, M1 note 1
+                    print(f"  批准方式：人批（{i['humanReason']}）")
                 if i.get("checks"):             # crew-check-ledger
                     from module_crew import checks
                     print("  " + checks.review_line(i["checks"]))
@@ -953,7 +955,8 @@ def _merge(args) -> int:
                              ensure_ascii=False, indent=2))
         else:
             for n, r in rows:
-                print(f"C{n} {r['module']}（最终验收交审 C{r['review']}）")
+                print(f"C{n} {r['module']}（最终验收交审 C{r['review']}）"
+                      + (f"（自动合，放行事项 C{r['auto']}）" if r.get("auto") else ""))
             if not rows:
                 print("合并队列是空的")
         return 0 if rows else 3
@@ -986,6 +989,28 @@ def _merge(args) -> int:
             _sent(x['to'])
         if adopted is not None:
             _DETACHED.update(approval=adopted.approval, code=res.code)
+        return res.code
+    if args.action == "first-stage":       # crew-takeover-merge decision 7: read only, for autopilot
+        doc = merge.first_stage(".")
+        if args.json:
+            print(json.dumps(doc, ensure_ascii=False, indent=2))
+        else:
+            print(f"集成分支 {doc['integrationBranch']}（{doc['repo'] or '没有远端'}，PR 目标 {doc['baseBranch'] or '取不到'}）")
+            for m in doc["merges"]:
+                check = m["check"] or {}
+                print(f"C{m['approval']} {m['module']}：合并提交 {m['mergeCommit'][:7]}，"
+                      + (f"自动合（放行事项 C{m['release']['item']}）" if m["auto"] else "人合")
+                      + f"，完整检查 {check.get('result') or '没有记录'}" + ("（非作者）" if check.get("nonAuthor") else ""))
+            if not doc["merges"]:
+                print("没有还没推送的合并")
+        return 0
+    if args.action == "auto":              # crew-takeover-merge decision 4
+        res = merge.auto(".", args.number, detach=args.detach)
+        for line in res.lines:
+            print(line)
+        for x in res.sends:
+            print(f"发送 【协调通知】（{x['kind']}）→ {x['to']}，正文文件：{x['path']}")
+            _sent(x['to'])
         return res.code
     if args.action == "result":            # crew-codex-coordinator decision 6
         got = merge.result(store.open_store(), args.number, args.wait)
@@ -1126,7 +1151,7 @@ _LOCKED = {("change", "land"), ("review", "approve"), ("merge", "tick"), ("merge
 # (group, action); action None = the whole group.
 _ANY_SESSION = {("status", None), ("sessions", None), ("protocol", None), ("hook", None), ("bind", None), ("sync", None),
                 ("host-check", None), ("scope", None), ("store", "check"), ("start", "plan"), ("review", "batch"), ("review", "show"),
-                ("change", "list"), ("merge", "queue"), ("merge", "push-plan"), ("source", "list"), ("source", "map"),
+                ("change", "list"), ("merge", "queue"), ("merge", "push-plan"), ("merge", "first-stage"), ("source", "list"), ("source", "map"),
                 ("task", "list"), ("task", "show"), ("task", "next"), ("permissions", "plan"), ("coordinator", "up"),
                 ("offload", "show"), ("rehost", "show"), ("offload", "start"), ("offload", "settle"),
                 ("offload", "resume"), ("offload", "takeover"), ("check", "quick"), ("check", "show"), ("check", "list"),
@@ -1267,6 +1292,12 @@ def _tier(args) -> int:
     """crew-autonomy-tier: `tier [--json] | --preflight | restore | degrade | digest`."""
     from module_crew import autonomy
     try:
+        if args.action == "restore":        # retired (crew-takeover-approve decision 10): guidance only, exit 3
+            try:
+                autonomy.restore(None, ".", None)
+            except autonomy.Refused as exc:
+                print(f"❌ {exc}")
+                return 3
         db = store.open_store()
         if args.preflight:                  # crew-takeover-approve: before /spec-guard:config writes takeover
             from module_crew import takeover
@@ -1281,12 +1312,6 @@ def _tier(args) -> int:
             code, line = autonomy.degrade(db, ".", args.reason, args.ref)
             print(line)
             return code
-        if args.action == "restore":
-            original = _original(args.original, args.original_file)
-            if original is None:
-                return 2
-            print("\n".join(autonomy.restore(db, ".", original)))
-            return 0
         from module_crew import takeover
         doc, lines = takeover.report(db, ".")
         old_doc, old_lines = autonomy.report(db, ".")
@@ -1488,6 +1513,11 @@ def _main(argv: list[str] | None = None) -> int:
     mr.add_argument("--replace-check", action="store_true")
     mr.add_argument("--detach", action="store_true", help="交给后台运行、立即返回（Codex 用；跑完用 merge result 取结果）")
     mr.add_argument("--detached-child", action="store_true", help=argparse.SUPPRESS)
+    mgs.add_parser("first-stage", help="只读：已合入、还没推送的合并及其放行与检查证据（给 autopilot）").add_argument(
+        "--json", action="store_true")
+    ma = mgs.add_parser("auto", help="自动合：Codex 对最终补丁无阻断后放行、排队并跑一次合并队列（放后台跑）")
+    ma.add_argument("number", type=refs.parse)
+    ma.add_argument("--detach", action="store_true", help="合并交给后台运行、立即返回（Codex 用；跑完用 merge result 取结果）")
     mres = mgs.add_parser("result", help="取 merge run --detach 后台合并的结果与通知（第一次取到时记进状态库）")
     mres.add_argument("number", nargs="?", type=refs.parse)
     mres.add_argument("--wait", type=float, default=0, help="最多等这么多分钟（上限 8）")
@@ -1681,9 +1711,9 @@ def _main(argv: list[str] | None = None) -> int:
     ti.add_argument("--preflight", action="store_true", help="写 takeover 之前核对 spec-guard 与 delegate 的版本和接口（只读）")
     tis = ti.add_subparsers(dest="action")
     tir = tis.add_parser("restore", help="已退役：放宽档位用 /spec-guard:config（要用户原话）")
-    tirg = tir.add_mutually_exclusive_group(required=True)
-    tirg.add_argument("--original")
-    tirg.add_argument("--original-file")
+    tirg = tir.add_mutually_exclusive_group()      # accepted and ignored: no words needed for the guidance (M1 note 4)
+    tirg.add_argument("--original", help=argparse.SUPPRESS)
+    tirg.add_argument("--original-file", help=argparse.SUPPRESS)
     tig = tis.add_parser("degrade", help="外部信号降一档（任何调用方，不要用户原话；恢复仍要原话）")
     tig.add_argument("--reason", required=True, help="降档原因（原样写进降档记录，不解析）")
     tig.add_argument("--ref", required=True, help="外部事项链接或编号；同一个 --ref 只降一次")
