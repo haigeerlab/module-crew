@@ -123,8 +123,8 @@ module-crew 自己的提交信息默认以 `chore(crew): ` 开头，`config set 
 
 档位存在 spec-guard 的 `.agent/config.json`：项目 `takeover`（不接管／只接管 Plan／接管到合并／自定义 Spec、Plan、合并三项），模块可单独设 `moduleTakeover`。模块协调先跑 `module-crew tier --preflight` 确认本机 spec-guard ≥ 0.91.0、delegate 接口 ≥ 1.5，再引用用户原话用 `/spec-guard:config` 写入并单独提交。没设或读不到时一律人批，一切照旧。
 
-- **看得清**：`tier`、`status`、开工说明、交审登记行写明每个模块「批准方式：Spec …、Plan …、合并 …」。能力图永远人批；spec-guard 判为重要需求的 Spec、写了「预先声明」的 Plan 不管勾选都由用户批，并写明原因。
-- **Codex 放行**：勾了「Codex 审过就算」的节点，交审不进给用户的批次。模块协调用 `review codex C<n>` 拿到 `/delegate:review --backend codex` 命令、跑完把报告交给 `review codex-note`：有阻断意见就自动返工（模块会话先用 `review-mark --state codex-reviewed` 记下这一轮），最多返工两轮；没有阻断就落地到集成分支、写 spec-guard 的 `codex-approved` 标记，Spec、Plan 都批了发开工通知，只放了一个节点发「放行」类【协调通知】（契约 v2.9）。
+- **看得清**：`tier`、`status`、开工说明、交审登记行写明每个模块「批准方式：Spec …、Plan …、合并 …」。能力图永远人批；spec-guard 判为重要需求的 Spec、写了「预先声明」的 Plan 不管勾选都由用户批，并写明原因；有没有预先声明以 spec-guard 的 `declaredScope` 为准，格式错误或读不到也算有。
+- **Codex 放行**：勾了「Codex 审过就算」的节点，交审不进给用户的批次。模块协调用 `review codex C<n>` 拿到 `/delegate:review --backend codex` 命令、跑完把报告交给 `review codex-note`：有阻断意见就自动返工（模块会话先用 `review-mark --state codex-reviewed` 记下这一轮），最多返工两轮（轮次按模块＋节点累计，重交不从 1 数，第 2 轮起带上一轮报告复核）；没有阻断就落地到集成分支、写 spec-guard 的 `codex-approved` 标记，Spec、Plan 都批了发开工通知，只放了一个节点发「放行」类【协调通知】（契约 v2.9）。
 - **Codex 不可用就停下**：报告缺失、没跑完、没结论或只审了一部分，一律停下给用户一份【等待用户】草稿（等 Codex 恢复后重跑，或这一项改由用户批：`review codex-fallback`），绝不退回 Claude 自己审。
 - **分开记账**：Codex 放行记成 `codex-approval`，`status` 单独计数，对用户说「Codex 放行」，不发【用户答复】。
 - **批准人不同就分开批**：同一模块 Spec、Plan 一个人批、一个 Codex 放行时，即使 `reviewCadence=combined` 也按 separate 交审。

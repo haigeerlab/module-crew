@@ -258,9 +258,9 @@ module-crew change accept <编号> --original-file <用户原话文件>     # �
   `module-crew tier` 看项目档位和每个在用模块的「批准方式：Spec …、Plan …、合并 …」；`status` 只在有接管时多一段。
 - **设或改档位要用户原话**：先 `module-crew tier --preflight`（spec-guard 0.91.0、delegate 接口 1.5；退出码 3 就把原因告诉用户、不写）；通过后引用用户原话，在集成 checkout 用 `/spec-guard:config` 写，写完把 `.agent/config.json` 单独提交。
   放宽也一样要原话、一次升一档（`tier restore` 已退役，只给指引）。
-- **能力图永远人批**；spec-guard 判为重要需求的 Spec、Plan 有「预先声明」时，不管勾选都由用户批（批准方式里写原因）。最终验收照旧要用户的答复。
+- **能力图永远人批**；spec-guard 判为重要需求的 Spec、Plan 有「预先声明」时，不管勾选都由用户批（批准方式里写原因）；有没有预先声明以 spec-guard 的 `declaredScope` 为准，格式错误或读不到也算有，交审登记行与批量交审会写「人批（原因）」。最终验收照旧要用户的答复。
 - **Codex 放行的节点**（交审登记时写「Codex 放行：下一步 review codex C<n>」，不进给用户的批次）：
-  1. `module-crew review codex C<n>` 给出这一轮的 `/delegate:review --backend codex …` 命令，照它在本会话跑，把标准输出的 JSON 原样存到它给的文件；
+  1. `module-crew review codex C<n>` 给出这一轮的 `/delegate:review --backend codex …` 命令（轮次按模块＋节点累计，返工重交后不从 1 数；第 2 轮起自动带 `--previous-report`），照它在本会话跑，把标准输出的 JSON 原样存到它给的文件；
   2. `module-crew review codex-note C<n> --report <文件>`，按退出码：`0` 已发返工通知（照输出 `bridge_send`）或已放行（Spec、Plan 都批了发开工通知，只放了一个节点发「放行」类【协调通知】）；
      `3` 报告和交审对不上，重跑第 1 步；`4` 落地失败，原因照抄给用户；`5` Codex 没跑成或两轮返工后仍有阻断：输出末尾是一份【等待用户】草稿，自检后照现有规则交给用户。
   3. **Codex 不可用就停下等用户，绝不自己审、不换后端。** 用户选「这一项改由我批」时，先 `module-crew review codex-fallback C<n> --original-file <原话文件>`，之后照人批流程 `review approve`／`review answer`。
