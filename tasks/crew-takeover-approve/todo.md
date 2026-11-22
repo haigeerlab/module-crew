@@ -16,4 +16,4 @@
 - [x] Task 7：认「放行」通知、只放行 Spec 时发它（Spec 决策 12）——`protocol.py` 认类型「放行」（approved-by-review）、`missing-approval-node`、`notice.node`，契约版本钉到 2.9；`review._approve` 在 Codex 只放行一个节点时发放行类通知；契约样例 v2.2～v2.9 全过，本模块 ReleaseNoticeTest、NoticeRenderTest 通过
 - [x] Task 8：skill、README、`module-crew sync` 后全量测试、本机实测（Spec 验收 12、13、1）——四份 skill 的档位一节改为接管档位，README 中英、docs/guide.md、docs/commands.md、docs/architecture.md 同步；sync 后集成分支仍是 b671c6f；第一次全量 1334 个中 2 个失败（文档里的旧称「用户答复」「协调会话」、interface.json 的 contract 仍是 2.8），修后（6a1e326）全量 1334 个全过（1774 秒）；本机实测：spec-guard 0.91.1 上 `tier --preflight` 退出码 0、`tier --json` 读到项目 none 与两个在用模块全人批；真跑一次 Codex `/delegate:review`（审本模块 Spec），报告字段与 `codex-note` 的读法一致、`scope.files` 的 sha256 等于已提交文件
 - [x] Checkpoint 5（gate）：最终验收
-- [ ] 回告：经模块协调转告 ecosystem-lead 与 autopr-design
+- [x] 回告：经模块协调转告 ecosystem-lead 与 autopr-design（已发：ecosystem-lead #22043、autopr-design #22044，2026-11-22）
