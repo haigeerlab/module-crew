@@ -1,6 +1,6 @@
 # Spec: crew-takeover-approve
 
-<!-- spec-guard: review approved 66dc4b3bfaf4 -->
+<!-- spec-guard: review approved de55989b6a16 -->
 
 > 能力图模块 `crew-takeover-approve`。需求来源：接缝 S101，已批合并方案 plugin-ecosystem `research/2026-11-21-自动接管合并方案.md`（bfce091，用户 2026-11-21「按推荐批准」）
 > 第 2 节 module-crew 一行与第 3 节 Q1、Q5、Q6、Q7、Q8、Q12；方向文档 `research/2026-11-21-自动接管方向.md` 第二节第 3、4 条。开会话依据：用户批准事项 C605。
@@ -62,7 +62,7 @@
 
 1. **读档位**：每个模块生效的四项从 `map_view.py --json` 每个模块的 `takeover` 读：`{"spec", "plan", "merge", "release", "source", "widerThanProject", "narrowed"}`（`release` 只显示，不由本模块处理）。
    module-crew 已在 `probe.run` 里读这份 `/map --json`，`takeover.py` 直接用它，不另起子进程；项目档位取 `project_config.py show --format json` 里 key 为 `takeover` 的一项（预设名或自定义对象）。
-   强制人批：`important.reasons` 非空时 Spec 一律人批（原因照抄，如 `multi-module`）；Plan 的「预先声明」有任何一行不是「无」时 Plan 一律人批（spec-guard codex-approval Q6，用户选 A）。
+   强制人批：`important.reasons` 非空时 Spec 一律人批（原因照抄，如 `multi-module`）；Plan 有预先声明时 Plan 一律人批（spec-guard codex-approval Q6，用户选 A）；有没有以 spec-guard `declaredScope`（`module_scope.py declared`，在交审的 worktree 读）为准：退出码 0、`declared` 为真且四个清单任一非空，或退出码 4（格式错误、读不出）、退出码 2、调用失败或超时，都按人批，module-crew 不自己解析；改回人批时 `review add` 登记行与 `review batch` 写出原因。
 2. **审查报告**：`/delegate:review` 标准输出的 JSON 存成文件。没有结论 = `execution_status` 不是 `completed`，或 `review_outcome` 不是 `findings`／`no_findings_in_scope`，或 `backend` 不是 `codex`；`findings[].severity` 缺省按 `blocking`。
    报告与文件靠 `scope.files` 里每个文件内容的 sha256 绑定（不用 `blob-pairs-v1`）。复审带 `--previous-report`，阻断项是否解决看 `recheck.items`，新问题在 `findings`。
 3. **`review codex` 给的命令**：`/delegate:review --backend codex --repo <模块 worktree> --paths <交审文件> [--spec spec/<模块>.md]（审 Plan 时带）[--previous-report <上一轮报告>] <任务说明>`，
@@ -254,3 +254,4 @@ README 的「自治档位」一节改写为「接管档位」：三项各由谁�
 - 2026-11-22：「并行边界」去掉「共享：」一行，共享文件清单与契约的说明挪到紧跟其后的新节「并行说明」；「公共」行只留类别「测试资源」；内容范围不变。原因：spec-guard verify-artifacts 只认「独占」「公共」两种行，「共享」行与带说明的公共行判为 unknown-line；来源：用户 2026-11-21 在 mc-coord 会话答复「批草案并改边界」（mc-coord 转达 #21948、#21951），随最终验收附 Spec 差异一并复审。
 - 2026-11-22：新增「上游实测」一节，按 spec-guard 0.91.0（interface 1.15）与 delegate 0.10.0（接口 1.5）的真实接口修订假设 1、2、7 与决策 1、3、4、5、9（读法改用 `/map --json` 每模块 `takeover`，强制人批取 `important.reasons` 与 Plan 预先声明，报告按 `scope.files` 的 sha256 绑定，阻断轮次由模块会话用 `review-mark --state codex-reviewed` 记进文件，放行用 `codex-approved --review`，收窄调 `takeoverNarrow` 并由 module-crew 提交 `.agent/config.json`）；目标与范围不变。原因：Plan Checkpoint 0 要求发版后按真实接口改；来源：本模块构建 Checkpoint 0，随最终验收附 Spec 差异复审。
 - 2026-11-22：构建 Task 4、5 时补三处实现取舍：① 新增 `review codex-fallback C<n> (--original|--original-file)`，用户选「这一项改由自己批」（Codex 不可用或两轮仍阻断）时凭原话把交审改回人批，之后照 `review approve`／`review answer`（决策 6 原写「选 B 后照人批走」，没写入口）；② Codex 返工通知的审查编号写 `R-<第几次审>`，交审事项的审查记录 `from` 为 `codex`；③ 批准标记命令认 spec-guard 1.1 与 1.15 两种占位符写法，`[--review <report file>]` 只在 Codex 放行时展开——装上 0.91.0 后旧写法会让 `review approve` 与合并时记 Spec 修订批准都失败（已告知 mc-coord #21999）。原因与来源：本模块构建 Task 4、5，随最终验收附 Spec 差异复审。
+- 2026-11-22：决策 1 的 Plan 预先声明判据改为以 spec-guard `declaredScope` 为准（格式错误、读不出、调用失败一律人批），不再自己解析，改回人批时写出原因。原因：M1 停点沙箱实跑（`module-crew-m1-sandbox/M1-REPORT.md` 注意 1、11）中 `- 无（…）` 被 module-crew 判为没有、交 Codex 放行，spec-guard 判为格式错误要人批；来源：用户 M1 停点「不通过，重开修」，读法经 mc-coord 转告（#22074、#22076，ecosystem-lead 记为 S106），随返工最终验收附 Spec 差异复审。

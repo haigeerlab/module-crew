@@ -776,6 +776,8 @@ def _review(args) -> int:
                 print(f"C{i['number']} {i['module']} 的 {review.NODE_NAME.get(i['node'], i['node'])}（{i['from']}）："
                       + "、".join(f["path"] for f in i["files"]))
                 print("  要点：" + i["points"].replace("\n", "\n        "))
+                if i.get("humanReason"):        # crew-takeover-approve, M1 note 1
+                    print(f"  批准方式：人批（{i['humanReason']}）")
                 if i.get("checks"):             # crew-check-ledger
                     from module_crew import checks
                     print("  " + checks.review_line(i["checks"]))
@@ -1290,6 +1292,12 @@ def _tier(args) -> int:
     """crew-autonomy-tier: `tier [--json] | --preflight | restore | degrade | digest`."""
     from module_crew import autonomy
     try:
+        if args.action == "restore":        # retired (crew-takeover-approve decision 10): guidance only, exit 3
+            try:
+                autonomy.restore(None, ".", None)
+            except autonomy.Refused as exc:
+                print(f"❌ {exc}")
+                return 3
         db = store.open_store()
         if args.preflight:                  # crew-takeover-approve: before /spec-guard:config writes takeover
             from module_crew import takeover
@@ -1304,12 +1312,6 @@ def _tier(args) -> int:
             code, line = autonomy.degrade(db, ".", args.reason, args.ref)
             print(line)
             return code
-        if args.action == "restore":
-            original = _original(args.original, args.original_file)
-            if original is None:
-                return 2
-            print("\n".join(autonomy.restore(db, ".", original)))
-            return 0
         from module_crew import takeover
         doc, lines = takeover.report(db, ".")
         old_doc, old_lines = autonomy.report(db, ".")
@@ -1709,9 +1711,9 @@ def _main(argv: list[str] | None = None) -> int:
     ti.add_argument("--preflight", action="store_true", help="写 takeover 之前核对 spec-guard 与 delegate 的版本和接口（只读）")
     tis = ti.add_subparsers(dest="action")
     tir = tis.add_parser("restore", help="已退役：放宽档位用 /spec-guard:config（要用户原话）")
-    tirg = tir.add_mutually_exclusive_group(required=True)
-    tirg.add_argument("--original")
-    tirg.add_argument("--original-file")
+    tirg = tir.add_mutually_exclusive_group()      # accepted and ignored: no words needed for the guidance (M1 note 4)
+    tirg.add_argument("--original", help=argparse.SUPPRESS)
+    tirg.add_argument("--original-file", help=argparse.SUPPRESS)
     tig = tis.add_parser("degrade", help="外部信号降一档（任何调用方，不要用户原话；恢复仍要原话）")
     tig.add_argument("--reason", required=True, help="降档原因（原样写进降档记录，不解析）")
     tig.add_argument("--ref", required=True, help="外部事项链接或编号；同一个 --ref 只降一次")

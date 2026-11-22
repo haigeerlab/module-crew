@@ -6,7 +6,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -89,24 +88,33 @@ def _map(where: Path) -> dict | str:
     return _CACHE[key]
 
 
-def predeclares(plan_text: str | None) -> bool:
-    """A Plan whose 预先声明 section says anything but 无 (spec-guard codex-approval Q6: the user approves it)."""
-    if not plan_text:
-        return False
-    m = re.search(r"^## 预先声明[^\n]*\n(.*?)(?=^## |\Z)", plan_text, re.S | re.M)
-    if not m:
-        return False
-    for line in m.group(1).splitlines():
-        text = line.strip().lstrip("-*").strip()
-        if not text:
-            continue
-        text = text.split("：", 1)[1].strip() if "：" in text and not text.startswith("无") else text
-        if not text.startswith("无"):
-            return True
-    return False
+def predeclares(where: Path, module_id: str) -> str | None:
+    """Why the Plan at `where` goes back to the user, or None: spec-guard's declaredScope decides, never parsed here
+    (M1 note 11; codex-approval Q6). Malformed, unreadable or not answered counts as declaring something."""
+    from module_crew import declared
+    got = declared._interface(where)
+    if isinstance(got, str):
+        return f"读不到 spec-guard 的预先声明判定（{got}）"
+    found, doc = got
+    cmd = probe.safe_command(found.root, doc, "declaredScope", {"<project-root>": str(where), "<module-id>": module_id})
+    if isinstance(cmd, str):
+        return f"读不到 spec-guard 的预先声明判定（{cmd}）"
+    try:
+        ran = subprocess.run(cmd, cwd=found.root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
+        result = json.loads(ran.stdout) if ran.returncode in (0, 4) else None
+    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+        return f"读不到 spec-guard 的预先声明判定（{exc}）"
+    if ran.returncode == 4:
+        code = result.get("error") if isinstance(result, dict) else None
+        return f"Plan 预先声明格式错误（spec-guard：{code or '退出码 4'}）"
+    if not isinstance(result, dict):
+        return f"读不到 spec-guard 的预先声明判定（退出码 {ran.returncode}）"
+    if result.get("declared") is True and any(result.get(k) for k in ("publicPaths", "dependencies", "configs", "patches")):
+        return REASONS["pre-declared"]
+    return None
 
 
-def module(db: store.Store, project: str | os.PathLike, module_id: str, plan_text: str | None = None,
+def module(db: store.Store, project: str | os.PathLike, module_id: str, plan_root: Path | None = None,
            map_doc: dict | None = None) -> Items:
     """Decision 1 (as measured): the module's takeover from /map --json, then the user's own steps forced back."""
     doc = map_doc if map_doc is not None else _map(checkout(db, project))
@@ -126,29 +134,39 @@ def module(db: store.Store, project: str | os.PathLike, module_id: str, plan_tex
     reasons = (row.get("important") or {}).get("reasons") or []
     if out.spec == "codex" and reasons:
         out.forced["spec"] = "重要需求：" + "、".join(REASONS.get(r, r) for r in reasons)
-    if out.plan == "codex" and predeclares(plan_text):
-        out.forced["plan"] = REASONS["pre-declared"]
+    why = predeclares(Path(plan_root), module_id) if out.plan == "codex" and plan_root is not None else None
+    if why:
+        out.forced["plan"] = why
     return out
 
 
-def approver(db: store.Store, project: str | os.PathLike, module_id: str, node: str, plan_text: str | None = None) -> str:
+def approver(db: store.Store, project: str | os.PathLike, module_id: str, node: str,
+             plan_root: Path | None = None) -> str:
     """"human" | "codex" for a review node; the interface proposal counts as the Spec, final acceptance follows
     final_reason (crew-takeover-merge decision 1)."""
+    return approval(db, project, module_id, node, plan_root)[0]
+
+
+def approval(db: store.Store, project: str | os.PathLike, module_id: str, node: str,
+             plan_root: Path | None = None) -> tuple[str, str | None]:
+    """(approver, why the user approves a step the takeover gives to Codex); `plan_root` is where spec-guard reads the
+    Plan's pre-declared section (M1 notes 1, 11). The final acceptance: crew-takeover-merge's final_reason."""
     if node == "final":
-        return final_reason(db, project, module_id, plan_text)[0]
+        return final_reason(db, project, module_id)
     item = {"spec": "spec", "interface": "spec", "plan": "plan"}.get(node)
     if item is None:
-        return "human"
-    got = module(db, project, module_id, plan_text)
-    return "codex" if getattr(got, item) == "codex" and item not in got.forced else "human"
+        return "human", None
+    got = module(db, project, module_id, plan_root if item == "plan" else None)
+    if getattr(got, item) != "codex":
+        return "human", None
+    return ("human", got.forced[item]) if item in got.forced else ("codex", None)
 
 
-def final_reason(db: store.Store, project: str | os.PathLike, module_id: str,
-                 plan_text: str | None = None) -> tuple[str, str | None]:
+def final_reason(db: store.Store, project: str | os.PathLike, module_id: str) -> tuple[str, str | None]:
     """crew-takeover-merge decision 1, assumption 3: ("codex", None) when the module's merge is auto and the check
     ledger is on and its Spec and Plan are approved; ("human", reason) when merge is auto but one is missing;
     ("human", None) otherwise."""
-    got = module(db, project, module_id, plan_text)
+    got = module(db, project, module_id)
     if not got.usable or got.merge != "auto":
         return "human", None
     from module_crew import checks, review
@@ -346,24 +364,23 @@ def _target(rec: dict) -> str:
     return "plan" if rec["node"] == "plan" else "spec"
 
 
-def _reports(db: store.Store, rec: dict, n: int) -> list[str]:
-    """Codex reports of this item; for a final acceptance also those of the submissions it superseded this round
-    (crew-takeover-merge: a rework is a resubmission, the recheck still compares with the previous report)."""
-    own = list(rec.get("codexReports") or [])
-    if rec.get("node") != "final":
-        return own
+def _history(db: store.Store, rec: dict, n: int) -> list[str]:
+    """Codex reports for this module and node so far, oldest first: a resubmission gets a new C number but keeps
+    counting (M1 notes 2, 3), the same way review._rounds counts rework notices and spec-guard counts rounds."""
     since = store.round_since(store.records(db, "session"), rec["module"])
-    earlier = [v for k, v in sorted(store.records(db, "item").items(), key=lambda kv: int(kv[0]))
-               if since < int(k) < n and v.get("kind") == "review" and v.get("module") == rec["module"]
-               and v.get("node") == "final" and v.get("closedReason") == "superseded"]
-    return [p for v in earlier for p in (v.get("codexReports") or [])] + own
+    out: list[str] = []
+    for key, other in sorted(store.records(db, "item").items(), key=lambda kv: int(kv[0])):
+        if (since < int(key) <= n and other.get("kind") == "review" and other.get("module") == rec["module"]
+                and other.get("node") == rec["node"]):
+            out += list(other.get("codexReports") or [])
+    return out
 
 
 def codex_command(db: store.Store, n: int) -> tuple[list[str], Path]:
     """`review codex C<n>` (read only): the /delegate:review line for this round and where to save its stdout."""
     rec = _codex_item(db, n)
-    reports = _reports(db, rec, n)
-    path = db.path / CODEX_DIR / f"C{n}-r{len(rec.get('codexReports') or []) + 1}.json"
+    reports = _history(db, rec, n)
+    path = db.path / CODEX_DIR / f"C{n}-r{len(reports) + 1}.json"
     session = store.get(db, "session", rec["from"]) or {}
     worktree = session.get("worktree", "")
     args = ["/delegate:review", "--backend", "codex", "--repo", worktree]
@@ -532,11 +549,11 @@ def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) ->
     if bad:
         raise CodexRefused("审查报告和交审对不上，没有记：" + "；".join(bad) + f"。重跑 review codex C{n}")
     block, advice = _blocking(doc)
-    saved = db.path / CODEX_DIR / f"C{n}-r{len(rec.get('codexReports') or []) + 1}.json"
+    rounds = len(_history(db, rec, n)) + 1
+    saved = db.path / CODEX_DIR / f"C{n}-r{rounds}.json"
     if Path(report).resolve() != saved.resolve():
         saved.parent.mkdir(parents=True, exist_ok=True)
         saved.write_bytes(Path(report).read_bytes())
-    rounds = len(_reports(db, rec, n)) + 1
     verdict = f"有须修改项{len(block)}条" if block else (f"通过，附建议{len(advice)}条" if advice else "通过")
     row = {"from": "codex", "ref": f"R-{rounds}", "verdict": verdict, "at": store.now(), "report": str(saved),
            "points": "\n".join([f"须修改：{x}" for x in block] + [f"建议{i}：{x}" for i, x in enumerate(advice, 1)]),
