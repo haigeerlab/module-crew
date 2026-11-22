@@ -49,6 +49,9 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
         raise AnswerRefused(f"没有交审事项 C{review_no}")
     if rec.get("node") != "final":
         raise AnswerRefused(f"交审事项 C{review_no} 不是最终验收（Spec／Plan 用 review approve）")
+    if rec.get("reviewer") == "codex":   # crew-takeover-merge decision 9
+        raise AnswerRefused(f"交审事项 C{review_no} 是自动合：先 review codex C{review_no}；Codex 不可用或超限时照草稿问用户，"
+                            f"用户选了由自己验收后 review codex-fallback，再用这个命令")
     if rec.get("state") not in ("open", "accepted"):     # crew-final-accept-split: an accepted item is authorized here
         raise AnswerRefused(f"交审事项 C{review_no} 已关闭（{rec.get('closedReason')}）")
     acceptance = rec.get("acceptance") if rec.get("state") == "accepted" else None
@@ -96,6 +99,9 @@ def _accept_one(tx, db: store.Store, review_no: int, original: str) -> Reply:
         raise AnswerRefused(f"没有交审事项 C{review_no}")
     if rec.get("node") != "final":
         raise AnswerRefused(f"交审事项 C{review_no} 不是最终验收（Spec／Plan 用 review approve）")
+    if rec.get("reviewer") == "codex":   # crew-takeover-merge decision 9
+        raise AnswerRefused(f"交审事项 C{review_no} 是自动合：先 review codex C{review_no}；Codex 不可用或超限时照草稿问用户，"
+                            f"用户选了由自己验收后 review codex-fallback，再用这个命令")
     if rec.get("state") == "accepted":
         raise AnswerRefused(f"交审事项 C{review_no} 已接受验收：用户补授权合并时用 merge approve")
     if rec.get("state") != "open":
@@ -177,13 +183,17 @@ def revoke(db: store.Store, approval: int, original: str) -> Revoked:
                  if v.get("kind") == "review" and v.get("module") == review["module"] and v.get("node") == review["node"]
                  and int(k) > int(rec["review"])]
         if not newer:
-            tx.put("item", str(rec["review"]), dict(review, state="open", closedReason=None, answer=None), action="reopened",
-                   data={"revokedApproval": approval})
+            back = dict(review, state="open", closedReason=None, answer=None)
+            if rec.get("auto"):         # crew-takeover-merge: the user stepped in, merge auto must not release it again
+                back = {k: v for k, v in back.items() if k not in ("sentTo", "sentAt")}
+                back.update(reviewer="human", fallback="revoked")
+            tx.put("item", str(rec["review"]), back, action="reopened", data={"revokedApproval": approval})
         body = tx.allocate_number()
         meta = tx.write_body(body, protocol.render_coordination_notice(
             "approval-revoked", f"C{approval}（用户撤回批准 C{record}；交审 C{rec['review']}）", REVOKE_TODO))
     from module_crew import autonomy
-    line = autonomy.incident(db, autonomy.project_of(db), "revoked", str(approval), f"C{approval}，{rec['module']}",
+    line = autonomy.incident(db, autonomy.project_of(db), "revoked", str(approval),
+                              f"C{approval}，{rec['module']}" + ("，自动合" if rec.get("auto") else ""),
                               module=rec.get("module"))
     return Revoked(rec["from"], None, body, db.path / meta["path"], superseded_by=max(newer) if newer else None,
                    tier_line=line)
@@ -666,7 +676,8 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
             result.lines += tick_hooks
     if reason and kind == "module":          # crew-autonomy-tier decision 8, after the merge is recorded
         from module_crew import autonomy
-        line = autonomy.incident(db, project, "merge-returned", str(n), f"C{n}，{unit}",
+        line = autonomy.incident(db, project, "auto-merge-returned" if rec.get("auto") else "merge-returned", str(n),
+                                 f"C{n}，{unit}",
                                  module=None if task else rec["module"])
         result.lines += [line] if line else []
     if task:

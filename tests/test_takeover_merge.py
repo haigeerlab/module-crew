@@ -13,7 +13,7 @@ from helpers import git
 from module_crew import review, store
 from test_autonomy_tier import TierMixin
 from test_check_ledger import LedgerCase
-from test_takeover_approve import FAKE_MARK_115, REVIEW_MARK_115, TakeoverMixin, finding, takeover_row
+from test_takeover_approve import FAKE_MARK_115, REVIEW_MARK_115, NarrowMixin, TakeoverMixin, finding, takeover_row
 
 
 def final_report(worktree: Path, base: str, head: str, findings=(), status="completed", outcome=None,
@@ -277,6 +277,65 @@ class QueueHeadTest(AutoMergeCase):
         self.assertIn(f"C{c}（c）已合入", out)
         self.assertIn("队列里还有", out)
         self.assertEqual([r["module"] for _, r in __import__("module_crew.merge", fromlist=["queue"]).queue(self.repo)], ["b"])
+
+
+class IncidentTest(NarrowMixin, AutoMergeCase):
+    """Task 5 (acceptance 8, 10)."""
+
+    def test_auto_returned_narrows_once(self):
+        from module_crew import autonomy
+        self.with_narrow("merge")
+        self.switch_on(full=self.counting_script("full", fail_if="src/b.py"))
+        n = self.passed()
+        code, out = self.cli("merge", "auto", f"C{n}")
+        self.assertEqual(code, 5, out)
+        self.assertIn("接管档位已收窄", out)
+        self.assertIn("自动合的合并因模块的原因退回", out)
+        self.assertEqual(len(self.calls()), 1)
+        approval = next(k for k, v in store.records(self.db, "item").items() if v.get("kind") == "merge-approval")
+        self.assertIn(f"auto-merge-returned:{approval}", autonomy.state(self.db)["incidentKeys"])
+        self.assertIsNone(autonomy.incident(self.db, self.repo, "auto-merge-returned", approval))   # once per item
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_codex_over_limit_or_unavailable_never_narrows(self):
+        self.with_narrow("merge")
+        n = self.submit_final().number
+        self.assertEqual(self.note(n, final_report(self.wt["b"], self.base(n), self.x(n), status="failed"))[0], 5)
+        self.assertEqual(self.calls(), [])
+
+    def test_revoke_of_an_auto_merge_narrows(self):
+        from helpers import START_MAP
+        from module_crew import merge
+        self.with_narrow("merge")
+        doc = json.loads(json.dumps(START_MAP))
+        doc["modules"].sort(key=lambda m: "acbde".index(m["id"]))       # c is merged first, b's approval stays queued
+        for m in doc["modules"]:
+            m.update(takeover_row(merge="auto") if m["id"] == "b" else takeover_row(source="default"))
+        self.set_map(doc)
+        (self.repo / ".agent" / "config.json").touch()
+        self.approve_final("c", 50)
+        n = self.passed()
+        self.assertEqual(merge.auto(self.repo, n).code, 0)
+        approval = next(int(k) for k, v in store.records(self.db, "item").items()
+                        if v.get("kind") == "merge-approval" and v.get("auto"))
+        note = merge.revoke(self.db, approval, "撤回")
+        self.assertIn("用户撤销合并批准", note.tier_line)
+        self.assertIn("自动合", note.tier_line)
+        self.assertEqual(len(self.calls()), 1)
+
+
+class FallbackTest(AutoMergeCase):
+    def test_merge_approve_and_accept_need_the_users_choice(self):
+        n = self.submit_final().number
+        for action in ("approve", "accept"):
+            code, out = self.cli("merge", action, f"C{n}", "--original", "验收通过")
+            self.assertEqual(code, 3, out)
+        code, out = self.cli("review", "codex-fallback", f"C{n}", "--original", "这次我来验收")
+        self.assertEqual(code, 0, out)
+        self.assertIn("merge approve", out)
+        code, out = self.cli("merge", "approve", f"C{n}", "--original", "验收通过")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.cli("merge", "auto", f"C{n}")[0], 3)
 
 
 if __name__ == "__main__":
