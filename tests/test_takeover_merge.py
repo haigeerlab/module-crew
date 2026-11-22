@@ -55,6 +55,8 @@ class FinalCase(TierMixin, TakeoverMixin, LedgerCase):
             n = review.add(self.db, text, "shop-b", rid).number
             res = review.approve(self.repo, [n], "批")
             assert res.code == 0, res.lines
+        git(self.wt["b"], "checkout", "refs/heads/main", "--", "spec/b.md", "tasks/b/plan.md")   # as after a sync
+        git(self.wt["b"], "commit", "-q", "-m", "b: approval marks from main")
         if self.ledger:
             self.switch_on()
         self.rid = 10
@@ -172,6 +174,109 @@ class FinalReviewTest(FinalCase):
         self.assertEqual(code, 5, out)
         self.assertIn("这一次由你验收", out)
         self.assertIn("不会改由 Claude 自己审", out)
+
+
+class AutoMergeCase(FinalCase):
+    def passed(self, **kw) -> int:
+        """A final acceptance of b that Codex passed (one suggestion)."""
+        n = self.submit_final(**kw).number
+        code, out = self.note(n, final_report(self.wt["b"], self.base(n), self.x(n),
+                                              [finding("可以更短", severity="suggestion")]))
+        assert code == 0, out
+        return n
+
+    def kinds(self, kind: str) -> list[dict]:
+        return [v for v in store.records(self.db, "item").values() if v.get("kind") == kind]
+
+
+class MergeAutoTest(AutoMergeCase):
+    """Task 3 (acceptance 5) and Task 4 (acceptance 6)."""
+
+    def test_release_merge_and_first_stage(self):
+        n = self.passed()
+        x = self.x(n)
+        code, out = self.cli("merge", "auto", f"C{n}")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("【用户答复】", out)
+        release = self.kinds("auto-release")
+        self.assertEqual(len(release), 1)
+        self.assertEqual((release[0]["review"], release[0]["commit"], release[0]["codex"]["suggestions"]), (n, x, 1))
+        approval = self.kinds("merge-approval")[0]
+        k = next(int(key) for key, v in store.records(self.db, "item").items() if v.get("kind") == "auto-release")
+        self.assertEqual((approval["auto"], approval["closedReason"]), (k, "merged"))
+        self.assertIn(f"自动放行事项 C{k}", approval["answer"]["original"])
+        rec = store.get(self.db, "item", str(n))
+        self.assertEqual((rec["state"], rec["closedReason"]), ("closed", "answered"))
+        self.assertEqual(self.calls("full"), 1)                 # decision 5: no extra check before the merge
+        first = approval["firstStage"]
+        tree = git(self.repo, "rev-parse", f"{approval['mergeCommit']}^{{tree}}").strip()
+        self.assertEqual((first["integrationBranch"], first["mergeCommit"], first["moduleCommit"], first["tree"]),
+                         ("main", approval["mergeCommit"], x, tree))
+        self.assertEqual(first["check"], f"{tree}.full")
+        self.assertEqual(store.get(self.db, "check", first["check"])["by"], "merge-run")
+        self.assertIn("合并第一段完成", out)
+        src = Path(review.__file__).parent
+        self.assertFalse(any(".autopilot" in f.read_text(encoding="utf-8") for f in src.glob("*.py")))
+        self.assertFalse(any(m.get("target") == "acceptance" for m in self.marks()))
+
+    def marks(self):
+        log = self.tmp / "marks.jsonl"
+        return [json.loads(x) for x in log.read_text().splitlines()] if log.exists() else []
+
+    def test_refused_before_codex_passed(self):
+        n = self.submit_final().number
+        before = store.records(self.db, "item")
+        self.assertEqual(self.cli("merge", "auto", f"C{n}")[0], 3)
+        self.assertEqual(store.records(self.db, "item"), before)
+
+    def test_refused_after_a_new_commit(self):
+        n = self.passed()
+        (self.wt["b"] / "src" / "late.py").write_text("X = 1\n")
+        git(self.wt["b"], "add", "-A")
+        git(self.wt["b"], "commit", "-q", "-m", "late")
+        before = store.records(self.db, "item")
+        code, out = self.cli("merge", "auto", f"C{n}")
+        self.assertEqual(code, 3, out)
+        self.assertIn("交审之后又有提交", out)
+        self.assertEqual(store.records(self.db, "item"), before)
+
+    def test_refused_when_the_report_changed(self):
+        n = self.passed()
+        report = Path(store.get(self.db, "item", str(n))["codex"]["report"])
+        doc = json.loads(report.read_text())
+        doc["scope"]["files"] = {"src/b.py": "0" * 64}
+        report.write_text(json.dumps(doc))
+        self.assertEqual(self.cli("merge", "auto", f"C{n}")[0], 3)
+        self.assertEqual(self.kinds("auto-release"), [])
+
+    def test_failed_check_returns_without_first_stage(self):
+        self.switch_on(full=self.counting_script("full", fail_if="src/b.py"))
+        n = self.passed()
+        code, out = self.cli("merge", "auto", f"C{n}")
+        self.assertEqual(code, 5, out)
+        approval = self.kinds("merge-approval")[0]
+        self.assertEqual(approval["closedReason"], "returned")
+        self.assertNotIn("firstStage", approval)
+        self.assertEqual(len(self.kinds("auto-release")), 1)     # the release stays on record
+
+
+class QueueHeadTest(AutoMergeCase):
+    def test_other_head_is_merged_first(self):
+        from helpers import START_MAP
+        doc = json.loads(json.dumps(START_MAP))
+        doc["buildOrderGroups"] = [["a"], ["c"], ["b", "d"], ["e"]]
+        doc["modules"].sort(key=lambda m: "acbde".index(m["id"]))     # the queue follows the order of modules
+        for m in doc["modules"]:
+            m.update(takeover_row(merge="auto") if m["id"] == "b" else takeover_row(source="default"))
+        self.set_map(doc)
+        (self.repo / ".agent" / "config.json").touch()
+        c = self.approve_final("c", 50)
+        n = self.passed()
+        code, out = self.cli("merge", "auto", f"C{n}")
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"C{c}（c）已合入", out)
+        self.assertIn("队列里还有", out)
+        self.assertEqual([r["module"] for _, r in __import__("module_crew.merge", fromlist=["queue"]).queue(self.repo)], ["b"])
 
 
 if __name__ == "__main__":

@@ -987,6 +987,14 @@ def _merge(args) -> int:
         if adopted is not None:
             _DETACHED.update(approval=adopted.approval, code=res.code)
         return res.code
+    if args.action == "auto":              # crew-takeover-merge decision 4
+        res = merge.auto(".", args.number, detach=args.detach)
+        for line in res.lines:
+            print(line)
+        for x in res.sends:
+            print(f"发送 【协调通知】（{x['kind']}）→ {x['to']}，正文文件：{x['path']}")
+            _sent(x['to'])
+        return res.code
     if args.action == "result":            # crew-codex-coordinator decision 6
         got = merge.result(store.open_store(), args.number, args.wait)
         info = got.info or {}
@@ -1488,6 +1496,9 @@ def _main(argv: list[str] | None = None) -> int:
     mr.add_argument("--replace-check", action="store_true")
     mr.add_argument("--detach", action="store_true", help="交给后台运行、立即返回（Codex 用；跑完用 merge result 取结果）")
     mr.add_argument("--detached-child", action="store_true", help=argparse.SUPPRESS)
+    ma = mgs.add_parser("auto", help="自动合：Codex 对最终补丁无阻断后放行、排队并跑一次合并队列（放后台跑）")
+    ma.add_argument("number", type=refs.parse)
+    ma.add_argument("--detach", action="store_true", help="合并交给后台运行、立即返回（Codex 用；跑完用 merge result 取结果）")
     mres = mgs.add_parser("result", help="取 merge run --detach 后台合并的结果与通知（第一次取到时记进状态库）")
     mres.add_argument("number", nargs="?", type=refs.parse)
     mres.add_argument("--wait", type=float, default=0, help="最多等这么多分钟（上限 8）")

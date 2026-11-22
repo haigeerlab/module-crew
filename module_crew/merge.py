@@ -341,6 +341,79 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
     return result
 
 
+def _auto_item(db: store.Store, project: Path, n: int) -> dict:
+    """crew-takeover-merge decision 4.1-4.2: an open final acceptance Codex passed, still at the submitted commit,
+    whose saved report still matches it."""
+    from module_crew import takeover
+    rec = store.get(db, "item", str(n))
+    if rec is None or rec.get("kind") != "review" or rec.get("node") != "final":
+        raise AnswerRefused(f"C{n} 不是最终验收交审")
+    if rec.get("state") != "open":
+        raise AnswerRefused(f"交审事项 C{n} 已关闭（{rec.get('closedReason')}）")
+    if rec.get("reviewer") != "codex":
+        raise AnswerRefused(f"C{n} 不是自动合的最终验收（照今天由用户答复）")
+    codex = rec.get("codex") or {}
+    if codex.get("verdict") != "pass":
+        raise AnswerRefused(f"C{n} 还没有 Codex 无阻断的结论：先 review codex C{n}，再 review codex-note")
+    head = _git(project, "rev-parse", f"refs/heads/{rec['module']}").stdout.strip()
+    if head != rec["commit"]:
+        raise AnswerRefused(f"模块分支 {rec['module']} 在交审之后又有提交（交审时 {rec['commit'][:7]}，现在 {head[:7]}），须重新交审")
+    doc, why = takeover._report(codex.get("report") or "")
+    worktree = Path((store.get(db, "session", rec["from"]) or {}).get("worktree", "/nonexistent"))
+    bad = [why] if doc is None else takeover._final_mismatch(db, rec, doc, worktree)
+    if not bad and (doc.get("scope") or {}).get("fingerprint") != codex.get("fingerprint"):
+        bad = ["记下的审查报告被换过（指纹不同）"]
+    if bad:
+        raise AnswerRefused(f"C{n} 的 Codex 报告和交审提交对不上：" + "；".join(bad) + f"。重跑 review codex C{n}")
+    return rec
+
+
+def auto(project: str | os.PathLike, n: int, detach: bool = False) -> RunResult:
+    """`merge auto C<n>` (crew-takeover-merge decision 4): release a final acceptance Codex passed, queue it and run
+    the merge queue once. The release is not the user's approval: no 【用户答复】 is written."""
+    from module_crew import mergelock
+    project = Path(project)
+    db = store.open_store(project)
+    try:
+        rec = _auto_item(db, project, n)
+    except AnswerRefused as exc:
+        return RunResult(3, [str(exc)])
+    if mergelock.read(db) is not None or mergelock.locked(db):
+        reason, _ = mergelock.guard(db, project)
+        if reason:
+            return RunResult(6, [reason])
+    codex = rec["codex"]
+    with db.transaction(actor="coordinator") as tx:
+        rec = tx.get("item", str(n))
+        k = tx.allocate_number()
+        tx.put("item", str(k), {"state": "closed", "kind": "auto-release", "closedReason": "answered", "review": n,
+                                "module": rec["module"], "commit": rec["commit"], "at": store.now(),
+                                "codex": {x: codex.get(x) for x in ("report", "fingerprint", "rounds", "suggestions")}},
+               action="auto-released")
+        approval = tx.allocate_number()
+        for key, old in sorted(tx.records("item").items(), key=lambda kv: int(kv[0])):
+            if old.get("kind") == "merge-approval" and old.get("state") == "open" and old.get("module") == rec["module"]:
+                tx.put("item", key, dict(old, state="closed", closedReason="superseded", supersededBy=approval),
+                       action="superseded", data={"by": approval})
+        now = store.now()
+        tx.put("item", str(approval), {
+            "state": "open", "kind": "merge-approval", "module": rec["module"], "task": None, "review": n,
+            "specRevisionApproved": bool(rec.get("specRevised")), "commit": rec["commit"], "from": rec["from"],
+            "relayId": rec["relayId"], "auto": k,
+            "answer": {"original": f"自动放行事项 C{k}（Codex 对最终补丁无阻断，不是用户批准）", "answeredAt": now},
+            "closedReason": None, "mergeCommit": None, "revertCommit": None, "resetTo": None, "reason": None,
+            "acceptedBy": None}, action="auto-queued", data={"release": k})
+        tx.put("item", str(n), dict(rec, state="closed", closedReason="answered",
+                                    answer={"original": f"Codex 无阻断，自动放行（事项 C{k}）", "answeredAt": now,
+                                            "approval": approval, "release": k}), action="answered", data={"release": k})
+    head = [f"C{n}（{rec['module']} 的最终验收）Codex 无阻断：记为自动放行事项 C{k}，合并批准 C{approval} 排入合并队列（不是用户批准）"]
+    result = run(project, detach=detach)
+    result.lines = head + result.lines
+    if result.approval is not None and result.approval != approval and result.code in (0, 5):
+        result.lines.append(f"队列里还有 C{approval}（{rec['module']}，自动合）：接着跑 module-crew merge run")
+    return result
+
+
 LOCK_FD_ENV = "MODULE_CREW_MERGE_LOCK_FD"
 LOG_ENV = "MODULE_CREW_MERGE_LOG"
 
@@ -576,8 +649,14 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
                     todo=ENV_TODO if kind == "env" else MODULE_TODO, task=task)
             result.lines.append(f"C{n}（{unit}）已退回（{'检查环境出了问题，模块不用改代码' if kind == 'env' else '模块需要修改'}）：{first}")
         else:
+            if current.get("auto"):         # crew-takeover-merge decision 6: merge stage one done, for autopilot
+                current = dict(current, firstStage=_first_stage(db, cfg, checkout, result.merge_commit, current))
+                tx.put("item", str(n), current, action="first-stage", data=current["firstStage"])
             _close_merged(tx, db, result, n, current, unit)
             result.lines.append(f"C{n}（{unit}）已合入集成分支 {result.merge_commit[:7]}")
+            if current.get("auto"):
+                result.lines.append(f"合并第一段完成（自动合，放行事项 C{current['auto']}）：推 batch 分支、开 PR、"
+                                    "最终验收记录与远端合并归 autopilot（读 module-crew merge first-stage）")
             if scoped is not None:
                 result.lines += changes.land_with_module(tx, scoped, n, result.merge_commit)
             if mark_line:
@@ -600,6 +679,16 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
             from module_crew import start
             result.lines += start.merged_lines(db, project, m)
     return result
+
+
+def _first_stage(db: store.Store, cfg: dict, checkout: Path, merge_commit: str, rec: dict) -> dict:
+    """crew-takeover-merge decision 6: where merge stage one landed and which check-ledger entry ran on it."""
+    from module_crew import checks
+    tree = _git(checkout, "rev-parse", f"{merge_commit}^{{tree}}").stdout.strip()
+    key = checks.key(tree, "full")
+    return {"integrationBranch": cfg.get("integrationBranch"), "mergeCommit": merge_commit,
+            "moduleCommit": rec["commit"], "tree": tree, "check": key if store.get(db, "check", key) else None,
+            "at": store.now()}
 
 
 def _close_merged(tx, db: store.Store, result: RunResult, n: int, rec: dict, unit: str, data: dict | None = None) -> None:
