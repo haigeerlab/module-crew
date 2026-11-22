@@ -22,6 +22,6 @@
 
 - [x] Task 9：「预先声明」以 spec-guard 判定为准——Plan 有没有预先声明改为读 spec-guard（`module_scope.py declared` 或 `/map --json` 的结论），格式错误按「有预先声明、人批」处理，不再自己解析；Plan 因此改回人批时，`review add` 登记行与 `review batch` 写出原因（M1 报告注意 1、11）——测试先红（8 个报错）后绿；`takeover.predeclares` 改为调 interface.json 的 `declaredScope`（在交审 worktree 读，worktree 的 Plan 与交审提交不同也按人批），退出码 0 且四个清单任一非空、退出码 4／2、调用失败超时均人批（读法依 mc-coord #22074、#22076）；交审事项记 `humanReason`，登记行写「Plan 改为人批：…」，`review batch` 写「批准方式：人批（…）」；Spec 决策 1 与变更记录已改（d356484），本模块 39 个通过
 - [x] Task 10：Codex 轮次跨重交累计——「返工后才放行」计数、`review codex` 显示的第几次、审查编号 R-<次>、报告文件名都按模块＋节点累计，与 spec-guard 记的 round 一致；第 2 轮起命令带 `--previous-report <上一轮报告>`（M1 报告注意 2、3）——测试先红后绿；新增 `takeover._history`（同模块同节点、本轮重开之后各交审事项的 Codex 报告，按事项号排），`review codex` 的「第几次」、报告文件名、`--previous-report`，`codex-note` 的 R-<次>、放行记账的 `rounds` 都按它算，`reworked` 因此计入重交后放行；新用例 test_rounds_add_up_across_resubmissions（Plan 与只接管 Spec 两种设置下都跑）；本模块 41 个通过（fed3fc9）
-- [ ] Task 11：`tier restore` 不再要求 `--original(-file)`，无条件输出指引并退出 3（M1 报告注意 4）
+- [x] Task 11：`tier restore` 不再要求 `--original(-file)`，无条件输出指引并退出 3（M1 报告注意 4）——测试先红后绿；`--original`／`--original-file` 改为可选（照收、忽略，不在帮助里列出），在打开状态库之前处理，指引写到标准输出、退出码 3；没有状态库的目录里实测同样退出码 3；本模块 41 个通过（9825088）
 - [ ] Task 12：同步 skill 与文档、`module-crew sync` 后全量测试；用安装版重跑 M1 前由模块协调安排
 - [ ] Checkpoint 6（gate）：返工最终验收
