@@ -88,7 +88,7 @@ class SelectTest(RepoCase):
         self.commit()
         args, lines = self.plan()
         self.assertEqual(args, ["-m", "unittest", "test_docs", "test_glossary", "test_skills"])
-        self.assertTrue(any("文档类改动" in l for l in lines))
+        self.assertIn("  test_docs：文档类改动 README.md 等 2 个文件", lines)
 
     def test_spec_and_tasks_are_skipped(self):
         self.write("spec/m.md")

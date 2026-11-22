@@ -82,6 +82,16 @@ def referencing_tests(root: Path, name: str) -> list[str]:
                   if _references(p.read_text(encoding="utf-8"), name))
 
 
+def _summary(whys: list[str]) -> str:
+    """One reason per kind: a single path is named, several are counted."""
+    kinds: dict[str, list[str]] = {}
+    for why in dict.fromkeys(whys):
+        kind, _, path = why.rpartition(" ")
+        kinds.setdefault(kind, []).append(path)
+    return "；".join(f"{k} {paths[0]}" if len(paths) == 1 else f"{k} {paths[0]} 等 {len(paths)} 个文件"
+                    for k, paths in kinds.items())
+
+
 def select(root: Path, changes: list[tuple[str, str]]) -> tuple[list[str], list[str]]:
     """(test module names, one reason line per pick); raises Fallback when the full check has to run."""
     if not changes:
@@ -109,7 +119,7 @@ def select(root: Path, changes: list[tuple[str, str]]) -> tuple[list[str], list[
                 raise Fallback(f"没有测试文件引用 {path}，对不上号")
             for test in tests:
                 add(test, f"引用了改过的 {path}")
-            add("test_glossary", f"读所有模块的文字，{path} 改了")
+            add("test_glossary", f"读所有模块的文字，改了 {path}")
         elif len(parts) == 2 and parts[0] == "scripts" and parts[1].endswith(".py") \
                 and (root / "tests" / f"test_{parts[1]}").exists():
             add(f"test_{parts[1][:-3]}", f"改了脚本 {path}")
@@ -123,7 +133,7 @@ def select(root: Path, changes: list[tuple[str, str]]) -> tuple[list[str], list[
     missing = [t for t in picks if not (root / "tests" / f"{t}.py").exists()]
     if missing:
         raise Fallback(f"测试文件不存在：{'、'.join(missing)}")
-    reasons = [f"  {t}：{'；'.join(dict.fromkeys(picks[t]))}" for t in sorted(picks)]
+    reasons = [f"  {t}：{_summary(picks[t])}" for t in sorted(picks)]
     if skipped:
         reasons.append(f"  跳过 {len(skipped)} 个 spec/、tasks/ 下的文件（没有测试读取）")
     return sorted(picks), reasons
