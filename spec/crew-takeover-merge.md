@@ -98,6 +98,7 @@ module-crew 不写 spec-guard 的 `--target acceptance` 验收记录，不写 `~
    - 自动合的合并批准被 `merge revoke` 撤销（沿用 `revoked`）。
    Codex 返工超限、Codex 不可用**不降**（交人是正常流程）。同一事项只降一次（`incidentKeys` 去重）。PR 上检查不过、远端被撤回由 autopilot 自己降。
 9. **Codex 不可用、超限一律停**：没有任何路径让 Claude 自己的判断替代 Codex；用户选「这次由用户验收」后，事项记 `reviewer: "human"`、`fallback`（复用 `review codex-fallback`），之后完全照今天的最终验收（`merge approve`／`merge accept`／`review answer`），不再自动合。
+   用户 `merge revoke` 撤销自动合的合并批准时，重新打开的交审事项同样改记 `reviewer: "human"`、`fallback: "revoked"`，之后照今天的最终验收，`merge auto` 不再放行它。
    `merge approve`／`merge accept` 对 `reviewer: "codex"` 且没有 `fallback` 的最终验收拒绝（退出码 3，提示「这一项是自动合，先 review codex；Codex 不可用时照草稿问用户」）。
 10. **显示与模块会话的提示**：
     - `review list`／`review show`：自动合的最终验收写「最终验收（自动合）：Codex 审查中／返工第 k 轮／Codex 无阻断，待 merge auto／已放行 C<k>」。
@@ -210,3 +211,4 @@ PYTHONPATH=tests python3 -m unittest test_takeover_merge
 - 2026-11-21：「并行边界」改成每个文件写完整的仓库相对路径（`module_crew/review.py` 等，照 `spec/crew-autonomy-tier.md` 的写法），`docs/` 两个文档与 README 从「公共」移到「共享」并写全路径；内容范围不变。原因：`module-crew review batch` 对简写路径报 bad-path、spec-guard 读不了；来源：mc-coord 2026-11-21 提醒（#21930），随 Plan 交审一并复审。
 - 2026-11-21：「并行边界」去掉「共享：」一行，共享文件清单与 `interface.json` 的说明挪到紧跟其后的新节「并行说明」（照 `spec/crew-autonomy-tier.md`）；「公共」行只留类别「测试资源」；内容范围不变。原因：spec-guard verify-artifacts 只认「独占」「公共」两种行，「共享」行与带说明的公共行判为 unknown-line；来源：用户 2026-11-21 在 mc-coord 会话答复「批草案并改边界」（mc-coord 转达 #21947），随最终验收附 Spec 差异一并复审。
 - 2026-11-22（Checkpoint 0，按真实接口改）：spec-guard 0.91.x 的最终验收记录（`review_mark --target acceptance --state codex-approved`）要读 autopilot 编排写的 `~/.autopilot/evidence/<owner>__<repo>/<HEAD>.json`（只认 `runner: autopilot-orchestrator`），本地合入时没有 PR 也没有这份证据，原决策 7「合入后写验收标记」做不成。改为：module-crew 只放行并完成合并第一段，凭 Codex 审最终补丁无阻断且绑定 X；非作者检查就是合并队列那次完整检查（去掉原决策 5「合并前在模块 worktree 另跑」，原未决 1 随之消失）；合入后记 `firstStage`；给 autopilot 的读接口由 `check evidence` 改为 `merge first-stage`（`interface.json` 节名 `firstStage`）；最终验收记录、编排证据、推送、PR、远端合并归 autopilot。改了目标、范围、上游依赖、假设 1～4、7，决策 3～10，接口约定，AC5～AC12，边界，未决问题，文档建议。来源：autopr-design #22045、#22050（经 mc-coord #22049、#22052 告知；module-crew 不调 autopilot 的回绝照旧），spec-guard 0.91.3 `interface.json` 与 `spec/codex-final-acceptance.md`；停在 Checkpoint 0 交用户复审。
+- 2026-11-22（构建中，Task 5）：决策 9 补一句：撤销自动合的合并批准后，重新打开的交审事项改由用户验收（`fallback: "revoked"`），`merge auto` 不再放行。原因：撤销会重新打开交审事项，它仍带 Codex 无阻断的结论，不改就可能被再次自动合进去、绕过用户的撤销；取更保守的一侧。来源：构建中发现，随最终验收附 Spec 差异复审。
