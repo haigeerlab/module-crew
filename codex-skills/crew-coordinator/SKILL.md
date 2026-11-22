@@ -258,14 +258,19 @@ module-crew change accept <编号> --original-file <用户原话文件>     # �
   `module-crew tier` 看项目档位和每个在用模块的「批准方式：Spec …、Plan …、合并 …」；`status` 只在有接管时多一段。
 - **设或改档位要用户原话**：先 `module-crew tier --preflight`（spec-guard 0.91.0、delegate 接口 1.5；退出码 3 就把原因告诉用户、不写）；通过后引用用户原话，在集成 checkout 用 `/spec-guard:config` 写，写完把 `.agent/config.json` 单独提交。
   放宽也一样要原话、一次升一档（`tier restore` 已退役，只给指引）。
-- **能力图永远人批**；spec-guard 判为重要需求的 Spec、Plan 有「预先声明」时，不管勾选都由用户批（批准方式里写原因）；有没有预先声明以 spec-guard 的 `declaredScope` 为准，格式错误或读不到也算有，交审登记行与批量交审会写「人批（原因）」。最终验收照旧要用户的答复。
+- **能力图永远人批**；spec-guard 判为重要需求的 Spec、Plan 有「预先声明」时，不管勾选都由用户批（批准方式里写原因）；有没有预先声明以 spec-guard 的 `declaredScope` 为准，格式错误或读不到也算有，交审登记行与批量交审会写「人批（原因）」。最终验收照旧要用户的答复，勾了「合并：自动」的模块除外（见下面「自动合」）。
 - **Codex 放行的节点**（交审登记时写「Codex 放行：下一步 review codex C<n>」，不进给用户的批次）：
   1. `module-crew review codex C<n>` 给出这一轮的 `/delegate:review --backend codex …` 命令（轮次按模块＋节点累计，返工重交后不从 1 数；第 2 轮起自动带 `--previous-report`），照它在本会话跑，把标准输出的 JSON 原样存到它给的文件；
   2. `module-crew review codex-note C<n> --report <文件>`，按退出码：`0` 已发返工通知（照输出 `bridge_send`）或已放行（Spec、Plan 都批了发开工通知，只放了一个节点发「放行」类【协调通知】）；
      `3` 报告和交审对不上，重跑第 1 步；`4` 落地失败，原因照抄给用户；`5` Codex 没跑成或两轮返工后仍有阻断：输出末尾是一份【等待用户】草稿，自检后照现有规则交给用户。
   3. **Codex 不可用就停下等用户，绝不自己审、不换后端。** 用户选「这一项改由我批」时，先 `module-crew review codex-fallback C<n> --original-file <原话文件>`，之后照人批流程 `review approve`／`review answer`。
   - Codex 放行记成单独的 `codex-approval`，对用户一律说「Codex 放行」，不说成用户批准，也不发【用户答复】。
-- **出事自动收窄**：输出里出现「接管档位已收窄（…）」（合并因模块原因退回、撤销合并批准、返工满 3 次、基线新跑出失败，或外部程序用 `module-crew tier degrade --reason … --ref …` 报来的外部信号）就马上告诉用户。
+- **自动合（合并第一段，crew-takeover-merge）**：模块的合并一项是「自动合」、项目开着检查记账、Spec 与 Plan 都已批准时，最终验收交审登记写「自动合：下一步 review codex C<n>」，不进给用户的批次（缺条件时登记行写原因，照人合）。
+  1. `review codex C<n>` 给出按提交范围（集成分支合并基点 → 交审提交）审最终补丁的命令，照跑、存报告，再 `review codex-note C<n> --report <文件>`：有阻断照返工处理（最多 2 轮），没跑成或超限按退出码 5 的草稿问用户（用户选由自己验收后 `review codex-fallback`，之后照今天 `merge approve`／`merge accept`／`review answer`）；
+  2. 没有阻断时输出「下一步：module-crew merge auto C<n>」：**不问用户**，用 Bash 后台跑（Codex 模块协调加 `--detach`，跑完 `merge result`）。它放行（记自动放行事项，不是用户批准，不发【用户答复】）、排进合并队列并跑一次 `merge run`，完整检查照跑；之后照 `merge run` 的退出码处理收尾、同步与退回通知；输出说「队列里还有」时接着 `merge run`。
+  3. 合入后只记「合并第一段完成」：**推 batch 分支、开 PR、spec-guard 的最终验收记录与远端合并都归 autopilot**，它读 `module-crew merge first-stage --json`；module-crew 不调 autopilot、不写 `~/.autopilot/`。`merge push` 照旧要用户原话。
+  4. 对用户说「Codex 无阻断，自动合并第一段」，不说成用户批准；用户撤销自动合的合并批准后，那份最终验收改由用户验收，不再 `merge auto`。
+- **出事自动收窄**：输出里出现「接管档位已收窄（…）」（合并因模块原因退回（含自动合）、撤销合并批准、返工满 3 次、基线新跑出失败，或外部程序用 `module-crew tier degrade --reason … --ref …` 报来的外部信号）就马上告诉用户。
   module-crew 调 spec-guard 的只许收窄入口，按「合并 → Plan → Spec」一次一格，并已在集成分支单独提交 `.agent/config.json`；出现「没能收窄」时照原文告诉用户，由用户决定。
 - **autonomyTier 已退役**：旧值不映射、不再生效（`tier`、`status` 会提示）。它原来顺带打开的三项各自独立：评审节奏照 spec-guard 的 `reviewCadence`（Spec、Plan 批准人不同的模块自动按 separate）；声明范围只认 `config set --declared-scope`；
   收尾汇总是新开关 `config set --digest on|off`（要用户原话）——打开时同步通知、快检查与检查账、不经队列的提交、提前落地这几类不逐条告诉用户，**给用户发批量交审、最终验收，或 `merge cleanup` 本批收尾时**，先 `module-crew tier digest`，把正文写进那条消息，再 `module-crew tier digest --mark-told`（只是记账）；

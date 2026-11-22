@@ -377,6 +377,13 @@ def fix_task(db: store.Store, project: Path, cfg: dict, checkout: Path, entry: d
             "照轻任务流程派出；告诉用户一次，不用各模块另记"]
 
 
+def non_author(entry: dict | None, author: str | None) -> bool:
+    """crew-takeover-merge assumption 4: a full check that passed, ran itself (not inherited), not by the module's
+    own session."""
+    return bool(entry) and entry.get("kind") == "full" and entry.get("result") == "pass" \
+        and not entry.get("inheritedFrom") and entry.get("by") != author
+
+
 def attach(db: store.Store, worktree: Path, commit: str) -> dict | None:
     """Decision 10: the ledger entries of a final acceptance's tree, kept on the review item (None with the switch off)."""
     cfg = store.get(db, "config", "main") or {}

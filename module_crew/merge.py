@@ -8,6 +8,7 @@ goes to a new remote branch and a PR the user merges.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import shlex
@@ -49,6 +50,9 @@ def _approve_one(tx, db: store.Store, review_no: int, original: str) -> Approved
         raise AnswerRefused(f"没有交审事项 C{review_no}")
     if rec.get("node") != "final":
         raise AnswerRefused(f"交审事项 C{review_no} 不是最终验收（Spec／Plan 用 review approve）")
+    if rec.get("reviewer") == "codex":   # crew-takeover-merge decision 9
+        raise AnswerRefused(f"交审事项 C{review_no} 是自动合：先 review codex C{review_no}；Codex 不可用或超限时照草稿问用户，"
+                            f"用户选了由自己验收后 review codex-fallback，再用这个命令")
     if rec.get("state") not in ("open", "accepted"):     # crew-final-accept-split: an accepted item is authorized here
         raise AnswerRefused(f"交审事项 C{review_no} 已关闭（{rec.get('closedReason')}）")
     acceptance = rec.get("acceptance") if rec.get("state") == "accepted" else None
@@ -96,6 +100,9 @@ def _accept_one(tx, db: store.Store, review_no: int, original: str) -> Reply:
         raise AnswerRefused(f"没有交审事项 C{review_no}")
     if rec.get("node") != "final":
         raise AnswerRefused(f"交审事项 C{review_no} 不是最终验收（Spec／Plan 用 review approve）")
+    if rec.get("reviewer") == "codex":   # crew-takeover-merge decision 9
+        raise AnswerRefused(f"交审事项 C{review_no} 是自动合：先 review codex C{review_no}；Codex 不可用或超限时照草稿问用户，"
+                            f"用户选了由自己验收后 review codex-fallback，再用这个命令")
     if rec.get("state") == "accepted":
         raise AnswerRefused(f"交审事项 C{review_no} 已接受验收：用户补授权合并时用 merge approve")
     if rec.get("state") != "open":
@@ -177,13 +184,17 @@ def revoke(db: store.Store, approval: int, original: str) -> Revoked:
                  if v.get("kind") == "review" and v.get("module") == review["module"] and v.get("node") == review["node"]
                  and int(k) > int(rec["review"])]
         if not newer:
-            tx.put("item", str(rec["review"]), dict(review, state="open", closedReason=None, answer=None), action="reopened",
-                   data={"revokedApproval": approval})
+            back = dict(review, state="open", closedReason=None, answer=None)
+            if rec.get("auto"):         # crew-takeover-merge: the user stepped in, merge auto must not release it again
+                back = {k: v for k, v in back.items() if k not in ("sentTo", "sentAt")}
+                back.update(reviewer="human", fallback="revoked")
+            tx.put("item", str(rec["review"]), back, action="reopened", data={"revokedApproval": approval})
         body = tx.allocate_number()
         meta = tx.write_body(body, protocol.render_coordination_notice(
             "approval-revoked", f"C{approval}（用户撤回批准 C{record}；交审 C{rec['review']}）", REVOKE_TODO))
     from module_crew import autonomy
-    line = autonomy.incident(db, autonomy.project_of(db), "revoked", str(approval), f"C{approval}，{rec['module']}",
+    line = autonomy.incident(db, autonomy.project_of(db), "revoked", str(approval),
+                              f"C{approval}，{rec['module']}" + ("，自动合" if rec.get("auto") else ""),
                               module=rec.get("module"))
     return Revoked(rec["from"], None, body, db.path / meta["path"], superseded_by=max(newer) if newer else None,
                    tier_line=line)
@@ -339,6 +350,90 @@ def run(project: str | os.PathLike, check_command: str | None = None, replace: b
     if note:
         result.lines.insert(0, note)
     return result
+
+
+def _auto_item(db: store.Store, project: Path, n: int) -> dict:
+    """crew-takeover-merge decision 4.1-4.2: an open final acceptance Codex passed, still at the submitted commit,
+    whose saved report still matches it."""
+    from module_crew import takeover
+    rec = store.get(db, "item", str(n))
+    if rec is None or rec.get("kind") != "review" or rec.get("node") != "final":
+        raise AnswerRefused(f"C{n} 不是最终验收交审")
+    if rec.get("state") != "open":
+        raise AnswerRefused(f"交审事项 C{n} 已关闭（{rec.get('closedReason')}）")
+    if rec.get("reviewer") != "codex":
+        raise AnswerRefused(f"C{n} 不是自动合的最终验收（照今天由用户验收）")
+    codex = rec.get("codex") or {}
+    if codex.get("verdict") != "pass":
+        raise AnswerRefused(f"C{n} 还没有 Codex 无阻断的结论：先 review codex C{n}，再 review codex-note")
+    head = _git(project, "rev-parse", f"refs/heads/{rec['module']}").stdout.strip()
+    if head != rec["commit"]:
+        raise AnswerRefused(f"模块分支 {rec['module']} 在交审之后又有提交（交审时 {rec['commit'][:7]}，现在 {head[:7]}），须重新交审")
+    doc, why = takeover._report(codex.get("report") or "")
+    worktree = Path((store.get(db, "session", rec["from"]) or {}).get("worktree", "/nonexistent"))
+    bad = [why] if doc is None else takeover._final_mismatch(db, rec, doc, worktree)
+    if not bad and (doc.get("scope") or {}).get("fingerprint") != codex.get("fingerprint"):
+        bad = ["记下的审查报告被换过（指纹不同）"]
+    if bad:
+        raise AnswerRefused(f"C{n} 的 Codex 报告和交审提交对不上：" + "；".join(bad) + f"。重跑 review codex C{n}")
+    return rec
+
+
+def auto(project: str | os.PathLike, n: int, detach: bool = False) -> RunResult:
+    """`merge auto C<n>` (crew-takeover-merge decision 4): release a final acceptance Codex passed, queue it and run
+    the merge queue once. The release is not the user's approval: no 【用户答复】 is written."""
+    from module_crew import mergelock
+    project = Path(project)
+    db = store.open_store(project)
+    try:
+        rec = _auto_item(db, project, n)
+    except AnswerRefused as exc:
+        return RunResult(3, [str(exc)])
+    if mergelock.read(db) is not None or mergelock.locked(db):
+        reason, _ = mergelock.guard(db, project)
+        if reason:
+            return RunResult(6, [reason])
+    codex = rec["codex"]
+    try:
+        with db.transaction(actor="coordinator") as tx:
+            rec = tx.get("item", str(n))
+            if rec.get("state") != "open" or rec.get("codex") != codex:    # another merge auto got here first
+                raise AnswerRefused(f"C{n} 已被处理（{rec.get('closedReason') or '结论变了'}），没有重复放行")
+            k, approval = _release(tx, n, rec, codex)
+    except AnswerRefused as exc:
+        return RunResult(3, [str(exc)])
+    head = [f"C{n}（{rec['module']} 的最终验收）Codex 无阻断：记为自动放行事项 C{k}，合并批准 C{approval} 排入合并队列（不是用户批准）"]
+    result = run(project, detach=detach)
+    result.lines = head + result.lines
+    if result.approval is not None and result.approval != approval and result.code in (0, 5):
+        result.lines.append(f"队列里还有 C{approval}（{rec['module']}，自动合）：接着跑 module-crew merge run")
+    return result
+
+
+def _release(tx, n: int, rec: dict, codex: dict) -> tuple[int, int]:
+    """crew-takeover-merge decision 4.3: the auto-release record, its merge approval, the review closed."""
+    k = tx.allocate_number()
+    tx.put("item", str(k), {"state": "closed", "kind": "auto-release", "closedReason": "answered", "review": n,
+                            "module": rec["module"], "commit": rec["commit"], "at": store.now(),
+                            "codex": {x: codex.get(x) for x in ("report", "fingerprint", "rounds", "suggestions")}},
+           action="auto-released")
+    approval = tx.allocate_number()
+    for key, old in sorted(tx.records("item").items(), key=lambda kv: int(kv[0])):
+        if old.get("kind") == "merge-approval" and old.get("state") == "open" and old.get("module") == rec["module"]:
+            tx.put("item", key, dict(old, state="closed", closedReason="superseded", supersededBy=approval),
+                   action="superseded", data={"by": approval})
+    now = store.now()
+    tx.put("item", str(approval), {
+        "state": "open", "kind": "merge-approval", "module": rec["module"], "task": None, "review": n,
+        "specRevisionApproved": bool(rec.get("specRevised")), "commit": rec["commit"], "from": rec["from"],
+        "relayId": rec["relayId"], "auto": k,
+        "answer": {"original": f"自动放行事项 C{k}（Codex 对最终补丁无阻断，不是用户批准）", "answeredAt": now},
+        "closedReason": None, "mergeCommit": None, "revertCommit": None, "resetTo": None, "reason": None,
+        "acceptedBy": None}, action="auto-queued", data={"release": k})
+    tx.put("item", str(n), dict(rec, state="closed", closedReason="answered",
+                                answer={"original": f"Codex 无阻断，自动放行（事项 C{k}）", "answeredAt": now,
+                                        "approval": approval, "release": k}), action="answered", data={"release": k})
+    return k, approval
 
 
 LOCK_FD_ENV = "MODULE_CREW_MERGE_LOCK_FD"
@@ -576,8 +671,14 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
                     todo=ENV_TODO if kind == "env" else MODULE_TODO, task=task)
             result.lines.append(f"C{n}（{unit}）已退回（{'检查环境出了问题，模块不用改代码' if kind == 'env' else '模块需要修改'}）：{first}")
         else:
+            if current.get("auto"):         # crew-takeover-merge decision 6: merge stage one done, for autopilot
+                current = dict(current, firstStage=_first_stage(db, cfg, checkout, result.merge_commit, current))
+                tx.put("item", str(n), current, action="first-stage", data=current["firstStage"])
             _close_merged(tx, db, result, n, current, unit)
             result.lines.append(f"C{n}（{unit}）已合入集成分支 {result.merge_commit[:7]}")
+            if current.get("auto"):
+                result.lines.append(f"合并第一段完成（自动合，放行事项 C{current['auto']}）：推 batch 分支、开 PR、"
+                                    "最终验收记录与远端合并归 autopilot（读 module-crew merge first-stage）")
             if scoped is not None:
                 result.lines += changes.land_with_module(tx, scoped, n, result.merge_commit)
             if mark_line:
@@ -587,7 +688,8 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
             result.lines += tick_hooks
     if reason and kind == "module":          # crew-autonomy-tier decision 8, after the merge is recorded
         from module_crew import autonomy
-        line = autonomy.incident(db, project, "merge-returned", str(n), f"C{n}，{unit}",
+        line = autonomy.incident(db, project, "auto-merge-returned" if rec.get("auto") else "merge-returned", str(n),
+                                 f"C{n}，{unit}",
                                  module=None if task else rec["module"])
         result.lines += [line] if line else []
     if task:
@@ -600,6 +702,73 @@ def _run(project: Path, check_command: str | None, replace: bool, holder: dict) 
             from module_crew import start
             result.lines += start.merged_lines(db, project, m)
     return result
+
+
+def _first_stage(db: store.Store, cfg: dict, checkout: Path, merge_commit: str, rec: dict) -> dict:
+    """crew-takeover-merge decision 6: where merge stage one landed and which check-ledger entry ran on it."""
+    from module_crew import checks
+    tree = _git(checkout, "rev-parse", f"{merge_commit}^{{tree}}").stdout.strip()
+    key = checks.key(tree, "full")
+    return {"integrationBranch": cfg.get("integrationBranch"), "mergeCommit": merge_commit,
+            "moduleCommit": rec["commit"], "tree": tree, "check": key if store.get(db, "check", key) else None,
+            "at": store.now()}
+
+
+def _repo_name(url: str) -> str | None:
+    """owner/name from a git remote URL (scp-like or URL form); None when it does not look like one."""
+    import re
+    got = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?/?$", url.strip())
+    return f"{got.group(1)}/{got.group(2)}" if got and url.strip() else None
+
+
+def first_stage(project: str | os.PathLike) -> dict:
+    """`merge first-stage --json` (crew-takeover-merge decision 7, fields agreed with autopr-design #22079):
+    merges in the integration branch not yet in any `merge push` record, with their release and check evidence."""
+    from module_crew import checks
+    project = Path(project)
+    db = store.open_store(project)
+    cfg = store.get(db, "config", "main") or {}
+    remote = cfg.get("remote") or "origin"
+    integration = cfg.get("integrationBranch")
+    url = _git(project, "remote", "get-url", remote)
+    base = _pr_base(project, cfg, remote, integration, None)[0] if integration and url.returncode == 0 else None
+    items = store.records(db, "item")
+    pushes = [v for _, v in sorted(items.items(), key=lambda kv: int(kv[0])) if v.get("kind") == "push"]
+    pushed = {c for v in pushes for c in v.get("mergeCommits") or []}
+    # like push-plan (T380): merges the remote PR base already contains are not "not yet pushed", record or not
+    tracking = f"refs/remotes/{remote}/{base}" if base else None
+    in_span = (set(_git(project, "rev-list", f"refs/heads/{integration}", f"^{tracking}").stdout.split())
+               if tracking and _git(project, "rev-parse", "--verify", "--quiet", tracking).returncode == 0 else None)
+    order = {c: i for i, c in enumerate(_git(project, "rev-list", "--reverse", "--first-parent",
+                                             f"refs/heads/{integration}").stdout.split())} if integration else {}
+    merges = []
+    for key, v in sorted(items.items(), key=lambda kv: (order.get(kv[1].get("mergeCommit"), len(order)), int(kv[0]))):
+        if v.get("kind") != "merge-approval" or v.get("closedReason") != "merged" or v.get("mergeCommit") in pushed:
+            continue
+        if in_span is not None and v.get("mergeCommit") not in in_span:
+            continue
+        tree = _git(project, "rev-parse", f"{v['mergeCommit']}^{{tree}}").stdout.strip()
+        entry = store.get(db, "check", checks.key(tree, "full")) if tree else None
+        release = items.get(str(v["auto"])) if v.get("auto") else None
+        report = (release or {}).get("codex", {}).get("report")
+        try:
+            digest = hashlib.sha256(Path(report).read_bytes()).hexdigest() if report else None
+        except OSError:
+            digest = None
+        author = v.get("from")          # the module's own session wrote the code
+        merges.append({
+            "approval": int(key), "module": v.get("module") or f"T{v.get('task')}", "moduleCommit": v.get("commit"),
+            "mergeCommit": v["mergeCommit"], "tree": tree, "auto": bool(v.get("auto")),
+            "release": None if release is None else {"item": int(v["auto"]), "report": report, "reportSha256": digest,
+                                                     **{x: release["codex"].get(x) for x in ("fingerprint", "rounds", "suggestions")}},
+            "check": None if entry is None else {
+                "key": checks.key(tree, "full"), "result": entry.get("result"), "by": entry.get("by"),
+                "nonAuthor": checks.non_author(entry, author), "command": entry.get("command"),
+                "exitCode": entry.get("exitCode"), "startedAt": entry.get("startedAt"), "seconds": entry.get("seconds")}})
+    head = _git(project, "rev-parse", f"refs/heads/{integration}").stdout.strip() if integration else ""
+    return {"schemaVersion": 1, "repo": _repo_name(url.stdout) if url.returncode == 0 else None,
+            "integrationBranch": integration, "baseBranch": base, "head": head or None,
+            "pushedUpTo": (pushes[-1].get("mergeCommits") or [None])[-1] if pushes else None, "merges": merges}
 
 
 def _close_merged(tx, db: store.Store, result: RunResult, n: int, rec: dict, unit: str, data: dict | None = None) -> None:

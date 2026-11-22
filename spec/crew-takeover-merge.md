@@ -85,19 +85,24 @@ module-crew 不写 spec-guard 的 `--target acceptance` 验收记录，不写 `~
    检查失败、冲突照今天退回、不记 `firstStage`。
 7. **给 autopilot 的读接口 `merge first-stage [--json]`**（只读，任何会话可跑）：
    ```json
-   {"schemaVersion": 1, "integrationBranch": "main", "head": "<集成分支顶端 40 位>", "pushedUpTo": "<最近一次 push 记录的提交或 null>",
+   {"schemaVersion": 1, "repo": "<owner/name，取自远端地址>", "integrationBranch": "main", "baseBranch": "<PR 要合进的远端分支或 null>",
+    "head": "<集成分支顶端 40 位>", "pushedUpTo": "<最近一次 push 记录里最新的合并提交或 null>",
     "merges": [{"approval": 123, "module": "x", "moduleCommit": "<X>", "mergeCommit": "...", "tree": "...", "auto": true,
-                "release": {"item": 124, "report": "<路径>", "fingerprint": "...", "rounds": 1, "suggestions": 2},
+                "release": {"item": 124, "report": "<路径>", "reportSha256": "...", "fingerprint": "...", "rounds": 1, "suggestions": 2},
                 "check": {"key": "<树>.full", "result": "pass", "by": "merge-run", "nonAuthor": true, "command": "...",
                           "exitCode": 0, "startedAt": "...", "seconds": 812}}]}
    ```
-   `merges` 列出集成分支上 `pushedUpTo` 之后完成合并第一段的合并（人合的也列，`auto: false`、`release: null`），按合并顺序。退出码：`0` 有记录（含空列表）、`2` 参数错或不在 module-crew 项目里。
+   `merges` 列出已合入、还没进任何 `merge push` 记录、且远端 PR 目标分支还不包含的合并（同 `merge push-plan` 的 T380 口径）（人合的也列，`auto: false`、`release: null`），按合并顺序；`pushedUpTo` 只作参考。
+   `repo` 从运行配置 `remote`（默认 `origin`）的地址解析 owner/name，解析不出为 null；`baseBranch` 照 `merge push-plan` 取 PR 目标的规则（配置 `prBase` → 远端有跟踪的集成分支 → 远端默认分支），取不到为 null；
+   `reportSha256` 是报告文件当前内容的 sha256，autopilot 读报告前先核对。退出码：`0` 有记录（含空列表）、`2` 参数错或不在 module-crew 项目里。
+   这条命令只读，任何会话（含 autopilot）都可以跑，不要求是登记的模块协调；`merge auto` 仍只限模块协调。
    `interface.json` 新增 `firstStage` 一节（命令、`schemaVersion`、字段说明、退出码），`interface` 升到 `1.1`。**字段是提案**：Checkpoint 3 经模块协调与 autopr-design 对一次，按对方要的改，变更记录写明。
 8. **出事收窄**：自动合的事项在下列情况调 `autonomy.incident`（已改为调 spec-guard 收窄入口，按「合并 → Plan → Spec」降一格），原因写明是自动合并：
    - 自动合的合并批准在 `merge run` 里被退回、且是「模块需要修改」（`kind: auto-merge-returned`，取代原来的 `merge-returned`，不重复降）；环境问题、提交钩子拒绝不降（同今天）；
    - 自动合的合并批准被 `merge revoke` 撤销（沿用 `revoked`）。
    Codex 返工超限、Codex 不可用**不降**（交人是正常流程）。同一事项只降一次（`incidentKeys` 去重）。PR 上检查不过、远端被撤回由 autopilot 自己降。
 9. **Codex 不可用、超限一律停**：没有任何路径让 Claude 自己的判断替代 Codex；用户选「这次由用户验收」后，事项记 `reviewer: "human"`、`fallback`（复用 `review codex-fallback`），之后完全照今天的最终验收（`merge approve`／`merge accept`／`review answer`），不再自动合。
+   用户 `merge revoke` 撤销自动合的合并批准时，重新打开的交审事项同样改记 `reviewer: "human"`、`fallback: "revoked"`，之后照今天的最终验收，`merge auto` 不再放行它。
    `merge approve`／`merge accept` 对 `reviewer: "codex"` 且没有 `fallback` 的最终验收拒绝（退出码 3，提示「这一项是自动合，先 review codex；Codex 不可用时照草稿问用户」）。
 10. **显示与模块会话的提示**：
     - `review list`／`review show`：自动合的最终验收写「最终验收（自动合）：Codex 审查中／返工第 k 轮／Codex 无阻断，待 merge auto／已放行 C<k>」。
@@ -199,7 +204,7 @@ PYTHONPATH=tests python3 -m unittest test_takeover_merge
 ## 未决问题
 
 1. `merge first-stage` 的字段：Checkpoint 3 经模块协调与 autopr-design 对（决策 7）。
-2. （要用户定）合并前要不要在模块 worktree 另跑一次非作者完整检查（原决策 5）：推荐**不跑**（决策 5 的理由）；若要留作 module-crew 自己的双保险，代价是自动合每次多跑一次完整检查。
+2. ~~合并前要不要在模块 worktree 另跑一次非作者完整检查~~：已定不另跑（用户 2026-11-22「C640 A；不另跑」）。
 
 ## 文档建议
 
@@ -210,3 +215,7 @@ PYTHONPATH=tests python3 -m unittest test_takeover_merge
 - 2026-11-21：「并行边界」改成每个文件写完整的仓库相对路径（`module_crew/review.py` 等，照 `spec/crew-autonomy-tier.md` 的写法），`docs/` 两个文档与 README 从「公共」移到「共享」并写全路径；内容范围不变。原因：`module-crew review batch` 对简写路径报 bad-path、spec-guard 读不了；来源：mc-coord 2026-11-21 提醒（#21930），随 Plan 交审一并复审。
 - 2026-11-21：「并行边界」去掉「共享：」一行，共享文件清单与 `interface.json` 的说明挪到紧跟其后的新节「并行说明」（照 `spec/crew-autonomy-tier.md`）；「公共」行只留类别「测试资源」；内容范围不变。原因：spec-guard verify-artifacts 只认「独占」「公共」两种行，「共享」行与带说明的公共行判为 unknown-line；来源：用户 2026-11-21 在 mc-coord 会话答复「批草案并改边界」（mc-coord 转达 #21947），随最终验收附 Spec 差异一并复审。
 - 2026-11-22（Checkpoint 0，按真实接口改）：spec-guard 0.91.x 的最终验收记录（`review_mark --target acceptance --state codex-approved`）要读 autopilot 编排写的 `~/.autopilot/evidence/<owner>__<repo>/<HEAD>.json`（只认 `runner: autopilot-orchestrator`），本地合入时没有 PR 也没有这份证据，原决策 7「合入后写验收标记」做不成。改为：module-crew 只放行并完成合并第一段，凭 Codex 审最终补丁无阻断且绑定 X；非作者检查就是合并队列那次完整检查（去掉原决策 5「合并前在模块 worktree 另跑」，原未决 1 随之消失）；合入后记 `firstStage`；给 autopilot 的读接口由 `check evidence` 改为 `merge first-stage`（`interface.json` 节名 `firstStage`）；最终验收记录、编排证据、推送、PR、远端合并归 autopilot。改了目标、范围、上游依赖、假设 1～4、7，决策 3～10，接口约定，AC5～AC12，边界，未决问题，文档建议。来源：autopr-design #22045、#22050（经 mc-coord #22049、#22052 告知；module-crew 不调 autopilot 的回绝照旧），spec-guard 0.91.3 `interface.json` 与 `spec/codex-final-acceptance.md`；停在 Checkpoint 0 交用户复审。
+- 2026-11-22（构建中，Task 5）：决策 9 补一句：撤销自动合的合并批准后，重新打开的交审事项改由用户验收（`fallback: "revoked"`），`merge auto` 不再放行。原因：撤销会重新打开交审事项，它仍带 Codex 无阻断的结论，不改就可能被再次自动合进去、绕过用户的撤销；取更保守的一侧。来源：构建中发现，随最终验收附 Spec 差异复审。
+- 2026-11-22（Checkpoint 3，与 autopr-design 对字段）：决策 7 的 JSON 加顶层 `repo`、`baseBranch` 与 `release.reportSha256`，其余字段名不变；`merges` 的口径写明为「已合入、还没进任何 merge push 记录」，`pushedUpTo` 只作参考。来源：autopr-design #22079（经 mc-coord #22080 转达，不是用户答复）；随最终验收附 Spec 差异复审。
+- 2026-11-22（构建中）：未决问题 2 标为已定「不另跑」。来源：用户 2026-11-22「C640 A；不另跑」（mc-coord 转达 #22061）。
+- 2026-11-22（构建中，Task 8 本机实测）：决策 7 补两处。① `merge first-stage` 列入任何会话可跑的只读命令（原实现被当成模块协调专用、别的会话跑退出码 7，与「只读，任何会话可跑」不符）；② `merges` 再排除远端 PR 目标分支已包含的合并（真实项目上早年推送的记录没有 `mergeCommits`，原口径把 36 个早已在远端的合并当成没推送）。来源：本机实测发现，随最终验收附 Spec 差异复审。
