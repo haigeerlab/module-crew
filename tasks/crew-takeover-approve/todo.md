@@ -17,3 +17,11 @@
 - [x] Task 8：skill、README、`module-crew sync` 后全量测试、本机实测（Spec 验收 12、13、1）——四份 skill 的档位一节改为接管档位，README 中英、docs/guide.md、docs/commands.md、docs/architecture.md 同步；sync 后集成分支仍是 b671c6f；第一次全量 1334 个中 2 个失败（文档里的旧称「用户答复」「协调会话」、interface.json 的 contract 仍是 2.8），修后（6a1e326）全量 1334 个全过（1774 秒）；本机实测：spec-guard 0.91.1 上 `tier --preflight` 退出码 0、`tier --json` 读到项目 none 与两个在用模块全人批；真跑一次 Codex `/delegate:review`（审本模块 Spec），报告字段与 `codex-note` 的读法一致、`scope.files` 的 sha256 等于已提交文件
 - [x] Checkpoint 5（gate）：最终验收
 - [x] 回告：经模块协调转告 ecosystem-lead 与 autopr-design（已发：ecosystem-lead #22043、autopr-design #22044，2026-11-22）
+
+## 返工：M1 停点不通过（2026-11-22）
+
+- [ ] Task 9：「预先声明」以 spec-guard 判定为准——Plan 有没有预先声明改为读 spec-guard（`module_scope.py declared` 或 `/map --json` 的结论），格式错误按「有预先声明、人批」处理，不再自己解析；Plan 因此改回人批时，`review add` 登记行与 `review batch` 写出原因（M1 报告注意 1、11）
+- [ ] Task 10：Codex 轮次跨重交累计——「返工后才放行」计数、`review codex` 显示的第几次、审查编号 R-<次>、报告文件名都按模块＋节点累计，与 spec-guard 记的 round 一致；第 2 轮起命令带 `--previous-report <上一轮报告>`（M1 报告注意 2、3）
+- [ ] Task 11：`tier restore` 不再要求 `--original(-file)`，无条件输出指引并退出 3（M1 报告注意 4）
+- [ ] Task 12：同步 skill 与文档、`module-crew sync` 后全量测试；用安装版重跑 M1 前由模块协调安排
+- [ ] Checkpoint 6（gate）：返工最终验收
