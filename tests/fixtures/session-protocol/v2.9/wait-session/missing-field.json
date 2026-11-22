@@ -1,0 +1,34 @@
+{
+  "parse": {
+    "type": "wait-session",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "在等谁": "API"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "missing-field:等什么"
+    ],
+    "hints": []
+  }
+}

@@ -1,13 +1,13 @@
 # Spec: crew-codex-coordinator
 
-<!-- spec-guard: review approved 7738b023fe6c -->
+<!-- spec-guard: review approved 0768907405a3 -->
 
 > 能力图模块 `crew-codex-coordinator`（第八版，接缝 S13 的模块 B）。需求来源：用户 2026-10-23 在 ecosystem-lead 会话同意开工模块 B，
 > 同日在 mc-coord 会话批准插入能力图并开工（批准事项 C30）。S13 修订版范围：一批收尾后的空档里，模块协调与模块会话整体在 Claude Code 与 Codex 之间来回切换。
 > 依赖 `crew-host-handover`（`coordinator handover`、宿主跟随、`bind --takeover` 认宿主）、`crew-codex-host`（Codex 模块会话、`host-check`、Codex 版 crew-dev）、
 > `crew-command-entry`（固定入口）、`crew-background-checks`（合并锁）。
 > 已有事实：阶段 0 实测（2026-10-23，Codex 桌面版 workspace-write 沙箱，探测分支 `probe/codex-s3` 的 `S3-RESULT.md`）、sg-coord（spec-guard 接口 1.10 读码）、
-> agent-relay PR #154 实测、decision-inbox `docs/host-differences.md`（H1–H5、H8、H10、H11、H17、H25）。标「新」的是写 Spec 时补的实现取舍，请重点审。
+> agent-relay PR #154 实测、agent-relay `docs/host-differences.md`（H1–H5、H8、H10、H11、H17、H25）。标「新」的是写 Spec 时补的实现取舍，请重点审。
 
 ## 目标
 
@@ -200,3 +200,4 @@ README「换宿主」一节补「模块协调在 Codex 上」：每轮开头三�
 
 - 2026-10-23：「并行边界」一节补成 spec-guard 格式的「- 独占：…」「- 公共：…」两行（原有三条说明移到其后新增的「并行说明」一节，spec-guard 的格式检查不认边界一节里的其他行），并加一条公共测试资源的说明；未决问题 1、2 已由用户定为「Q1 不放开」「Q2 不加」，与 Spec 里的推荐一致，正文不变。原因：Spec 批准时用户要求补并行边界的格式；来源：用户在 C32 的答复（「C32 A；Q1 不放开；Q2 不加；并行边界补成独占／公共两行」），随最终验收一并复审。
 - 2026-10-23：接口约定里的事件名由 `merge.detached`、`merge.result-read` 改为记在批准事项上的 `item.merge-detached`、`item.merge-result-read`（状态库事件一律是「记录种类.动作」，没有 merge 这种记录）；`merge-running.json` 另加 `detached`、`adopted` 两个字段（只增不改）；`merge result C<号>` 给的不是最近一次后台合并时退出码 3 并给出日志路径，不从日志末行推退出码；`status` 末尾的宿主行在模块协调登记为 Codex 时写「模块协调：Codex 桌面版；模块会话：Codex 桌面版」，Claude 时逐字不变。原因：构建 Task 1、5、6 时按现有格式与最小实现取舍；来源：模块会话，随最终验收交用户复审。
+- 2026-11-22：开头引用的宿主差异文档改为 agent-relay `docs/host-differences.md`（agent-relay main 33e8abc，PR #190），内容不变。原因：该文档已从 decision-inbox 搬进 agent-relay 维护，旧位置不再更新（agent-relay-owner #22021）；来源：用户 2026-11-22 在 mc-coord 会话批准（「改成新路径」）。

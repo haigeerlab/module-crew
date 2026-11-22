@@ -1,9 +1,9 @@
 # Spec: crew-codex-host
 
-<!-- spec-guard: review approved ff38203b213d -->
+<!-- spec-guard: review approved 75190688afa7 -->
 
 > 能力图模块 `crew-codex-host`（第二版）。需求来源：`docs/requirements-record.md` B7（第二版 Codex 前置核对清单：`.git` 沙箱提权最关键、重启不加载、
-> 身份丢失、只能提供 skill、钩子信任、压缩后重放；协调会话不放 Codex）与第 13 节。宿主事实取自 decision-inbox `docs/host-differences.md`
+> 身份丢失、只能提供 skill、钩子信任、压缩后重放；协调会话不放 Codex）与第 13 节。宿主事实取自 agent-relay `docs/host-differences.md`
 > （H1–H5、H7、H8、H10–H12）。用户 2026-10-18 在本会话确认 14 条假设（第 10 条选 a），并批准插入能力图。
 
 ## 目标
@@ -133,3 +133,4 @@ README「前提」表把宿主改为「协调会话 Claude 桌面版；模块会
 ## 变更记录
 
 - 2026-10-23：验收 4「协调会话登记 `host: codex-desktop` 时 store 校验拒绝」改为：只有带 `hostHandover`（经 `coordinator handover` 换过去）的模块协调可以是 `codex-desktop`，`coordinator up` 仍只登记 Claude。原因：crew-host-handover 空档整体换宿主；来源：用户 2026-10-23 批准 crew-host-handover 的接口提案（事项 C15）。
+- 2026-11-22：开头引用的宿主差异文档改为 agent-relay `docs/host-differences.md`（agent-relay main 33e8abc，PR #190），内容不变。原因：该文档已从 decision-inbox 搬进 agent-relay 维护，旧位置不再更新（agent-relay-owner #22021）；来源：用户 2026-11-22 在 mc-coord 会话批准（「改成新路径」）。

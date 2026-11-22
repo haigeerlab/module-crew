@@ -153,7 +153,7 @@ Codex 模块会话；协调会话放 Codex；审查者外挂；停止钩子与�
 | 批量前置审、挂起、变更记录、评审标记、阶段实时计算 | spec-guard 现有规则 |
 | 会话照做、命令判断记账；正文走文件；严格解析；状态库；等待单；角色名 | decision-inbox（`hub.py`、`protocol.py`、`store.py`、`tickets.py`） |
 | 请求／回复配对、在线状态、身份接管与退役、跨宿主建会话 | agent-relay |
-| 宿主差异 H1–H17 | decision-inbox `docs/host-differences.md` |
+| 宿主差异 H1–H17 | agent-relay `docs/host-differences.md` |
 
 ## 13. 第二版及以后
 

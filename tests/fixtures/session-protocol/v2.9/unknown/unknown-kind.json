@@ -1,0 +1,32 @@
+{
+  "parse": {
+    "type": "unknown",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {},
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "unknown-kind"
+    ],
+    "hints": []
+  }
+}

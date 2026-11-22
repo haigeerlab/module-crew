@@ -4,7 +4,7 @@ A plugin that lets several Claude Code or Codex desktop sessions **develop sever
 
 [中文](README.md) | English
 
-> Version 0.23.6 · License [MIT](LICENSE)
+> Version 0.24.0 · License [MIT](LICENSE)
 >
 > Only this README is in English. The other documents linked below (user guide, command reference, architecture, changelog) are in Chinese.
 
@@ -35,9 +35,9 @@ There are also light tasks (轻任务: a single feature or bug that skips the Sp
 |---|---|
 | Host | Claude Code desktop (Code tab); module sessions may also run in Codex desktop, and between batches the coordinator can move to Codex desktop with `coordinator handover`. All sessions on the same Mac |
 | [agent-relay](https://github.com/haigeerlab/agent-relay) | Required, interface major version 2. Sessions exchange messages through it |
-| [spec-guard](https://github.com/haigeerlab/spec-guard-plugin) | Required, 0.68.0 or later (planning layer, interface 1.1), with spec-guard's local multi-spec convention enabled in the project (`spec/CAPABILITY-MAP.md`): if it is not enabled yet, run `/spec-guard:setup-convention local` in the project first, otherwise the health check reports a blocker and `start plan` exits with 3. Declared scope, autonomy tiers and quota offload need 0.85.0 or later (interface 1.11) |
-| [delegate](https://github.com/haigeerlab/delegate-plugin) | Optional, only for quota offload: 0.8.0 or later (interface 1.3) |
-| session-protocol | The message format contract between sessions; module-crew pins v2.8 (enforced by module-crew's built-in parser, nothing to install); a decision inbox speaking any 2.x version of the contract is compatible |
+| [spec-guard](https://github.com/haigeerlab/spec-guard-plugin) | Required, 0.68.0 or later (planning layer, interface 1.1), with spec-guard's local multi-spec convention enabled in the project (`spec/CAPABILITY-MAP.md`): if it is not enabled yet, run `/spec-guard:setup-convention local` in the project first, otherwise the health check reports a blocker and `start plan` exits with 3. Declared scope and quota offload need 0.85.0 or later (interface 1.11); takeover needs 0.91.0 or later (interface 1.15) |
+| [delegate](https://github.com/haigeerlab/delegate-plugin) | Optional: quota offload needs 0.8.0 or later (interface 1.3); a takeover with "Codex approves" needs interface 1.5 or later |
+| session-protocol | The message format contract between sessions; module-crew pins v2.9 (enforced by module-crew's built-in parser, nothing to install); a decision inbox speaking any 2.x version of the contract is compatible |
 | Project | A git repository that can host worktrees, with one full check command that runs locally; it decides whether a merge passes |
 | Runtime | Python 3 (standard library only; developed and tested on 3.10) |
 
@@ -93,7 +93,8 @@ All off by default; the coordinator turns them on only with the user's own words
 |---|---|---|
 | `declaredScope` (declared scope) | Shared files declared up front in a module's Plan are edited directly on the module branch and reviewed at final acceptance | [User guide](docs/guide.md#声明范围declaredscope) |
 | `checkLedger` (check ledger) | Day to day only the quick check runs, recorded per tree hash; the full check runs only in the merge queue | [User guide](docs/guide.md#检查记账checkledger) |
-| `autonomyTier` (autonomy tier) | `strict` (default) / `standard` / `relaxed`: how review cadence and message digests loosen; steps down automatically after an incident | [User guide](docs/guide.md#自治档位autonomytier) |
+| `takeover` (spec-guard takeover) | none (default) / Plan only / up to merge / custom: a Spec or Plan ticked "Codex approves" is reviewed by Codex and released when it has no blocking finding (two rework rounds at most; if Codex is unavailable it stops and waits for the user); narrows automatically after an incident. `autonomyTier` is retired | [User guide](docs/guide.md#接管档位takeover) |
+| `digest` (wrap-up digest) | sync, check-ledger, unqueued-commit and early-landing messages are summarised once at wrap-up with `tier digest` | [User guide](docs/guide.md#接管档位takeover) |
 | `codexOffload` (quota offload) | When Claude quota is tight, modules opened afterwards hand their Tasks to one Codex session; the module session checks and commits | [User guide](docs/guide.md#额度外包codexoffload) |
 
 ## Documentation (in Chinese)

@@ -91,13 +91,14 @@ module-crew 自己的提交信息默认以 `chore(crew): ` 开头，`config set 
 
 ## 项目开关
 
-都存在状态库的运行配置里（自治档位存在 spec-guard 的 `.agent/config.json`），默认都关；设或改都要用户原话，由模块协调执行。不打开时一切照旧。
+都存在状态库的运行配置里（接管档位存在 spec-guard 的 `.agent/config.json`），默认都关；设或改都要用户原话，由模块协调执行。不打开时一切照旧。
 
 | 开关 | 默认 | 作用 |
 |---|---|---|
-| `declaredScope` 声明范围 | 关（没设过时跟随自治档位，standard 及以上视为开） | Plan「预先声明」名单内的公共文件模块直接改 |
+| `declaredScope` 声明范围 | 关 | Plan「预先声明」名单内的公共文件模块直接改 |
 | `checkLedger` 检查记账 | 关 | 平时快检查、按树哈希记账；完整检查只在合并队列里跑 |
-| `autonomyTier` 自治档位 | `strict` | 交审节奏与消息汇总的松紧 |
+| `takeover` 接管档位（spec-guard） | 不接管 | Spec、Plan 由谁批（人或 Codex），出事自动收窄 |
+| `digest` 收尾汇总 | 关 | 几类记账消息收尾时一次说明 |
 | `codexOffload` 额度外包 | 关 | 开工后把模块的 Task 交给 Codex 实现 |
 | `moduleConcurrency` 多模块并行 | 由 spec-guard 管 | 关掉就退回一次一个模块 |
 
@@ -118,16 +119,18 @@ module-crew 自己的提交信息默认以 `chore(crew): ` 开头，`config set 
 3. **基线只跑一次**：集成分支被落地或不经队列的提交推进后，模块协调把 `module-crew check baseline` 放后台跑一次；红了自动建一个「修基线」bug 任务，不再让每个模块各记一遍。
 4. **最终验收引用检查账**：交审事项自动附上那棵树的检查记录，模块不再提交证据文件。`change land` 提交前也先跑快检查。
 
-### 自治档位（`autonomyTier`）
+### 接管档位（`takeover`）
 
-档位存在 spec-guard 的 `.agent/config.json`。模块协调先跑 `module-crew tier --preflight` 确认本机 spec-guard ≥ 0.85.0，再引用用户原话用 `/spec-guard:config` 写入并单独提交。
+档位存在 spec-guard 的 `.agent/config.json`：项目 `takeover`（不接管／只接管 Plan／接管到合并／自定义 Spec、Plan、合并三项），模块可单独设 `moduleTakeover`。模块协调先跑 `module-crew tier --preflight` 确认本机 spec-guard ≥ 0.91.0、delegate 接口 ≥ 1.5，再引用用户原话用 `/spec-guard:config` 写入并单独提交。没设或读不到时一律人批，一切照旧。
 
-- `strict`（默认）：每个节点照常交审。没设档位时 module-crew 什么都不变，也不给升档建议。
-- `standard`：Spec 与 Plan 一起交审（同一句原话里另设 `reviewCadence=combined`，spec-guard 不联动它）；`declaredScope` 没设过时按 Plan「预先声明」处理公共文件。
-- `relaxed`：再把同步、快检查与检查账、不经队列的提交、提前落地这几类消息改为收尾时一次汇总（`module-crew tier digest`）。
-- **升档只建议**：当前档位开始后连续 3 个合入的模块合并退回 0、撤销 0、返工 ≤ 1、用户退回 0，`tier`、`status`、`merge run` 提示可以升一档，用户确认才升。
-- **出事自动降一档**：合并因模块原因退回、撤销合并批准、返工满 3 次、基线新跑出失败，生效档位立刻降一档并告诉用户；恢复用 `module-crew tier restore`，要原话。
-- **底线**：任何档位都不低于 spec-guard 共享检查点规则「自治档位与底线」——能力图、Spec（可以和 Plan 一起批）、最终验收要用户批，三种情况必停（测试改不红、Spec 没覆盖的决策、高风险不可逆改动），合并队列里照样跑完整检查。
+- **看得清**：`tier`、`status`、开工说明、交审登记行写明每个模块「批准方式：Spec …、Plan …、合并 …」。能力图永远人批；spec-guard 判为重要需求的 Spec、写了「预先声明」的 Plan 不管勾选都由用户批，并写明原因。
+- **Codex 放行**：勾了「Codex 审过就算」的节点，交审不进给用户的批次。模块协调用 `review codex C<n>` 拿到 `/delegate:review --backend codex` 命令、跑完把报告交给 `review codex-note`：有阻断意见就自动返工（模块会话先用 `review-mark --state codex-reviewed` 记下这一轮），最多返工两轮；没有阻断就落地到集成分支、写 spec-guard 的 `codex-approved` 标记，Spec、Plan 都批了发开工通知，只放了一个节点发「放行」类【协调通知】（契约 v2.9）。
+- **Codex 不可用就停下**：报告缺失、没跑完、没结论或只审了一部分，一律停下给用户一份【等待用户】草稿（等 Codex 恢复后重跑，或这一项改由用户批：`review codex-fallback`），绝不退回 Claude 自己审。
+- **分开记账**：Codex 放行记成 `codex-approval`，`status` 单独计数，对用户说「Codex 放行」，不发【用户答复】。
+- **批准人不同就分开批**：同一模块 Spec、Plan 一个人批、一个 Codex 放行时，即使 `reviewCadence=combined` 也按 separate 交审。
+- **出事自动收窄**：合并因模块原因退回、撤销合并批准、返工满 3 次、基线新跑出失败，或外部程序用 `tier degrade` 报来的信号，module-crew 调 spec-guard 的只许收窄入口，按「合并 → Plan → Spec」一次一格，并在集成分支单独提交 `.agent/config.json`，马上告诉用户。放宽要用户原话、一次升一档，经 `/spec-guard:config` 写。
+- **autonomyTier 已退役**：旧值不映射、不再生效。评审节奏只看 `reviewCadence`；声明范围只认 `config set --declared-scope`；收尾汇总改为独立开关 `config set --digest on|off`（打开后同步、检查账、不经队列的提交、提前落地收尾时用 `tier digest` 一次说明）。
+- **底线**：三种情况必停（测试改不红、Spec 没覆盖的决策、高风险不可逆改动），最终验收要用户的答复，合并队列里照样跑完整检查。
 
 ### 额度外包（`codexOffload`）
 
@@ -179,7 +182,7 @@ Claude 额度紧张时，先打开检查记账，再由模块协调凭用户原�
 2. **只写 Spec 与 Plan**：开工说明写明「这是提前开工」，Spec、Plan 照常交审、由用户批准；`review batch` 里显示「依赖未就绪」是预期的。
 3. **Plan 批准后停住**：依赖还没合入时 `review approve` 不发开工通知，模块会话停在原地，不构建。
 4. **依赖就位后问一次再开工**：依赖都合入后 `status` 与 `merge run` 提示「<模块> 的依赖已就位，可以发开工通知」；模块协调问用户一次，
-   同意后运行 `module-crew start kickoff <模块 id> --original-file <原话文件>` 发开工通知（任何自治档位都不自动发）。模块会话收到后先 `module-crew sync` 拿到依赖的代码再构建。
+   同意后运行 `module-crew start kickoff <模块 id> --original-file <原话文件>` 发开工通知（任何接管档位都不自动发）。模块会话收到后先 `module-crew sync` 拿到依赖的代码再构建。
 
 依赖模块的 Spec 之后改了不会自动提醒提前开工的模块。
 
@@ -324,5 +327,5 @@ Codex 版 `crew-coordinator` skill 管下面这些与 Claude 不同的地方，�
 - 权限预配的放行规则：在本机宿主上和不写规则时看不出差别，是否真的减少弹窗还没证实。
 - 桌面版整个退出重开后会话 id 是否不变：压缩、`/clear`、`claude --resume` 接上都实测不变，退出整个桌面版这一种没测。
 - Codex 的固定入口：在真实 Codex 沙箱里跑过 `status`（读得到 Claude 的安装记录）与 `host-check`（写 `.git` 要提权，提权后能提交）；登记过的 Codex 模块会话完整走一遍 bind、交审还没测。
-- 声明范围、检查记账、自治档位、额度外包四个开关：都只用测试和本机接口实测验证过，还没在真实项目上打开试跑。额度外包只用夹具测过两种情形（带 `--resumable` 的长期限运行被中止后的收尾、长期限下回收不了时的真实表现）；needs-input 续跑与整个模块的长链外包没实跑。自治档位的升档门槛与收尾汇总时机是先定的，等试点数据再调。
+- 声明范围、检查记账、接管档位、额度外包四个开关：都只用测试和本机接口实测验证过，还没在真实项目上打开试跑。额度外包只用夹具测过两种情形（带 `--resumable` 的长期限运行被中止后的收尾、长期限下回收不了时的真实表现）；needs-input 续跑与整个模块的长链外包没实跑。接管档位的 Codex 放行只用夹具与本机接口测过，收尾汇总时机是先定的，等试点数据再调。
 - 模块协调在 Codex 上：只用测试验证过。`merge run --detach` 的后台进程能否活过 Codex 的一轮、提权是否随之继承，单次工具调用最长能等多久，一次提权批准能覆盖多少条命令，都还没在真实 Codex 线程里试过。

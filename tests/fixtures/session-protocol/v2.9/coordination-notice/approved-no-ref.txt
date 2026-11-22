@@ -1,0 +1,4 @@
+【协调通知】
+类型：放行
+依据：alpha 的 Spec 由 Codex 审过放行
+要你做什么：Spec 已由 Codex 放行，写 Plan 交审

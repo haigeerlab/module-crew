@@ -230,15 +230,21 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 - `check baseline [--rerun]`：对集成分支顶端跑一次完整检查并记账（模块协调，放后台跑）；红了自动建一个修基线的 bug 任务。
 - `check show [<提交>] [--json]`、`check list [--limit <条数>] [--json]`：一个提交的树有哪些检查记录；最近的检查账（只读，任何会话）。
 
-## 自治档位
+## 接管档位
 
 ### `tier`
 
-- `tier [--json]`：设的档位、降档上限、生效档位、证据与升档建议（只读，任何会话）。`--json` 另有 `lastIncident`：最近一次降档 `{kind, reason, ref, at}`，没降过为 `null`。
-- `tier --preflight`：写 `autonomyTier` 之前核对 spec-guard 版本与接口（只读）。
-- `tier restore --original(-file)`：降档后恢复一档（模块协调）。
-- `tier degrade --reason <文字> --ref <链接>`：外部信号降一档（任何调用方，不要用户原话）。规则同出事降档：已是 strict 不降（退出码 0，说明没降）、同一个 `--ref` 只降一次；`--reason` 或 `--ref` 为空拒绝（退出码 3）。module-crew 不认调用方、不读 `--ref` 指向的内容、不解析 `--reason`；恢复仍要用户原话（`tier restore`）。
-- `tier digest [--json] [--mark-told]`：relaxed 档的收尾汇总（同步、检查账、不经队列的提交、提前落地）；只读查看任何会话都能跑，`--mark-told` 记为已汇总给用户（只是记账，不是批准）由模块协调跑。
+- `tier [--json]`：项目的接管档位、在用模块的批准方式、Codex 放行计数，以及 autonomyTier 退役提示与收尾汇总开关（只读，任何会话）。`--json` 另有 `lastIncident`：最近一次收窄 `{kind, reason, ref, at}`，没收窄过为 `null`。
+- `tier --preflight`：写 `takeover` 之前核对 spec-guard ≥ 0.91.0（接口有 `takeover`、`takeoverNarrow`）与 delegate 接口 ≥ 1.5（只读）。
+- `tier restore …`：已退役，只给指引（退出码 3）：放宽档位要用户原话、一次升一档，用 `/spec-guard:config`。
+- `tier degrade --reason <文字> --ref <链接>`：外部信号收窄一格（任何调用方，不要用户原话），参数与退出码不变：没有接管的项或已是最严不收窄（退出码 0，说明没收窄）、同一个 `--ref` 只收窄一次、收窄失败退出码 2；`--reason` 或 `--ref` 为空拒绝（退出码 3）。
+- `tier digest [--json] [--mark-told]`：收尾汇总（同步、检查账、不经队列的提交、提前落地）；只读查看任何会话都能跑，`--mark-told` 记为已汇总给用户（只是记账）由模块协调跑。
+
+### `review codex`、`review codex-note`、`review codex-fallback`
+
+- `review codex C<n>`：只读，给出这一轮交 Codex 审的 `/delegate:review --backend codex` 命令与报告要存的文件（模块协调）。
+- `review codex-note C<n> --report <json>`：记下 Codex 的审查报告。退出码 0：已发返工通知或已放行；3：报告与交审提交对不上、事项不对；4：落地失败（集成 checkout 已还原）；5：Codex 没有结论或两轮返工后仍有阻断，输出末尾是【等待用户】草稿。
+- `review codex-fallback C<n> (--original|--original-file)`：用户决定这一项改由自己批时把交审改回人批（要原话），之后照 `review approve`／`review answer`。
 
 ## 额度外包
 

@@ -1,0 +1,41 @@
+{
+  "parse": {
+    "type": "coordination-notice",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "类型": "挂起",
+      "原因": "等支付宝补签名接口，对方预计下周交付",
+      "依据": "用户批准事项 #1012（挂起 vowels）",
+      "要你做什么": "停在当前停点，不构建、不发交审；\n  挂起期间收到同步基线也先不动"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "notice": {
+      "kind": "suspend",
+      "refs": [
+        1012
+      ]
+    }
+  }
+}

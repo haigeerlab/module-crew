@@ -1,0 +1,44 @@
+{
+  "parse": {
+    "type": "review-conclusion",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "审查编号": "R-3",
+      "节点": "Spec",
+      "送审方": "前端",
+      "结论": "有须修改项",
+      "来自": "前端负责人",
+      "要点": "错误码表缺两项，见审查记录第 2 条。"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": {
+      "ref": "R-3",
+      "node": "spec",
+      "submitter": "前端",
+      "verdict": "changes-required",
+      "adviceCount": null,
+      "module": null
+    },
+    "problems": [],
+    "hints": []
+  }
+}

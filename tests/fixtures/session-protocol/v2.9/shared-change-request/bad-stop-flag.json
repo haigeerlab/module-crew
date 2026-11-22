@@ -1,0 +1,43 @@
+{
+  "parse": {
+    "type": "shared-change-request",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "来自": "crew-merge",
+      "文件": ".github/workflows/ci.yml",
+      "改什么": "CI 加一步跑完整检查",
+      "为什么": "合并后要用同一条命令判断集成是否通过",
+      "是否完全停住": "一半"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "bad-stop-flag"
+    ],
+    "hints": [],
+    "changeRequest": {
+      "files": [
+        ".github/workflows/ci.yml"
+      ]
+    }
+  }
+}
