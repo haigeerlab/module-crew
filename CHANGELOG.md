@@ -2,6 +2,18 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.24.0 的变化（接管档位的批准部分：Codex 放行 Spec、Plan；autonomyTier 退役；契约钉 v2.9）
+
+S101 自动接管的第一个模块 crew-takeover-approve（用户 C632 批准）。依赖 spec-guard 0.91.0 及以上（interface 1.15）、delegate 接口 1.5；读不到时一律按人批。契约改钉 session-protocol v2.9（`interface.json` 的 `contract` 2.9，新增「放行」类协调通知）。状态库不用迁移。
+
+- **读接管档位**：从 spec-guard 读项目 `takeover` 与各模块生效的 Spec、Plan、合并三项；`tier`、`status`、开工说明、交审登记写明每项「人批」还是「Codex 放行」。判为重要需求或 Plan 带预先声明的，强制人批。
+- **Codex 放行**：勾了「Codex 审过就算」的 Spec、Plan 不进给用户的批次。`review codex C<n>` 给出 `/delegate:review` 命令，`review codex-note C<n> --report <json>` 读报告：有阻断自动返工、最多两轮，第 3 次仍阻断或 Codex 没有结论就停下、给【等待用户】草稿（退出码 5）；只有建议就写 `codex-approved` 标记放行，单独记成 Codex 放行事项，不发【用户答复】。`review codex-fallback C<n>` 凭用户原话改回人批。Codex 不可用绝不改由 Claude 自审。
+- **批准人不同自动分开批**：同一模块 Spec、Plan 一个人批一个 Codex 放行时，自动按 separate 交审。
+- **出事收窄**：四类出事与 `tier degrade --reason --ref`（参数不变）改调 spec-guard 的 `takeoverNarrow`，按「合并 → Plan → Spec」收窄一格，单独提交 `.agent/config.json`；放宽要用户原话、经 `/spec-guard:config`，`tier restore` 只给指引。
+- **autonomyTier 退役**：不再读 autonomyTier、降档上限与升档建议；声明范围只认显式开关，评审节奏只看 `reviewCadence`，新开关 `config set --digest on|off`（要用户原话）接替收尾汇总。
+- **修 spec-guard 0.91 兼容**（S105）：批准标记命令同时认 interface 1.1 与 1.15 的 reviewMark 模板；0.23.6 在装了 spec-guard 0.91 后 `review approve` 与合并时记 Spec 修订批准都会失败，本版修好。
+- 升级后：只升级 module-crew 时，原会话 /clear 一次即可；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`。
+
 ## 0.23.6 的变化（外部信号降档入口；tier --json 带最近一次降档）
 
 不加项目开关；接口与契约不变（`interface.json` 1.0、session-protocol v2.8），状态库不用迁移。
