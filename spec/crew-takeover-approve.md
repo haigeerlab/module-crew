@@ -1,6 +1,6 @@
 # Spec: crew-takeover-approve
 
-<!-- spec-guard: review approved 66dc4b3bfaf4 -->
+<!-- spec-guard: review approved de55989b6a16 -->
 
 > 能力图模块 `crew-takeover-approve`。需求来源：接缝 S101，已批合并方案 plugin-ecosystem `research/2026-11-21-自动接管合并方案.md`（bfce091，用户 2026-11-21「按推荐批准」）
 > 第 2 节 module-crew 一行与第 3 节 Q1、Q5、Q6、Q7、Q8、Q12；方向文档 `research/2026-11-21-自动接管方向.md` 第二节第 3、4 条。开会话依据：用户批准事项 C605。
