@@ -12,8 +12,8 @@
 - [x] Task 5：出事收窄与 Codex 不可用的回退（Spec 决策 8、9；验收 8、10）
 - [x] Checkpoint 3（gate）：`merge first-stage` 字段与 autopr-design 对齐（autopr-design #22079 经 mc-coord #22080：加 repo、baseBranch、reportSha256）
 - [x] Task 6：`merge first-stage` 与 `interface.json`（Spec 决策 7；验收 7）
-- [ ] Task 7：显示（Spec 决策 10；验收 9）
-- [ ] Checkpoint 4（report）：读接口与显示就位
+- [x] Task 7：显示（Spec 决策 10；验收 9）
+- [x] Checkpoint 4（report）：读接口与显示就位（test_takeover_merge 22 项、test_takeover_approve 通过）
 - [ ] Task 8：skill、文档、`module-crew sync` 后全量测试、本机实测（Spec 验收 11、12、13）
 - [ ] Checkpoint 5（gate）：最终验收
 - [ ] 回告：经模块协调转告 ecosystem-lead 与 autopr-design
