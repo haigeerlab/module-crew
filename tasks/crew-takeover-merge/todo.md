@@ -14,6 +14,6 @@
 - [x] Task 6：`merge first-stage` 与 `interface.json`（Spec 决策 7；验收 7）
 - [x] Task 7：显示（Spec 决策 10；验收 9）
 - [x] Checkpoint 4（report）：读接口与显示就位（test_takeover_merge 22 项、test_takeover_approve 通过）
-- [ ] Task 8：skill、文档、`module-crew sync` 后全量测试、本机实测（Spec 验收 11、12、13）
+- [x] Task 8：skill、文档、`module-crew sync` 后全量测试、本机实测（Spec 验收 11、12、13）
 - [ ] Checkpoint 5（gate）：最终验收
 - [ ] 回告：经模块协调转告 ecosystem-lead 与 autopr-design
