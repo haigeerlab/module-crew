@@ -324,10 +324,22 @@ def _target(rec: dict) -> str:
     return "plan" if rec["node"] == "plan" else "spec"
 
 
+def _history(db: store.Store, rec: dict, n: int) -> list[str]:
+    """Codex reports for this module and node so far, oldest first: a resubmission gets a new C number but keeps
+    counting (M1 notes 2, 3), the same way review._rounds counts rework notices and spec-guard counts rounds."""
+    since = store.round_since(store.records(db, "session"), rec["module"])
+    out: list[str] = []
+    for key, other in sorted(store.records(db, "item").items(), key=lambda kv: int(kv[0])):
+        if (since < int(key) <= n and other.get("kind") == "review" and other.get("module") == rec["module"]
+                and other.get("node") == rec["node"]):
+            out += list(other.get("codexReports") or [])
+    return out
+
+
 def codex_command(db: store.Store, n: int) -> tuple[list[str], Path]:
     """`review codex C<n>` (read only): the /delegate:review line for this round and where to save its stdout."""
     rec = _codex_item(db, n)
-    reports = list(rec.get("codexReports") or [])
+    reports = _history(db, rec, n)
     path = db.path / CODEX_DIR / f"C{n}-r{len(reports) + 1}.json"
     session = store.get(db, "session", rec["from"]) or {}
     worktree = session.get("worktree", "")
@@ -447,11 +459,11 @@ def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) ->
     if bad:
         raise CodexRefused("审查报告和交审对不上，没有记：" + "；".join(bad) + f"。重跑 review codex C{n}")
     block, advice = _blocking(doc)
-    saved = db.path / CODEX_DIR / f"C{n}-r{len(rec.get('codexReports') or []) + 1}.json"
+    rounds = len(_history(db, rec, n)) + 1
+    saved = db.path / CODEX_DIR / f"C{n}-r{rounds}.json"
     if Path(report).resolve() != saved.resolve():
         saved.parent.mkdir(parents=True, exist_ok=True)
         saved.write_bytes(Path(report).read_bytes())
-    rounds = len(rec.get("codexReports") or []) + 1
     verdict = f"有须修改项{len(block)}条" if block else (f"通过，附建议{len(advice)}条" if advice else "通过")
     row = {"from": "codex", "ref": f"R-{rounds}", "verdict": verdict, "at": store.now(), "report": str(saved),
            "points": "\n".join([f"须修改：{x}" for x in block] + [f"建议{i}：{x}" for i, x in enumerate(advice, 1)]),

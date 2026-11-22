@@ -468,6 +468,41 @@ class CodexReviewTest(TierMixin, TakeoverMixin, ReviewCase):
         self.assertNotIn("tier-lowered", "".join(e["type"] for e in store.events(self.db)))
         self.assertEqual(rec["reviewer"], "codex")
 
+    def resubmit(self, relay: int) -> int:
+        from module_crew import review
+        spec = store.get(self.db, "item", str(self.n))["node"] == "spec"
+        f = self.wt["b"] / ("spec/b.md" if spec else "tasks/b/plan.md")
+        f.write_text(f.read_text() + f"\n改了一轮 {relay}\n", encoding="utf-8")
+        git(self.wt["b"], "commit", "-qam", f"rework {relay}")
+        return review.add(self.db, (self.spec_review if spec else self.plan_review)("b"), "shop-b", relay).number
+
+    def test_rounds_add_up_across_resubmissions(self):
+        """Task 10 (M1 notes 2, 3): a resubmission keeps counting Codex rounds for the module and node."""
+        first = self.files()
+        self.assertEqual(self.note(report(first, [finding("缺回滚步骤")]))[0], 0)
+        old = store.get(self.db, "item", str(self.n))["codexReports"][-1]
+        m = self.resubmit(3)
+        code, out = self.cli("review", "codex", f"C{m}")
+        self.assertEqual(code, 0, out)
+        what = "Spec" if store.get(self.db, "item", str(self.n))["node"] == "spec" else "Plan"
+        self.assertIn(f"C{m}（b 的 {what}）第 2 次交 Codex 审", out)
+        self.assertIn(f"--previous-report {old}", out)
+        self.assertIn(f"codex/C{m}-r2.json", out)
+        code, out = self.note(report(self.files(m), [finding("还缺")]), m)
+        self.assertIn("返工第 2 轮", out)
+        body = [e for e in store.events(self.db, kind="item") if e["type"] == "item.rework-sent"][-1]["data"]["body"]
+        self.assertIn(f"Codex 审查 R-2（交审 C{m}）", store.read_body(self.db, body))
+        self.assertEqual(store.get(self.db, "item", str(m))["reviews"][-1]["ref"], "R-2")
+        k = self.resubmit(4)
+        self.assertIn("第 3 次交 Codex 审", self.cli("review", "codex", f"C{k}")[1])
+        code, out = self.note(report(self.files(k)), k)
+        self.assertEqual(code, 0, out)
+        approval = next(v for v in store.records(self.db, "item").values() if v.get("kind") == "codex-approval")
+        self.assertEqual(approval["codex"]["rounds"], 3)
+        self.assertTrue(approval["codex"]["report"].endswith(f"C{k}-r3.json"))
+        self.assertEqual(json.loads(self.cli("status", "--json")[1])["store"]["takeover"]["codex"]["reworked"], 1)
+        self.assertIn("其中返工后才放行 1 次", self.cli("status")[1])
+
     def test_suggestions_only_lands_as_codex_approval(self):
         code, out = self.note(report(self.files(), [finding("可以更短", severity="suggestion")]))
         self.assertEqual(code, 0, out)
