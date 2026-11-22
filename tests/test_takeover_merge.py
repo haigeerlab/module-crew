@@ -374,6 +374,13 @@ class FirstStageTest(AutoMergeCase):
         self.assertEqual(doc["pushedUpTo"], human["mergeCommit"])
         text = self.cli("merge", "first-stage")[1]
         self.assertIn("b", text)
+        bare = self.tmp / "remote.git"                         # once the remote base contains b's merge, it is not listed
+        git(self.tmp, "init", "-q", "--bare", str(bare))
+        git(self.repo, "remote", "set-url", "origin", str(bare))
+        git(self.repo, "push", "-q", "origin", "refs/heads/main:refs/heads/main")
+        git(self.repo, "fetch", "-q", "origin")
+        doc = json.loads(self.cli("merge", "first-stage", "--json")[1])
+        self.assertEqual(doc["merges"], [])
 
     def test_no_remote_and_interface(self):
         doc = json.loads(self.cli("merge", "first-stage", "--json")[1])
@@ -443,6 +450,19 @@ class SkillsDocsTest(unittest.TestCase):
         self.assertIn("`merge first-stage [--json]`", self.text("docs/commands.md"))
         self.assertIn("自动合（合并第一段）", self.text("docs/guide.md"))
         self.assertIn("合并：自动", self.text("README.md"))
+
+
+class AnySessionTest(__import__("test_session_handover").HandoverCase):
+    """merge first-stage is read only: any session (autopilot's too) may run it; merge auto stays the coordinator's."""
+
+    def test_first_stage_any_session_auto_coordinator_only(self):
+        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")}
+        env["CLAUDE_CODE_SESSION_ID"] = "sid-other"
+        r = self.run_cli("merge", "first-stage", "--json", env=env)
+        self.assertEqual(r.returncode, 0, (r.stdout, r.stderr))
+        self.assertEqual(json.loads(r.stdout)["schemaVersion"], 1)
+        r = self.run_cli("merge", "auto", "C1", env=env)
+        self.assertEqual(r.returncode, 7, (r.stdout, r.stderr))
 
 
 if __name__ == "__main__":

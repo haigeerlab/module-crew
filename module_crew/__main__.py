@@ -1149,7 +1149,7 @@ _LOCKED = {("change", "land"), ("review", "approve"), ("merge", "tick"), ("merge
 # (group, action); action None = the whole group.
 _ANY_SESSION = {("status", None), ("sessions", None), ("protocol", None), ("hook", None), ("bind", None), ("sync", None),
                 ("host-check", None), ("scope", None), ("store", "check"), ("start", "plan"), ("review", "batch"), ("review", "show"),
-                ("change", "list"), ("merge", "queue"), ("merge", "push-plan"), ("source", "list"), ("source", "map"),
+                ("change", "list"), ("merge", "queue"), ("merge", "push-plan"), ("merge", "first-stage"), ("source", "list"), ("source", "map"),
                 ("task", "list"), ("task", "show"), ("task", "next"), ("permissions", "plan"), ("coordinator", "up"),
                 ("offload", "show"), ("rehost", "show"), ("offload", "start"), ("offload", "settle"),
                 ("offload", "resume"), ("offload", "takeover"), ("check", "quick"), ("check", "show"), ("check", "list"),

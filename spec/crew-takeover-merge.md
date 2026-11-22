@@ -92,9 +92,10 @@ module-crew 不写 spec-guard 的 `--target acceptance` 验收记录，不写 `~
                 "check": {"key": "<树>.full", "result": "pass", "by": "merge-run", "nonAuthor": true, "command": "...",
                           "exitCode": 0, "startedAt": "...", "seconds": 812}}]}
    ```
-   `merges` 列出已合入、还没进任何 `merge push` 记录的合并（人合的也列，`auto: false`、`release: null`），按合并顺序；`pushedUpTo` 只作参考。
+   `merges` 列出已合入、还没进任何 `merge push` 记录、且远端 PR 目标分支还不包含的合并（同 `merge push-plan` 的 T380 口径）（人合的也列，`auto: false`、`release: null`），按合并顺序；`pushedUpTo` 只作参考。
    `repo` 从运行配置 `remote`（默认 `origin`）的地址解析 owner/name，解析不出为 null；`baseBranch` 照 `merge push-plan` 取 PR 目标的规则（配置 `prBase` → 远端有跟踪的集成分支 → 远端默认分支），取不到为 null；
    `reportSha256` 是报告文件当前内容的 sha256，autopilot 读报告前先核对。退出码：`0` 有记录（含空列表）、`2` 参数错或不在 module-crew 项目里。
+   这条命令只读，任何会话（含 autopilot）都可以跑，不要求是登记的模块协调；`merge auto` 仍只限模块协调。
    `interface.json` 新增 `firstStage` 一节（命令、`schemaVersion`、字段说明、退出码），`interface` 升到 `1.1`。**字段是提案**：Checkpoint 3 经模块协调与 autopr-design 对一次，按对方要的改，变更记录写明。
 8. **出事收窄**：自动合的事项在下列情况调 `autonomy.incident`（已改为调 spec-guard 收窄入口，按「合并 → Plan → Spec」降一格），原因写明是自动合并：
    - 自动合的合并批准在 `merge run` 里被退回、且是「模块需要修改」（`kind: auto-merge-returned`，取代原来的 `merge-returned`，不重复降）；环境问题、提交钩子拒绝不降（同今天）；
@@ -217,3 +218,4 @@ PYTHONPATH=tests python3 -m unittest test_takeover_merge
 - 2026-11-22（构建中，Task 5）：决策 9 补一句：撤销自动合的合并批准后，重新打开的交审事项改由用户验收（`fallback: "revoked"`），`merge auto` 不再放行。原因：撤销会重新打开交审事项，它仍带 Codex 无阻断的结论，不改就可能被再次自动合进去、绕过用户的撤销；取更保守的一侧。来源：构建中发现，随最终验收附 Spec 差异复审。
 - 2026-11-22（Checkpoint 3，与 autopr-design 对字段）：决策 7 的 JSON 加顶层 `repo`、`baseBranch` 与 `release.reportSha256`，其余字段名不变；`merges` 的口径写明为「已合入、还没进任何 merge push 记录」，`pushedUpTo` 只作参考。来源：autopr-design #22079（经 mc-coord #22080 转达，不是用户答复）；随最终验收附 Spec 差异复审。
 - 2026-11-22（构建中）：未决问题 2 标为已定「不另跑」。来源：用户 2026-11-22「C640 A；不另跑」（mc-coord 转达 #22061）。
+- 2026-11-22（构建中，Task 8 本机实测）：决策 7 补两处。① `merge first-stage` 列入任何会话可跑的只读命令（原实现被当成模块协调专用、别的会话跑退出码 7，与「只读，任何会话可跑」不符）；② `merges` 再排除远端 PR 目标分支已包含的合并（真实项目上早年推送的记录没有 `mergeCommits`，原口径把 36 个早已在远端的合并当成没推送）。来源：本机实测发现，随最终验收附 Spec 差异复审。

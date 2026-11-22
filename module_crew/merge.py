@@ -724,9 +724,15 @@ def first_stage(project: str | os.PathLike) -> dict:
     items = store.records(db, "item")
     pushes = [v for _, v in sorted(items.items(), key=lambda kv: int(kv[0])) if v.get("kind") == "push"]
     pushed = {c for v in pushes for c in v.get("mergeCommits") or []}
+    # like push-plan (T380): merges the remote PR base already contains are not "not yet pushed", record or not
+    tracking = f"refs/remotes/{remote}/{base}" if base else None
+    in_span = (set(_git(project, "rev-list", f"refs/heads/{integration}", f"^{tracking}").stdout.split())
+               if tracking and _git(project, "rev-parse", "--verify", "--quiet", tracking).returncode == 0 else None)
     merges = []
     for key, v in sorted(items.items(), key=lambda kv: int(kv[0])):
         if v.get("kind") != "merge-approval" or v.get("closedReason") != "merged" or v.get("mergeCommit") in pushed:
+            continue
+        if in_span is not None and v.get("mergeCommit") not in in_span:
             continue
         tree = _git(project, "rev-parse", f"{v['mergeCommit']}^{{tree}}").stdout.strip()
         entry = store.get(db, "check", checks.key(tree, "full")) if tree else None
