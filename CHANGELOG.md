@@ -2,6 +2,18 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.24.1 的变化（接管档位的合并部分：Codex 审最终补丁后自动合进本地集成分支；接管批准部分返工；快检查脚本）
+
+S101 自动接管的第二个模块 crew-takeover-merge（合并批准 C676）与 crew-takeover-approve 第 2 轮返工（合并批准 C655）。`interface.json` 的 `interface` 升到 1.1（新增 `firstStage` 一节），契约仍钉 session-protocol v2.9。状态库不用迁移。
+
+- **自动合（合并第一段）**：spec-guard 里把模块的合并设成「自动」时，最终验收由 Codex 审「集成分支合并基点 → 交审提交」的最终补丁：有阻断自动返工，最多两轮；超限或 Codex 不可用停下问用户。无阻断后模块协调跑 `merge auto`：记一次放行（auto-release，不是用户批准）、排进合并队列、跑一次 `merge run`（完整检查照跑，作非作者检查），合入后在合并批准上记 `firstStage`。推送、PR、最终验收记录与远端合并归 autopilot，module-crew 不调 autopilot、不写 `~/.autopilot/`、不写 spec-guard 验收记录。
+- **`merge first-stage --json`**：只读，任何会话都能跑。列出已合入、还没推送、远端 PR 目标分支也还不包含的合并，按合并顺序，带 `repo`、`baseBranch`、`release.reportSha256` 与检查账记录。字段见 `interface.json` 的 `firstStage`。
+- **出事收窄与撤销**：自动合因模块原因被退回、撤销自动合的合并批准都收窄一次；撤销后那份最终验收改由用户验收，`merge auto` 不再放行它。
+- **接管批准部分返工**（M1 停点不通过）：Plan 是否带预先声明以 spec-guard 的 `declaredScope` 判定为准，改回人批时写出原因；Codex 轮次按模块加节点跨重交累计，第 2 轮起带上一轮报告（`--previous-report`）；`tier restore` 不再要求原话参数，直接给指引。最终验收节点 Codex 超限、用户自己批之后不再重问超限。
+- **快检查脚本**（T652）：`scripts/quick_check.py` 只跑当前分支相对集成分支改动相关的测试，对不上号时退回完整检查；为打开检查记账与额度外包做准备。
+- **防新增本机路径**（S107，T670）：新测试 `tests/test_no_local_paths.py` 拦已跟踪文件里带真实用户名的 `/Users/<名字>`、`/home/<名字>`。
+- 升级后：只升级 module-crew 时，原会话 /clear 一次即可；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`。
+
 ## 0.24.0 的变化（接管档位的批准部分：Codex 放行 Spec、Plan；autonomyTier 退役；契约钉 v2.9）
 
 S101 自动接管的第一个模块 crew-takeover-approve（用户 C632 批准）。依赖 spec-guard 0.91.0 及以上（interface 1.15）、delegate 接口 1.5；读不到时一律按人批。契约改钉 session-protocol v2.9（`interface.json` 的 `contract` 2.9，新增「放行」类协调通知）。状态库不用迁移。
