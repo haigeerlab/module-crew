@@ -116,7 +116,12 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         rec = {"state": "open", "kind": "review", "from": sender, "relayId": relay_id, "text": text,
                "module": sub["module"], "node": sub["node"], "files": sub["files"], "commit": commit,
                "closedReason": None, "answer": None}
-        codex = not sub.get("disputes") and codex_node(db, sub["module"], sub["node"], worktree, commit)
+        codex = (not sub.get("disputes") and not sub.get("task")
+                 and codex_node(db, sub["module"], sub["node"], worktree, commit))
+        auto_why = None
+        if sub["node"] == "final" and not codex and not sub.get("task"):    # crew-takeover-merge decision 1
+            from module_crew import autonomy, takeover
+            auto_why = takeover.final_reason(db, autonomy.project_of(db), sub["module"])[1]
         reviewers = [] if sub.get("disputes") or codex else _reviewers(db, sub["module"], sub["node"])
         if not sub.get("disputes") and not codex:
             out.lines += _unrouted(db, sub["module"], sub["node"], reviewers)
@@ -137,7 +142,10 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         tx.put("item", str(n), rec, action="created", data={"relayId": relay_id})
         out.number = n
         out.lines.append(f"已记为交审事项 C{n}（{sub['module']} 的 {msg.fields.get('节点', '').strip()}）"
-                         + (f"，Codex 放行：下一步 review codex C{n}，不提请用户" if codex else ""))
+                         + ((f"，自动合：下一步 review codex C{n}，不提请用户" if sub["node"] == "final" else
+                             f"，Codex 放行：下一步 review codex C{n}，不提请用户") if codex else ""))
+        if auto_why:
+            out.lines.append(f"合并档位是自动，但这次照人合：{auto_why}")
         if sub.get("disputes"):
             refs = "、".join(d["review"] for d in sub["disputes"])
             out.lines.append(f"模块不同意审查 {refs}：不再返工，作为待你决定（D 编号）的问题提请批准")
@@ -472,7 +480,7 @@ def batch(project: str | os.PathLike) -> dict:
 def codex_node(db: store.Store, module: str, node: str, worktree: Path, commit: str) -> bool:
     """crew-takeover-approve: the module's takeover gives this node to Codex (the Plan read from the submitted commit)."""
     from module_crew import takeover
-    if node not in ("spec", "interface", "plan"):
+    if node not in ("spec", "interface", "plan", "final"):     # final: crew-takeover-merge decision 1
         return False
     plan = None
     if node == "plan":
