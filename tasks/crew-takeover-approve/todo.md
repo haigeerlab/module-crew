@@ -24,4 +24,4 @@
 - [x] Task 10：Codex 轮次跨重交累计——「返工后才放行」计数、`review codex` 显示的第几次、审查编号 R-<次>、报告文件名都按模块＋节点累计，与 spec-guard 记的 round 一致；第 2 轮起命令带 `--previous-report <上一轮报告>`（M1 报告注意 2、3）——测试先红后绿；新增 `takeover._history`（同模块同节点、本轮重开之后各交审事项的 Codex 报告，按事项号排），`review codex` 的「第几次」、报告文件名、`--previous-report`，`codex-note` 的 R-<次>、放行记账的 `rounds` 都按它算，`reworked` 因此计入重交后放行；新用例 test_rounds_add_up_across_resubmissions（Plan 与只接管 Spec 两种设置下都跑）；本模块 41 个通过（fed3fc9）
 - [x] Task 11：`tier restore` 不再要求 `--original(-file)`，无条件输出指引并退出 3（M1 报告注意 4）——测试先红后绿；`--original`／`--original-file` 改为可选（照收、忽略，不在帮助里列出），在打开状态库之前处理，指引写到标准输出、退出码 3；没有状态库的目录里实测同样退出码 3；本模块 41 个通过（9825088）
 - [x] Task 12：同步 skill 与文档、`module-crew sync` 后全量测试；用安装版重跑 M1 前由模块协调安排——两份 crew-coordinator skill、docs/guide.md、docs/commands.md 同步（6ddca9c）；`module-crew sync` 后集成分支仍是 cfe3e94；6ddca9c 上全量 1337 个全过（1602 秒）；其后只删一行孤儿导入（1c9d1d7），复跑 test_takeover_approve、test_docs 47 个通过；安装版重跑 M1 由模块协调安排
-- [ ] Checkpoint 6（gate）：返工最终验收
+- [x] Checkpoint 6（gate）：返工最终验收
