@@ -12,8 +12,8 @@
 - [x] Task 5：放行落地与记账、Codex 不可用、`review approve` 的回退（Spec 决策 5、6、7；验收 5、7、10）——`review._approve` 参数化共用落地（单独提交 bda2b32），写 `codex-approved --review`、记 `codex-approval`、不发【用户答复】；Codex 没结论退出码 5；`review approve` 对 Codex 项拒绝，新增 `review codex-fallback`（要原话）后照人批（Spec 已补变更记录）；按 mc-coord #22000（用户「取消 T628」）修好 spec-guard 0.91.0 新模板下 `review approve` 与 `merge run` 记 Spec 修订批准两处，复现测试 Template115Test、SpecRevision115Test 在修复前代码上分别报「不认识的占位符」与没记下修订批准，修复后通过
 - [x] Checkpoint 3（report）：Codex 放行链路就位——本模块 26 个通过；交审、合并、收件箱、开工、提前开工、外包、轻任务、重开、最终验收拆分、旧档位、声明范围、检查账等回归 463 个通过
 - [x] Task 6：出事收窄与 `tier degrade`（Spec 决策 9、10；验收 9）——实现先于测试；`incident` 内部改调 `takeover.narrow`（`--source module-crew --confirm`，归到模块且模块单独设过时模块与项目都收），收窄后在集成分支单独提交 `.agent/config.json` 并记为 module-crew 自己的提交；`incident` 加可选参数 `module`（签名兼容）；`tier degrade` 参数与退出码不变；测试中发现收窄提交会改集成分支的树、让基线检查重跑再降一格，已加去重（同一红基线、其后没有别的提交就不再收窄）；旧档位测试里 IncidentTest 等 4 个类（13 个用例）由 NarrowTest 等 9 个用例取代
-- [ ] Checkpoint 4（gate）：契约「放行」类型已发版
-- [ ] Task 7：认「放行」通知、只放行 Spec 时发它（Spec 决策 12）
+- [x] Checkpoint 4（gate）：契约「放行」类型已发版——session-protocol v2.9 于 21eff81 发版（mc-coord #21922）；样例按用户答复 C630「甲：随模块合并」放在本分支 tests/fixtures/session-protocol/v2.9/（252 个文件，SHA256SUMS 全部通过）
+- [x] Task 7：认「放行」通知、只放行 Spec 时发它（Spec 决策 12）——`protocol.py` 认类型「放行」（approved-by-review）、`missing-approval-node`、`notice.node`，契约版本钉到 2.9；`review._approve` 在 Codex 只放行一个节点时发放行类通知；契约样例 v2.2～v2.9 全过，本模块 ReleaseNoticeTest、NoticeRenderTest 通过
 - [ ] Task 8：skill、README、`module-crew sync` 后全量测试、本机实测（Spec 验收 12、13、1）
 - [ ] Checkpoint 5（gate）：最终验收
 - [ ] 回告：经模块协调转告 ecosystem-lead 与 autopr-design
