@@ -214,18 +214,8 @@ CADENCES = ("separate", "combined")
 def cadence_info(project: str | os.PathLike, map_doc: dict | None = None) -> tuple[str, str, bool]:
     """(value, source, read from /map). spec-guard 0.73.0+ puts the effective reviewCadence in /map --json; use it when
     the caller already has the map, otherwise read .agent/config.json (same source, same value); `separate` by default.
-    crew-autonomy-tier decision 4: `separate` while a step down has capped the tier at strict."""
-    value, source, via_map = _spec_guard_cadence(project, map_doc)
-    if value == "combined":
-        from module_crew import autonomy
-        try:
-            db = store.open_store(Path(project))
-        except store.StoreError:
-            return value, source, via_map
-        eff = autonomy.effective(db, project) if autonomy.state(db).get("cap") else None
-        if eff is not None and eff.cap and eff.value == "strict":
-            return "separate", "自治档位降到 strict（降档上限），恢复要用户原话", via_map
-    return value, source, via_map
+    crew-takeover-approve decision 11: the retired autonomyTier's step-down cap no longer changes it."""
+    return _spec_guard_cadence(project, map_doc)
 
 
 def _spec_guard_cadence(project: str | os.PathLike, map_doc: dict | None = None) -> tuple[str, str, bool]:
@@ -242,9 +232,35 @@ def _spec_guard_cadence(project: str | os.PathLike, map_doc: dict | None = None)
     return (value, ".agent/config.json", False) if value in CADENCES else ("separate", "default (config invalid)", False)
 
 
-def review_cadence(project: str | os.PathLike, map_doc: dict | None = None) -> str:
-    """The project's spec-guard reviewCadence, read only; `separate` when unset or unreadable."""
-    return cadence_info(project, map_doc)[0]
+def review_cadence(project: str | os.PathLike, map_doc: dict | None = None, module: str | None = None) -> str:
+    """The project's spec-guard reviewCadence, read only; `separate` when unset or unreadable.
+    crew-takeover-approve decision 8: for a module whose Spec and Plan have different approvers, always `separate`."""
+    value = cadence_info(project, map_doc)[0]
+    if value == "combined" and module is not None and split_approvers(project, module):
+        return "separate"
+    return value
+
+
+def split_approvers(project: str | os.PathLike, module: str) -> bool:
+    """One of the module's Spec and Plan goes to the user, the other to Codex."""
+    from module_crew import takeover
+    db = _open_store(Path(project))
+    if db is None:
+        return False
+    return takeover.approver(db, project, module, "spec") != takeover.approver(db, project, module, "plan")
+
+
+def takeover_line(project: str | os.PathLike, module: str) -> str | None:
+    """Decision 2: the kickoff's 批准方式 line, only when something of the module is taken over."""
+    from module_crew import takeover
+    db = _open_store(Path(project))
+    if db is None:
+        return None
+    items = takeover.module(db, project, module)
+    if not items.active:
+        return None
+    return (takeover.line(items) + "。Codex 放行的节点，【交审】照常发给模块协调，结论由 Codex 给出；"
+            "有阻断意见时会收到返工通知，照通知先记下这一轮再改")
 
 
 def _settings(project: Path, db: store.Store | None, short: str | None, max_modules: int | None) -> tuple[dict, list[str]]:
@@ -516,7 +532,9 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
         if copied:
             result.lines.append(f"{m}：{copied}")
         relay = f"{short}-{m}" + (f"-r{reopen['round']}" if reopen else "")
-        text = render_kickoff(m, info.get(m, {}), path, {**cfg, "reviewCadence": proposal.cadence}, relay, coord,
+        text = render_kickoff(m, info.get(m, {}), path,
+                              {**cfg, "reviewCadence": "separate" if proposal.cadence == "combined" and split_approvers(project, m)
+                               else proposal.cadence, "takeoverLine": takeover_line(project, m)}, relay, coord,
                               approval, host_id, reopen=reopen,
                               spec_ahead=(proposal.spec_ahead.get(m) or {}).get("missing"))
         extra = {"reopen": {"round": reopen["round"], "since": approval, "review": reopen["review"]}} if reopen else {}
@@ -835,6 +853,7 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
         *(_reopen_lines(module, reopen, cfg["integrationBranch"], cfg.get("reviewCadence", "separate"),
                          worktree) if reopen else
           [_first_step(module, cfg.get("reviewCadence", "separate")),
+           *([cfg["takeoverLine"]] if cfg.get("takeoverLine") else []),
            *(spec_ahead_lines(spec_ahead) if spec_ahead else []), "收到开工类【协调通知】之前不要开始构建。"]),
         "",
         f"接口：\n{deps}",
