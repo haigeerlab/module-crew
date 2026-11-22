@@ -1,0 +1,51 @@
+{
+  "parse": {
+    "type": "review-conclusion",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "审查编号": "R-7",
+      "节点": "Spec",
+      "模块": "alpha",
+      "送审方": "前端",
+      "结论": "有须修改项3条",
+      "须修改": "1. 验收标准缺少令牌过期的错误路径，偏离已批准的能力图条目\n2. 令牌原文写进了调试日志，属于安全缺陷"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": {
+      "ref": "R-7",
+      "node": "spec",
+      "submitter": "前端",
+      "verdict": "changes-required",
+      "adviceCount": null,
+      "module": "alpha",
+      "changeCount": 3,
+      "changes": [
+        "验收标准缺少令牌过期的错误路径，偏离已批准的能力图条目",
+        "令牌原文写进了调试日志，属于安全缺陷"
+      ]
+    },
+    "problems": [
+      "change-count-mismatch"
+    ],
+    "hints": []
+  }
+}

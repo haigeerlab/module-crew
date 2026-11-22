@@ -1,0 +1,41 @@
+{
+  "parse": {
+    "type": "coordination-notice",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "类型": "收尾",
+      "依据": "用户批准事项 #15（crew-store 最终验收），已合入本地集成分支 d4e5f6a"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "missing-field:要你做什么"
+    ],
+    "hints": [],
+    "notice": {
+      "kind": "wrap-up",
+      "refs": [
+        15
+      ]
+    }
+  }
+}

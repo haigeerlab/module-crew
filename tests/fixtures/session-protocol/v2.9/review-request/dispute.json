@@ -1,0 +1,52 @@
+{
+  "parse": {
+    "type": "review-request",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "模块": "alpha",
+      "节点": "Spec",
+      "文件": "spec/alpha.md sha256:3f2a9c1e7b4d",
+      "要点": "- 做：登录页与令牌刷新\n- 不做：第三方登录",
+      "不同意": "R-7：第 2 条要求改用 SQLite，已批准的 Spec 明确用 JSON 文件"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "submission": {
+      "module": "alpha",
+      "node": "spec",
+      "files": [
+        {
+          "path": "spec/alpha.md",
+          "fingerprint": "sha256:3f2a9c1e7b4d"
+        }
+      ],
+      "disputes": [
+        {
+          "review": "R-7",
+          "reason": "第 2 条要求改用 SQLite，已批准的 Spec 明确用 JSON 文件"
+        }
+      ]
+    }
+  }
+}

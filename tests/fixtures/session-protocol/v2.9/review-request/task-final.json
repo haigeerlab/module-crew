@@ -1,0 +1,53 @@
+{
+  "parse": {
+    "type": "review-request",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "模块": "无",
+      "节点": "最终验收",
+      "文件": "- tasks/T3.md sha256:5c1f0e27ab94d3e8\n- src/parse_input.py sha256:a03b9e4471c2f6d0",
+      "要点": "- 修了空输入时崩溃，补了 2 个测试\n- 实测：pytest tests/test_parse_input.py，14 passed\n- 没验证：Windows 下的换行符",
+      "任务": "T3",
+      "改动统计": "  2 files changed, 31 insertions(+), 2 deletions(-)",
+      "越界检查": "与任务单一致（预计 src/parse_input.py、tests/test_parse_input.py，对照集成基线 b4c5d6e）"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "submission": {
+      "module": "无",
+      "node": "final",
+      "files": [
+        {
+          "path": "tasks/T3.md",
+          "fingerprint": "sha256:5c1f0e27ab94d3e8"
+        },
+        {
+          "path": "src/parse_input.py",
+          "fingerprint": "sha256:a03b9e4471c2f6d0"
+        }
+      ]
+    },
+    "task": "T3"
+  }
+}

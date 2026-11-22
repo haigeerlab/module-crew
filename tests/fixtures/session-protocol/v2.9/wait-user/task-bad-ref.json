@@ -1,0 +1,53 @@
+{
+  "parse": {
+    "type": "wait-user",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "来自": "前端模块协调",
+      "要你决定": "第三个轻任务要不要延期到周五",
+      "要点": "等后端给测试账号\n周五前给不了就取消",
+      "任务": "第3个",
+      "选项与我的建议": "推荐 A：延期到周五\n  选了会怎样：任务会话停住等账号\nB. 现在取消\n  选了会怎样：关掉任务会话",
+      "你该回": "54 A",
+      "是否完全停住": "是"
+    },
+    "options": [
+      {
+        "letter": "A",
+        "text": "延期到周五",
+        "consequence": "任务会话停住等账号"
+      },
+      {
+        "letter": "B",
+        "text": "现在取消",
+        "consequence": "关掉任务会话"
+      }
+    ],
+    "recommended": "A",
+    "suggestedReply": "54 A",
+    "fullyStopped": true,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "bad-task-ref"
+    ],
+    "hints": [],
+    "module": null,
+    "task": null
+  }
+}
