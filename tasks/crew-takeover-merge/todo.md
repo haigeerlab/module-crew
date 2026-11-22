@@ -5,7 +5,7 @@
 - [x] Checkpoint 0（gate）：依赖合入与上游发版（crew-takeover-approve、spec-guard 0.91.0／interface 1.15、delegate 接口 1.5）
 - [x] Task 1：最终验收的「自动合」判定与 `review add`（Spec 决策 1；验收 1、2）
 - [x] Task 2：Codex 最终验收审查（Spec 决策 2、3；验收 3、4）
-- [ ] Checkpoint 1（report）：判定与 Codex 审查就位
+- [x] Checkpoint 1（report）：判定与 Codex 审查就位（test_takeover_merge 9 项、test_takeover_approve／review_approve／review_nearby／final_accept 115 项通过）
 - [ ] Task 3：`merge auto` 放行加合并（Spec 决策 4、5；验收 5）
 - [ ] Task 4：合并第一段完成记录（Spec 决策 6；验收 6）
 - [ ] Checkpoint 2（report）：自动放行与合并链路就位
