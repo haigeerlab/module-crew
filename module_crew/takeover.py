@@ -336,7 +336,7 @@ def preflight(db: store.Store, project: str | os.PathLike) -> tuple[int, list[st
 
 # ---------------------------------------------------------------- Codex as a reviewer (decisions 3 to 6)
 
-CODEX_REWORK_LIMIT = 2                 # spec-guard: two rounds with blocking findings, then the user
+CODEX_REWORK_LIMIT = 2                 # spec-guard: two rounds with blocking findings, then the user (ROUND_CAP)
 CODEX_DIR = "codex"
 DONE_OUTCOMES = ("findings", "no_findings_in_scope")
 TASK_TEXT = ("按 spec-guard 对 {what} 的要求审这份文件；阻断意见（severity: blocking）只限「照这份文件做会做错或做不成」，"
@@ -367,6 +367,9 @@ def _codex_item(db: store.Store, n: int) -> dict:
         raise CodexRefused(f"C{n} 不是 Codex 放行的节点（照人批流程走 review approve）")
     if rec.get("overLimit"):
         raise CodexRefused(f"C{n} Codex 已审满两轮仍有阻断：交用户决定，不再交 Codex")
+    if rec.get("landFailed"):
+        raise CodexRefused(f"C{n} Codex 已放行但落地失败（{rec['landFailed']}）：交用户决定，"
+                           f"review codex-fallback C{n} --original-file <用户原话> 后照人批")
     return rec
 
 
@@ -560,8 +563,8 @@ def over_limit_draft(db: store.Store, rec: dict, n: int, block: list[str]) -> st
              ("B", "照阻断意见再改一轮，改完交你验收（不再交 Codex）",
               f"review codex-fallback C{n} --original-file <答复> 后用 review answer C{n} 退回；模块重交的最终验收照人合")])) + "\n"
     return "\n".join(offload.draft(
-        _coordinator(db), rec["module"], f"{rec['module']} 的 {what}（交审 C{n}）Codex 两轮后仍有阻断，怎么办",
-        f"Codex 审了 {CODEX_REWORK_LIMIT} 轮返工后仍有 {len(block)} 条阻断意见：" + "；".join(block[:5]),
+        _coordinator(db), rec["module"], f"{rec['module']} 的 {what}（交审 C{n}）Codex 两轮都有阻断，怎么办",
+        f"Codex 审了 {CODEX_REWORK_LIMIT} 轮都有阻断（spec-guard 的上限），这一轮 {len(block)} 条：" + "；".join(block[:5]),
         [("A", "你来批这一版", f"review codex-fallback C{n} --original-file <答复>，再 review approve C{n}"),
          ("B", "照阻断意见再改一轮，改完交你批（不再交 Codex）",
           f"review codex-fallback C{n} --original-file <答复> 后用 review answer C{n} 退回；模块重交的{what}照人批")])) + "\n"
@@ -607,11 +610,15 @@ def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) ->
         tx.put("item", str(n), cur, action="codex-noted", data={"round": rounds, "blocking": len(block)})
         if block:
             done = review._rounds(db, cur["module"], cur["node"])
-            if done >= CODEX_REWORK_LIMIT:
+            # Task 14 (M1-M2 report C, sg-coord #22262): spec-guard takes no codex-approved after two rounds with
+            # blocking findings, so a Spec or Plan goes to the user at the second; the final acceptance (not a file
+            # spec-guard counts) keeps two reworks (crew-takeover-merge)
+            if done + (1 if cur["node"] != "final" else 0) >= CODEX_REWORK_LIMIT:
                 tx.put("item", str(n), dict(cur, overLimit=True), action="codex-over-limit")
                 res.code = 5
                 res.draft = over_limit_draft(db, cur, n, block)
-                res.lines += [f"C{n} Codex 审了 {CODEX_REWORK_LIMIT} 轮返工后仍有阻断：不再返工，交用户决定（不降档）",
+                res.lines += [(f"C{n} Codex 审了 {CODEX_REWORK_LIMIT} 轮返工后仍有阻断" if cur["node"] == "final" else
+                               f"C{n} Codex 两轮都有阻断（spec-guard 的上限）") + "：不再返工，交用户决定（不降档）",
                               "把下面这份【等待用户】自检后发给用户：", ""]
                 return res
             target = _target(cur)
@@ -643,6 +650,14 @@ def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) ->
     res.code = landed.code if landed.code in (0, 3) else 4
     res.lines += [f"C{n} Codex 没有阻断意见（建议 {len(advice)} 条）：放行"] + landed.lines
     res.sends += landed.sends
+    if res.code == 4:                   # M1-M2 report C: the pass stands, the landing did not; the user decides
+        why = ((landed.lines[0].split("已停下：", 1)[-1] if landed.lines else "").strip() or
+               (landed.lines[0] if landed.lines else "落地失败"))[:200]
+        with db.transaction(actor="coordinator") as tx:
+            tx.put("item", str(n), dict(tx.get("item", str(n)), landFailed=why), action="codex-land-failed",
+                   data={"reason": why})
+        res.lines += [f"下一步：C{n} 停在「Codex 已放行但落地失败」，交用户决定；用户决定自己批时 review codex-fallback C{n} "
+                      f"--original-file <用户原话>，再 review approve C{n}（不再交 Codex）"]
     return res
 
 
@@ -653,7 +668,8 @@ def codex_fallback(db: store.Store, n: int, original: str) -> list[str]:
     rec = store.get(db, "item", str(n))
     if rec is None or rec.get("kind") != "review" or rec.get("state") != "open" or rec.get("reviewer") != "codex":
         raise CodexRefused(f"C{n} 不是未答的 Codex 放行交审")
-    why = "codex-over-limit" if rec.get("overLimit") else "codex-unavailable"
+    why = ("codex-over-limit" if rec.get("overLimit") else "codex-land-failed" if rec.get("landFailed")
+           else "codex-unavailable")
     with db.transaction(actor="coordinator") as tx:
         cur = tx.get("item", str(n))
         cur = {k: v for k, v in cur.items() if k not in ("sentTo", "sentAt")}

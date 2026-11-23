@@ -460,10 +460,9 @@ class CodexReviewTest(TierMixin, TakeoverMixin, ReviewCase):
         self.assertIn("--state codex-reviewed --review", text)
         self.assertIn("2. 缺字段", text)                   # missing severity is blocking
         self.assertIn("--previous-report", self.cli("review", "codex", f"C{self.n}")[1])
-        code, out = self.note(report(self.files(), [finding("还缺")]))
-        self.assertIn("返工第 2 轮", out)
-        code, out = self.note(report(self.files(), [finding("仍缺")]))
+        code, out = self.note(report(self.files(), [finding("还缺")]))   # Task 14: spec-guard's cap, two blocking rounds
         self.assertEqual(code, 5, out)
+        self.assertIn("Codex 两轮都有阻断", out)
         self.assertIn("交用户决定（不降档）", out)
         self.assertIn("【等待用户】", out)
         self.assertIn("类型：卡住选做法", out)
@@ -492,18 +491,12 @@ class CodexReviewTest(TierMixin, TakeoverMixin, ReviewCase):
         self.assertIn(f"C{m}（b 的 {what}）第 2 次交 Codex 审", out)
         self.assertIn(f"--previous-report {old}", out)
         self.assertIn(f"codex/C{m}-r2.json", out)
-        code, out = self.note(report(self.files(m), [finding("还缺")]), m)
-        self.assertIn("返工第 2 轮", out)
-        body = [e for e in store.events(self.db, kind="item") if e["type"] == "item.rework-sent"][-1]["data"]["body"]
-        self.assertIn(f"Codex 审查 R-2（交审 C{m}）", store.read_body(self.db, body))
-        self.assertEqual(store.get(self.db, "item", str(m))["reviews"][-1]["ref"], "R-2")
-        k = self.resubmit(4)
-        self.assertIn("第 3 次交 Codex 审", self.cli("review", "codex", f"C{k}")[1])
-        code, out = self.note(report(self.files(k)), k)
+        code, out = self.note(report(self.files(m)), m)
         self.assertEqual(code, 0, out)
+        self.assertEqual(store.get(self.db, "item", str(m))["reviews"][-1]["ref"], "R-2")
         approval = next(v for v in store.records(self.db, "item").values() if v.get("kind") == "codex-approval")
-        self.assertEqual(approval["codex"]["rounds"], 3)
-        self.assertTrue(approval["codex"]["report"].endswith(f"C{k}-r3.json"))
+        self.assertEqual(approval["codex"]["rounds"], 2)
+        self.assertTrue(approval["codex"]["report"].endswith(f"C{m}-r2.json"))
         self.assertEqual(json.loads(self.cli("status", "--json")[1])["store"]["takeover"]["codex"]["reworked"], 1)
         self.assertIn("其中返工后才放行 1 次", self.cli("status")[1])
 
@@ -518,6 +511,24 @@ class CodexReviewTest(TierMixin, TakeoverMixin, ReviewCase):
             relay += 1
             n = self.resubmit(relay)
         self.fail("never over the limit")
+
+    def test_land_failure_cleans_up_and_says_what_next(self):
+        """Task 14 (report C): a refused landing removes the files it created in the integration checkout, the item
+        says what comes next, and codex-fallback records the real reason."""
+        import os
+        os.environ["FAKE_REVIEW_FAIL"] = "b"
+        self.addCleanup(lambda: os.environ.pop("FAKE_REVIEW_FAIL", None))
+        code, out = self.note(report(self.files()))
+        self.assertEqual(code, 4, out)
+        self.assertIn("review codex-fallback", out)
+        self.assertEqual(git(self.repo, "status", "--porcelain", "--untracked-files=all").strip(), "", out)
+        rec = store.get(self.db, "item", str(self.n))
+        self.assertTrue(rec.get("landFailed"))
+        self.assertIn("落地失败", self.cli("review", "batch")[1])
+        self.assertEqual(self.cli("review", "codex-note", f"C{self.n}", "--report", rec["codexReports"][-1])[0], 3)
+        os.environ.pop("FAKE_REVIEW_FAIL")
+        self.assertEqual(self.cli("review", "codex-fallback", f"C{self.n}", "--original", "我来批")[0], 0)
+        self.assertEqual(store.get(self.db, "item", str(self.n))["fallback"], "codex-land-failed")
 
     def test_unavailable_draft_names_the_cause(self):
         """Task 16 (B): diagnostics in the draft; a run that would fail the same way again is not the recommendation."""

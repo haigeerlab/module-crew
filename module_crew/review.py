@@ -169,14 +169,25 @@ def _ledger_lines(ledger: dict | None) -> list[str]:
 _MARKER = "<!-- spec-guard: review"
 
 
-def _restore(checkout: Path) -> list[str]:
+def _restore(checkout: Path, created: list[str] = ()) -> list[str]:
     """Decision 4 (0.11.2): put the integration checkout back after a failed approve. It was clean before (baseline
-    check), so every tracked change is ours and goes back to the branch; new files are unstaged and kept, never deleted."""
+    check), so every tracked change is ours and goes back to the branch; new files are unstaged and kept, never deleted.
+    `created`: files a Codex landing wrote that did not exist before; nobody but module-crew has seen them, so they
+    go (crew-takeover-approve, M1-M2 report C)."""
     _git(checkout, "reset", "-q")
     _git(checkout, "checkout", "--", ".")
+    for rel in created:
+        path = checkout / rel
+        if path.is_file():
+            path.unlink()
+        parent = path.parent
+        while parent != checkout and parent.is_dir() and not any(parent.iterdir()):
+            parent.rmdir()
+            parent = parent.parent
     new = [line[3:] for line in _git(checkout, "status", "--porcelain", "--untracked-files=all").stdout.splitlines()
            if line.startswith("?? ")]
     return (["状态库与集成分支都没有变化；集成 checkout 里原有的文件已还原成集成分支上的内容"]
+            + (["这次 Codex 放行新建的文件已删掉：" + "、".join(created)] if created else [])
             + (["这次新建、没有删除的文件（未暂存，交用户决定）：" + "、".join(new),
                 "  它们让集成 checkout 不干净，会挡住下一次 review approve：用户看过后不要就删掉、要留就移出 checkout，"
                 "再重新 review approve（module-crew 不删文件）"] if new else []))
@@ -428,6 +439,14 @@ def start_basis(db: store.Store, module: str, approval: int, nodes: set[str], co
 NODE_RANK = {"spec": 0, "interface": 1, "plan": 2, "final": 3}
 
 
+def _codex_state(db: store.Store, item: dict) -> str:
+    """M1-M2 report C: a Codex pass that could not land waits for the user, and says so."""
+    failed = (store.get(db, "item", str(item["number"])) or {}).get("landFailed")
+    if failed:
+        return f"Codex 已放行但落地失败，等用户决定：review codex-fallback C{item['number']}（{failed}）"
+    return STATE_TEXT[item["reviewState"]]
+
+
 def batch(project: str | os.PathLike) -> dict:
     """Read-only view of the open reviews, their dependency check and relevant conflicts."""
     project = Path(project)
@@ -474,7 +493,7 @@ def batch(project: str | os.PathLike) -> dict:
                          and not v.get("task") else {})})
     codex = [f"C{i['number']} {i['module']} 的 "
              + (auto_progress(db, i["number"], store.get(db, "item", str(i["number"])) or {}) if i["node"] == "final"
-                else f"{NODE_NAME.get(i['node'], i['node'])}（{STATE_TEXT[i['reviewState']]}）")
+                else f"{NODE_NAME.get(i['node'], i['node'])}（{_codex_state(db, i)}）")
              for i in items if i.get("reviewer") == "codex" and not i["ready"]]
     return {"items": items, "groups": groups, "dependencyIssues": issues, "conflicts": conflicts, "overlap": over,
             "codex": codex}
@@ -1348,9 +1367,11 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
         return ApproveResult(3, ["没有执行，原因："] + reasons)
 
     root, doc = mark
-    written = []
+    written, created = [], []
     for path, data in contents:
         target = checkout / path
+        if codex is not None and not target.exists():
+            created.append(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         written.append(path)
@@ -1359,12 +1380,12 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
         cmd = mark_args(root, doc, checkout, rec["module"], target, "codex-approved" if codex else "approved",
                         codex["report"] if codex else None)
         if isinstance(cmd, str):
-            return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{cmd}"] + _restore(checkout))
+            return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{cmd}"] + _restore(checkout, created))
         cmd = cmd + ["--confirm"]
         ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
         if ran.returncode != 0:
             return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{(ran.stderr.strip() or ran.stdout.strip())[:200]}"]
-                                 + _restore(checkout))
+                                 + _restore(checkout, created))
     approval_no = _next_number(db)
     modules = list(dict.fromkeys(rec["module"] for _, rec in picked))
     nodes = "、".join(f"{rec['module']} 的 {NODE_NAME[rec['node']]}" for _, rec in picked)
