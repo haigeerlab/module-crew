@@ -90,7 +90,8 @@ def _why_not(m: dict, sessions: dict[str, dict], merged: set[str], done: set[str
     if status == "in_progress" and _reopenable(m) is None:   # crew-reopen-module decision 6
         return f"已重开（第 {_reopen_round(db, mid)} 轮待开），要用户点名：start prepare {mid}"
     if status == "in_progress":
-        return f"spec-guard 的当前模块（{m.get('step') or '进行中'}），不在可开工列表"
+        from module_crew import flow           # crew-flow-v2 decision 10: design / regression steps in words
+        return f"spec-guard 的当前模块（{flow.step_word(m) or m.get('step') or '进行中'}），不在可开工列表"
     if status == "suspended":
         return f"在 spec-guard 里挂起（{m.get('suspendedReason') or '未记原因'}）"
     if status == "blocked":
@@ -241,6 +242,15 @@ def review_cadence(project: str | os.PathLike, map_doc: dict | None = None, modu
     if value == "combined" and module is not None and flow_v2(project, module, map_doc):
         return "separate"           # crew-flow-v2 decision 4: the design is written on a confirmed requirement
     return value
+
+
+def flow_available(project: str | os.PathLike) -> bool:
+    """crew-flow-v2 decision 10: the installed spec-guard knows flow v2 (interface 1.18 or later)."""
+    found = probe.find_plugin("spec-guard", Path(project))
+    if isinstance(found, str):
+        return False
+    doc = probe.read_interface(found.root, probe.SPEC_GUARD_MAJOR)
+    return not isinstance(doc, str) and probe._version_tuple(doc) >= (1, 18)
 
 
 def flow_v2(project: str | os.PathLike, module: str, map_doc: dict | None = None) -> bool:
@@ -544,7 +554,8 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
         relay = f"{short}-{m}" + (f"-r{reopen['round']}" if reopen else "")
         text = render_kickoff(m, info.get(m, {}), path,
                               {**cfg, "reviewCadence": "separate" if proposal.cadence == "combined" and (split_approvers(project, m) or flow_v2(project, m))
-                               else proposal.cadence, "takeoverLine": takeover_line(project, m)}, relay, coord,
+                               else proposal.cadence, "takeoverLine": takeover_line(project, m),
+                               "flowV2": flow_available(project)}, relay, coord,
                               approval, host_id, reopen=reopen,
                               spec_ahead=(proposal.spec_ahead.get(m) or {}).get("missing"))
         extra = {"reopen": {"round": reopen["round"], "since": approval, "review": reopen["review"]}} if reopen else {}
@@ -772,7 +783,12 @@ def install_line(root: str | os.PathLike) -> list[str]:
     return [f"第一步：先在本 worktree 装依赖，再写 Spec／动手：{'；'.join(cmds)}（提交钩子要靠它们才能跑）"] if cmds else []
 
 
-def _first_step(module: str, cadence: str) -> str:
+FLOW_V2_STEP = ("如果 spec-guard 把这个模块写成新流程（spec/{m}.md 里有 flow v2 档位行）：需求与技术方案分开交，"
+                "需求批准后写 tasks/{m}/design.md、regression.md 一起交审（节点 技术方案；bug／小改动没有这一步），"
+                "Plan、todo 不交审，开工通知到了再写。")
+
+
+def _first_step(module: str, cadence: str, flow_v2: bool = False) -> str:
     """R13: what the module does before its first approval, by the project's review cadence.
 
     The paths are spec-guard's layout convention (see review.REQUIRED_FILES; boundary review 7)."""
@@ -780,7 +796,8 @@ def _first_step(module: str, cadence: str) -> str:
         return (f"这一步只做：用 /spec 写 spec/{module}.md 与 tasks/{module}/plan.md、todo.md，写好后给模块协调发【交审】"
                 "（节点 Spec、Plan 各一条，或接口提案）。项目评审节奏：combined；遇到新决策、范围不清或高风险不可逆改动时仍先只交 Spec。")
     return (f"这一步只做：用 /spec 只写 spec/{module}.md，写好后给模块协调发【交审】（节点 Spec，或接口提案）；"
-            f"Spec 批准的【用户答复】到了再写 tasks/{module}/plan.md、todo.md 交审（节点 Plan）。项目评审节奏：separate。")
+            f"Spec 批准的【用户答复】到了再写 tasks/{module}/plan.md、todo.md 交审（节点 Plan）。项目评审节奏：separate。"
+            + (FLOW_V2_STEP.format(m=module) if flow_v2 else ""))
 
 
 _TODO_OPEN = re.compile(r"^\s*[-*]\s+\[ \]\s+(.+?)\s*$")
@@ -862,7 +879,7 @@ def render_kickoff(module: str, info: dict, worktree: Path, cfg: dict, relay: st
         *install_line(worktree),
         *(_reopen_lines(module, reopen, cfg["integrationBranch"], cfg.get("reviewCadence", "separate"),
                          worktree) if reopen else
-          [_first_step(module, cfg.get("reviewCadence", "separate")),
+          [_first_step(module, cfg.get("reviewCadence", "separate"), bool(cfg.get("flowV2"))),
            *([cfg["takeoverLine"]] if cfg.get("takeoverLine") else []),
            *(spec_ahead_lines(spec_ahead) if spec_ahead else []), "收到开工类【协调通知】之前不要开始构建。"]),
         "",

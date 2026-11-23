@@ -128,6 +128,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         rec = {"state": "open", "kind": "review", "from": sender, "relayId": relay_id, "text": text,
                "module": sub["module"], "node": sub["node"], "files": sub["files"], "commit": commit,
                "closedReason": None, "answer": None}
+        if tier is not None:               # crew-flow-v2 decision 10: hooks read the stage without /map
+            rec["tier"] = tier
         codex, human_why = ((False, None) if sub.get("disputes") or sub.get("task")
                             else codex_node(db, sub["module"], sub["node"], worktree, commit))
         skip = (sub["node"] == "design" and not sub.get("disputes")            # crew-flow-v2 decision 6

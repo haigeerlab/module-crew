@@ -419,5 +419,53 @@ class FinalByRegressionTest(FlowReviewMixin, MergeCase):
         self.assertEqual(flow.case_ids(["验收结果：", "R1：过", "- R12: 过", "S1：无"]), ["R1", "R12"])
 
 
+class DisplayTest(FlowMixin, ReviewCase):
+    """Task 7, decisions 4, 10, acceptance 9."""
+
+    def items(self, tier, *rows):
+        out = {}
+        for k, (kind, node, state) in enumerate(rows, 1):
+            if kind == "review":
+                out[str(k)] = {"kind": "review", "module": "b", "node": node, "state": state, "tier": tier}
+            else:
+                out[str(k)] = {"kind": kind, "reviews": [node]}
+        return out
+
+    def test_hook_stage_by_tier(self):
+        from module_crew import hooks
+        self.assertIn("写需求文档 spec/b.md", hooks._stage(self.items("normal", ("review", "spec", "open")), "b"))
+        spec_ok = [("review", "spec", "closed"), ("review-approval", 1, None)]
+        self.assertIn("写技术方案与回归", hooks._stage(self.items("normal", *spec_ok), "b"))
+        waiting = self.items("normal", *spec_ok, ("review", "design", "open"))
+        self.assertIn("技术方案已交审（交审事项 C3）", hooks._stage(waiting, "b"))
+        released = self.items("normal", *spec_ok, ("review", "design", "closed"), ("codex-approval", 3, None))
+        self.assertIn("先写 Plan、todo（只留任务，不交审）", hooks._stage(released, "b"))
+        self.assertIn("先写 Plan、todo", hooks._stage(self.items("bug", *spec_ok), "b"))
+
+    def test_old_module_stage_unchanged(self):
+        from module_crew import hooks
+        items = {"1": {"kind": "review", "module": "b", "node": "spec", "state": "closed"},
+                 "2": {"kind": "review", "module": "b", "node": "plan", "state": "closed"},
+                 "3": {"kind": "review-approval", "reviews": [1, 2]}}
+        self.assertEqual(hooks._stage(items, "b"), hooks.STAGE_BUILD)
+        self.assertEqual(hooks._stage({}, "b"), hooks.STAGE_WRITE)
+
+    def test_kickoff_first_step(self):
+        from module_crew import start
+        self.assertFalse(start.flow_available(self.repo))          # the plain fake spec-guard 1.7
+        self.with_flow()
+        self.assertTrue(start.flow_available(self.repo))
+        self.assertIn("节点 技术方案", start._first_step("b", "separate", True))
+        self.assertNotIn("技术方案", start._first_step("b", "separate"))
+
+    def test_start_plan_step_words(self):
+        from module_crew import start
+        self.with_flow()
+        self.set_flow({"b": "normal"}, steps={"b": "design"})
+        db = self.db()
+        m = dict(flow.row_of(json.loads(self.map_file.read_text()), "b"), status="in_progress")
+        self.assertEqual(start._why_not(m, {}, set(), set(), 3, db), "spec-guard 的当前模块（写技术方案），不在可开工列表")
+
+
 if __name__ == "__main__":
     unittest.main()

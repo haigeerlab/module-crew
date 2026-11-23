@@ -130,6 +130,11 @@ COMPACT_NOTE = "刚压缩过：先跑 `module-crew status`、读未完成的事�
 STAGE_WRITE = "写 Spec 与 Plan、发【交审】，收到开工通知之前不要构建"
 STAGE_BUILD = "Spec 与 Plan 已批准，可以构建；做完发最终验收【交审】"
 STAGE_WAIT_MERGE = "最终验收已批准，等模块协调合并"
+# crew-flow-v2 decision 10: a flow v2 module (its tier is recorded on its reviews)
+STAGE_V2_SPEC = "写需求文档 spec/<模块>.md、发【交审】（节点 Spec），等用户确认；收到开工通知之前不要构建"
+STAGE_V2_DESIGN = "需求已确认：写技术方案与回归（tasks/<模块>/design.md、regression.md）、一起发【交审】（节点 技术方案）"
+STAGE_V2_DESIGN_WAIT = "技术方案已交审（交审事项 C{n}），等批准（人批或第二审查者）；不要重做或重发"
+STAGE_V2_BUILD = "可以构建：先写 Plan、todo（只留任务，不交审）并提交，再按它构建；做完发最终验收【交审】（验收结果按回归用例 R<n> 写）"
 STAGE_WAIT_FINAL = "最终验收已交审（交审事项 C{n}），等用户批准；不要重做或重发"
 STAGE_ACCEPTED = "最终验收已接受（交审事项 C{n}），用户暂未授权合并：停在当前停点，不要再提交，等授权合并或退回"
 STAGE_MERGED = "已合入集成分支，停止开发，等模块协调收回 worktree"
@@ -150,8 +155,11 @@ def _stage(items: dict, module: str, sessions: dict | None = None) -> str:
     items = store.round_items(items, sessions, module)
     reopen = store.reopen_of(sessions or {}, module) or {}
     approved = {"spec", "plan"} if reopen.get("review") == {"spec": "approved", "plan": "approved"} else set()
+    tiers = [v.get("tier") for _, v in sorted(((int(k), v) for k, v in items.items()), key=lambda kv: kv[0])
+             if v.get("kind") == "review" and v.get("module") == module and "tier" in v]
+    tier = tiers[-1] if tiers else None
     for rec in items.values():
-        if rec.get("kind") == "review-approval":
+        if rec.get("kind") == "review-approval" or tier is not None and rec.get("kind") == "codex-approval":
             for n in rec.get("reviews", []):
                 r = items.get(str(n)) or {}
                 if r.get("module") == module:
@@ -170,12 +178,26 @@ def _stage(items: dict, module: str, sessions: dict | None = None) -> str:
                    and v.get("node") == "final" and v.get("state") == "open")
     if final:
         return STAGE_WAIT_FINAL.format(n=final[-1])
+    if tier is not None:                              # crew-flow-v2 decision 10
+        return _stage_v2(items, module, tier, approved)
     if {"spec", "plan"} <= approved:
         last = merges[-1][1] if merges else None
         if last and last.get("closedReason") == "returned":
             return f"{STAGE_BUILD}（上次最终验收被退回：{(last.get('reason') or '').splitlines()[0]}）"
         return STAGE_BUILD
     return STAGE_WRITE
+
+
+def _stage_v2(items: dict, module: str, tier: str, approved: set) -> str:
+    from module_crew import flow
+    has = {"spec" if n in flow.SPEC_NODES else n for n in approved}
+    if "spec" not in has:
+        return STAGE_V2_SPEC.replace("<模块>", module)
+    if not flow.full_docs(tier) or "design" in has:
+        return STAGE_V2_BUILD
+    waiting = sorted(int(k) for k, v in items.items() if v.get("kind") == "review" and v.get("module") == module
+                     and v.get("node") == "design" and v.get("state") in ("open", "accepted"))
+    return STAGE_V2_DESIGN_WAIT.format(n=waiting[-1]) if waiting else STAGE_V2_DESIGN.replace("<模块>", module)
 
 
 def _counts(db: store.Store) -> dict[str, int]:
