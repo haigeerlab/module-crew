@@ -238,7 +238,17 @@ def review_cadence(project: str | os.PathLike, map_doc: dict | None = None, modu
     value = cadence_info(project, map_doc)[0]
     if value == "combined" and module is not None and split_approvers(project, module):
         return "separate"
+    if value == "combined" and module is not None and flow_v2(project, module, map_doc):
+        return "separate"           # crew-flow-v2 decision 4: the design is written on a confirmed requirement
     return value
+
+
+def flow_v2(project: str | os.PathLike, module: str, map_doc: dict | None = None) -> bool:
+    from module_crew import flow
+    if map_doc is not None and flow.row_of(map_doc, module) is not None:
+        return flow.is_v2(flow.tier_of(flow.row_of(map_doc, module)))
+    db = _open_store(Path(project))
+    return db is not None and flow.is_v2(flow.tier(db, project, module))
 
 
 def split_approvers(project: str | os.PathLike, module: str) -> bool:
@@ -533,7 +543,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
             result.lines.append(f"{m}：{copied}")
         relay = f"{short}-{m}" + (f"-r{reopen['round']}" if reopen else "")
         text = render_kickoff(m, info.get(m, {}), path,
-                              {**cfg, "reviewCadence": "separate" if proposal.cadence == "combined" and split_approvers(project, m)
+                              {**cfg, "reviewCadence": "separate" if proposal.cadence == "combined" and (split_approvers(project, m) or flow_v2(project, m))
                                else proposal.cadence, "takeoverLine": takeover_line(project, m)}, relay, coord,
                               approval, host_id, reopen=reopen,
                               spec_ahead=(proposal.spec_ahead.get(m) or {}).get("missing"))

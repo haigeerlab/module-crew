@@ -57,3 +57,69 @@ def summarize(map_doc: dict | None) -> dict[str, str]:
     """module id -> tier for every flow v2 module in the map (probe / status)."""
     return {m["id"]: t for m in (map_doc or {}).get("modules") or []
             if isinstance(m, dict) and isinstance(m.get("id"), str) and (t := tier_of(m)) is not None}
+
+
+# decision 3: which review nodes each kind of module takes (interface proposals stand for the Spec, as today)
+PLAN_REFUSED = "新流程模块的 Plan 不交审：写完 tasks/{m}/plan.md、todo.md 提交后直接构建"
+ONE_DOC = "bug／小改动只写一份文档（spec/{m}.md），没有技术方案"
+OLD_DESIGN = ("「技术方案」节点只用于 spec-guard 新流程模块（/map --json 的 tier 不为空）；{m} 是老模块，照 Spec → Plan 交审")
+
+
+def refuse(tier_value: str | None, node: str, module_id: str) -> str | None:
+    """Why this module cannot take a review at this node, or None (decision 3)."""
+    if tier_value is None:
+        return OLD_DESIGN.format(m=module_id) if node == "design" else None
+    if node == "plan":
+        return PLAN_REFUSED.format(m=module_id)
+    if node == "design" and not full_docs(tier_value):
+        return ONE_DOC.format(m=module_id)
+    return None
+
+
+def design_files(module_id: str) -> tuple[str, str]:
+    return f"tasks/{module_id}/design.md", f"tasks/{module_id}/regression.md"
+
+
+def transition_node(tier_value: str | None, node: str, files: list[dict], module_id: str) -> str:
+    """Decision 9: until the contract names 技术方案, a full-docs module sends its design as 节点：Spec listing the
+    design and the regression document and not spec/<id>.md; that review is the design node."""
+    listed = {f.get("path") for f in files}
+    if (node == "spec" and full_docs(tier_value) and set(design_files(module_id)) <= listed
+            and f"spec/{module_id}.md" not in listed):
+        return "design"
+    return node
+
+
+SPEC_NODES = {"spec", "interface"}
+
+
+def ready_to_start(tier_value: str, nodes_now: set[str], nodes_here: set[str]) -> tuple[bool, str | None]:
+    """Decision 5, flow v2 only: (send the start notice now, why not when the approval would otherwise look like it).
+    bug/small start once the requirement is approved; normal/important once the requirement and the design are.
+    Like S53, re-approving a document already approved before does not start the build again."""
+    gate = "design" if full_docs(tier_value) else "spec"
+    has = {("spec" if n in SPEC_NODES else n) for n in nodes_now}
+    here = {("spec" if n in SPEC_NODES else n) for n in nodes_here}
+    if not ({"spec", gate} <= has):
+        return False, None
+    if gate not in here:
+        return False, ("这次批的不是开工所需的最后一份（" + ("技术方案" if gate == "design" else "需求") + "以前已批），"
+                       "没有发开工通知；修订是否影响已开工的构建由用户定")
+    return True, None
+
+
+def start_todo(module_id: str, step: str) -> str:
+    """Decision 5: the start notice's 要你做什么 for a flow v2 module (`step` is sync.STEP)."""
+    return (f"{step}（spec/{module_id}.md、tasks/{module_id}/ 冲突时 sync 自动取集成分支的版本，它带批准标记），"
+            f"然后写 tasks/{module_id}/plan.md（只留任务与检查点）、tasks/{module_id}/todo.md，不交审，提交后按它构建；"
+            "公共文件只能经【公共变更请求】改")
+
+
+def after_release(tier_value: str | None, node: str, module_id: str) -> str | None:
+    """The next step a 放行 notice names for a flow v2 module (None: an old module, today's text)."""
+    if tier_value is None:
+        return None
+    if node in SPEC_NODES and full_docs(tier_value):
+        return (f"写技术方案 tasks/{module_id}/design.md 与回归 tasks/{module_id}/regression.md，"
+                "一起交审（节点 技术方案；契约 v2.10 之前写「节点：Spec」、文件只列这两份）")
+    return "等开工通知"
