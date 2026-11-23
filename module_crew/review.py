@@ -127,11 +127,15 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
                "closedReason": None, "answer": None}
         codex, human_why = ((False, None) if sub.get("disputes") or sub.get("task")
                             else codex_node(db, sub["module"], sub["node"], worktree, commit))
-        reviewers = [] if sub.get("disputes") or codex else _reviewers(db, sub["module"], sub["node"])
-        if not sub.get("disputes") and not codex:
+        skip = (sub["node"] == "design" and not sub.get("disputes")            # crew-flow-v2 decision 6
+                and _design_approver(db, sub["module"]) == "skip")
+        reviewers = [] if sub.get("disputes") or codex or skip else _reviewers(db, sub["module"], sub["node"])
+        if not sub.get("disputes") and not codex and not skip:
             out.lines += _unrouted(db, sub["module"], sub["node"], reviewers)
         if codex:                          # crew-takeover-approve decision 3: the virtual reviewer, no mailbox
             rec.update(reviewer="codex", sentTo=["codex"], sentAt=store.now())
+        elif skip:
+            rec["reviewer"] = "skip"
         elif human_why:                    # M1 note 1: say why a step the takeover gives to Codex goes to the user
             rec["humanReason"] = human_why
         if sub.get("disputes"):
@@ -153,6 +157,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
                              f"，Codex 放行：下一步 review codex C{n}，不提请用户") if codex else "")
                          + (f"；{NODE_NAME.get(sub['node'], sub['node'])} 改为人批：{human_why}"
                             if human_why and sub["node"] != "final" else ""))
+        if codex and sub["node"] == "design":
+            out.lines[-1] = out.lines[-1].replace("Codex 放行：", "交第二审查者：")
         if human_why and sub["node"] == "final":       # crew-takeover-merge decision 1
             out.lines.append(f"合并档位是自动，但这次照人合：{human_why}")
         if sub.get("disputes"):
@@ -164,7 +170,22 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             out.lines.append(f"{revised['path']} 在构建中改过（和集成分支上已批准的不同）：提请用户批准这次最终验收时附上 Spec 的改动差异"
                              f"（review show C{n} --spec-diff），写明一次批准同时批准修订后的 Spec；合入后由 merge run 记下它的批准")
         out.lines += _ledger_lines(ledger)
-        return out
+    if skip:                               # crew-flow-v2 decision 6: no one reviews it, land it and start the build
+        landed = _approve(autonomy.project_of(db), [n], "", codex={"report": None, "skip": SKIP_WHY, "rounds": 0,
+                                                                   "suggestions": 0})
+        out.lines += [f"免审放行 C{n}：{SKIP_WHY}"] + landed.lines
+        out.sends += landed.sends
+        if landed.code != 0:
+            out.code = landed.code
+    return out
+
+
+SKIP_WHY = "spec-guard 判定这份技术方案不用审（designReview 关、没碰老逻辑、不跨模块）"
+
+
+def _design_approver(db: store.Store, module: str) -> str:
+    from module_crew import autonomy, takeover
+    return takeover.approver(db, autonomy.project_of(db), module, "design")
 
 
 def _ledger_lines(ledger: dict | None) -> list[str]:
@@ -423,7 +444,17 @@ def _approved_nodes(db: store.Store) -> dict[str, set[str]]:
     return approved
 
 
-def start_basis(db: store.Store, module: str, approval: int, nodes: set[str], codex: bool = False) -> str:
+def released_by(codex: dict | None) -> str:
+    """crew-flow-v2 decisions 6, 7: who let a node through without the user."""
+    if (codex or {}).get("skip"):
+        return "免审放行"
+    if (codex or {}).get("design"):
+        return "第二审查者放行"
+    return "Codex 放行"
+
+
+def start_basis(db: store.Store, module: str, approval: int, nodes: set[str], codex: bool = False,
+                label: str | None = None) -> str:
     """S53: what a start notice rests on — the nodes approved in C<approval>, and the earlier record of the rest."""
     items = store.records(db, "item")
     since = store.round_since(store.records(db, "session"), module)
@@ -440,7 +471,7 @@ def start_basis(db: store.Store, module: str, approval: int, nodes: set[str], co
     covered = {MARK_TARGET.get(n) or n for n in nodes}
     rest = [f"{NODE_NAME[earlier[t][1]]} 以前" + ("由 Codex 放行于" if earlier[t][2] == "codex-approval" else "批准于")
             + f" C{earlier[t][0]}" for t in ("spec", "design", "plan") if t not in covered and t in earlier]
-    return (f"{'Codex 放行事项' if codex else '用户批准事项'} C{approval}（{module} 的 {here}"
+    return (f"{(label or 'Codex 放行') + '事项' if codex else '用户批准事项'} C{approval}（{module} 的 {here}"
             + ("；" + "，".join(rest) if rest else "") + "）")
 
 
@@ -512,7 +543,7 @@ def codex_node(db: store.Store, module: str, node: str, worktree: Path, commit: 
     spec-guard reads the Plan in the submitting worktree, which must hold the submitted Plan (M1 note 11).
     The final acceptance follows crew-takeover-merge decision 1 (takeover.approval → final_reason)."""
     from module_crew import autonomy, takeover
-    if node not in ("spec", "interface", "plan", "final"):
+    if node not in ("spec", "interface", "plan", "final", "design"):
         return False, None
     if node == "plan":
         shown = _git(worktree, "show", f"{commit}:tasks/{module}/plan.md")
@@ -1410,7 +1441,7 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
         from module_crew import merge
         try:
             commit_run = probe._git(checkout, "commit", "-q", "-m",
-                                    commits.message(f"Codex 放行事项 C{approval_no}：放行 {nodes}" if codex else
+                                    commits.message(f"{released_by(codex)}事项 C{approval_no}：放行 {nodes}" if codex else
                                                     f"用户批准事项 C{approval_no}{hub}：批准 {nodes}", commits.prefix_of(db)),
                                     timeout=merge.commit_timeout(cfg))
         except subprocess.TimeoutExpired as exc:
@@ -1486,7 +1517,8 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
             if todo is None:                      # crew-codex-offload decision 4: held until the user decides
                 continue
             text = protocol.render_coordination_notice(
-                kind="start", basis=start_basis(db, m, approval, nodes_here, codex is not None) + "，"
+                kind="start", basis=start_basis(db, m, approval, nodes_here, codex is not None,
+                                                label=released_by(codex) if codex else None) + "，"
                                     + (f"集成分支 {commit[:7]} 已是批准内容" if empty else f"已提交到集成分支 {commit[:7]}"),
                 todo=(todo + "".join(f"\n审查原文：module-crew review show C{k}（写 Plan、构建时吸收遗留建议）"
                                      for k, rec in picked if rec["module"] == m and rec.get("reviews"))))
@@ -1516,9 +1548,9 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
                                  "path": db.path / meta["path"]})
     result.approval = approval
     if empty:
-        result.lines.append(f"{'Codex 放行记录' if codex else '批准记录'} C{approval}；集成分支已是批准内容、没有差异，未提交，基线记为 HEAD {commit[:7]}")
+        result.lines.append(f"{released_by(codex) + '记录' if codex else '批准记录'} C{approval}；集成分支已是批准内容、没有差异，未提交，基线记为 HEAD {commit[:7]}")
         return result
-    result.lines.append(f"{'Codex 放行记录' if codex else '批准记录'} C{approval}；集成分支提交 {commit[:7]}")
+    result.lines.append(f"{released_by(codex) + '记录' if codex else '批准记录'} C{approval}；集成分支提交 {commit[:7]}")
     result.lines.append(probe.took_line(commit_run, merge.commit_timeout(cfg)))
     if approval != approval_no:
         result.lines.append(f"注意：提交信息里写的是 C{approval_no}，实际批准事项是 C{approval}（期间有其他写入）")

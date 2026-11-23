@@ -225,5 +225,72 @@ class StartTest(FlowReviewMixin, ReviewCase):
         self.assertIsNone(flow.after_release(None, "spec", "b"))
 
 
+def flow_row(design=None, approval=None, **kw):
+    row = takeover_row(**kw)
+    if design is not None:
+        row["takeover"]["design"] = design
+    if approval is not None:
+        row["designApproval"] = {"status": approval}
+    return row
+
+
+class ApproverTest(FlowReviewMixin, ReviewCase):
+    """Task 4, decision 6, acceptance 5."""
+
+    def setUp(self):
+        super().setUp()
+        self.with_flow()
+        for m in ("b", "c"):
+            self.write_design(m)
+
+    def who(self, m, node):
+        from module_crew import takeover
+        return takeover.approval(self.db(), self.repo, m, node)
+
+    def test_requirement_always_user(self):
+        from module_crew import takeover
+        self.set_flow({"b": "normal"}, {"b": flow_row(spec="codex", plan="codex")})
+        self.assertEqual(self.who("b", "spec"), ("human", takeover.FLOW_SPEC))
+        out = self.add(self.spec_review("b"))
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertNotIn("Codex 放行", "\n".join(out.lines))
+        self.assertIn("Plan 不交审（旧档位的 Plan 一项已不生效）", takeover.line(takeover.module(self.db(), self.repo, "b")))
+
+    def test_design_reviewer_human_and_upstream_missing(self):
+        from module_crew import takeover
+        self.set_flow({"b": "normal", "c": "normal"}, {"b": flow_row(design="reviewer"), "c": flow_row(design="human")})
+        self.assertEqual(self.who("b", "design"), ("codex", None))
+        self.assertEqual(self.who("c", "design"), ("human", None))
+        out = self.add(self.design_review("b", node="Spec"))
+        self.assertIn("交第二审查者：下一步 review codex", "\n".join(out.lines))
+        self.set_flow({"b": "normal"})                       # spec-guard without the design item yet
+        self.assertEqual(self.who("b", "design"), ("human", takeover.DESIGN_UPSTREAM))
+        self.assertIn("因上游未发版而人批", takeover.line(takeover.module(self.db(), self.repo, "b")))
+
+    def test_important_design_always_user(self):
+        from module_crew import takeover
+        self.set_flow({"b": "important"}, {"b": flow_row(design="reviewer", approval="not-required")})
+        self.assertEqual(self.who("b", "design"), ("human", takeover.DESIGN_IMPORTANT))
+
+    def test_skip_lands_and_starts(self):
+        self.set_flow({"b": "normal"}, {"b": flow_row(design="reviewer", approval="not-required")})
+        s = self.add(self.spec_review("b")).number
+        self.assertEqual(review.approve(self.repo, [s], "b 的需求批准").code, 0)
+        out = self.add(self.design_review("b", node="Spec"), rid=2)
+        self.assertEqual(out.code, 0, out.lines)
+        text = "\n".join(out.lines)
+        self.assertIn("免审放行 C", text)
+        [msg] = notices(self.db(), out)
+        self.assertIn("免审放行事项", msg.fields["依据"])
+        self.assertTrue((self.repo / "tasks" / "b" / "design.md").exists())
+
+    def test_old_module_line_unchanged(self):
+        from module_crew import takeover
+        self.set_flow({}, {"b": flow_row(plan="codex")})
+        items = takeover.module(self.db(), self.repo, "b")
+        self.assertEqual(takeover.line(items), "批准方式：Spec 人批、Plan Codex 放行、合并 人合")
+        self.assertEqual(self.who("b", "design"), ("human", None))
+
+
 if __name__ == "__main__":
     unittest.main()

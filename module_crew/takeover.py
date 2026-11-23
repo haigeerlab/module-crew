@@ -35,10 +35,14 @@ class Items:
     usable: bool = False
     reason: str | None = None
     narrowed: dict | None = None
+    tier: str | None = None             # crew-flow-v2: the flow v2 tier, None for an old module
+    design: str = "human"               # crew-flow-v2 decision 6: human | reviewer | skip | none (no design document)
+    design_why: str | None = None
 
     @property
     def active(self) -> bool:
-        return self.usable and (any(getattr(self, k) != "human" for k in ITEMS) or bool(self.forced))
+        return self.usable and (any(getattr(self, k) != "human" for k in ITEMS) or bool(self.forced)
+                                or self.tier is not None)       # crew-flow-v2: always say how a flow v2 module is approved
 
 
 def _version(text: str | None) -> tuple[int, ...] | None:
@@ -138,7 +142,41 @@ def module(db: store.Store, project: str | os.PathLike, module_id: str, plan_roo
     why = predeclares(Path(plan_root), module_id) if out.plan == "codex" and plan_root is not None else None
     if why:
         out.forced["plan"] = why
+    from module_crew import flow
+    out.tier = flow.tier_of(row)
+    if out.tier is not None:            # crew-flow-v2 decision 6
+        if out.spec == "codex":
+            out.forced["spec"] = FLOW_SPEC
+        out.plan = "human"
+        out.forced.pop("plan", None)
+        out.design, out.design_why = _design(row, out.tier)
     return out
+
+
+FLOW_SPEC = "新流程：需求永远由用户确认"
+DESIGN_IMPORTANT = "重要需求：技术方案由用户批"
+DESIGN_UPSTREAM = "因上游未发版而人批（spec-guard 还没有技术方案的档位）"
+# Names from the spec-guard interface draft v1 (#22365); checked against the released interface at Checkpoint 4
+DESIGN_NOT_REQUIRED = "not-required"
+
+
+def _design(row: dict, tier: str) -> tuple[str, str | None]:
+    """Who approves a flow v2 module's design: the effective takeover design item spec-guard gives (important
+    requirements already counted in), skip when spec-guard says this one needs no review, human when unreadable."""
+    from module_crew import flow
+    if not flow.full_docs(tier):
+        return "none", None
+    if tier == "important":
+        return "human", DESIGN_IMPORTANT
+    approval = row.get("designApproval")
+    if isinstance(approval, dict) and approval.get("status") == DESIGN_NOT_REQUIRED:
+        return "skip", None
+    value = (row.get("takeover") or {}).get("design")
+    if value == "reviewer":
+        return "reviewer", None
+    if value == "human":
+        return "human", None
+    return "human", DESIGN_UPSTREAM
 
 
 def approver(db: store.Store, project: str | os.PathLike, module_id: str, node: str,
@@ -154,6 +192,10 @@ def approval(db: store.Store, project: str | os.PathLike, module_id: str, node: 
     Plan's pre-declared section (M1 notes 1, 11). The final acceptance: crew-takeover-merge's final_reason."""
     if node == "final":
         who, why = final_reason(db, project, module_id)
+    elif node == "design":              # crew-flow-v2 decision 6: codex here means the second reviewer
+        got = module(db, project, module_id)
+        who = {"reviewer": "codex", "skip": "skip"}.get(got.design, "human") if got.tier is not None else "human"
+        why = got.design_why if who == "human" else None
     else:
         item = {"spec": "spec", "interface": "spec", "plan": "plan"}.get(node)
         if item is None:
@@ -197,12 +239,18 @@ def final_reason(db: store.Store, project: str | os.PathLike, module_id: str) ->
     return "codex", None
 
 
+DESIGN_WORDS = {"human": "人批", "reviewer": "第二审查者审过即可", "skip": "免审", "none": "无（只写一份文档）"}
+
+
 def line(items: Items) -> str:
     """Decision 2: 批准方式：Spec …、Plan …、合并 …"""
     def word(item: str) -> str:
         if item in items.forced:
             return f"人批（{items.forced[item]}）"
         return WORDS[getattr(items, item)]
+    if items.tier is not None:          # crew-flow-v2 decision 6
+        design = DESIGN_WORDS[items.design] + (f"（{items.design_why}）" if items.design_why else "")
+        return f"批准方式：需求 人批、技术方案 {design}、Plan 不交审（旧档位的 Plan 一项已不生效）、合并 {MERGE_WORDS[items.merge]}"
     return f"批准方式：Spec {word('spec')}、Plan {word('plan')}、合并 {MERGE_WORDS[items.merge]}"
 
 
