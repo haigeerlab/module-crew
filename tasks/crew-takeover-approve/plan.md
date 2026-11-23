@@ -105,3 +105,4 @@
 - 问题 G：Codex 看不到 Spec／Plan 引用的项目已有文件（如 `scripts/check.sh`），一轮接一轮阻断（Task 15）。
 - A、C、G 的做法依赖上游约定：mc-coord 已问 delegate-owner（#22261）与 sg-coord（#22260），答复由模块协调转来；先做 Task 16、17，Checkpoint 7 收到答复再做 Task 13～15。
 - 问题 B、D、E、F、I 与 K 中的编号混用（Task 16），注意 5、7 与用法草案对齐（Task 17）。
+- 上游答复（spec-guard，sg-coord #22262）：两轮上限是 spec-guard 有意的硬上限（spec/codex-approval.md 假设 6、AC2；`review_mark.py` 的 `ROUND_CAP = 2`），只数「有阻断」的轮次；与之一致的做法是两轮阻断后直接转人批、不审第 3 轮。spec-guard 不打算放宽。Task 14 按此做。
