@@ -2,7 +2,7 @@
 
 > 依据 `tasks/crew-flow-v2/plan.md`。
 
-- [ ] Task 1：认新模块（Spec 决策 1；验收 1）
+- [x] Task 1：认新模块（Spec 决策 1；验收 1）——实现先于测试（同一次提交）；新增 `module_crew/flow.py`（`tier_of`、`tier`、`is_v2`、`full_docs`、`step_word`、`summarize`），`/map` 经 `takeover._map` 读、低于 1.15 或没有 `tier` 一律按老模块；`probe.summarize_map` 只在有新流程模块时加 `flowV2`；本模块 5 个通过，变异（`is_v2` 恒假）转红；probe 回归 30 个通过（4bf4d15）
 - [ ] Task 2：交审节点合法性与过渡（Spec 决策 2、3、9；验收 2、3、4）
 - [ ] Task 3：开工判定、开工与放行通知文字（Spec 决策 4、5；验收 2、3、4）
 - [ ] Checkpoint 1（report）：节点与开工就位，本模块测试与交审、批量、开工、提前开工、外包回归测试通过
