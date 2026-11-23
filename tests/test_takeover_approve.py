@@ -459,7 +459,10 @@ class CodexReviewTest(TierMixin, TakeoverMixin, ReviewCase):
         text = store.read_body(self.db, body)
         self.assertIn("--state codex-reviewed --review", text)
         self.assertIn("2. 缺字段", text)                   # missing severity is blocking
-        self.assertIn("--previous-report", self.cli("review", "codex", f"C{self.n}")[1])
+        again = self.cli("review", "codex", f"C{self.n}")[1]
+        self.assertNotIn("--previous-report", again)        # Task 13: a snapshot recheck carries the findings in text
+        self.assertIn("逐条核对是否已解决", again)
+        self.assertIn("缺回滚步骤", again)
         code, out = self.note(report(self.files(), [finding("还缺")]))   # Task 14: spec-guard's cap, two blocking rounds
         self.assertEqual(code, 5, out)
         self.assertIn("Codex 两轮都有阻断", out)
@@ -489,7 +492,8 @@ class CodexReviewTest(TierMixin, TakeoverMixin, ReviewCase):
         self.assertEqual(code, 0, out)
         what = "Spec" if store.get(self.db, "item", str(self.n))["node"] == "spec" else "Plan"
         self.assertIn(f"C{m}（b 的 {what}）第 2 次交 Codex 审", out)
-        self.assertIn(f"--previous-report {old}", out)
+        self.assertNotIn("--previous-report", out)          # Task 13 (delegate-owner #22282): interim
+        self.assertIn("1. 缺回滚步骤", out)
         self.assertIn(f"codex/C{m}-r2.json", out)
         code, out = self.note(report(self.files(m)), m)
         self.assertEqual(code, 0, out)
@@ -511,6 +515,24 @@ class CodexReviewTest(TierMixin, TakeoverMixin, ReviewCase):
             relay += 1
             n = self.resubmit(relay)
         self.fail("never over the limit")
+
+    def test_cited_project_files_go_as_context(self):
+        """Task 15 (report G): files the Plan cites that exist in the repository go to delegate as --spec context,
+        with a line saying they are not reviewed themselves; a cited path that does not exist is left out."""
+        spec = store.get(self.db, "item", str(self.n))["node"] == "spec"
+        f = self.wt["b"] / ("spec/b.md" if spec else "tasks/b/plan.md")
+        (self.wt["b"] / "scripts").mkdir(exist_ok=True)
+        (self.wt["b"] / "scripts" / "check.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+        f.write_text(f.read_text() + "\n由 `scripts/check.sh` 调用，结果写到 `out/none.txt`\n", encoding="utf-8")
+        git(self.wt["b"], "add", "-A")
+        git(self.wt["b"], "commit", "-qm", "cite")
+        from module_crew import review
+        m = review.add(self.db, (self.spec_review if spec else self.plan_review)("b"), "shop-b", 60).number
+        out = self.cli("review", "codex", f"C{m}")[1]
+        self.assertIn("--spec scripts/check.sh", out)
+        self.assertNotIn("--spec out/none.txt", out)
+        self.assertIn("context_files", out)
+        self.assertIn("不据此阻断", out)
 
     def test_land_failure_cleans_up_and_says_what_next(self):
         """Task 14 (report C): a refused landing removes the files it created in the integration checkout, the item

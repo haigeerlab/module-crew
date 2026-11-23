@@ -371,7 +371,7 @@ def _auto_item(db: store.Store, project: Path, n: int) -> dict:
         raise AnswerRefused(f"模块分支 {rec['module']} 在交审之后又有提交（交审时 {rec['commit'][:7]}，现在 {head[:7]}），须重新交审")
     doc, why = takeover._report(codex.get("report") or "")
     worktree = Path((store.get(db, "session", rec["from"]) or {}).get("worktree", "/nonexistent"))
-    bad = [why] if doc is None else takeover._final_mismatch(db, rec, doc, worktree)
+    bad = [why] if doc is None else takeover._final_mismatch(db, rec, doc, worktree, n)
     if not bad and (doc.get("scope") or {}).get("fingerprint") != codex.get("fingerprint"):
         bad = ["记下的审查报告被换过（指纹不同）"]
     if bad:

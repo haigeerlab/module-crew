@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -396,6 +397,77 @@ def _history(db: store.Store, rec: dict, n: int) -> list[str]:
     return out
 
 
+def _history_items(db: store.Store, rec: dict, n: int) -> list[tuple[int, dict]]:
+    """This module and node's submissions since the module was last reopened, up to C<n>, oldest first."""
+    since = store.round_since(store.records(db, "session"), rec["module"])
+    return [(int(k), v) for k, v in sorted(store.records(db, "item").items(), key=lambda kv: int(kv[0]))
+            if since < int(k) <= n and v.get("kind") == "review" and v.get("module") == rec["module"]
+            and v.get("node") == rec["node"]]
+
+
+def _load(path: str) -> dict:
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+def _final_scope(db: store.Store, rec: dict, n: int, worktree: Path) -> tuple[str | None, list[str]]:
+    """Task 13 (M1-M2 report A, delegate-owner #22282): a final-acceptance recheck must keep the first round's scope —
+    the same explicit --paths and the same --base (its baseline.from, a full commit id); only --head moves. Round 1:
+    the merge base and the submitted tree's top-level entries (so a rework touching another file stays in scope)."""
+    for _, other in _history_items(db, rec, n):
+        for path in other.get("codexReports") or []:
+            scope = _load(path).get("scope") or {}
+            base = (scope.get("baseline") or {}).get("from")
+            include = (scope.get("paths") or {}).get("include") if isinstance(scope.get("paths"), dict) else None
+            if isinstance(base, str) and base:
+                first = next((v["commit"] for _, v in _history_items(db, rec, n) if v.get("codexReports")), rec["commit"])
+                return base, include if isinstance(include, list) and include else _top(worktree, first)
+    return _base(db, worktree, rec["commit"]), _top(worktree, rec["commit"])
+
+
+def _top(worktree: Path, commit: str) -> list[str]:
+    got = probe._git(worktree, "ls-tree", "--name-only", commit)
+    return [x for x in got.stdout.splitlines() if x and x != ".git"] if got.returncode == 0 else []
+
+
+def _previous_blocking(db: store.Store, rec: dict, n: int) -> list[str]:
+    """The last Codex round's blocking findings for this module and node (snapshot reviews carry them in the text)."""
+    rows = [r for _, v in _history_items(db, rec, n) for r in v.get("reviews") or [] if r.get("from") == "codex"]
+    return list(rows[-1].get("changes") or []) if rows else []
+
+
+_REF = re.compile(r"`([A-Za-z0-9_.][A-Za-z0-9_./-]*)`")
+MAX_CONTEXT = 40
+
+
+def _context_files(rec: dict, worktree: Path, skip: set[str]) -> list[str]:
+    """Task 15 (M1-M2 report G, delegate-owner #22282): files the Spec and Plan cite in backticks that exist in the
+    submitted commit, passed as delegate context_files (--spec, read-only, not reviewed themselves)."""
+    sources = [f"spec/{rec['module']}.md"] + ([f"tasks/{rec['module']}/plan.md"] if rec["node"] in ("plan", "final") else [])
+    out: list[str] = []
+    for src in sources:
+        shown = probe._git(worktree, "show", f"{rec['commit']}:{src}")
+        for name in _REF.findall(shown.stdout if shown.returncode == 0 else ""):
+            name = name.rstrip("/.")
+            if (name in skip or name in out or name in sources or "/" not in name and "." not in name
+                    or any(part in ("", ".", "..", ".git") for part in name.split("/"))):
+                continue
+            kind = probe._git(worktree, "cat-file", "-t", f"{rec['commit']}:{name}")
+            if kind.returncode == 0 and kind.stdout.strip() == "blob":
+                out.append(name)
+            if len(out) >= MAX_CONTEXT:
+                return out
+    return out
+
+
+CONTEXT_TEXT = ("。--spec 带进来的其余文件（context_files）只用来核实 Spec／Plan 的引用，不对它们本身提发现；"
+                "审查范围以外、仓库里已有的文件不据此阻断")
+RECHECK_TEXT = "。上一轮的阻断意见如下，逐条核对是否已解决，没解决的照原样写成阻断意见（severity: blocking）：{items}"
+
+
 def codex_command(db: store.Store, n: int) -> tuple[list[str], Path]:
     """`review codex C<n>` (read only): the /delegate:review line for this round and where to save its stdout."""
     rec = _codex_item(db, n)
@@ -404,25 +476,42 @@ def codex_command(db: store.Store, n: int) -> tuple[list[str], Path]:
     session = store.get(db, "session", rec["from"]) or {}
     worktree = session.get("worktree", "")
     args = ["/delegate:review", "--backend", "codex", "--repo", worktree]
+    recheck = []
     if rec["node"] == "final":          # crew-takeover-merge decision 2: the final patch as a commit range
-        base = _base(db, Path(worktree), rec["commit"]) if worktree else None
-        if base is None:
+        base, include = _final_scope(db, rec, n, Path(worktree)) if worktree else (None, [])
+        if base is None or not include:
             raise CodexRefused(f"C{n} 取不到集成分支与交审提交 {rec['commit'][:7]} 的合并基点")
-        args += ["--base", base, "--head", rec["commit"], "--spec", f"spec/{rec['module']}.md"]
+        args += ["--base", base, "--head", rec["commit"]]
+        for f in include:
+            args += ["--paths", f]
+        args += ["--spec", f"spec/{rec['module']}.md"]
+        changed = set(probe._git(Path(worktree), "diff", "--name-only", "--no-renames", base, rec["commit"]).stdout.split())
+        skip = changed
     else:
         for f in rec["files"]:
             args += ["--paths", f["path"]]
         if rec["node"] == "plan":
             args += ["--spec", f"spec/{rec['module']}.md"]
-    if reports:
+        skip = {f["path"] for f in rec["files"]}
+        recheck = _previous_blocking(db, rec, n) if reports else []
+    context = _context_files(rec, Path(worktree), skip) if worktree else []
+    for f in context:
+        args += ["--spec", f]
+    if reports and rec["node"] == "final":
+        # delegate A9: a recheck needs the same scope; only the final acceptance keeps it (a snapshot review's from
+        # and to are the HEAD it read, so its rework never matches: interim, the findings go into the text)
         args += ["--previous-report", reports[-1]]
     what = WHAT[rec["node"]]
-    args.append(json.dumps(FINAL_TEXT.format(module=rec["module"]) if rec["node"] == "final"
-                           else TASK_TEXT.format(what=what), ensure_ascii=False))
+    text = (FINAL_TEXT.format(module=rec["module"]) if rec["node"] == "final" else TASK_TEXT.format(what=what))
+    text += CONTEXT_TEXT if context else ""
+    text += RECHECK_TEXT.format(items="；".join(f"{i}. {x}" for i, x in enumerate(recheck, 1))) if recheck else ""
+    args.append(json.dumps(text, ensure_ascii=False))
     lines = [f"C{n}（{rec['module']} 的 {what}）第 {len(reports) + 1} 次交 Codex 审：由模块协调在本会话运行",
              "  " + " ".join(args),
              f"把标准输出的那份 JSON 原样存到 {path}，再运行 module-crew review codex-note C{n} --report {path}",
              "Codex 跑不成也照样交给 codex-note（它会停下、给出问用户的草稿）；不要自己审，也不要换后端"]
+    if recheck:
+        lines.append("第 2 轮起不带上一轮报告（delegate 的快照审查范围在返工后对不上，暂行做法）：上一轮的阻断意见已写进审查说明")
     head = probe._git(Path(worktree), "rev-parse", "HEAD").stdout.strip() if worktree else ""
     if head and head != rec["commit"]:
         lines.append(f"注意：模块 worktree 的 HEAD（{head[:7]}）不是交审提交（{rec['commit'][:7]}）；审的内容对不上时 codex-note 会拒收")
@@ -475,19 +564,19 @@ def _mismatch(rec: dict, doc: dict, worktree: Path) -> list[str]:
     return out
 
 
-def _final_mismatch(db: store.Store, rec: dict, doc: dict, worktree: Path) -> list[str]:
+def _final_mismatch(db: store.Store, rec: dict, doc: dict, worktree: Path, n: int) -> list[str]:
     """crew-takeover-merge decision 4.2 / AC4: a commits-mode review from the merge base to the submitted commit X,
     with every file changed in that range at X's content."""
     scope = doc.get("scope") or {}
     line = scope.get("baseline") or {}
-    base = _base(db, worktree, rec["commit"])
+    base = _final_scope(db, rec, n, worktree)[0]
     if not isinstance(line, dict) or line.get("mode") != "commits":
         return ["审查报告不是按提交范围审的（scope.baseline.mode 不是 commits）"]
     out = []
     if line.get("to") != rec["commit"]:
         out.append(f"审的不是交审提交 {rec['commit'][:7]}（报告的 to 是 {str(line.get('to'))[:7]}）")
     if base is None or line.get("from") != base:
-        out.append(f"审查起点不是集成分支与交审提交的合并基点 {(base or '?')[:7]}")
+        out.append(f"审查起点不是 {(base or '?')[:7]}（第一轮的起点，或集成分支与交审提交的合并基点）")
     if out:
         return out
     files = scope.get("files") if isinstance(scope.get("files"), dict) else {}
@@ -585,7 +674,7 @@ def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) ->
         return CodexResult(5, [f"C{n} 没有记结论：{why}", "把下面这份【等待用户】自检后发给用户（照现有规则转）；不要自己审：", ""],
                            draft=unavailable_draft(db, rec, n, why, _repeats(report)))
     worktree = Path((store.get(db, "session", rec["from"]) or {}).get("worktree", "/nonexistent"))
-    bad = _final_mismatch(db, rec, doc, worktree) if rec["node"] == "final" else _mismatch(rec, doc, worktree)
+    bad = _final_mismatch(db, rec, doc, worktree, n) if rec["node"] == "final" else _mismatch(rec, doc, worktree)
     if bad:
         raise CodexRefused("审查报告和交审对不上，没有记：" + "；".join(bad) + f"。重跑 review codex C{n}")
     block, advice = _blocking(doc)

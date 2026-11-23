@@ -127,7 +127,8 @@ class FinalReviewTest(FinalCase):
         self.assertEqual(code, 0, out)
         self.assertIn(f"--base {self.base(n)} --head {self.x(n)}", out)
         self.assertIn("--spec spec/b.md", out)
-        self.assertNotIn("--paths", out)
+        # crew-takeover-approve Task 13 (delegate-owner #22282): explicit --paths, the same every round
+        self.assertIn("--paths spec --paths src --paths tasks", out)
         self.assertIn("验收标准", out)
         self.assertIn("最终验收", out)
 
@@ -139,7 +140,11 @@ class FinalReviewTest(FinalCase):
         body = [e for e in store.events(self.db, kind="item") if e["type"] == "item.rework-sent"][-1]["data"]["body"]
         self.assertNotIn("review-mark", store.read_body(self.db, body))
         m = self.submit_final(content="VALUE = 'b2'\n").number
-        self.assertIn("--previous-report", self.cli("review", "codex", f"C{m}")[1])
+        again = self.cli("review", "codex", f"C{m}")[1]
+        self.assertIn("--previous-report", again)
+        # crew-takeover-approve Task 13: the recheck keeps the first round's --base and --paths, only --head moves
+        self.assertIn(f"--base {self.base(n)} --head {self.x(m)}", again)
+        self.assertIn("--paths spec --paths src --paths tasks", again)
         code, out = self.note(m, final_report(self.wt["b"], self.base(m), self.x(m),
                                               [finding("可以更短", severity="suggestion")]))
         self.assertEqual(code, 0, out)
