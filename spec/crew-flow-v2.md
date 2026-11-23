@@ -173,7 +173,7 @@ module-crew check quick
 
 ## 并行边界
 
-- 独占：`spec/crew-flow-v2.md`、`tasks/crew-flow-v2/`、`module_crew/{probe,protocol,review,takeover,sources,start,hooks,present,merge}.py`、`tests/test_flow_v2.py`
+- 独占：`spec/crew-flow-v2.md`、`tasks/crew-flow-v2/`、`module_crew/probe.py`、`module_crew/protocol.py`、`module_crew/review.py`、`module_crew/takeover.py`、`module_crew/sources.py`、`module_crew/start.py`、`module_crew/hooks.py`、`module_crew/present.py`、`module_crew/merge.py`、`tests/test_flow_v2.py`
 - 公共：`skills/`、`codex-skills/`、`README.md`、`README.en.md`、`interface.json`、`CHANGELOG.md`（发【公共变更请求】）
 
 ## 并行说明
@@ -202,4 +202,4 @@ README「流程」一节加「新流程模块」：节点、谁批、何时开�
 
 ## 变更记录
 
-（尚未批准，无）
+- 2026-11-24：「并行边界」独占文件由花括号写法改为逐个列出；原因：module-crew 读并行边界时把花括号路径报为 bad-path，内容不变；来源：mc-coord #22376（随 C698 批准附带的修改要求）。
