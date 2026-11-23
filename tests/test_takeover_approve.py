@@ -507,6 +507,75 @@ class CodexReviewTest(TierMixin, TakeoverMixin, ReviewCase):
         self.assertEqual(json.loads(self.cli("status", "--json")[1])["store"]["takeover"]["codex"]["reworked"], 1)
         self.assertIn("其中返工后才放行 1 次", self.cli("status")[1])
 
+    def over_limit(self) -> tuple[int, str]:
+        """Blocking rounds, resubmitting between them, until codex-note stops for the user: (item, output)."""
+        n, relay = self.n, 10
+        for _ in range(5):
+            code, out = self.note(report(self.files(n), [finding(f"还缺 {relay}")]), n)
+            if code == 5:
+                return n, out
+            self.assertEqual(code, 0, out)
+            relay += 1
+            n = self.resubmit(relay)
+        self.fail("never over the limit")
+
+    def test_unavailable_draft_names_the_cause(self):
+        """Task 16 (B): diagnostics in the draft; a run that would fail the same way again is not the recommendation."""
+        doc = dict(report(self.files(), status="conditions_missing"), diagnostics=["previous_report_scope_mismatch"],
+                   backend_started=False)
+        code, out = self.note(doc)
+        self.assertEqual(code, 5, out)
+        self.assertIn("previous_report_scope_mismatch", out)
+        self.assertIn("推荐 B", out)
+        self.assertIn("你该回：B", out)
+        code, out = self.note(report(self.files(), status="failed"))
+        self.assertEqual(code, 5, out)
+        self.assertIn("推荐 A", out)
+
+    def test_over_limit_counted_after_fallback_and_rework_goes_to_the_user(self):
+        """Task 16 (D, E, F): the count survives the fallback; choosing B sends the resubmission to the user; the
+        default reply block for the over-limit item agrees with itself."""
+        from module_crew import review
+        n, out = self.over_limit()
+        self.assertIn("不再交 Codex", out)              # option B says where the resubmission goes
+        self.assertEqual(self.cli("review", "codex-fallback", f"C{n}", "--original", "我来定")[0], 0)
+        self.assertEqual(json.loads(self.cli("status", "--json")[1])["store"]["takeover"]["codex"]["overLimit"], 1)
+        b = review.batch(self.repo)
+        blocks = review.batch_reply_blocks(b, review.numbered_decisions(b, "c"))
+        self.assertIn(f"C{n} A；C{n}-1 A", blocks)
+        self.assertNotIn("改了 3 轮", "\n".join(review.question_lines(review.numbered_decisions(b, "c"))))
+        code, out = self.cli("review", "answer", f"C{n}", "--original", "照阻断意见再改一轮")
+        self.assertEqual(code, 0, out)
+        m = self.resubmit(30)
+        rec = store.get(self.db, "item", str(m))
+        self.assertNotEqual(rec.get("reviewer"), "codex")
+        self.assertIn("Codex 已审满两轮仍有阻断", rec.get("humanReason") or "")
+        self.assertEqual(json.loads(self.cli("status", "--json")[1])["store"]["takeover"]["codex"]["overLimit"], 1)
+
+    def test_disagree_question_carries_the_refuted_finding(self):
+        """Task 16 (I): the pending question quotes the Codex finding the module refutes; the default block says a B
+        overrides the A in front of it (F)."""
+        from module_crew import review
+        self.assertEqual(self.note(report(self.files(), [finding("缺回滚步骤")]))[0], 0)
+        spec = store.get(self.db, "item", str(self.n))["node"] == "spec"
+        text = (self.spec_review if spec else self.plan_review)("b").replace("要点：", "不同意：R-1：回滚不归本模块管\n要点：")
+        m = review.add(self.db, text, "shop-b", 40).number
+        self.assertIsNotNone(m)
+        b = review.batch(self.repo)
+        questions = "\n".join(review.question_lines(review.numbered_decisions(b, "c")))
+        self.assertIn("缺回滚步骤", questions)
+        self.assertNotIn("见审查结论", questions)
+        self.assertIn("覆盖", self.cli("review", "batch")[1])
+
+    def test_show_uses_one_numbering(self):
+        """Task 16 (K): a Codex row is labelled by its cumulative R-<n> only."""
+        self.assertEqual(self.note(report(self.files(), [finding("缺回滚步骤")]))[0], 0)
+        m = self.resubmit(50)
+        self.assertEqual(self.note(report(self.files(m), [finding("还缺")]), m)[0] in (0, 5), True)
+        out = self.cli("review", "show", f"C{m}")[1]
+        self.assertIn("R-2 · codex", out)
+        self.assertNotIn("第 1 轮 · R-2", out)
+
     def test_suggestions_only_lands_as_codex_approval(self):
         code, out = self.note(report(self.files(), [finding("可以更短", severity="suggestion")]))
         self.assertEqual(code, 0, out)

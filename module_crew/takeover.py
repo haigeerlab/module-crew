@@ -152,14 +152,31 @@ def approval(db: store.Store, project: str | os.PathLike, module_id: str, node: 
     """(approver, why the user approves a step the takeover gives to Codex); `plan_root` is where spec-guard reads the
     Plan's pre-declared section (M1 notes 1, 11). The final acceptance: crew-takeover-merge's final_reason."""
     if node == "final":
-        return final_reason(db, project, module_id)
-    item = {"spec": "spec", "interface": "spec", "plan": "plan"}.get(node)
-    if item is None:
-        return "human", None
-    got = module(db, project, module_id, plan_root if item == "plan" else None)
-    if getattr(got, item) != "codex":
-        return "human", None
-    return ("human", got.forced[item]) if item in got.forced else ("codex", None)
+        who, why = final_reason(db, project, module_id)
+    else:
+        item = {"spec": "spec", "interface": "spec", "plan": "plan"}.get(node)
+        if item is None:
+            return "human", None
+        got = module(db, project, module_id, plan_root if item == "plan" else None)
+        if getattr(got, item) != "codex":
+            return "human", None
+        who, why = ("human", got.forced[item]) if item in got.forced else ("codex", None)
+    if who == "codex" and exhausted(db, module_id, node):
+        return "human", EXHAUSTED
+    return who, why
+
+
+EXHAUSTED = "Codex 已审满两轮仍有阻断"
+
+
+def exhausted(db: store.Store, module_id: str, node: str) -> bool:
+    """M1-M2 report E: once Codex ran out of rounds for this module and node (since the module was last reopened),
+    a resubmission goes to the user, as the over-limit draft's option B says."""
+    since = store.round_since(store.records(db, "session"), module_id)
+    items = store.records(db, "item")
+    return any(e.get("type") == "item.codex-over-limit" and int(e["key"]) > since
+               and (items.get(e["key"]) or {}).get("module") == module_id and (items.get(e["key"]) or {}).get("node") == node
+               for e in store.events(db, kind="item"))
 
 
 def final_reason(db: store.Store, project: str | os.PathLike, module_id: str) -> tuple[str, str | None]:
@@ -250,8 +267,8 @@ def codex_counts(db: store.Store) -> dict:
                 if key in out:
                     out[key] += 1
             out["reworked"] += 1 if (rec.get("codex") or {}).get("rounds", 1) > 1 else 0
-        elif rec.get("kind") == "review" and rec.get("reviewer") == "codex" and rec.get("overLimit"):
-            out["overLimit"] += 1
+    # M1-M2 report D: one event each time Codex runs out of rounds; codex-fallback later hands the item to the user
+    out["overLimit"] = sum(1 for e in store.events(db, kind="item") if e.get("type") == "item.codex-over-limit")
     return out
 
 
@@ -420,12 +437,24 @@ def _report(path: str | os.PathLike) -> tuple[dict | None, str | None]:
     if doc.get("backend") != "codex":
         return None, f"审查后端不是 codex（{doc.get('backend')}）"
     if doc.get("execution_status") != "completed":
-        return None, f"Codex 审查没跑完（execution_status：{doc.get('execution_status')}）"
+        diag = [str(x) for x in doc.get("diagnostics") or [] if x]
+        return None, (f"Codex 审查没跑完（execution_status：{doc.get('execution_status')}"
+                      + (f"；diagnostics：{'、'.join(diag)}" if diag else "") + "）")
     if doc.get("review_outcome") not in DONE_OUTCOMES:
         return None, f"Codex 审查没有结论（review_outcome：{doc.get('review_outcome')}）"
     if doc.get("unreviewed"):
         return None, "Codex 审查只覆盖了一部分文件"
     return doc, None
+
+
+def _repeats(path: str | os.PathLike) -> bool:
+    """M1-M2 report B: delegate refused before starting Codex (conditions_missing), so the same command fails the
+    same way again; rerunning it is not the recommendation."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(doc, dict) and doc.get("execution_status") == "conditions_missing"
 
 
 def _mismatch(rec: dict, doc: dict, worktree: Path) -> list[str]:
@@ -498,20 +527,26 @@ def _coordinator(db: store.Store) -> str:
 FINAL_BY_USER = "之后照今天的最终验收：用户批准合并 merge approve、只接受验收 merge accept、要求修改 review answer"
 
 
-def unavailable_draft(db: store.Store, rec: dict, n: int, why: str) -> str:
+REPEATS = "（delegate 没启动 Codex 就拒绝了，照同一条命令重跑会同样失败：先排除上面的原因）"
+
+
+def unavailable_draft(db: store.Store, rec: dict, n: int, why: str, repeats: bool = False) -> str:
+    """M1-M2 report B: the cause with delegate's diagnostics; a failure that repeats puts the user's way first."""
     from module_crew import offload
     what = WHAT[rec["node"]]
+    rerun = ("A", "排除原因后重跑" if repeats else "等 Codex 恢复后重跑",
+             f"运行 review codex C{n}，照它给的命令重跑" + (REPEATS if repeats else ""))
     if rec["node"] == "final":          # crew-takeover-merge decision 3
+        user = ("B", "这一次由你验收", f"review codex-fallback C{n} --original-file <答复>；{FINAL_BY_USER}")
         return "\n".join(offload.draft(
             _coordinator(db), rec["module"], f"{rec['module']} 的最终验收（交审 C{n}）Codex 审查没跑成，下一步怎么办",
             f"Codex 审查没跑成：{why}。这一项是自动合，Codex 不可用时停下等你，不会改由 Claude 自己审",
-            [("A", "等 Codex 恢复后重跑", f"运行 review codex C{n}，照它给的命令重跑"),
-             ("B", "这一次由你验收", f"review codex-fallback C{n} --original-file <答复>；{FINAL_BY_USER}")])) + "\n"
+            [user, rerun] if repeats else [rerun, user])) + "\n"
+    user = ("B", "这一项这次改由你批", f"之后照人批流程：review codex-fallback C{n} --original-file <答复>，再 review approve C{n}")
     return "\n".join(offload.draft(
         _coordinator(db), rec["module"], f"{rec['module']} 的 {what}（交审 C{n}）Codex 审查没跑成，下一步怎么办",
         f"Codex 审查没跑成：{why}。这一项由 Codex 放行，Codex 不可用时停下等你，不会改由 Claude 自己审",
-        [("A", f"等 Codex 恢复后重跑", f"运行 review codex C{n}，照它给的命令重跑"),
-         ("B", "这一项这次改由你批", f"之后照人批流程：review codex-fallback C{n} --original-file <答复>，再 review approve C{n}")])) + "\n"
+        [user, rerun] if repeats else [rerun, user])) + "\n"
 
 
 def over_limit_draft(db: store.Store, rec: dict, n: int, block: list[str]) -> str:
@@ -522,12 +557,14 @@ def over_limit_draft(db: store.Store, rec: dict, n: int, block: list[str]) -> st
             _coordinator(db), rec["module"], f"{rec['module']} 的最终验收（交审 C{n}）Codex 两轮后仍有阻断，怎么办",
             f"Codex 审了 {CODEX_REWORK_LIMIT} 轮返工后仍有 {len(block)} 条阻断意见：" + "；".join(block[:5]),
             [("A", "你来验收这一版", f"review codex-fallback C{n} --original-file <答复>；{FINAL_BY_USER}"),
-             ("B", "照阻断意见再改一轮，改完交你验收", f"review codex-fallback C{n} --original-file <答复> 后用 review answer C{n} 退回")])) + "\n"
+             ("B", "照阻断意见再改一轮，改完交你验收（不再交 Codex）",
+              f"review codex-fallback C{n} --original-file <答复> 后用 review answer C{n} 退回；模块重交的最终验收照人合")])) + "\n"
     return "\n".join(offload.draft(
         _coordinator(db), rec["module"], f"{rec['module']} 的 {what}（交审 C{n}）Codex 两轮后仍有阻断，怎么办",
         f"Codex 审了 {CODEX_REWORK_LIMIT} 轮返工后仍有 {len(block)} 条阻断意见：" + "；".join(block[:5]),
         [("A", "你来批这一版", f"review codex-fallback C{n} --original-file <答复>，再 review approve C{n}"),
-         ("B", "照阻断意见再改一轮，改完交你批", f"review codex-fallback C{n} --original-file <答复> 后用 review answer C{n} 退回")])) + "\n"
+         ("B", "照阻断意见再改一轮，改完交你批（不再交 Codex）",
+          f"review codex-fallback C{n} --original-file <答复> 后用 review answer C{n} 退回；模块重交的{what}照人批")])) + "\n"
 
 
 def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) -> CodexResult:
@@ -543,7 +580,7 @@ def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) ->
             tx.put("item", str(n), tx.get("item", str(n)), action="codex-unavailable", data={"reason": why,
                                                                                             "report": str(report)})
         return CodexResult(5, [f"C{n} 没有记结论：{why}", "把下面这份【等待用户】自检后发给用户（照现有规则转）；不要自己审：", ""],
-                           draft=unavailable_draft(db, rec, n, why))
+                           draft=unavailable_draft(db, rec, n, why, _repeats(report)))
     worktree = Path((store.get(db, "session", rec["from"]) or {}).get("worktree", "/nonexistent"))
     bad = _final_mismatch(db, rec, doc, worktree) if rec["node"] == "final" else _mismatch(rec, doc, worktree)
     if bad:

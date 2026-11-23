@@ -468,7 +468,7 @@ def batch(project: str | os.PathLike) -> dict:
                       "ready": state in READY and v.get("reviewer") != "codex",
                       **({"reviewer": "codex"} if v.get("reviewer") == "codex" else {}),
                       **({"humanReason": v["humanReason"]} if v.get("humanReason") else {}),
-                      "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state),
+                      "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state, db),
                       **({"checks": v["checks"]} if "checks" in v else {}),
                       **({"display": present.final_tables(project, db, v)} if v["node"] == "final" and v.get("module")
                          and not v.get("task") else {})})
@@ -525,16 +525,36 @@ def _reworked(db: store.Store, module: str, node: str) -> list[str]:
     return out
 
 
-def _item_decisions(n: int, v: dict, state: str) -> list[dict]:
+def _disputed(db: store.Store | None, v: dict) -> list[str]:
+    """M1-M2 report I: what each refuted review asked for, from the earlier submissions of this module and node."""
+    refs = {d["review"] for d in v.get("disputes") or []}
+    out = []
+    for _, rec in sorted((store.records(db, "item") if db is not None else {}).items(), key=lambda kv: int(kv[0])):
+        if rec.get("kind") == "review" and rec.get("module") == v["module"] and rec.get("node") == v["node"]:
+            for row in rec.get("reviews") or []:
+                if row.get("ref") in refs:
+                    out += [f"{row['ref']}：{x}" for x in (row.get("changes") or [row.get("points", "")]) if x]
+    return out
+
+
+CODEX_OVER = "Codex 审了两轮仍有阻断，你已决定这一项由你来定；选 A 照现版本批，选 B 退回再改（重交后交你批，不再交 Codex）"
+
+
+def _item_decisions(n: int, v: dict, state: str, db: store.Store | None = None) -> list[dict]:
     """Questions this submission puts to the user: the reviewer's own, or the coordinator's for a deadlock or timeout."""
     what = f"C{n} {v['module']} 的 {NODE_NAME.get(v['node'], v['node'])}"
     rows = v.get("reviews") or []
     last = rows[-1] if rows else {}
     asked = (last.get("changes") or [last.get("points", "")])
     if v.get("disputes"):
+        asked = [x for x in asked if x] or _disputed(db, v)
         reasons = "；".join(f"{d['review']}：{d['reason']}" for d in v["disputes"])
         return [{"source": "coordinator", "kind": "disagree", "lean": "B", "leanReason": WHY_B["disagree"], "options": CHOOSE_CURRENT,
                  "question": f"{what}：模块不同意审查——审查要求：{'；'.join(asked) or '见审查结论'}；模块理由：{reasons}"}]
+    if v.get("overLimit") and v.get("fallback") == "codex-over-limit":
+        # M1-M2 report F: the user already chose to decide it; leaning B here would contradict the A in front of it
+        return [{"source": "coordinator", "kind": "over-limit", "lean": None, "leanReason": CODEX_OVER,
+                 "options": CHOOSE_CURRENT, "question": f"{what}：{CODEX_OVER}——{'；'.join(asked)}"}]
     if v.get("overLimit"):
         return [{"source": "coordinator", "kind": "over-limit", "lean": "B", "leanReason": WHY_B["over-limit"], "options": CHOOSE_CURRENT,
                  "question": f"{what}：返工 {REWORK_LIMIT} 轮后审查仍要求修改——{'；'.join(asked)}"}]
@@ -688,8 +708,8 @@ def show(db: store.Store, number: int, submission: bool = False, spec_diff: bool
     rows = [r for r in rec.get("reviews") or [] if r.get("text")]
     if not rows:
         return out + [f"C{number} 还没有审查结论"]
-    for i, r in enumerate(rows, 1):
-        out += [f"第 {i} 轮 · {r['ref']} · {r['from']} · {r.get('verdict')} "
+    for i, r in enumerate(rows, 1):             # M1-M2 report K: Codex rows carry their cumulative R-<n> only
+        out += [("" if r["from"] == "codex" else f"第 {i} 轮 · ") + f"{r['ref']} · {r['from']} · {r.get('verdict')} "
                 f"sha256:{hashlib.sha256(r['text'].encode('utf-8')).hexdigest()}：", r["text"].rstrip("\n"), ""]
     return out[:-1]
 

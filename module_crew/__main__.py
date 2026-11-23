@@ -799,6 +799,9 @@ def _review(args) -> int:
             print("答复块（一块只答一件事，各放一个代码块给用户复制；待定问题按倾向填好，用户可改字母；"
                   "要退回就请用户写一句修改意见，不给占位块）：")
             print("\n".join(f"  {x}" for x in blocks))
+            if any(d["kind"] in ("disagree", "over-limit") and d["lean"] == "B" for _, _, d in numbered):
+                print("  注意：待定问题答 B（退回）会覆盖前面那一项的 A，整项按退回处理、不算批准；"     # M1-M2 report F
+                      "要批准就把那个待定问题也答 A")
             print()
         if b.get("codex"):                  # crew-takeover-approve decision 2: only so the user knows
             print(f"另有 {len(b['codex'])} 项由 Codex 审查中（不提请你批）：" + "；".join(b["codex"]))
