@@ -579,10 +579,15 @@ def _coordinator_summary(db: store.Store, sessions: dict) -> tuple[dict | None, 
 def summarize_map(doc: dict | None) -> dict | None:
     if doc is None:
         return None
+    from module_crew import flow
     modules = [m for m in doc.get("modules") or [] if isinstance(m, dict)]
-    return {"done": sum(1 for m in modules if m.get("status") == "done"), "total": len(modules),
-            "activeModule": doc.get("activeModule"),
-            "inProgress": [m.get("id") for m in modules if m.get("status") == "in_progress"]}
+    out = {"done": sum(1 for m in modules if m.get("status") == "done"), "total": len(modules),
+           "activeModule": doc.get("activeModule"),
+           "inProgress": [m.get("id") for m in modules if m.get("status") == "in_progress"]}
+    tiers = flow.summarize(doc)          # crew-flow-v2 decision 1: only when some module follows flow v2
+    if tiers:
+        out["flowV2"] = tiers
+    return out
 
 
 @dataclass(frozen=True)
