@@ -169,14 +169,24 @@ def _ledger_lines(ledger: dict | None) -> list[str]:
 _MARKER = "<!-- spec-guard: review"
 
 
-def _restore(checkout: Path) -> list[str]:
+def _restore(checkout: Path, created: list[str] = (), keep: Path | None = None) -> list[str]:
     """Decision 4 (0.11.2): put the integration checkout back after a failed approve. It was clean before (baseline
-    check), so every tracked change is ours and goes back to the branch; new files are unstaged and kept, never deleted."""
+    check), so every tracked change is ours and goes back to the branch; new files are unstaged and kept, never deleted.
+    `created`: files a Codex landing wrote that did not exist before; nobody but module-crew has seen them, so they
+    move out of the checkout into `keep` (crew-takeover-approve, M1-M2 report C) — moved, never deleted."""
     _git(checkout, "reset", "-q")
     _git(checkout, "checkout", "--", ".")
+    moved = []
+    for rel in created if keep is not None else ():
+        path = checkout / rel
+        if path.is_file():
+            (keep / rel).parent.mkdir(parents=True, exist_ok=True)
+            os.replace(path, keep / rel)
+            moved.append(rel)
     new = [line[3:] for line in _git(checkout, "status", "--porcelain", "--untracked-files=all").stdout.splitlines()
            if line.startswith("?? ")]
     return (["状态库与集成分支都没有变化；集成 checkout 里原有的文件已还原成集成分支上的内容"]
+            + ([f"这次 Codex 放行新建的文件已移出集成 checkout，存在 {keep}：" + "、".join(moved)] if moved else [])
             + (["这次新建、没有删除的文件（未暂存，交用户决定）：" + "、".join(new),
                 "  它们让集成 checkout 不干净，会挡住下一次 review approve：用户看过后不要就删掉、要留就移出 checkout，"
                 "再重新 review approve（module-crew 不删文件）"] if new else []))
@@ -428,6 +438,14 @@ def start_basis(db: store.Store, module: str, approval: int, nodes: set[str], co
 NODE_RANK = {"spec": 0, "interface": 1, "plan": 2, "final": 3}
 
 
+def _codex_state(db: store.Store, item: dict) -> str:
+    """M1-M2 report C: a Codex pass that could not land waits for the user, and says so."""
+    failed = (store.get(db, "item", str(item["number"])) or {}).get("landFailed")
+    if failed:
+        return f"Codex 已放行但落地失败，等用户决定：review codex-fallback C{item['number']}（{failed}）"
+    return STATE_TEXT[item["reviewState"]]
+
+
 def batch(project: str | os.PathLike) -> dict:
     """Read-only view of the open reviews, their dependency check and relevant conflicts."""
     project = Path(project)
@@ -468,13 +486,13 @@ def batch(project: str | os.PathLike) -> dict:
                       "ready": state in READY and v.get("reviewer") != "codex",
                       **({"reviewer": "codex"} if v.get("reviewer") == "codex" else {}),
                       **({"humanReason": v["humanReason"]} if v.get("humanReason") else {}),
-                      "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state),
+                      "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state, db),
                       **({"checks": v["checks"]} if "checks" in v else {}),
                       **({"display": present.final_tables(project, db, v)} if v["node"] == "final" and v.get("module")
                          and not v.get("task") else {})})
     codex = [f"C{i['number']} {i['module']} 的 "
              + (auto_progress(db, i["number"], store.get(db, "item", str(i["number"])) or {}) if i["node"] == "final"
-                else f"{NODE_NAME.get(i['node'], i['node'])}（{STATE_TEXT[i['reviewState']]}）")
+                else f"{NODE_NAME.get(i['node'], i['node'])}（{_codex_state(db, i)}）")
              for i in items if i.get("reviewer") == "codex" and not i["ready"]]
     return {"items": items, "groups": groups, "dependencyIssues": issues, "conflicts": conflicts, "overlap": over,
             "codex": codex}
@@ -525,16 +543,36 @@ def _reworked(db: store.Store, module: str, node: str) -> list[str]:
     return out
 
 
-def _item_decisions(n: int, v: dict, state: str) -> list[dict]:
+def _disputed(db: store.Store | None, v: dict) -> list[str]:
+    """M1-M2 report I: what each refuted review asked for, from the earlier submissions of this module and node."""
+    refs = {d["review"] for d in v.get("disputes") or []}
+    out = []
+    for _, rec in sorted((store.records(db, "item") if db is not None else {}).items(), key=lambda kv: int(kv[0])):
+        if rec.get("kind") == "review" and rec.get("module") == v["module"] and rec.get("node") == v["node"]:
+            for row in rec.get("reviews") or []:
+                if row.get("ref") in refs:
+                    out += [f"{row['ref']}：{x}" for x in (row.get("changes") or [row.get("points", "")]) if x]
+    return out
+
+
+CODEX_OVER = "Codex 审了两轮仍有阻断，你已决定这一项由你来定；选 A 照现版本批，选 B 退回再改（重交后交你批，不再交 Codex）"
+
+
+def _item_decisions(n: int, v: dict, state: str, db: store.Store | None = None) -> list[dict]:
     """Questions this submission puts to the user: the reviewer's own, or the coordinator's for a deadlock or timeout."""
     what = f"C{n} {v['module']} 的 {NODE_NAME.get(v['node'], v['node'])}"
     rows = v.get("reviews") or []
     last = rows[-1] if rows else {}
     asked = (last.get("changes") or [last.get("points", "")])
     if v.get("disputes"):
+        asked = [x for x in asked if x] or _disputed(db, v)
         reasons = "；".join(f"{d['review']}：{d['reason']}" for d in v["disputes"])
         return [{"source": "coordinator", "kind": "disagree", "lean": "B", "leanReason": WHY_B["disagree"], "options": CHOOSE_CURRENT,
                  "question": f"{what}：模块不同意审查——审查要求：{'；'.join(asked) or '见审查结论'}；模块理由：{reasons}"}]
+    if v.get("overLimit") and v.get("fallback") == "codex-over-limit":
+        # M1-M2 report F: the user already chose to decide it; leaning B here would contradict the A in front of it
+        return [{"source": "coordinator", "kind": "over-limit", "lean": None, "leanReason": CODEX_OVER,
+                 "options": CHOOSE_CURRENT, "question": f"{what}：{CODEX_OVER}——{'；'.join(asked)}"}]
     if v.get("overLimit"):
         return [{"source": "coordinator", "kind": "over-limit", "lean": "B", "leanReason": WHY_B["over-limit"], "options": CHOOSE_CURRENT,
                  "question": f"{what}：返工 {REWORK_LIMIT} 轮后审查仍要求修改——{'；'.join(asked)}"}]
@@ -688,8 +726,8 @@ def show(db: store.Store, number: int, submission: bool = False, spec_diff: bool
     rows = [r for r in rec.get("reviews") or [] if r.get("text")]
     if not rows:
         return out + [f"C{number} 还没有审查结论"]
-    for i, r in enumerate(rows, 1):
-        out += [f"第 {i} 轮 · {r['ref']} · {r['from']} · {r.get('verdict')} "
+    for i, r in enumerate(rows, 1):             # M1-M2 report K: Codex rows carry their cumulative R-<n> only
+        out += [("" if r["from"] == "codex" else f"第 {i} 轮 · ") + f"{r['ref']} · {r['from']} · {r.get('verdict')} "
                 f"sha256:{hashlib.sha256(r['text'].encode('utf-8')).hexdigest()}：", r["text"].rstrip("\n"), ""]
     return out[:-1]
 
@@ -1328,9 +1366,11 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
         return ApproveResult(3, ["没有执行，原因："] + reasons)
 
     root, doc = mark
-    written = []
+    written, created = [], []
     for path, data in contents:
         target = checkout / path
+        if codex is not None and not target.exists():
+            created.append(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         written.append(path)
@@ -1339,12 +1379,12 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
         cmd = mark_args(root, doc, checkout, rec["module"], target, "codex-approved" if codex else "approved",
                         codex["report"] if codex else None)
         if isinstance(cmd, str):
-            return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{cmd}"] + _restore(checkout))
+            return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{cmd}"] + _restore(checkout, created, db.path / "codex" / f"leftover-C{n}"))
         cmd = cmd + ["--confirm"]
         ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
         if ran.returncode != 0:
             return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{(ran.stderr.strip() or ran.stdout.strip())[:200]}"]
-                                 + _restore(checkout))
+                                 + _restore(checkout, created, db.path / "codex" / f"leftover-C{n}"))
     approval_no = _next_number(db)
     modules = list(dict.fromkeys(rec["module"] for _, rec in picked))
     nodes = "、".join(f"{rec['module']} 的 {NODE_NAME[rec['node']]}" for _, rec in picked)

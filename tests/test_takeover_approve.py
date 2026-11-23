@@ -459,11 +459,13 @@ class CodexReviewTest(TierMixin, TakeoverMixin, ReviewCase):
         text = store.read_body(self.db, body)
         self.assertIn("--state codex-reviewed --review", text)
         self.assertIn("2. 缺字段", text)                   # missing severity is blocking
-        self.assertIn("--previous-report", self.cli("review", "codex", f"C{self.n}")[1])
-        code, out = self.note(report(self.files(), [finding("还缺")]))
-        self.assertIn("返工第 2 轮", out)
-        code, out = self.note(report(self.files(), [finding("仍缺")]))
+        again = self.cli("review", "codex", f"C{self.n}")[1]
+        self.assertNotIn("--previous-report", again)        # Task 13: a snapshot recheck carries the findings in text
+        self.assertIn("逐条核对是否已解决", again)
+        self.assertIn("缺回滚步骤", again)
+        code, out = self.note(report(self.files(), [finding("还缺")]))   # Task 14: spec-guard's cap, two blocking rounds
         self.assertEqual(code, 5, out)
+        self.assertIn("Codex 两轮都有阻断", out)
         self.assertIn("交用户决定（不降档）", out)
         self.assertIn("【等待用户】", out)
         self.assertIn("类型：卡住选做法", out)
@@ -490,22 +492,124 @@ class CodexReviewTest(TierMixin, TakeoverMixin, ReviewCase):
         self.assertEqual(code, 0, out)
         what = "Spec" if store.get(self.db, "item", str(self.n))["node"] == "spec" else "Plan"
         self.assertIn(f"C{m}（b 的 {what}）第 2 次交 Codex 审", out)
-        self.assertIn(f"--previous-report {old}", out)
+        self.assertNotIn("--previous-report", out)          # Task 13 (delegate-owner #22282): interim
+        self.assertIn("1. 缺回滚步骤", out)
         self.assertIn(f"codex/C{m}-r2.json", out)
-        code, out = self.note(report(self.files(m), [finding("还缺")]), m)
-        self.assertIn("返工第 2 轮", out)
-        body = [e for e in store.events(self.db, kind="item") if e["type"] == "item.rework-sent"][-1]["data"]["body"]
-        self.assertIn(f"Codex 审查 R-2（交审 C{m}）", store.read_body(self.db, body))
-        self.assertEqual(store.get(self.db, "item", str(m))["reviews"][-1]["ref"], "R-2")
-        k = self.resubmit(4)
-        self.assertIn("第 3 次交 Codex 审", self.cli("review", "codex", f"C{k}")[1])
-        code, out = self.note(report(self.files(k)), k)
+        code, out = self.note(report(self.files(m)), m)
         self.assertEqual(code, 0, out)
+        self.assertEqual(store.get(self.db, "item", str(m))["reviews"][-1]["ref"], "R-2")
         approval = next(v for v in store.records(self.db, "item").values() if v.get("kind") == "codex-approval")
-        self.assertEqual(approval["codex"]["rounds"], 3)
-        self.assertTrue(approval["codex"]["report"].endswith(f"C{k}-r3.json"))
+        self.assertEqual(approval["codex"]["rounds"], 2)
+        self.assertTrue(approval["codex"]["report"].endswith(f"C{m}-r2.json"))
         self.assertEqual(json.loads(self.cli("status", "--json")[1])["store"]["takeover"]["codex"]["reworked"], 1)
         self.assertIn("其中返工后才放行 1 次", self.cli("status")[1])
+
+    def over_limit(self) -> tuple[int, str]:
+        """Blocking rounds, resubmitting between them, until codex-note stops for the user: (item, output)."""
+        n, relay = self.n, 10
+        for _ in range(5):
+            code, out = self.note(report(self.files(n), [finding(f"还缺 {relay}")]), n)
+            if code == 5:
+                return n, out
+            self.assertEqual(code, 0, out)
+            relay += 1
+            n = self.resubmit(relay)
+        self.fail("never over the limit")
+
+    def test_cited_project_files_go_as_context(self):
+        """Task 15 (report G): files the Plan cites that exist in the repository go to delegate as --spec context,
+        with a line saying they are not reviewed themselves; a cited path that does not exist is left out."""
+        spec = store.get(self.db, "item", str(self.n))["node"] == "spec"
+        f = self.wt["b"] / ("spec/b.md" if spec else "tasks/b/plan.md")
+        (self.wt["b"] / "scripts").mkdir(exist_ok=True)
+        (self.wt["b"] / "scripts" / "check.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+        f.write_text(f.read_text() + "\n由 `scripts/check.sh` 调用，结果写到 `out/none.txt`\n", encoding="utf-8")
+        git(self.wt["b"], "add", "-A")
+        git(self.wt["b"], "commit", "-qm", "cite")
+        from module_crew import review
+        m = review.add(self.db, (self.spec_review if spec else self.plan_review)("b"), "shop-b", 60).number
+        out = self.cli("review", "codex", f"C{m}")[1]
+        self.assertIn("--spec scripts/check.sh", out)
+        self.assertNotIn("--spec out/none.txt", out)
+        self.assertIn("context_files", out)
+        self.assertIn("不据此阻断", out)
+
+    def test_land_failure_cleans_up_and_says_what_next(self):
+        """Task 14 (report C): a refused landing removes the files it created in the integration checkout, the item
+        says what comes next, and codex-fallback records the real reason."""
+        import os
+        os.environ["FAKE_REVIEW_FAIL"] = "b"
+        self.addCleanup(lambda: os.environ.pop("FAKE_REVIEW_FAIL", None))
+        code, out = self.note(report(self.files()))
+        self.assertEqual(code, 4, out)
+        self.assertIn("review codex-fallback", out)
+        self.assertEqual(git(self.repo, "status", "--porcelain", "--untracked-files=all").strip(), "", out)
+        kept = self.db.path / "codex" / f"leftover-C{self.n}"     # moved out, never deleted
+        self.assertTrue([p for p in kept.rglob("*") if p.is_file()], out)
+        rec = store.get(self.db, "item", str(self.n))
+        self.assertTrue(rec.get("landFailed"))
+        self.assertIn("落地失败", self.cli("review", "batch")[1])
+        self.assertEqual(self.cli("review", "codex-note", f"C{self.n}", "--report", rec["codexReports"][-1])[0], 3)
+        os.environ.pop("FAKE_REVIEW_FAIL")
+        self.assertEqual(self.cli("review", "codex-fallback", f"C{self.n}", "--original", "我来批")[0], 0)
+        self.assertEqual(store.get(self.db, "item", str(self.n))["fallback"], "codex-land-failed")
+
+    def test_unavailable_draft_names_the_cause(self):
+        """Task 16 (B): diagnostics in the draft; a run that would fail the same way again is not the recommendation."""
+        doc = dict(report(self.files(), status="conditions_missing"), diagnostics=["previous_report_scope_mismatch"],
+                   backend_started=False)
+        code, out = self.note(doc)
+        self.assertEqual(code, 5, out)
+        self.assertIn("previous_report_scope_mismatch", out)
+        self.assertIn("推荐 B", out)
+        self.assertIn("你该回：B", out)
+        code, out = self.note(report(self.files(), status="failed"))
+        self.assertEqual(code, 5, out)
+        self.assertIn("推荐 A", out)
+
+    def test_over_limit_counted_after_fallback_and_rework_goes_to_the_user(self):
+        """Task 16 (D, E, F): the count survives the fallback; choosing B sends the resubmission to the user; the
+        default reply block for the over-limit item agrees with itself."""
+        from module_crew import review
+        n, out = self.over_limit()
+        self.assertIn("不再交 Codex", out)              # option B says where the resubmission goes
+        self.assertEqual(self.cli("review", "codex-fallback", f"C{n}", "--original", "我来定")[0], 0)
+        self.assertEqual(json.loads(self.cli("status", "--json")[1])["store"]["takeover"]["codex"]["overLimit"], 1)
+        b = review.batch(self.repo)
+        blocks = review.batch_reply_blocks(b, review.numbered_decisions(b, "c"))
+        self.assertIn(f"C{n} A；C{n}-1 A", blocks)
+        self.assertNotIn("改了 3 轮", "\n".join(review.question_lines(review.numbered_decisions(b, "c"))))
+        code, out = self.cli("review", "answer", f"C{n}", "--original", "照阻断意见再改一轮")
+        self.assertEqual(code, 0, out)
+        m = self.resubmit(30)
+        rec = store.get(self.db, "item", str(m))
+        self.assertNotEqual(rec.get("reviewer"), "codex")
+        self.assertIn("Codex 已审满两轮仍有阻断", rec.get("humanReason") or "")
+        self.assertEqual(json.loads(self.cli("status", "--json")[1])["store"]["takeover"]["codex"]["overLimit"], 1)
+
+    def test_disagree_question_carries_the_refuted_finding(self):
+        """Task 16 (I): the pending question quotes the Codex finding the module refutes; the default block says a B
+        overrides the A in front of it (F)."""
+        from module_crew import review
+        self.assertEqual(self.note(report(self.files(), [finding("缺回滚步骤")]))[0], 0)
+        spec = store.get(self.db, "item", str(self.n))["node"] == "spec"
+        text = (self.spec_review if spec else self.plan_review)("b").replace("要点：", "不同意：R-1：回滚不归本模块管\n要点：")
+        m = review.add(self.db, text, "shop-b", 40).number
+        self.assertIsNotNone(m)
+        b = review.batch(self.repo)
+        questions = "\n".join(review.question_lines(review.numbered_decisions(b, "c")))
+        self.assertIn("缺回滚步骤", questions)
+        self.assertNotIn("见审查结论", questions)
+        self.assertIn("覆盖", self.cli("review", "batch")[1])
+
+    def test_show_uses_one_numbering(self):
+        """Task 16 (K): a Codex row is labelled by its cumulative R-<n> only."""
+        self.assertEqual(self.note(report(self.files(), [finding("缺回滚步骤")]))[0], 0)
+        m = self.resubmit(50)
+        self.assertEqual(self.note(report(self.files(m), [finding("还缺")]), m)[0] in (0, 5), True)
+        out = self.cli("review", "show", f"C{m}")[1]
+        self.assertIn("R-2 · codex", out)
+        self.assertNotIn("第 1 轮 · R-2", out)
 
     def test_suggestions_only_lands_as_codex_approval(self):
         code, out = self.note(report(self.files(), [finding("可以更短", severity="suggestion")]))

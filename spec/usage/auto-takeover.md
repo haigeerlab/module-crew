@@ -25,10 +25,11 @@
 
 ### U1: 只接管 Plan：Plan 由 Codex 放行
 
-用户在集成 checkout 用 `/spec-guard:config` 把项目档位设成「只接管 Plan」（module-crew 先 `tier --preflight`）。`module-crew tier` 显示「Spec 人批、Plan Codex 放行、合并人合」。
+用户在集成 checkout 用 `/spec-guard:config` 把项目档位设成「只接管 Plan」（module-crew 先 `tier --preflight`；它读状态库，项目还没有状态库时先 `module-crew store init`，否则退出码 2）。`module-crew tier` 显示「Spec 人批、Plan Codex 放行、合并人合」。
 模块会话交 Spec：照旧交用户批。交 Plan：`review add` 登记行写「Codex 放行：下一步 review codex C<n>」，不进给用户的批次。
 模块协调后台跑 `review codex C<n>` 给出的命令，再 `review codex-note C<n> --report <报告>`：有阻断就发返工通知，模块改完重交；无阻断就落地 Plan、记 `codex-approved` 标记、发开工通知（依据写 Codex 放行事项号）。
-`status` 的接管一段写「Codex 放行：Plan 1 次」；Codex 没跑成时退出码 5，给出【等待用户】草稿，用户选等 Codex 或这次自己批。
+`status` 的接管一段写「Codex 放行：Plan 1 次」；Codex 没跑成时退出码 5，给出【等待用户】草稿（带 delegate 的 diagnostics），用户选等 Codex 或这次自己批。
+Codex 审满两轮仍有阻断时同样停下交用户；之后这个节点重交改为人批，不再交 Codex。
 
 ### U2: 接管到合并：最终验收由 Codex 放行并自动合进集成分支
 
@@ -40,7 +41,7 @@
 ### U3: 出事收窄
 
 自动合的模块在合并队列里因模块原因被退回（或用户撤销合并批准、返工超限、基线变红，或 autopilot 调 `tier degrade --reason … --ref …`）：
-module-crew 调 spec-guard 收窄入口，「接管到合并」降为「只接管 Plan」，输出「接管档位已从 … 收窄到 …」，模块协调马上告诉用户；同一事项只降一次。
+module-crew 调 spec-guard 收窄入口，「接管到合并」降为「只接管 Plan」，输出「接管档位已收窄（项目 接管到合并 → 只接管 Plan）：<原因>。马上告诉用户；…」，模块协调马上告诉用户；同一事项只降一次。
 放宽要用户原话，经 `/spec-guard:config` 写；`module-crew tier restore` 只给出这条指引。
 
 ## Milestones
@@ -53,3 +54,7 @@ module-crew 调 spec-guard 收窄入口，「接管到合并」降为「只接�
 ## 评审记录
 
 - 2026-11-21：用户在 mc-coord 会话批准本草案（原话「批草案并改边界」）。补写于两个模块 Spec、Plan 批准之后；拆分核对：无。
+
+## 变更记录
+
+- 2026-11-23：U1 写明 `tier --preflight` 要先有状态库、Codex 没跑成的草稿带 diagnostics、两轮阻断后改人批；U3 的收窄提示按实际措辞写。原因：0.24.1 沙箱实跑报告（M1-M2-REPORT.md）注意 5、7 与问题 B、C、E。来源：crew-takeover-approve 第 3 轮返工 Task 17（用户「按推荐继续」，C686），随返工最终验收复审。

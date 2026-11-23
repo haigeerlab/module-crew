@@ -95,3 +95,18 @@
 - 注意 5～7（措辞、`review batch` 仍列出审查中项、preflight 依赖状态库）不改代码；如需与草案对齐，改用法草案或 Spec 的措辞，随返工最终验收一并呈现。
 
 若改动需要修订 Spec（例如 Task 9 改变决策 1 的读法），照常在 Spec「变更记录」追加并随返工最终验收复审。
+
+## 返工：M1、M2 停点不通过（2026-11-23，第 3 轮）
+
+用户在 M1、M2 停点判定不通过（原话「按推荐继续」，推荐为「M1、M2 都判不通过，两个模块原地重开修」）。依据 0.24.1 安装版沙箱实跑报告 `module-crew-m2-sandbox/M1-M2-REPORT.md`（提交 8dc41d5） 的问题 A～G、I、K 与注意 5、7。均为修正已批准 Spec 描述的行为（返工能走通、上限与 spec-guard 一致、提示准确），Plan 批准标记不改回 pending；做法改变 Spec 决策的，照常在 Spec「变更记录」追加，随返工最终验收复审。
+
+- 问题 A（严重）：第 2 轮起的 `--previous-report` 被 delegate 以 `previous_report_scope_mismatch` 拒绝（返工必然换提交），所有返工路径都失败（Task 13）。
+- 问题 C（严重）：module-crew 允许审 3 轮，spec-guard 0.92 两轮阻断后拒收 `codex-approved`（`codex-rounds-exhausted`）；落地失败还在集成 checkout 留下未跟踪文件、事项卡住（Task 14）。
+- 问题 G：Codex 看不到 Spec／Plan 引用的项目已有文件（如 `scripts/check.sh`），一轮接一轮阻断（Task 15）。
+- A、C、G 的做法依赖上游约定：mc-coord 已问 delegate-owner（#22261）与 sg-coord（#22260），答复由模块协调转来；先做 Task 16、17，Checkpoint 7 收到答复再做 Task 13～15。
+- 问题 B、D、E、F、I 与 K 中的编号混用（Task 16），注意 5、7 与用法草案对齐（Task 17）。
+- 上游答复（spec-guard，sg-coord #22262）：两轮上限是 spec-guard 有意的硬上限（spec/codex-approval.md 假设 6、AC2；`review_mark.py` 的 `ROUND_CAP = 2`），只数「有阻断」的轮次；与之一致的做法是两轮阻断后直接转人批、不审第 3 轮。spec-guard 不打算放宽。Task 14 按此做。
+- 上游答复（delegate，delegate-owner #22282，按 delegate 0.10.0／接口 1.5 代码并 `--dry-run` 核过）：
+  - A·最终验收：`--previous-report` 只用于范围对得上的复审（delegate spec/review-recheck.md A9：`scope.paths` 的 include／exclude、`baseline.mode` 相同，commits 模式下 `baseline.from` 也相同，只有 `to` 可前进）。做法：`--base` 固定写第一轮报告的 `scope.baseline.from`（完整提交号，不写分支名）；每轮显式给同样的 `--paths`（可以是目录），只让 `--head` 前进。显式 paths 以外的改动不进审查。
+  - A·Plan 审查（快照）：delegate 规格缺口（快照 from = to = 当时 HEAD，返工后必然对不上），放宽要 delegate 的用户先定。在那之前第 2 轮起不带 `--previous-report`，把上一轮阻断逐条写进审查说明请 Codex 逐条核对；轮次由 module-crew 自己记。最终验收里写明这是暂行做法。Task 13 按此做。
+  - G：`--spec`／`--plan` 可重复、接受仓库里任何文件，进 `context_files`（按 `to` 提交读入、`scope.files` 带 sha256，不进补丁、不进 `scope.fingerprint.paths`、不参与 A9 比较）；不能落在 `--exclude` 里（否则 `context_file_excluded`），一次审查文件总数上限 256。审查说明另加一句「context_files 只用来核实 Spec/Plan 的引用，不对它们本身提发现」。只写说明而不带文件不推荐。Task 15 按此做。
