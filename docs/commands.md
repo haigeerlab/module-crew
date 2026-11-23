@@ -242,10 +242,10 @@ module-crew 的全部命令。每个命令组写：做什么、谁跑、在哪�
 
 ### `review codex`、`review codex-note`、`review codex-fallback`
 
-- `review codex C<n>`：只读，给出这一轮交 Codex 审的 `/delegate:review --backend codex` 命令与报告要存的文件（模块协调）。轮次按模块＋节点累计（返工重交换了 C 号也接着数，与 spec-guard 记的 round 一致），第 2 轮起命令带 `--previous-report <上一轮报告>`。
-- `review codex-note C<n> --report <json>`：记下 Codex 的审查报告。退出码 0：已发返工通知或已放行；3：报告与交审提交对不上、事项不对；4：落地失败（集成 checkout 已还原）；5：Codex 没有结论或两轮返工后仍有阻断，输出末尾是【等待用户】草稿。
-- `review codex-fallback C<n> (--original|--original-file)`：用户决定这一项改由自己批时把交审改回人批（要原话），之后照 `review approve`／`review answer`。
-- 最终验收（自动合，crew-takeover-merge）：`review codex` 给出 `--base <合并基点> --head <交审提交>` 的命令；`review codex-note` 没有阻断时只记「通过」、不落地，提示下一步 `merge auto`；`review codex-fallback` 后照 `merge approve`／`merge accept`／`review answer`。
+- `review codex C<n>`：只读，给出这一轮交 Codex 审的 `/delegate:review --backend codex` 命令与报告要存的文件（模块协调）。轮次按模块＋节点累计（返工重交换了 C 号也接着数，与 spec-guard 记的 round 一致）。Spec、Plan、接口提案是快照审查，第 2 轮起不带 `--previous-report`（delegate 认为返工后范围对不上），改把上一轮阻断意见逐条写进审查说明（暂行做法）；最终验收复审固定第一轮的 `--base` 与 `--paths`、只让 `--head` 前进，并带 `--previous-report <上一轮报告>`。Spec、Plan 用反引号引用、交审提交里存在的项目文件以 `--spec` 作为只读上下文（context_files）带上，审查说明写明不据范围外已有文件阻断。
+- `review codex-note C<n> --report <json>`：记下 Codex 的审查报告。退出码 0：已发返工通知或已放行；3：报告与交审提交对不上、事项不对；4：落地失败（集成 checkout 已还原、这次新建的文件已删掉，事项停在「Codex 已放行但落地失败」等用户）；5：Codex 没有结论（草稿带 delegate 的 diagnostics；`conditions_missing` 时推荐改由用户批），或 Spec、Plan 两轮都有阻断（spec-guard 的上限；最终验收两轮返工后仍有阻断），输出末尾是【等待用户】草稿。超限之后该节点重交改为人批。
+- `review codex-fallback C<n> (--original|--original-file)`：用户决定这一项改由自己批时把交审改回人批（要原话，记下原因 `codex-unavailable`／`codex-over-limit`／`codex-land-failed`），之后照 `review approve`／`review answer`。
+- 最终验收（自动合，crew-takeover-merge）：`review codex` 给出 `--base <合并基点> --head <交审提交> --paths <交审提交的顶层条目>…` 的命令（复审沿用第一轮的 `--base` 与 `--paths`）；`review codex-note` 没有阻断时只记「通过」、不落地，提示下一步 `merge auto`；`review codex-fallback` 后照 `merge approve`／`merge accept`／`review answer`。
 
 ### `merge auto`、`merge first-stage`
 

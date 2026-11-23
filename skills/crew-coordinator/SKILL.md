@@ -247,13 +247,13 @@ module-crew change accept <编号> --original-file <用户原话文件>     # �
   放宽也一样要原话、一次升一档（`tier restore` 已退役，只给指引）。
 - **能力图永远人批**；spec-guard 判为重要需求的 Spec、Plan 有「预先声明」时，不管勾选都由用户批（批准方式里写原因）；有没有预先声明以 spec-guard 的 `declaredScope` 为准，格式错误或读不到也算有，交审登记行与批量交审会写「人批（原因）」。最终验收照旧要用户的答复，勾了「合并：自动」的模块除外（见下面「自动合」）。
 - **Codex 放行的节点**（交审登记时写「Codex 放行：下一步 review codex C<n>」，不进给用户的批次）：
-  1. `module-crew review codex C<n>` 给出这一轮的 `/delegate:review --backend codex …` 命令（轮次按模块＋节点累计，返工重交后不从 1 数；第 2 轮起自动带 `--previous-report`），照它在本会话跑，把标准输出的 JSON 原样存到它给的文件；
+  1. `module-crew review codex C<n>` 给出这一轮的 `/delegate:review --backend codex …` 命令（轮次按模块＋节点累计，返工重交后不从 1 数；Spec、Plan 第 2 轮起把上一轮阻断写进审查说明、不带 `--previous-report`，最终验收复审固定第一轮的 `--base` 与 `--paths` 并带它；Spec、Plan 引用的已有项目文件作为只读上下文带上），照它在本会话跑，把标准输出的 JSON 原样存到它给的文件；
   2. `module-crew review codex-note C<n> --report <文件>`，按退出码：`0` 已发返工通知（照输出 `bridge_send`）或已放行（Spec、Plan 都批了发开工通知，只放了一个节点发「放行」类【协调通知】）；
-     `3` 报告和交审对不上，重跑第 1 步；`4` 落地失败，原因照抄给用户；`5` Codex 没跑成或两轮返工后仍有阻断：输出末尾是一份【等待用户】草稿，自检后照现有规则交给用户。
+     `3` 报告和交审对不上，重跑第 1 步；`4` 落地失败（这次新建的文件已删掉），原因照抄给用户，用户决定自己批时 `review codex-fallback`；`5` Codex 没跑成，或 Spec、Plan 两轮都有阻断（spec-guard 的上限；最终验收是两轮返工后仍有阻断）：输出末尾是一份【等待用户】草稿，自检后照现有规则交给用户；超限之后这个节点重交改为人批。
   3. **Codex 不可用就停下等用户，绝不自己审、不换后端。** 用户选「这一项改由我批」时，先 `module-crew review codex-fallback C<n> --original-file <原话文件>`，之后照人批流程 `review approve`／`review answer`。
   - Codex 放行记成单独的 `codex-approval`，对用户一律说「Codex 放行」，不说成用户批准，也不发【用户答复】。
 - **自动合（合并第一段，crew-takeover-merge）**：模块的合并一项是「自动合」、项目开着检查记账、Spec 与 Plan 都已批准时，最终验收交审登记写「自动合：下一步 review codex C<n>」，不进给用户的批次（缺条件时登记行写原因，照人合）。
-  1. `review codex C<n>` 给出按提交范围（集成分支合并基点 → 交审提交）审最终补丁的命令，照跑、存报告，再 `review codex-note C<n> --report <文件>`：有阻断照返工处理（最多 2 轮），没跑成或超限按退出码 5 的草稿问用户（用户选由自己验收后 `review codex-fallback`，之后照今天 `merge approve`／`merge accept`／`review answer`）；
+  1. `review codex C<n>` 给出按提交范围（集成分支合并基点 → 交审提交；复审固定第一轮的起点与 `--paths`）审最终补丁的命令，照跑、存报告，再 `review codex-note C<n> --report <文件>`：有阻断照返工处理（最多 2 轮），没跑成或超限按退出码 5 的草稿问用户（用户选由自己验收后 `review codex-fallback`，之后照今天 `merge approve`／`merge accept`／`review answer`）；
   2. 没有阻断时输出「下一步：module-crew merge auto C<n>」：**不问用户**，用 Bash 后台跑（Codex 模块协调加 `--detach`，跑完 `merge result`）。它放行（记自动放行事项，不是用户批准，不发【用户答复】）、排进合并队列并跑一次 `merge run`，完整检查照跑；之后照 `merge run` 的退出码处理收尾、同步与退回通知；输出说「队列里还有」时接着 `merge run`。
   3. 合入后只记「合并第一段完成」：**推 batch 分支、开 PR、spec-guard 的最终验收记录与远端合并都归 autopilot**，它读 `module-crew merge first-stage --json`；module-crew 不调 autopilot、不写 `~/.autopilot/`。`merge push` 照旧要用户原话。
   4. 对用户说「Codex 无阻断，自动合并第一段」，不说成用户批准；用户撤销自动合的合并批准后，那份最终验收改由用户验收，不再 `merge auto`。
