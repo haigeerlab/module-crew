@@ -93,7 +93,7 @@ All off by default; the coordinator turns them on only with the user's own words
 |---|---|---|
 | `declaredScope` (declared scope) | Shared files declared up front in a module's Plan are edited directly on the module branch and reviewed at final acceptance | [User guide](docs/guide.md#声明范围declaredscope) |
 | `checkLedger` (check ledger) | Day to day only the quick check runs, recorded per tree hash; the full check runs only in the merge queue | [User guide](docs/guide.md#检查记账checkledger) |
-| `takeover` (spec-guard takeover) | none (default) / Plan only / up to merge / custom: a Spec or Plan ticked "Codex approves" is reviewed by Codex and released when it has no blocking finding (two rework rounds at most; if Codex is unavailable it stops and waits for the user); narrows automatically after an incident. `autonomyTier` is retired | [User guide](docs/guide.md#接管档位takeover) |
+| `takeover` (spec-guard takeover) | none (default) / Plan only / up to merge / custom: a Spec or Plan ticked "Codex approves" is reviewed by Codex and released when it has no blocking finding (two rounds with blocking findings hand it to the user; if Codex is unavailable it stops and waits for the user); narrows automatically after an incident. `autonomyTier` is retired | [User guide](docs/guide.md#接管档位takeover) |
 | `digest` (wrap-up digest) | sync, check-ledger, unqueued-commit and early-landing messages are summarised once at wrap-up with `tier digest` | [User guide](docs/guide.md#接管档位takeover) |
 | `codexOffload` (quota offload) | When Claude quota is tight, modules opened afterwards hand their Tasks to one Codex session; the module session checks and commits | [User guide](docs/guide.md#额度外包codexoffload) |
 

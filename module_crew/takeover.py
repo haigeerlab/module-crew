@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -152,14 +153,31 @@ def approval(db: store.Store, project: str | os.PathLike, module_id: str, node: 
     """(approver, why the user approves a step the takeover gives to Codex); `plan_root` is where spec-guard reads the
     Plan's pre-declared section (M1 notes 1, 11). The final acceptance: crew-takeover-merge's final_reason."""
     if node == "final":
-        return final_reason(db, project, module_id)
-    item = {"spec": "spec", "interface": "spec", "plan": "plan"}.get(node)
-    if item is None:
-        return "human", None
-    got = module(db, project, module_id, plan_root if item == "plan" else None)
-    if getattr(got, item) != "codex":
-        return "human", None
-    return ("human", got.forced[item]) if item in got.forced else ("codex", None)
+        who, why = final_reason(db, project, module_id)
+    else:
+        item = {"spec": "spec", "interface": "spec", "plan": "plan"}.get(node)
+        if item is None:
+            return "human", None
+        got = module(db, project, module_id, plan_root if item == "plan" else None)
+        if getattr(got, item) != "codex":
+            return "human", None
+        who, why = ("human", got.forced[item]) if item in got.forced else ("codex", None)
+    if who == "codex" and exhausted(db, module_id, node):
+        return "human", EXHAUSTED
+    return who, why
+
+
+EXHAUSTED = "Codex 已审满两轮仍有阻断"
+
+
+def exhausted(db: store.Store, module_id: str, node: str) -> bool:
+    """M1-M2 report E: once Codex ran out of rounds for this module and node (since the module was last reopened),
+    a resubmission goes to the user, as the over-limit draft's option B says."""
+    since = store.round_since(store.records(db, "session"), module_id)
+    items = store.records(db, "item")
+    return any(e.get("type") == "item.codex-over-limit" and int(e["key"]) > since
+               and (items.get(e["key"]) or {}).get("module") == module_id and (items.get(e["key"]) or {}).get("node") == node
+               for e in store.events(db, kind="item"))
 
 
 def final_reason(db: store.Store, project: str | os.PathLike, module_id: str) -> tuple[str, str | None]:
@@ -250,8 +268,8 @@ def codex_counts(db: store.Store) -> dict:
                 if key in out:
                     out[key] += 1
             out["reworked"] += 1 if (rec.get("codex") or {}).get("rounds", 1) > 1 else 0
-        elif rec.get("kind") == "review" and rec.get("reviewer") == "codex" and rec.get("overLimit"):
-            out["overLimit"] += 1
+    # M1-M2 report D: one event each time Codex runs out of rounds; codex-fallback later hands the item to the user
+    out["overLimit"] = sum(1 for e in store.events(db, kind="item") if e.get("type") == "item.codex-over-limit")
     return out
 
 
@@ -319,7 +337,7 @@ def preflight(db: store.Store, project: str | os.PathLike) -> tuple[int, list[st
 
 # ---------------------------------------------------------------- Codex as a reviewer (decisions 3 to 6)
 
-CODEX_REWORK_LIMIT = 2                 # spec-guard: two rounds with blocking findings, then the user
+CODEX_REWORK_LIMIT = 2                 # spec-guard: two rounds with blocking findings, then the user (ROUND_CAP)
 CODEX_DIR = "codex"
 DONE_OUTCOMES = ("findings", "no_findings_in_scope")
 TASK_TEXT = ("按 spec-guard 对 {what} 的要求审这份文件；阻断意见（severity: blocking）只限「照这份文件做会做错或做不成」，"
@@ -350,6 +368,9 @@ def _codex_item(db: store.Store, n: int) -> dict:
         raise CodexRefused(f"C{n} 不是 Codex 放行的节点（照人批流程走 review approve）")
     if rec.get("overLimit"):
         raise CodexRefused(f"C{n} Codex 已审满两轮仍有阻断：交用户决定，不再交 Codex")
+    if rec.get("landFailed"):
+        raise CodexRefused(f"C{n} Codex 已放行但落地失败（{rec['landFailed']}）：交用户决定，"
+                           f"review codex-fallback C{n} --original-file <用户原话> 后照人批")
     return rec
 
 
@@ -376,6 +397,77 @@ def _history(db: store.Store, rec: dict, n: int) -> list[str]:
     return out
 
 
+def _history_items(db: store.Store, rec: dict, n: int) -> list[tuple[int, dict]]:
+    """This module and node's submissions since the module was last reopened, up to C<n>, oldest first."""
+    since = store.round_since(store.records(db, "session"), rec["module"])
+    return [(int(k), v) for k, v in sorted(store.records(db, "item").items(), key=lambda kv: int(kv[0]))
+            if since < int(k) <= n and v.get("kind") == "review" and v.get("module") == rec["module"]
+            and v.get("node") == rec["node"]]
+
+
+def _load(path: str) -> dict:
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+def _final_scope(db: store.Store, rec: dict, n: int, worktree: Path) -> tuple[str | None, list[str]]:
+    """Task 13 (M1-M2 report A, delegate-owner #22282): a final-acceptance recheck must keep the first round's scope —
+    the same explicit --paths and the same --base (its baseline.from, a full commit id); only --head moves. Round 1:
+    the merge base and the submitted tree's top-level entries (so a rework touching another file stays in scope)."""
+    for _, other in _history_items(db, rec, n):
+        for path in other.get("codexReports") or []:
+            scope = _load(path).get("scope") or {}
+            base = (scope.get("baseline") or {}).get("from")
+            include = (scope.get("paths") or {}).get("include") if isinstance(scope.get("paths"), dict) else None
+            if isinstance(base, str) and base:
+                first = next((v["commit"] for _, v in _history_items(db, rec, n) if v.get("codexReports")), rec["commit"])
+                return base, include if isinstance(include, list) and include else _top(worktree, first)
+    return _base(db, worktree, rec["commit"]), _top(worktree, rec["commit"])
+
+
+def _top(worktree: Path, commit: str) -> list[str]:
+    got = probe._git(worktree, "ls-tree", "--name-only", commit)
+    return [x for x in got.stdout.splitlines() if x and x != ".git"] if got.returncode == 0 else []
+
+
+def _previous_blocking(db: store.Store, rec: dict, n: int) -> list[str]:
+    """The last Codex round's blocking findings for this module and node (snapshot reviews carry them in the text)."""
+    rows = [r for _, v in _history_items(db, rec, n) for r in v.get("reviews") or [] if r.get("from") == "codex"]
+    return list(rows[-1].get("changes") or []) if rows else []
+
+
+_REF = re.compile(r"`([A-Za-z0-9_.][A-Za-z0-9_./-]*)`")
+MAX_CONTEXT = 40
+
+
+def _context_files(rec: dict, worktree: Path, skip: set[str]) -> list[str]:
+    """Task 15 (M1-M2 report G, delegate-owner #22282): files the Spec and Plan cite in backticks that exist in the
+    submitted commit, passed as delegate context_files (--spec, read-only, not reviewed themselves)."""
+    sources = [f"spec/{rec['module']}.md"] + ([f"tasks/{rec['module']}/plan.md"] if rec["node"] in ("plan", "final") else [])
+    out: list[str] = []
+    for src in sources:
+        shown = probe._git(worktree, "show", f"{rec['commit']}:{src}")
+        for name in _REF.findall(shown.stdout if shown.returncode == 0 else ""):
+            name = name.rstrip("/.")
+            if (name in skip or name in out or name in sources or "/" not in name and "." not in name
+                    or any(part in ("", ".", "..", ".git") for part in name.split("/"))):
+                continue
+            kind = probe._git(worktree, "cat-file", "-t", f"{rec['commit']}:{name}")
+            if kind.returncode == 0 and kind.stdout.strip() == "blob":
+                out.append(name)
+            if len(out) >= MAX_CONTEXT:
+                return out
+    return out
+
+
+CONTEXT_TEXT = ("。--spec 带进来的其余文件（context_files）只用来核实 Spec／Plan 的引用，不对它们本身提发现；"
+                "审查范围以外、仓库里已有的文件不据此阻断")
+RECHECK_TEXT = "。上一轮的阻断意见如下，逐条核对是否已解决，没解决的照原样写成阻断意见（severity: blocking）：{items}"
+
+
 def codex_command(db: store.Store, n: int) -> tuple[list[str], Path]:
     """`review codex C<n>` (read only): the /delegate:review line for this round and where to save its stdout."""
     rec = _codex_item(db, n)
@@ -384,25 +476,42 @@ def codex_command(db: store.Store, n: int) -> tuple[list[str], Path]:
     session = store.get(db, "session", rec["from"]) or {}
     worktree = session.get("worktree", "")
     args = ["/delegate:review", "--backend", "codex", "--repo", worktree]
+    recheck = []
     if rec["node"] == "final":          # crew-takeover-merge decision 2: the final patch as a commit range
-        base = _base(db, Path(worktree), rec["commit"]) if worktree else None
-        if base is None:
+        base, include = _final_scope(db, rec, n, Path(worktree)) if worktree else (None, [])
+        if base is None or not include:
             raise CodexRefused(f"C{n} 取不到集成分支与交审提交 {rec['commit'][:7]} 的合并基点")
-        args += ["--base", base, "--head", rec["commit"], "--spec", f"spec/{rec['module']}.md"]
+        args += ["--base", base, "--head", rec["commit"]]
+        for f in include:
+            args += ["--paths", f]
+        args += ["--spec", f"spec/{rec['module']}.md"]
+        changed = set(probe._git(Path(worktree), "diff", "--name-only", "--no-renames", base, rec["commit"]).stdout.split())
+        skip = changed
     else:
         for f in rec["files"]:
             args += ["--paths", f["path"]]
         if rec["node"] == "plan":
             args += ["--spec", f"spec/{rec['module']}.md"]
-    if reports:
+        skip = {f["path"] for f in rec["files"]}
+        recheck = _previous_blocking(db, rec, n) if reports else []
+    context = _context_files(rec, Path(worktree), skip) if worktree else []
+    for f in context:
+        args += ["--spec", f]
+    if reports and rec["node"] == "final":
+        # delegate A9: a recheck needs the same scope; only the final acceptance keeps it (a snapshot review's from
+        # and to are the HEAD it read, so its rework never matches: interim, the findings go into the text)
         args += ["--previous-report", reports[-1]]
     what = WHAT[rec["node"]]
-    args.append(json.dumps(FINAL_TEXT.format(module=rec["module"]) if rec["node"] == "final"
-                           else TASK_TEXT.format(what=what), ensure_ascii=False))
+    text = (FINAL_TEXT.format(module=rec["module"]) if rec["node"] == "final" else TASK_TEXT.format(what=what))
+    text += CONTEXT_TEXT if context else ""
+    text += RECHECK_TEXT.format(items="；".join(f"{i}. {x}" for i, x in enumerate(recheck, 1))) if recheck else ""
+    args.append(json.dumps(text, ensure_ascii=False))
     lines = [f"C{n}（{rec['module']} 的 {what}）第 {len(reports) + 1} 次交 Codex 审：由模块协调在本会话运行",
              "  " + " ".join(args),
              f"把标准输出的那份 JSON 原样存到 {path}，再运行 module-crew review codex-note C{n} --report {path}",
              "Codex 跑不成也照样交给 codex-note（它会停下、给出问用户的草稿）；不要自己审，也不要换后端"]
+    if recheck:
+        lines.append("第 2 轮起不带上一轮报告（delegate 的快照审查范围在返工后对不上，暂行做法）：上一轮的阻断意见已写进审查说明")
     head = probe._git(Path(worktree), "rev-parse", "HEAD").stdout.strip() if worktree else ""
     if head and head != rec["commit"]:
         lines.append(f"注意：模块 worktree 的 HEAD（{head[:7]}）不是交审提交（{rec['commit'][:7]}）；审的内容对不上时 codex-note 会拒收")
@@ -420,12 +529,24 @@ def _report(path: str | os.PathLike) -> tuple[dict | None, str | None]:
     if doc.get("backend") != "codex":
         return None, f"审查后端不是 codex（{doc.get('backend')}）"
     if doc.get("execution_status") != "completed":
-        return None, f"Codex 审查没跑完（execution_status：{doc.get('execution_status')}）"
+        diag = [str(x) for x in doc.get("diagnostics") or [] if x]
+        return None, (f"Codex 审查没跑完（execution_status：{doc.get('execution_status')}"
+                      + (f"；diagnostics：{'、'.join(diag)}" if diag else "") + "）")
     if doc.get("review_outcome") not in DONE_OUTCOMES:
         return None, f"Codex 审查没有结论（review_outcome：{doc.get('review_outcome')}）"
     if doc.get("unreviewed"):
         return None, "Codex 审查只覆盖了一部分文件"
     return doc, None
+
+
+def _repeats(path: str | os.PathLike) -> bool:
+    """M1-M2 report B: delegate refused before starting Codex (conditions_missing), so the same command fails the
+    same way again; rerunning it is not the recommendation."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(doc, dict) and doc.get("execution_status") == "conditions_missing"
 
 
 def _mismatch(rec: dict, doc: dict, worktree: Path) -> list[str]:
@@ -443,19 +564,19 @@ def _mismatch(rec: dict, doc: dict, worktree: Path) -> list[str]:
     return out
 
 
-def _final_mismatch(db: store.Store, rec: dict, doc: dict, worktree: Path) -> list[str]:
+def _final_mismatch(db: store.Store, rec: dict, doc: dict, worktree: Path, n: int) -> list[str]:
     """crew-takeover-merge decision 4.2 / AC4: a commits-mode review from the merge base to the submitted commit X,
     with every file changed in that range at X's content."""
     scope = doc.get("scope") or {}
     line = scope.get("baseline") or {}
-    base = _base(db, worktree, rec["commit"])
+    base = _final_scope(db, rec, n, worktree)[0]
     if not isinstance(line, dict) or line.get("mode") != "commits":
         return ["审查报告不是按提交范围审的（scope.baseline.mode 不是 commits）"]
     out = []
     if line.get("to") != rec["commit"]:
         out.append(f"审的不是交审提交 {rec['commit'][:7]}（报告的 to 是 {str(line.get('to'))[:7]}）")
     if base is None or line.get("from") != base:
-        out.append(f"审查起点不是集成分支与交审提交的合并基点 {(base or '?')[:7]}")
+        out.append(f"审查起点不是 {(base or '?')[:7]}（第一轮的起点，或集成分支与交审提交的合并基点）")
     if out:
         return out
     files = scope.get("files") if isinstance(scope.get("files"), dict) else {}
@@ -498,20 +619,26 @@ def _coordinator(db: store.Store) -> str:
 FINAL_BY_USER = "之后照今天的最终验收：用户批准合并 merge approve、只接受验收 merge accept、要求修改 review answer"
 
 
-def unavailable_draft(db: store.Store, rec: dict, n: int, why: str) -> str:
+REPEATS = "（delegate 没启动 Codex 就拒绝了，照同一条命令重跑会同样失败：先排除上面的原因）"
+
+
+def unavailable_draft(db: store.Store, rec: dict, n: int, why: str, repeats: bool = False) -> str:
+    """M1-M2 report B: the cause with delegate's diagnostics; a failure that repeats puts the user's way first."""
     from module_crew import offload
     what = WHAT[rec["node"]]
+    rerun = ("A", "排除原因后重跑" if repeats else "等 Codex 恢复后重跑",
+             f"运行 review codex C{n}，照它给的命令重跑" + (REPEATS if repeats else ""))
     if rec["node"] == "final":          # crew-takeover-merge decision 3
+        user = ("B", "这一次由你验收", f"review codex-fallback C{n} --original-file <答复>；{FINAL_BY_USER}")
         return "\n".join(offload.draft(
             _coordinator(db), rec["module"], f"{rec['module']} 的最终验收（交审 C{n}）Codex 审查没跑成，下一步怎么办",
             f"Codex 审查没跑成：{why}。这一项是自动合，Codex 不可用时停下等你，不会改由 Claude 自己审",
-            [("A", "等 Codex 恢复后重跑", f"运行 review codex C{n}，照它给的命令重跑"),
-             ("B", "这一次由你验收", f"review codex-fallback C{n} --original-file <答复>；{FINAL_BY_USER}")])) + "\n"
+            [user, rerun] if repeats else [rerun, user])) + "\n"
+    user = ("B", "这一项这次改由你批", f"之后照人批流程：review codex-fallback C{n} --original-file <答复>，再 review approve C{n}")
     return "\n".join(offload.draft(
         _coordinator(db), rec["module"], f"{rec['module']} 的 {what}（交审 C{n}）Codex 审查没跑成，下一步怎么办",
         f"Codex 审查没跑成：{why}。这一项由 Codex 放行，Codex 不可用时停下等你，不会改由 Claude 自己审",
-        [("A", f"等 Codex 恢复后重跑", f"运行 review codex C{n}，照它给的命令重跑"),
-         ("B", "这一项这次改由你批", f"之后照人批流程：review codex-fallback C{n} --original-file <答复>，再 review approve C{n}")])) + "\n"
+        [user, rerun] if repeats else [rerun, user])) + "\n"
 
 
 def over_limit_draft(db: store.Store, rec: dict, n: int, block: list[str]) -> str:
@@ -522,12 +649,14 @@ def over_limit_draft(db: store.Store, rec: dict, n: int, block: list[str]) -> st
             _coordinator(db), rec["module"], f"{rec['module']} 的最终验收（交审 C{n}）Codex 两轮后仍有阻断，怎么办",
             f"Codex 审了 {CODEX_REWORK_LIMIT} 轮返工后仍有 {len(block)} 条阻断意见：" + "；".join(block[:5]),
             [("A", "你来验收这一版", f"review codex-fallback C{n} --original-file <答复>；{FINAL_BY_USER}"),
-             ("B", "照阻断意见再改一轮，改完交你验收", f"review codex-fallback C{n} --original-file <答复> 后用 review answer C{n} 退回")])) + "\n"
+             ("B", "照阻断意见再改一轮，改完交你验收（不再交 Codex）",
+              f"review codex-fallback C{n} --original-file <答复> 后用 review answer C{n} 退回；模块重交的最终验收照人合")])) + "\n"
     return "\n".join(offload.draft(
-        _coordinator(db), rec["module"], f"{rec['module']} 的 {what}（交审 C{n}）Codex 两轮后仍有阻断，怎么办",
-        f"Codex 审了 {CODEX_REWORK_LIMIT} 轮返工后仍有 {len(block)} 条阻断意见：" + "；".join(block[:5]),
+        _coordinator(db), rec["module"], f"{rec['module']} 的 {what}（交审 C{n}）Codex 两轮都有阻断，怎么办",
+        f"Codex 审了 {CODEX_REWORK_LIMIT} 轮都有阻断（spec-guard 的上限），这一轮 {len(block)} 条：" + "；".join(block[:5]),
         [("A", "你来批这一版", f"review codex-fallback C{n} --original-file <答复>，再 review approve C{n}"),
-         ("B", "照阻断意见再改一轮，改完交你批", f"review codex-fallback C{n} --original-file <答复> 后用 review answer C{n} 退回")])) + "\n"
+         ("B", "照阻断意见再改一轮，改完交你批（不再交 Codex）",
+          f"review codex-fallback C{n} --original-file <答复> 后用 review answer C{n} 退回；模块重交的{what}照人批")])) + "\n"
 
 
 def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) -> CodexResult:
@@ -543,9 +672,9 @@ def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) ->
             tx.put("item", str(n), tx.get("item", str(n)), action="codex-unavailable", data={"reason": why,
                                                                                             "report": str(report)})
         return CodexResult(5, [f"C{n} 没有记结论：{why}", "把下面这份【等待用户】自检后发给用户（照现有规则转）；不要自己审：", ""],
-                           draft=unavailable_draft(db, rec, n, why))
+                           draft=unavailable_draft(db, rec, n, why, _repeats(report)))
     worktree = Path((store.get(db, "session", rec["from"]) or {}).get("worktree", "/nonexistent"))
-    bad = _final_mismatch(db, rec, doc, worktree) if rec["node"] == "final" else _mismatch(rec, doc, worktree)
+    bad = _final_mismatch(db, rec, doc, worktree, n) if rec["node"] == "final" else _mismatch(rec, doc, worktree)
     if bad:
         raise CodexRefused("审查报告和交审对不上，没有记：" + "；".join(bad) + f"。重跑 review codex C{n}")
     block, advice = _blocking(doc)
@@ -570,11 +699,15 @@ def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) ->
         tx.put("item", str(n), cur, action="codex-noted", data={"round": rounds, "blocking": len(block)})
         if block:
             done = review._rounds(db, cur["module"], cur["node"])
-            if done >= CODEX_REWORK_LIMIT:
+            # Task 14 (M1-M2 report C, sg-coord #22262): spec-guard takes no codex-approved after two rounds with
+            # blocking findings, so a Spec or Plan goes to the user at the second; the final acceptance (not a file
+            # spec-guard counts) keeps two reworks (crew-takeover-merge)
+            if done + (1 if cur["node"] != "final" else 0) >= CODEX_REWORK_LIMIT:
                 tx.put("item", str(n), dict(cur, overLimit=True), action="codex-over-limit")
                 res.code = 5
                 res.draft = over_limit_draft(db, cur, n, block)
-                res.lines += [f"C{n} Codex 审了 {CODEX_REWORK_LIMIT} 轮返工后仍有阻断：不再返工，交用户决定（不降档）",
+                res.lines += [(f"C{n} Codex 审了 {CODEX_REWORK_LIMIT} 轮返工后仍有阻断" if cur["node"] == "final" else
+                               f"C{n} Codex 两轮都有阻断（spec-guard 的上限）") + "：不再返工，交用户决定（不降档）",
                               "把下面这份【等待用户】自检后发给用户：", ""]
                 return res
             target = _target(cur)
@@ -606,6 +739,14 @@ def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) ->
     res.code = landed.code if landed.code in (0, 3) else 4
     res.lines += [f"C{n} Codex 没有阻断意见（建议 {len(advice)} 条）：放行"] + landed.lines
     res.sends += landed.sends
+    if res.code == 4:                   # M1-M2 report C: the pass stands, the landing did not; the user decides
+        why = ((landed.lines[0].split("已停下：", 1)[-1] if landed.lines else "").strip() or
+               (landed.lines[0] if landed.lines else "落地失败"))[:200]
+        with db.transaction(actor="coordinator") as tx:
+            tx.put("item", str(n), dict(tx.get("item", str(n)), landFailed=why), action="codex-land-failed",
+                   data={"reason": why})
+        res.lines += [f"下一步：C{n} 停在「Codex 已放行但落地失败」，交用户决定；用户决定自己批时 review codex-fallback C{n} "
+                      f"--original-file <用户原话>，再 review approve C{n}（不再交 Codex）"]
     return res
 
 
@@ -616,7 +757,8 @@ def codex_fallback(db: store.Store, n: int, original: str) -> list[str]:
     rec = store.get(db, "item", str(n))
     if rec is None or rec.get("kind") != "review" or rec.get("state") != "open" or rec.get("reviewer") != "codex":
         raise CodexRefused(f"C{n} 不是未答的 Codex 放行交审")
-    why = "codex-over-limit" if rec.get("overLimit") else "codex-unavailable"
+    why = ("codex-over-limit" if rec.get("overLimit") else "codex-land-failed" if rec.get("landFailed")
+           else "codex-unavailable")
     with db.transaction(actor="coordinator") as tx:
         cur = tx.get("item", str(n))
         cur = {k: v for k, v in cur.items() if k not in ("sentTo", "sentAt")}
