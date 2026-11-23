@@ -544,6 +544,8 @@ class CodexReviewTest(TierMixin, TakeoverMixin, ReviewCase):
         self.assertEqual(code, 4, out)
         self.assertIn("review codex-fallback", out)
         self.assertEqual(git(self.repo, "status", "--porcelain", "--untracked-files=all").strip(), "", out)
+        kept = self.db.path / "codex" / f"leftover-C{self.n}"     # moved out, never deleted
+        self.assertTrue([p for p in kept.rglob("*") if p.is_file()], out)
         rec = store.get(self.db, "item", str(self.n))
         self.assertTrue(rec.get("landFailed"))
         self.assertIn("落地失败", self.cli("review", "batch")[1])

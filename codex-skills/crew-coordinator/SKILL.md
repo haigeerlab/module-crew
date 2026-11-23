@@ -262,7 +262,7 @@ module-crew change accept <编号> --original-file <用户原话文件>     # �
 - **Codex 放行的节点**（交审登记时写「Codex 放行：下一步 review codex C<n>」，不进给用户的批次）：
   1. `module-crew review codex C<n>` 给出这一轮的 `/delegate:review --backend codex …` 命令（轮次按模块＋节点累计，返工重交后不从 1 数；Spec、Plan 第 2 轮起把上一轮阻断写进审查说明、不带 `--previous-report`，最终验收复审固定第一轮的 `--base` 与 `--paths` 并带它；Spec、Plan 引用的已有项目文件作为只读上下文带上），照它在本会话跑，把标准输出的 JSON 原样存到它给的文件；
   2. `module-crew review codex-note C<n> --report <文件>`，按退出码：`0` 已发返工通知（照输出 `bridge_send`）或已放行（Spec、Plan 都批了发开工通知，只放了一个节点发「放行」类【协调通知】）；
-     `3` 报告和交审对不上，重跑第 1 步；`4` 落地失败（这次新建的文件已删掉），原因照抄给用户，用户决定自己批时 `review codex-fallback`；`5` Codex 没跑成，或 Spec、Plan 两轮都有阻断（spec-guard 的上限；最终验收是两轮返工后仍有阻断）：输出末尾是一份【等待用户】草稿，自检后照现有规则交给用户；超限之后这个节点重交改为人批。
+     `3` 报告和交审对不上，重跑第 1 步；`4` 落地失败（这次新建的文件已移出集成 checkout，存在状态库的 codex/leftover-C<n>/，不删），原因照抄给用户，用户决定自己批时 `review codex-fallback`；`5` Codex 没跑成，或 Spec、Plan 两轮都有阻断（spec-guard 的上限；最终验收是两轮返工后仍有阻断）：输出末尾是一份【等待用户】草稿，自检后照现有规则交给用户；超限之后这个节点重交改为人批。
   3. **Codex 不可用就停下等用户，绝不自己审、不换后端。** 用户选「这一项改由我批」时，先 `module-crew review codex-fallback C<n> --original-file <原话文件>`，之后照人批流程 `review approve`／`review answer`。
   - Codex 放行记成单独的 `codex-approval`，对用户一律说「Codex 放行」，不说成用户批准，也不发【用户答复】。
 - **自动合（合并第一段，crew-takeover-merge）**：模块的合并一项是「自动合」、项目开着检查记账、Spec 与 Plan 都已批准时，最终验收交审登记写「自动合：下一步 review codex C<n>」，不进给用户的批次（缺条件时登记行写原因，照人合）。

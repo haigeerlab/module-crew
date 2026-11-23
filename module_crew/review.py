@@ -169,25 +169,24 @@ def _ledger_lines(ledger: dict | None) -> list[str]:
 _MARKER = "<!-- spec-guard: review"
 
 
-def _restore(checkout: Path, created: list[str] = ()) -> list[str]:
+def _restore(checkout: Path, created: list[str] = (), keep: Path | None = None) -> list[str]:
     """Decision 4 (0.11.2): put the integration checkout back after a failed approve. It was clean before (baseline
     check), so every tracked change is ours and goes back to the branch; new files are unstaged and kept, never deleted.
     `created`: files a Codex landing wrote that did not exist before; nobody but module-crew has seen them, so they
-    go (crew-takeover-approve, M1-M2 report C)."""
+    move out of the checkout into `keep` (crew-takeover-approve, M1-M2 report C) — moved, never deleted."""
     _git(checkout, "reset", "-q")
     _git(checkout, "checkout", "--", ".")
-    for rel in created:
+    moved = []
+    for rel in created if keep is not None else ():
         path = checkout / rel
         if path.is_file():
-            path.unlink()
-        parent = path.parent
-        while parent != checkout and parent.is_dir() and not any(parent.iterdir()):
-            parent.rmdir()
-            parent = parent.parent
+            (keep / rel).parent.mkdir(parents=True, exist_ok=True)
+            os.replace(path, keep / rel)
+            moved.append(rel)
     new = [line[3:] for line in _git(checkout, "status", "--porcelain", "--untracked-files=all").stdout.splitlines()
            if line.startswith("?? ")]
     return (["状态库与集成分支都没有变化；集成 checkout 里原有的文件已还原成集成分支上的内容"]
-            + (["这次 Codex 放行新建的文件已删掉：" + "、".join(created)] if created else [])
+            + ([f"这次 Codex 放行新建的文件已移出集成 checkout，存在 {keep}：" + "、".join(moved)] if moved else [])
             + (["这次新建、没有删除的文件（未暂存，交用户决定）：" + "、".join(new),
                 "  它们让集成 checkout 不干净，会挡住下一次 review approve：用户看过后不要就删掉、要留就移出 checkout，"
                 "再重新 review approve（module-crew 不删文件）"] if new else []))
@@ -1380,12 +1379,12 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
         cmd = mark_args(root, doc, checkout, rec["module"], target, "codex-approved" if codex else "approved",
                         codex["report"] if codex else None)
         if isinstance(cmd, str):
-            return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{cmd}"] + _restore(checkout, created))
+            return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{cmd}"] + _restore(checkout, created, db.path / "codex" / f"leftover-C{n}"))
         cmd = cmd + ["--confirm"]
         ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
         if ran.returncode != 0:
             return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{(ran.stderr.strip() or ran.stdout.strip())[:200]}"]
-                                 + _restore(checkout, created))
+                                 + _restore(checkout, created, db.path / "codex" / f"leftover-C{n}"))
     approval_no = _next_number(db)
     modules = list(dict.fromkeys(rec["module"] for _, rec in picked))
     nodes = "、".join(f"{rec['module']} 的 {NODE_NAME[rec['node']]}" for _, rec in picked)
