@@ -25,3 +25,14 @@
 - [x] Task 11：`tier restore` 不再要求 `--original(-file)`，无条件输出指引并退出 3（M1 报告注意 4）——测试先红后绿；`--original`／`--original-file` 改为可选（照收、忽略，不在帮助里列出），在打开状态库之前处理，指引写到标准输出、退出码 3；没有状态库的目录里实测同样退出码 3；本模块 41 个通过（9825088）
 - [x] Task 12：同步 skill 与文档、`module-crew sync` 后全量测试；用安装版重跑 M1 前由模块协调安排——两份 crew-coordinator skill、docs/guide.md、docs/commands.md 同步（6ddca9c）；`module-crew sync` 后集成分支仍是 cfe3e94；6ddca9c 上全量 1337 个全过（1602 秒）；其后只删一行孤儿导入（1c9d1d7），复跑 test_takeover_approve、test_docs 47 个通过；安装版重跑 M1 由模块协调安排
 - [x] Checkpoint 6（gate）：返工最终验收
+
+## 返工：M1、M2 停点不通过（2026-11-23，第 3 轮）
+
+- [ ] Checkpoint 7（gate）：上游答复——delegate 对 `--previous-report` 跨提交与范围外已有文件的约定（#22261）、spec-guard 对两轮阻断上限的约定（#22260），由模块协调转来；收到前先做 Task 16、17
+- [ ] Task 13：返工后的复审能跑通——按 delegate 约定改 `review codex` 第 2 轮起的命令（范围对不上时不带 `--previous-report`，或改用 delegate 认可的方式把上一轮阻断带给 Codex）；验证：返工换提交后照 `review codex` 给出的命令跑，delegate 不再以 `previous_report_scope_mismatch` 拒绝（报告问题 A）
+- [ ] Task 14：Codex 轮次上限与 spec-guard 一致——按 spec-guard 约定对齐（例如两轮阻断后直接转人批、不审第 3 轮）；`codex-note` 落地失败时先清理集成 checkout 里本次新建的文件、事项给出明确下一步，`codex-fallback` 记真实原因而不是 `codex-unavailable`（报告问题 C）
+- [ ] Task 15：Codex 审查不因范围外的已有文件阻断——按 delegate 约定把 Spec／Plan 引用、集成分支上已有的文件作为只读上下文，或在审查说明里写明范围外已有文件不据此阻断；对 Spec、Plan、最终验收三种节点都生效（报告问题 G）
+- [ ] Task 16：提示与计数——Codex 没跑成的【等待用户】草稿带上 `diagnostics`，确定会重复失败的不推荐重跑（B）；「超限交用户」按事件计数，用户 fallback 后不归零（D）；超限草稿选项 B 与实际流程一致：选 B 后的重交走人批，或改措辞（E）；超限项的默认答复块两项方向一致（F）；不同意 Codex 意见时待定问题正文带上被反驳的那条审查要求（I）；`review show` 同一行不混用两种编号（K）
+- [ ] Task 17：用法草案与 Spec 措辞对齐——草案 U1 写明 preflight 要先建状态库（注意 7）、收窄提示按实际措辞或改实现与草案一致（注意 5）；草案修订按已批准文件追加变更记录，随返工最终验收复审
+- [ ] Task 18：同步 skill 与文档、`module-crew sync` 后全量测试；安装版重跑 M1、M2 由模块协调安排
+- [ ] Checkpoint 8（gate）：返工最终验收

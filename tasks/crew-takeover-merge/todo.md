@@ -17,3 +17,11 @@
 - [x] Task 8：skill、文档、`module-crew sync` 后全量测试、本机实测（Spec 验收 11、12、13）
 - [x] Checkpoint 5（gate）：最终验收
 - [x] 回告：经模块协调转告 ecosystem-lead 与 autopr-design（2026-11-22，#22146、#22147）
+
+## 返工：M2 停点不通过（2026-11-23，第 2 轮）
+
+- [ ] Task 9：最终验收审查不把流程文件判为越界——给 Codex 的最终验收审查说明写明 `tasks/<模块>/` 是流程文件、勾选是规定动作；验证：只多勾了 todo 的交审不被判越界（报告问题 H）
+- [ ] Task 10：第一个模块也能自动合、同步通知不重复——允许不经合并单独设完整检查命令（例如 `config set --check-command`，凭用户原话），或在草案与提示里写明第一个模块必然人合并给出设法；同一次 `merge run` 对同一模块只发一条同步基线通知（报告问题 J、K）
+- [ ] Task 11：用法草案 U2 按实现改写——入口表与 U2 改为 `merge auto C<n>` 与只读 `merge first-stage --json`、合入后记 firstStage（不写 codex-approved 验收标记），写明 J 的前提；按已批准文件追加变更记录，随返工最终验收复审
+- [ ] Task 12：同步 skill 与文档、`module-crew sync` 后全量测试；安装版重跑 M2 由模块协调安排
+- [ ] Checkpoint 6（gate）：返工最终验收

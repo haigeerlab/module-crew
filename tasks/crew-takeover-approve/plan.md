@@ -95,3 +95,13 @@
 - 注意 5～7（措辞、`review batch` 仍列出审查中项、preflight 依赖状态库）不改代码；如需与草案对齐，改用法草案或 Spec 的措辞，随返工最终验收一并呈现。
 
 若改动需要修订 Spec（例如 Task 9 改变决策 1 的读法），照常在 Spec「变更记录」追加并随返工最终验收复审。
+
+## 返工：M1、M2 停点不通过（2026-11-23，第 3 轮）
+
+用户在 M1、M2 停点判定不通过（原话「按推荐继续」，推荐为「M1、M2 都判不通过，两个模块原地重开修」）。依据 0.24.1 安装版沙箱实跑报告 `module-crew-m2-sandbox/M1-M2-REPORT.md`（提交 8dc41d5） 的问题 A～G、I、K 与注意 5、7。均为修正已批准 Spec 描述的行为（返工能走通、上限与 spec-guard 一致、提示准确），Plan 批准标记不改回 pending；做法改变 Spec 决策的，照常在 Spec「变更记录」追加，随返工最终验收复审。
+
+- 问题 A（严重）：第 2 轮起的 `--previous-report` 被 delegate 以 `previous_report_scope_mismatch` 拒绝（返工必然换提交），所有返工路径都失败（Task 13）。
+- 问题 C（严重）：module-crew 允许审 3 轮，spec-guard 0.92 两轮阻断后拒收 `codex-approved`（`codex-rounds-exhausted`）；落地失败还在集成 checkout 留下未跟踪文件、事项卡住（Task 14）。
+- 问题 G：Codex 看不到 Spec／Plan 引用的项目已有文件（如 `scripts/check.sh`），一轮接一轮阻断（Task 15）。
+- A、C、G 的做法依赖上游约定：mc-coord 已问 delegate-owner（#22261）与 sg-coord（#22260），答复由模块协调转来；先做 Task 16、17，Checkpoint 7 收到答复再做 Task 13～15。
+- 问题 B、D、E、F、I 与 K 中的编号混用（Task 16），注意 5、7 与用法草案对齐（Task 17）。

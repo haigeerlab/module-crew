@@ -91,3 +91,12 @@
 ## 变更记录
 
 - 2026-11-22（Checkpoint 0）：随 Spec 同日修订改 Task 3、4、6 与 Checkpoint 3：去掉合并前在模块 worktree 补跑非作者检查，Task 4 由「写 codex-approved 验收标记」改为「记合并第一段完成（firstStage）」，读接口由 `check evidence` 改为 `merge first-stage`；Task 5 收窄去掉非作者检查失败一类。原因与来源见 Spec 变更记录同日一行；停在 Checkpoint 0 交用户复审。
+
+## 返工：M2 停点不通过（2026-11-23，第 2 轮）
+
+用户在 M2 停点判定不通过（原话「按推荐继续」，推荐为「M1、M2 都判不通过，两个模块原地重开修」）。依据 0.24.1 安装版沙箱实跑报告 `module-crew-m2-sandbox/M1-M2-REPORT.md`（提交 8dc41d5） 的问题 H、J、K（重复同步通知）与用法草案 U2 的过时描述。均在已批准 Spec 范围内，Plan 批准标记不改回 pending。共享代码里的 A、C、G 由 crew-takeover-approve 第 3 轮修，本轮在它合入之后开工、sync 后再构建。
+
+- 问题 H：最终验收的 Codex 审查把勾选 `tasks/<模块>/todo.md` 判为越界（误报）（Task 9）。
+- 问题 J：项目第一个模块不可能自动合（检查命令只能由非空队列的 `merge run --check-command` 记下）（Task 10）。
+- 问题 K：同一次 `merge run` 给同一模块发两条相同的同步基线通知（Task 10）。
+- 用法草案 U2 仍写 `check evidence --json` 与「合入后写 codex-approved 验收标记」，与实现不符（Task 11）。
