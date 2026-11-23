@@ -1,6 +1,6 @@
 # Implementation Plan: crew-flow-v2
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-flow-v2.md`（用户 2026-11-24 批准，事项 C698「C698 批准，Q 按推荐」；批准后按 mc-coord #22376 改了并行边界写法，见 Spec 变更记录）。任务清单：`tasks/crew-flow-v2/todo.md`。
 
