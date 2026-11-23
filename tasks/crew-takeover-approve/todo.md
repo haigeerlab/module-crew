@@ -30,9 +30,9 @@
 
 - [ ] Checkpoint 7（gate）：上游答复——delegate 对 `--previous-report` 跨提交与范围外已有文件的约定（#22261）、spec-guard 对两轮阻断上限的约定（#22260），由模块协调转来；收到前先做 Task 16、17
 - [ ] Task 13：返工后的复审能跑通——按 delegate 约定改 `review codex` 第 2 轮起的命令（范围对不上时不带 `--previous-report`，或改用 delegate 认可的方式把上一轮阻断带给 Codex）；验证：返工换提交后照 `review codex` 给出的命令跑，delegate 不再以 `previous_report_scope_mismatch` 拒绝（报告问题 A）
-- [ ] Task 14：Codex 轮次上限与 spec-guard 一致——按 spec-guard 约定对齐（例如两轮阻断后直接转人批、不审第 3 轮）；`codex-note` 落地失败时先清理集成 checkout 里本次新建的文件、事项给出明确下一步，`codex-fallback` 记真实原因而不是 `codex-unavailable`（报告问题 C）
+- [x] Task 14：Codex 轮次上限与 spec-guard 一致——按 spec-guard 约定对齐（例如两轮阻断后直接转人批、不审第 3 轮）；`codex-note` 落地失败时先清理集成 checkout 里本次新建的文件、事项给出明确下一步，`codex-fallback` 记真实原因而不是 `codex-unavailable`（报告问题 C）——spec-guard 答复已在 plan（#22262），不等 delegate 先做；测试先红（2 个）后绿；Spec、Plan 第 2 轮仍有阻断即交用户（最终验收不是 spec-guard 计数的文件，仍返工 2 次，不动 crew-takeover-merge 的行为）；落地失败删掉本次 Codex 放行新建的文件、事项记 `landFailed`、`review batch` 写「Codex 已放行但落地失败，等用户决定」，`review codex`／`codex-note` 对它拒收，`codex-fallback` 记 `codex-land-failed`；Spec「上游实测」4、5 与变更记录已改；本模块 51 个、接管合并 29 个、审查就近 42 个通过（39e580a）
 - [ ] Task 15：Codex 审查不因范围外的已有文件阻断——按 delegate 约定把 Spec／Plan 引用、集成分支上已有的文件作为只读上下文，或在审查说明里写明范围外已有文件不据此阻断；对 Spec、Plan、最终验收三种节点都生效（报告问题 G）
-- [ ] Task 16：提示与计数——Codex 没跑成的【等待用户】草稿带上 `diagnostics`，确定会重复失败的不推荐重跑（B）；「超限交用户」按事件计数，用户 fallback 后不归零（D）；超限草稿选项 B 与实际流程一致：选 B 后的重交走人批，或改措辞（E）；超限项的默认答复块两项方向一致（F）；不同意 Codex 意见时待定问题正文带上被反驳的那条审查要求（I）；`review show` 同一行不混用两种编号（K）
-- [ ] Task 17：用法草案与 Spec 措辞对齐——草案 U1 写明 preflight 要先建状态库（注意 7）、收窄提示按实际措辞或改实现与草案一致（注意 5）；草案修订按已批准文件追加变更记录，随返工最终验收复审
+- [x] Task 16：提示与计数——Codex 没跑成的【等待用户】草稿带上 `diagnostics`，确定会重复失败的不推荐重跑（B）；「超限交用户」按事件计数，用户 fallback 后不归零（D）；超限草稿选项 B 与实际流程一致：选 B 后的重交走人批，或改措辞（E）；超限项的默认答复块两项方向一致（F）；不同意 Codex 意见时待定问题正文带上被反驳的那条审查要求（I）；`review show` 同一行不混用两种编号（K）——测试先红（4 个）后绿；B：原因带 diagnostics，`conditions_missing` 时推荐 B、A 写「排除原因后重跑」；D：按 `item.codex-over-limit` 事件计数；E：某模块某节点 Codex 超限后重交改人批（「Codex 已审满两轮仍有阻断」），草稿 B 写「不再交 Codex」；F：用户已改由自己批的 Codex 超限项待定问题不再倾向 B，其余倾向 B 的「不同意」「超限」问题在 `review batch` 注明 B 覆盖 A；I：问题正文带上被反驳的审查要求；K：Codex 行只写 R-<n>；本模块 49 个、接管合并 29 个、审查就近 42 个、旧档位 11 个通过（a83095e）
+- [x] Task 17：用法草案与 Spec 措辞对齐——草案 U1 写明 preflight 要先建状态库（注意 7）、收窄提示按实际措辞或改实现与草案一致（注意 5）；草案修订按已批准文件追加变更记录，随返工最终验收复审——草案 U1 写明 preflight 要先建状态库、草稿带 diagnostics、两轮阻断后改人批，U3 收窄提示改按实际措辞，草案新增「变更记录」；Spec「上游实测」7、决策 6、7、9 同步并追加变更记录（21d659a）
 - [ ] Task 18：同步 skill 与文档、`module-crew sync` 后全量测试；安装版重跑 M1、M2 由模块协调安排
 - [ ] Checkpoint 8（gate）：返工最终验收
