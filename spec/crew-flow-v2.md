@@ -1,6 +1,6 @@
 # Spec: crew-flow-v2
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 23b1d9f2afcf -->
 
 > 能力图模块 `crew-flow-v2`。需求来源：接缝 S110，plugin-ecosystem `research/2026-11-24-开发流程改版/需求.md`（用户 2026-11-24 确认）第七节 module-crew 一行，
 > 以及第三节总表 ②③④⑦、第五节第 3、4 条。开会话依据：用户批准事项 C696。
