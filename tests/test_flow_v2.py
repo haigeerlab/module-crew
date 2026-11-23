@@ -7,7 +7,7 @@ from helpers import START_MAP, ReviewCase, git, review_text
 from module_crew import flow, probe, review, store
 from test_autonomy_tier import TierMixin
 from test_declared_scope import DeclaredMixin
-from test_takeover_approve import TakeoverMixin, takeover_row
+from test_takeover_approve import TakeoverMixin, finding, report, takeover_row
 
 
 class FlowMixin(TierMixin, TakeoverMixin, DeclaredMixin):
@@ -29,6 +29,10 @@ class FlowMixin(TierMixin, TakeoverMixin, DeclaredMixin):
 
     def db(self):
         return store.open_store(self.repo)
+
+    def cli(self, *argv) -> tuple[int, str]:
+        res = self.run_cli(*argv, cwd=self.repo)
+        return res.returncode, res.stdout + res.stderr
 
 
 class RecognizeTest(FlowMixin, ReviewCase):
@@ -290,6 +294,79 @@ class ApproverTest(FlowReviewMixin, ReviewCase):
         items = takeover.module(self.db(), self.repo, "b")
         self.assertEqual(takeover.line(items), "批准方式：Spec 人批、Plan Codex 放行、合并 人合")
         self.assertEqual(self.who("b", "design"), ("human", None))
+
+
+class SecondReviewerTest(FlowReviewMixin, ReviewCase):
+    """Task 5, decision 7, acceptance 6."""
+
+    def setUp(self):
+        super().setUp()
+        self.with_flow()
+        self.write_design("b")
+        self.set_flow({"b": "normal"}, {"b": flow_row(design="reviewer")})
+        s = self.add(self.spec_review("b")).number
+        assert review.approve(self.repo, [s], "b 的需求批准").code == 0
+        self.n = self.add(self.design_review("b", node="Spec"), rid=2).number
+
+    def files(self):
+        import hashlib, subprocess
+        rec = store.get(self.db(), "item", str(self.n))
+        return {f["path"]: hashlib.sha256(subprocess.run(["git", "-C", str(self.wt["b"]), "show",
+                                                          f"{rec['commit']}:{f['path']}"], capture_output=True,
+                                                         check=True).stdout).hexdigest() for f in rec["files"]}
+
+    def note(self, doc):
+        path = self.tmp / f"report-{len(list(self.tmp.glob('report-*')))}.json"
+        path.write_text(json.dumps(doc))
+        return self.cli("review", "codex-note", f"C{self.n}", "--report", str(path))
+
+    def design_report(self, findings=(), same=False, **kw):
+        doc = report(self.files(), findings, backend="claude-code", **kw)
+        doc["reviewer"] = {"vendor": "anthropic" if same else "openai", "backend": "claude-code" if same else "codex",
+                           "same_vendor": same, "selection": "same-vendor" if same else "other-vendor"}
+        doc["criteria"] = "design-v1"
+        return doc
+
+    def test_command(self):
+        code, out = self.cli("review", "codex", f"C{self.n}")
+        self.assertEqual(code, 0, out)
+        self.assertIn("/delegate:review --profile design --backend auto --author-host claude-code --repo", out)
+        self.assertIn("--paths tasks/b/design.md --paths tasks/b/regression.md --spec spec/b.md", out)
+        self.assertNotIn("--model", out)
+        self.assertNotIn("--effort", out)
+        self.assertNotIn("--previous-report", out)
+
+    def test_two_rounds_then_user(self):
+        code, out = self.note(self.design_report([finding("迁移没写回滚", file="tasks/b/design.md")]))
+        self.assertEqual(code, 0, out)
+        self.assertIn("返工第 1 轮", out)
+        again = self.cli("review", "codex", f"C{self.n}")[1]
+        self.assertIn("--previous-report", again)
+        code, out = self.note(self.design_report(recheck={"items": [{"status": "unresolved",
+                                                                       "finding": {"title": "迁移没写回滚"}}]}))
+        self.assertEqual(code, 5, out)
+        self.assertIn("两轮都有阻断", out)
+
+    def test_suggestion_only_passes_and_starts(self):
+        code, out = self.note(self.design_report([finding("命名", severity="suggestion")], same=True))
+        self.assertEqual(code, 0, out)
+        self.assertIn("第二审查者（同厂商审查） 没有阻断意见", out)
+        rec = store.get(self.db(), "item", str(self.n))
+        self.assertEqual(rec["closedReason"], "codex-approved")
+
+    def test_no_reviewer_releases_unreviewed(self):
+        doc = {"schema_version": 1, "execution_status": "conditions_missing", "backend": None,
+               "diagnostics": ["no_reviewer_available"], "reviewer": {"vendor": None, "backend": None,
+                                                                       "same_vendor": None, "selection": "none"}}
+        code, out = self.note(doc)
+        self.assertEqual(code, 0, out)
+        self.assertIn("未审：本机没有可用的第二审查者，由回归测试兜底", out)
+        self.assertTrue((self.repo / "tasks" / "b" / "design.md").exists())
+
+    def test_author_host(self):
+        from module_crew import takeover
+        self.assertEqual(takeover.author_host({"host": "codex-desktop"}), "codex")
+        self.assertEqual(takeover.author_host({"host": "claude-desktop"}), "claude-code")
 
 
 if __name__ == "__main__":

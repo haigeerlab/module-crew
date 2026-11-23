@@ -448,8 +448,10 @@ def released_by(codex: dict | None) -> str:
     """crew-flow-v2 decisions 6, 7: who let a node through without the user."""
     if (codex or {}).get("skip"):
         return "免审放行"
+    if (codex or {}).get("unreviewed"):
+        return "未审放行"
     if (codex or {}).get("design"):
-        return "第二审查者放行"
+        return "第二审查者放行" + ("（同厂商审查）" if codex.get("sameVendor") else "")
     return "Codex 放行"
 
 
