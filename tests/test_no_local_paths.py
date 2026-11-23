@@ -1,6 +1,7 @@
 """Tracked files carry no machine-local home paths (S107: block new ones).
 
-Scans every file listed by ``git ls-files`` for ``/Users/<name>`` and ``/home/<name>``.
+Scans every file listed by ``git ls-files`` for ``/Users/<name>`` and ``/home/<name>``,
+and for the encoded form ``-Users-<name>-`` / ``-home-<name>-`` (Claude project dir names).
 Placeholder names pass; real-looking names fail with file, line and how to fix it.
 Samples copied verbatim from the session-protocol contract are exempt as a whole.
 
@@ -23,6 +24,8 @@ ROOT = Path(__file__).resolve().parent.parent
 EXEMPT_PREFIXES = ("tests/fixtures/session-protocol/",)
 PLACEHOLDERS = {"me", "user", "username", "you", "name", "example", "someone", "xxx", "..."}
 HOME_PATH = re.compile(r"/(?:Users|home)/([^/\s\"'`)\]]+)")
+# Encoded form, e.g. a Claude project dir name: -Users-<name>-Documents-…
+ENCODED_HOME = re.compile(r"(?<![\w-])-(?:Users|home)-([^-/\s\"'`)\]]+)-")
 
 
 def _is_placeholder(name: str) -> bool:
@@ -52,11 +55,20 @@ def scan(repo: Path) -> list[str]:
                     problems.append(
                         f"{rel}:{lineno}: 带本机用户名的绝对路径 {match.group(0)!r}；"
                         "改成相对路径、环境变量（$HOME、tempfile），或用占位名 /Users/me/")
+            for match in ENCODED_HOME.finditer(line):
+                if not _is_placeholder(match.group(1)):
+                    problems.append(
+                        f"{rel}:{lineno}: 带本机用户名的编码路径 {match.group(0)!r}；"
+                        "改成占位名 -Users-me- 或 -Users-<名字>-")
     return problems
 
 
 def _home(name: str) -> str:
     return "/" + "Users" + "/" + name + "/"
+
+
+def _encoded(name: str, root: str = "Users") -> str:
+    return "-" + root + "-" + name + "-"
 
 
 class ScanTest(unittest.TestCase):
@@ -86,6 +98,23 @@ class ScanTest(unittest.TestCase):
     def test_placeholders_pass(self):
         names = ["me", "<名字>", "<user>", "<用户名>", "$USER", "${USER}", "{user}", "USER", "you"]
         self.commit("docs/p.md", "\n".join(_home(n) + "x" for n in names) + "\n")
+        self.assertEqual(scan(self.repo), [])
+
+    def test_encoded_real_name_reported(self):
+        # Claude 项目目录名把 / 换成 -：-Users-<名字>-Documents-…
+        self.commit("docs/m.md", "ok\nmemory: ~/.claude/projects/" + _encoded("alice") + "Documents-x/\n")
+        self.commit("c.txt", _encoded("bob", "home") + "proj\n")
+        problems = scan(self.repo)
+        self.assertEqual(len(problems), 2, problems)
+        alice = [p for p in problems if p.startswith("docs/m.md:2:")]
+        self.assertEqual(len(alice), 1, problems)
+        self.assertIn("alice", alice[0])
+        self.assertIn("改成", alice[0])
+        self.assertTrue(any(p.startswith("c.txt:1:") and "bob" in p for p in problems), problems)
+
+    def test_encoded_placeholders_pass(self):
+        names = ["me", "<名字>", "<user>", "$USER", "${USER}", "{user}", "you"]
+        self.commit("docs/q.md", "\n".join(_encoded(n) + "x" for n in names) + "\n")
         self.assertEqual(scan(self.repo), [])
 
     def test_contract_samples_exempt(self):
