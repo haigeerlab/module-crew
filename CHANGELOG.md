@@ -2,6 +2,16 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.24.2 的变化（接管批准部分第 3 轮返工：返工后复审能跑通、轮次上限与 spec-guard 一致、Codex 能看到引用的已有文件）
+
+S101 自动接管 crew-takeover-approve 第 3 轮返工（M1、M2 停点不通过，合并批准 C691）。`interface.json` 的 `interface` 仍是 1.1，契约仍钉 session-protocol v2.9。状态库不用迁移。
+
+- **返工后复审能跑通**（问题 A）：最终验收的 Codex 复审每轮固定第一轮的 `--base` 与同一组显式 `--paths`，只让 `--head` 前进，并带上一轮报告（依 delegate #22282，按 delegate 0.10.0 实测）；接管合并的最终验收命令第一轮起就带 `--paths`。Spec、Plan、接口提案是快照审查，暂行做法：第 2 轮起不带 `--previous-report`，把上一轮阻断逐条写进审查说明（delegate 0.11.0 放宽快照复审后改回）。
+- **轮次上限与 spec-guard 一致**（问题 C）：Spec、Plan 第 2 轮仍有阻断就交用户，不审第 3 轮（spec-guard `ROUND_CAP = 2`）；之后这个节点重交改为人批。Codex 放行后落地失败时，把这次新建的文件移到状态库 `codex/leftover-C<n>/`（不删），事项记 `landFailed` 并写明下一步，`review codex-fallback` 记 `codex-land-failed`。
+- **引用的已有文件作为只读上下文**（问题 G）：Spec、Plan 用反引号引用、交审提交里存在的项目文件（最多 40 个）以 `--spec` 作为 `context_files` 带给 Codex，审查说明写明不据范围外已有文件阻断。
+- **提示与计数**：Codex 没跑成的草稿带上 delegate 的 `diagnostics`，`conditions_missing` 时推荐这一项改由用户批；「超限交用户」按事件计数；「不同意」的待定问题带上被反驳的审查要求；`review show` 的 Codex 审查行只用累计编号 R-<n>；收窄提示改为「接管档位已收窄（<对象> <原> → <新>）」；`tier --preflight` 没有状态库时退出码 2。
+- 升级后：只升级 module-crew 时，原会话 /clear 一次即可；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`。
+
 ## 0.24.1 的变化（接管档位的合并部分：Codex 审最终补丁后自动合进本地集成分支；接管批准部分返工；快检查脚本）
 
 S101 自动接管的第二个模块 crew-takeover-merge（合并批准 C676）与 crew-takeover-approve 第 2 轮返工（合并批准 C655）。`interface.json` 的 `interface` 升到 1.1（新增 `firstStage` 一节），契约仍钉 session-protocol v2.9。状态库不用迁移。
