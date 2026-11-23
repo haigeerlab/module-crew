@@ -3,7 +3,7 @@
 import json
 import unittest
 
-from helpers import START_MAP, ReviewCase, git, review_text
+from helpers import START_MAP, MergeCase, ReviewCase, git, review_text
 from module_crew import flow, probe, review, store
 from test_autonomy_tier import TierMixin
 from test_declared_scope import DeclaredMixin
@@ -367,6 +367,56 @@ class SecondReviewerTest(FlowReviewMixin, ReviewCase):
         from module_crew import takeover
         self.assertEqual(takeover.author_host({"host": "codex-desktop"}), "codex")
         self.assertEqual(takeover.author_host({"host": "claude-desktop"}), "claude-code")
+
+
+FAKE_VIEW = "import os, sys\nsys.stdout.write(os.environ.get('FAKE_CASES', '{\"cases\": []}'))\n"
+
+
+class FinalByRegressionTest(FlowReviewMixin, MergeCase):
+    """Task 6, decision 11, acceptance 7."""
+
+    def setUp(self):
+        super().setUp()
+        self.with_flow()
+        self.set_flow({"b": "normal", "c": "bug"})
+
+    def final(self, m, evidence):
+        self.k = getattr(self, "k", 0) + 1
+        text = self.finish(m, content=f"VALUE = {self.k}\n")
+        return text.replace("验收标准与证据：\n1：test_value 通过\n2：无\n", "验收结果：\n" + evidence)
+
+    def with_view(self, cases):
+        import os
+        from pathlib import Path
+        root = Path(self.plugins.entries["spec-guard@m"][-1]["installPath"])
+        doc = json.loads((root / "interface.json").read_text())
+        doc["regressionView"] = {"command": ["python3", "-B", "hooks/regression_view.py", "--json", "--project",
+                                             "<project-root>", "--module", "<module-id>"]}
+        (root / "interface.json").write_text(json.dumps(doc))
+        (root / "hooks" / "regression_view.py").write_text(FAKE_VIEW)
+        os.environ["FAKE_CASES"] = json.dumps({"cases": cases})
+        self.addCleanup(lambda: os.environ.pop("FAKE_CASES", None))
+
+    def test_needs_case_lines(self):
+        out = self.add(self.final("b", "1：test_value 通过\n"))
+        self.assertEqual(out.code, 3)
+        self.assertIn("每行以用例编号开头", "\n".join(out.lines))
+        self.assertEqual(self.add(self.final("b", "R1：test_value 通过\n"), rid=2).code, 0)
+
+    def test_lists_missing_cases_manual_excluded(self):
+        self.with_view([{"id": "R1", "method": "command"}, {"id": "R2", "method": "manual"},
+                        {"id": "R3", "method": "script"}])
+        out = self.add(self.final("c", "R1：通过\n"), m="c")
+        self.assertEqual(out.code, 3)
+        self.assertIn("缺这些回归用例：R3", "\n".join(out.lines))
+        self.assertEqual(self.add(self.final("c", "- R1：通过\nR3：通过\n"), m="c", rid=2).code, 0)
+
+    def test_old_module_unchanged(self):
+        self.set_flow({})
+        self.assertEqual(self.add(self.finish("b")).code, 0)
+
+    def test_case_ids(self):
+        self.assertEqual(flow.case_ids(["验收结果：", "R1：过", "- R12: 过", "S1：无"]), ["R1", "R12"])
 
 
 if __name__ == "__main__":

@@ -4,7 +4,10 @@ reviews, starting and display (see spec/crew-flow-v2.md). A module without a tie
 
 from __future__ import annotations
 
+import json
 import os
+import re
+import subprocess
 from pathlib import Path
 
 from module_crew import store
@@ -123,3 +126,48 @@ def after_release(tier_value: str | None, node: str, module_id: str) -> str | No
         return (f"写技术方案 tasks/{module_id}/design.md 与回归 tasks/{module_id}/regression.md，"
                 "一起交审（节点 技术方案；契约 v2.10 之前写「节点：Spec」、文件只列这两份）")
     return "等开工通知"
+
+
+# decision 11: a flow v2 module's final acceptance reports by regression case
+CASE_LINE = re.compile(r"^\s*(?:[-*]\s*)?(R\d+)\s*[：:]")
+REGRESSION_VIEW = "regressionView"      # interface draft v1 regression_view --json; name checked at Checkpoint 4
+
+
+def case_ids(evidence: list[str]) -> list[str]:
+    return [m.group(1) for line in evidence if (m := CASE_LINE.match(line))]
+
+
+def regression_cases(where: Path, module_id: str) -> list[dict] | None:
+    """spec-guard's parsed regression cases for the module, or None when the installed spec-guard has no reader
+    (module-crew never parses the Markdown itself)."""
+    from module_crew import probe
+    found = probe.find_plugin("spec-guard", where)
+    if isinstance(found, str):
+        return None
+    doc = probe.read_interface(found.root, probe.SPEC_GUARD_MAJOR)
+    if isinstance(doc, str) or not isinstance(doc.get(REGRESSION_VIEW), dict):
+        return None
+    cmd = probe.safe_command(found.root, doc, REGRESSION_VIEW, {"<project-root>": str(where), "<module-id>": module_id})
+    if isinstance(cmd, str):
+        return None
+    try:
+        ran = subprocess.run(cmd, cwd=found.root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
+        got = json.loads(ran.stdout) if ran.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+    cases = got.get("cases") if isinstance(got, dict) else got
+    return [c for c in cases if isinstance(c, dict)] if isinstance(cases, list) else None
+
+
+def final_reasons(evidence: list[str], cases: list[dict] | None, module_id: str) -> list[str]:
+    """Why a flow v2 final acceptance is refused: no R<n> line at all, or (with spec-guard's reader) cases left out.
+    manual cases are the user's to test and may be missing or written 待用户测."""
+    have = set(case_ids(evidence))
+    if not have:
+        return [f"新流程模块的「验收结果」按回归用例写：每行以用例编号开头（R1：<结果与证据>），用例见 tasks/{module_id}/regression.md"
+                "（bug／小改动见 spec 的回归用例一节）"]
+    if cases is None:
+        return []
+    missing = [str(c.get("id")) for c in cases
+               if c.get("id") and str(c.get("id")) not in have and (c.get("method") or c.get("execution")) != "manual"]
+    return [f"「验收结果」缺这些回归用例：{'、'.join(missing)}（执行方式为 manual 的写「待用户测」即可）"] if missing else []

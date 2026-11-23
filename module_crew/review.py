@@ -91,6 +91,9 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
     reasons = _missing_files(sub["module"], sub["node"], sub["files"]) + _check_files(worktree, sub["files"])
     if sub["node"] == "final" and not _evidence(msg.fields.get("要点", "")):
         reasons.append(f"最终验收的「要点」里缺「{EVIDENCE}」一节：按 Spec 的验收标准逐条写结果与证据「<编号或原文>：<结果与证据>」，没有证据写「无」")
+    if sub["node"] == "final" and flow.is_v2(tier) and _evidence(msg.fields.get("要点", "")):   # crew-flow-v2 decision 11
+        reasons += flow.final_reasons(_evidence(msg.fields.get("要点", "")),
+                                      flow.regression_cases(worktree, sub["module"]), sub["module"])
     if sub["node"] == "final" and _inventory_pending(session):
         reasons.append(INVENTORY_PENDING)
     if not reasons and sub.get("disputes"):
