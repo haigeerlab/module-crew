@@ -73,7 +73,7 @@
    spec-guard 拒绝（退出 2）时 module-crew 还原集成 checkout、退出码 4，原因照抄。
 6. **收窄**：调 `takeoverNarrow`：`project_config.py narrow --project <集成 checkout> [--module <模块>] --source module-crew --reason <一行> --confirm`；顺序（合并 → Plan → 不接管，自定义按 release、merge、plan、spec 取第一个非人批项）由 spec-guard 定。
    它改 `.agent/config.json`，module-crew 随即在集成分支单独提交（提交信息写原因），按 `crew-unqueued-commits` 记为 module-crew 自己的提交。已是最严时 spec-guard 什么都不写、退出 0，module-crew 不输出收窄行。
-7. **`tier --preflight`**：核对 spec-guard ≥ 0.91.0 且接口 1.15 有 `takeover`、`takeoverNarrow`，delegate 接口 ≥ 1.5（`review.report.severity`、`recheck`）；任一不满足退出码 3。
+7. **`tier --preflight`**：核对 spec-guard ≥ 0.91.0 且接口 1.15 有 `takeover`、`takeoverNarrow`，delegate 接口 ≥ 1.5（`review.report.severity`、`recheck`）；任一不满足退出码 3。它读状态库，项目还没建状态库时退出码 2，提示先 `module-crew store init`。
 
 
 
@@ -107,15 +107,16 @@
 5. **（新）放行时复用 `review approve` 的落地路径**（细节按「上游实测」一节修订）：抽出 `_land(project, picked, mark_state, record)`：`review approve` 传 `approved` 与用户原话，Codex 放行传 `codex-approved` 与报告摘要（报告路径、指纹、轮次、建议条数）。
    集成分支提交信息写「Codex 放行事项 C<k>：放行 <模块> 的 <节点>」；回给模块会话的不是【用户答复】，而是：Spec 与 Plan 都已批准（任一方批的都算）时发开工类【协调通知】（「依据」写 Codex 放行事项号）；只放行了 Spec 时发「放行」类【协调通知】（决策 12）。
    开工通知的其余写法（提前开工、外包、`_start_todo`）全部照旧。
-6. **（新）Codex 不可用一律停**：`codex-note` 读到「没有结论」（报告缺失、坏 JSON、`status` 非完成、部分覆盖）时不记结论，退出码 5，输出一份【等待用户】草稿：「Codex 审查没跑成：<原因>」，选项 A 等 Codex 恢复后重跑 `review codex C<n>`（推荐）／B 这一项这次改由用户批（之后照人批流程 `review approve`）。模块协调照今天的【等待用户】流程转给用户。
+6. **（新）Codex 不可用一律停**：`codex-note` 读到「没有结论」（报告缺失、坏 JSON、`status` 非完成、部分覆盖）时不记结论，退出码 5，输出一份【等待用户】草稿：「Codex 审查没跑成：<原因>」（原因带上报告的 `diagnostics`），选项 A 等 Codex 恢复后重跑 `review codex C<n>`（推荐）／B 这一项这次改由用户批（之后照人批流程 `review approve`）；
+   `execution_status` 为 `conditions_missing`（delegate 没启动 Codex 就拒绝，同一条命令重跑会同样失败）时改为推荐 B，A 写成「排除原因后重跑」。模块协调照今天的【等待用户】流程转给用户。
    `review approve` 对 `reviewer: "codex"` 的事项：没有用户选 B 的答复记录时拒绝（退出码 3，提示「这一项是 Codex 放行，先 review codex」），选 B 后照人批走，事项记 `reviewer: "human"`、`fallback: "codex-unavailable"`。没有任何路径让 Claude 自己的判断替代 Codex 结论。
 7. **（新）分开记账**：Codex 放行记成事项 `kind: "codex-approval"`（字段同 `review-approval`，`answer` 换成 `codex: {report, fingerprint, rounds, suggestions}`），事件 `item.codex-approved`；`_approved_nodes`、`start_basis` 认它与 `review-approval` 两种；
-   `status` 的接管一段写「Codex 放行：Spec a 次、Plan b 次；其中返工后才放行 c 次；超限交用户 d 次」；`status --json` 的 `store.takeover` 给同样的数。用户批准的说法、编号、统计一处都不变。
+   `status` 的接管一段写「Codex 放行：Spec a 次、Plan b 次；其中返工后才放行 c 次；超限交用户 d 次」（d 按超限事件数，用户之后改由自己批也不减）；`status --json` 的 `store.takeover` 给同样的数。用户批准的说法、编号、统计一处都不变。
 8. **（新）批准人不同就分开批**：`start.review_cadence` 加模块参数：该模块 Spec 与 Plan 的批准方 `approver` 不同时返回 `separate`（来源写「Spec、Plan 批准人不同，自动分开批」），相同时照 spec-guard 的 `reviewCadence`。开工说明与 `review batch` 都走它。
 9. **（新）出事收窄改调 spec-guard**（细节按「上游实测」一节修订）：`autonomy.incident(db, project, kind, ref, reason)` 的签名与四个出口（`merge.py` 两处、`review.py` 的 `rework-over-limit`、`checks.py` 的基线失败）不动，内部改为：
    读生效档位；三项全是人批就什么都不做；否则调 spec-guard 收窄入口，按「合并 → Plan → Spec」取消最前面一个勾（预设档：接管到合并 → 只接管 Plan → 不接管），一次一格。
    作用对象：出事能归到模块（前三类）时，该模块单独设过 `moduleTakeover` 就收窄那个模块，同时收窄项目档；基线失败只收窄项目档。同一 `kind:ref` 只降一次（`incidentKeys` 照旧记在 `config/main`，只是去重用）。
-   输出一行「接管档位已从 <原> 收窄到 <新>：<原因>。马上告诉用户；恢复要用户原话，经 /spec-guard:config 写」；收窄入口调用失败时输出「没能收窄（<原因>）：请告诉用户，由用户决定是否用 /spec-guard:config 调低」，不影响调用方。
+   输出一行「接管档位已收窄（<对象> <原> → <新>）：<原因>。马上告诉用户；恢复要用户原话，经 /spec-guard:config 一次升一档」；收窄入口调用失败时输出「没能收窄（<原因>）：请告诉用户，由用户决定是否用 /spec-guard:config 调低」，不影响调用方。
 10. **`tier degrade` 参数不变**：`--reason`、`--ref` 照旧，内部走决策 9 的同一路径（`kind: external`）；退出码照旧（0 已降或无需降、2 降档失败、3 参数错）。
     `tier restore` 退役为指引：不论参数，退出码 3，输出「放宽档位要用户原话、一次升一档，用 /spec-guard:config 写（module-crew 不再存降档上限）」。
 11. **（新）autonomyTier 退役与三个开关**：module-crew 不再调用 `autonomyTier.readFrom`，`config/main.autonomy` 里的 `cap`、`seen`、`suggestedFor` 不再读（记录保留、只增不改）；升档建议（`evidence`、`suggestion`、`merge run` 合入后的建议行）随之去掉。三个开关独立：
@@ -255,3 +256,4 @@ README 的「自治档位」一节改写为「接管档位」：三项各由谁�
 - 2026-11-22：新增「上游实测」一节，按 spec-guard 0.91.0（interface 1.15）与 delegate 0.10.0（接口 1.5）的真实接口修订假设 1、2、7 与决策 1、3、4、5、9（读法改用 `/map --json` 每模块 `takeover`，强制人批取 `important.reasons` 与 Plan 预先声明，报告按 `scope.files` 的 sha256 绑定，阻断轮次由模块会话用 `review-mark --state codex-reviewed` 记进文件，放行用 `codex-approved --review`，收窄调 `takeoverNarrow` 并由 module-crew 提交 `.agent/config.json`）；目标与范围不变。原因：Plan Checkpoint 0 要求发版后按真实接口改；来源：本模块构建 Checkpoint 0，随最终验收附 Spec 差异复审。
 - 2026-11-22：构建 Task 4、5 时补三处实现取舍：① 新增 `review codex-fallback C<n> (--original|--original-file)`，用户选「这一项改由自己批」（Codex 不可用或两轮仍阻断）时凭原话把交审改回人批，之后照 `review approve`／`review answer`（决策 6 原写「选 B 后照人批走」，没写入口）；② Codex 返工通知的审查编号写 `R-<第几次审>`，交审事项的审查记录 `from` 为 `codex`；③ 批准标记命令认 spec-guard 1.1 与 1.15 两种占位符写法，`[--review <report file>]` 只在 Codex 放行时展开——装上 0.91.0 后旧写法会让 `review approve` 与合并时记 Spec 修订批准都失败（已告知 mc-coord #21999）。原因与来源：本模块构建 Task 4、5，随最终验收附 Spec 差异复审。
 - 2026-11-22：决策 1 的 Plan 预先声明判据改为以 spec-guard `declaredScope` 为准（格式错误、读不出、调用失败一律人批），不再自己解析，改回人批时写出原因。原因：M1 停点沙箱实跑（`module-crew-m1-sandbox/M1-REPORT.md` 注意 1、11）中 `- 无（…）` 被 module-crew 判为没有、交 Codex 放行，spec-guard 判为格式错误要人批；来源：用户 M1 停点「不通过，重开修」，读法经 mc-coord 转告（#22074、#22076，ecosystem-lead 记为 S106），随返工最终验收附 Spec 差异复审。
+- 2026-11-23：决策 6 的草稿带上 `diagnostics`，`conditions_missing` 时推荐 B；决策 7 的「超限交用户」按事件计数；「上游实测」7 写明没有状态库时退出码 2；决策 9 的收窄提示按实际措辞「接管档位已收窄（<对象> <原> → <新>）」；新增：某模块某节点 Codex 超限后，该节点重交改为人批（原因「Codex 已审满两轮仍有阻断」），与超限草稿选项 B「改完交你批」一致；超限且用户已改由自己批的事项，批次里的待定问题不再倾向 B（与前面的 A 不矛盾），其余「不同意」「超限」待定问题倾向 B 时 `review batch` 注明 B 覆盖 A；「不同意」的待定问题带上被反驳的审查要求；`review show` 里 Codex 的审查行只写累计编号 R-<n>。原因：0.24.1 安装版沙箱实跑（`module-crew-m2-sandbox/M1-M2-REPORT.md`，8dc41d5）问题 B、D、E、F、I、K 与注意 5、7；来源：用户在 M1、M2 停点「按推荐继续」（C686），第 3 轮返工 Task 16、17，随返工最终验收附 Spec 差异复审。
