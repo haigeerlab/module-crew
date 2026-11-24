@@ -1,5 +1,7 @@
 # Usage draft: auto-takeover
 
+> **已留档（2026-11-24）**：S101 于 11-24 停下，M1、M2 不再确认，剩余归 S110。原在 `spec/usage/auto-takeover.md`，移出后不再参与里程碑停点与校验。依据：用户「推送 0.24.2，S101 停」「丙：问 sg-coord」「移去留档」（mc-coord 会话），做法按 sg-coord #22371。
+
 > 需求：S101 自动接管（plugin-ecosystem `research/2026-11-21-自动接管合并方案.md`，bfce091）。模块 `crew-takeover-approve`、`crew-takeover-merge`（能力图 6636f7e）。
 > 补写：两个模块的 Spec、Plan 已批（C607、C610、C620、C623）之后才写这份草案，按 spec-guard「用法草案」规则补审。
 > 接管档位本身（`takeover`／`moduleTakeover` 的设置与存储、收窄入口）归 spec-guard 0.91.0；下面只列 module-crew 的入口。

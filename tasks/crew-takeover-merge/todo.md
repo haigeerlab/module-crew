@@ -25,3 +25,5 @@
 - [ ] Task 11：用法草案 U2 按实现改写——入口表与 U2 改为 `merge auto C<n>` 与只读 `merge first-stage --json`、合入后记 firstStage（不写 codex-approved 验收标记），写明 J 的前提；按已批准文件追加变更记录，随返工最终验收复审
 - [ ] Task 12：同步 skill 与文档、`module-crew sync` 后全量测试；安装版重跑 M2 由模块协调安排
 - [ ] Checkpoint 6（gate）：返工最终验收
+<!-- spec-guard: suspended -->
+<!-- spec-guard: suspended-reason: S101 已停，剩余归 S110 -->
