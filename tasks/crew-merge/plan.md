@@ -1,4 +1,5 @@
-<!-- spec-guard: review approved -->
+<!-- spec-guard: review pending -->
+
 # Implementation Plan: crew-merge
 
 > 依据：`spec/crew-merge.md`（已批准）。任务清单：`tasks/crew-merge/todo.md`。
@@ -57,3 +58,11 @@
 | 测试误推到真实远端或调用真实 `gh` | 高 | 远端一律是临时裸仓库；测试把 PATH 指向只含假 `gh` 的目录，断言没有网络访问的参数 |
 | 撤销后集成分支内容与合并前不一致 | 高 | 测试比对撤销后与合并前的树对象 |
 | 检查命令长时间挂住 | 中 | 超时可配；测试用 1 秒超时验证 |
+
+## 修订（2026-11-24）：规范 v1.5 F3 合并方式统一
+
+- 来源：ecosystem-lead #22516（S109，规范 v1.5 新增 F3）；用户在 mc-coord 答复「重开 crew-merge」。
+- 要改：用户在对话里说「合并」后，由 module-crew 凭原话执行 `gh pr merge --auto`（合并方式按本仓现有习惯），等必需检查 `CI required` 通过后由 GitHub 合并，再核实 PR 已合并、记下合并提交；用户不用去 GitHub 点。「合并：自动」（不问就合）不开。
+- 前提：仓库开了 Allow auto-merge（ecosystem-lead 逐仓取用户同意后统一开，本模块不开），主干已有必需检查；不满足时命令拒绝并说明，不退化成直接合并。
+- 影响面：`spec/crew-merge.md`（第 11 条、范围、「绝不」一节与对应验收条）、`docs/requirements-record.md`、两份 `crew-coordinator` skill、`module_crew/merge.py` 的 PR 提示文字、README 中英、`docs/guide.md`、`docs/architecture.md`，以及 CLAUDE.md／AGENTS.md 共享段中相应写法。
+- 先改 Spec 交复审，Spec 批准后再细化本节任务并交审本 Plan；批准前不改代码。
