@@ -15,6 +15,6 @@
 - [x] Task 8：协议认「技术方案」（Spec 决策 2、9；验收 10）——实现先于测试；`CONTRACT_VERSION` 2.10，【交审】节点表加「技术方案」（【审查结论】另用 `CONCLUSION_NODES` 不加），技术方案节点缺文件报 `missing-design-file:*`（排在 bad-file-line 之后），放行节点正则加「技术方案」并按匹配文字取代码，`WAIT_KINDS`／`REVIEW_POINTS` 加七个小项；样例复制到 `tests/fixtures/session-protocol/v2.10/`（SHA256SUMS 全过），v2.2～v2.10 全部通过（v2.10 解析 130 份）；过渡写法仍收并提示改写；卡片类型改为「技术方案」；变异（节点表去掉技术方案）3 个转红；`interface.json` 的 contract 已发【公共变更请求】#22421，回复前 test_hub_output 的 test_interface_json 红（bf0b973）
 - [x] Task 9：多模块布局——按用户答复 C715「C715 B」取消：不等 sg-coord，Spec 去掉范围第 7 条与 AC8（决策 8 提案原文留作参考，变更记录已加），没有写代码；等待记录 W714 以【已恢复】关闭
 - [x] Checkpoint 4（gate）：上游发版与实测（spec-guard interface 1.18）——实测：本机 spec-guard 0.94.0，interface 1.18；本仓库 /map 43 个模块 tier 全为 null（老模块不变）；临时项目里带 flow v2 行的两个模块 tier 读成 important（规则判 multi-module，写 bug 的也按 important）、step 为 regression／design，flow.summarize、step_word、refuse 照预期；本机没有 takeover.design、designApproval、regressionView（spec-guard 后续模块未发），delegate 最高 0.11.0／接口 1.6（1.7 未发）：技术方案一律人批、最终验收只查有 R<n>，照兜底交付；用户 C715「C715 B」通过本停点
-- [ ] Task 10：文档（公共变更请求）、同步后全量测试、本机实测（验收 1、11）
+- [x] Task 10：文档（公共变更请求）、同步后全量测试、本机实测（验收 1、11）——按用户答复 C718「C718 只批范围」在本分支改四份 skill、README 中英与 docs/guide.md（89113e3），文档测试 7 个文件全过；`module-crew sync` 已是最新（main c62506a）；检查记账没开，完整检查用全量测试：1437 个用例 1436 个通过，唯一失败为 test_hooks 的耗时断言（全量跑 72 分钟、负载高时 1.2 秒），单独重跑 3 次通过，本分支与集成分支钩子耗时同为约 180 毫秒；本机实测见 Checkpoint 4
 - [ ] Checkpoint 5（gate）：最终验收
 - [ ] 回告：经模块协调转告 ecosystem-lead 与 sg-coord
