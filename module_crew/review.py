@@ -448,8 +448,17 @@ def _approved_nodes(db: store.Store) -> dict[str, set[str]]:
             for n in rec.get("reviews", []):
                 r = items.get(str(n)) or {}
                 if n > store.round_since(sessions, r.get("module")):     # crew-reopen-module: this round only
-                    approved.setdefault(r.get("module"), set()).add(r.get("node"))
+                    approved.setdefault(r.get("module"), set()).update(_nodes_of(r))
     return approved
+
+
+def _nodes_of(rec: dict) -> set[str]:
+    """The nodes one approved review covers: a Plan that carries the module's Spec approves the Spec too
+    (decision 7; T750: a reopened module's round 2 may send only that Plan)."""
+    node = rec.get("node")
+    if node == "plan" and any(f.get("path") == f"spec/{rec.get('module')}.md" for f in rec.get("files") or []):
+        return {"plan", "spec"}
+    return {node}
 
 
 def released_by(codex: dict | None) -> str:
@@ -1497,7 +1506,7 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
             _closing_send(tx, db, result.sends, modules, [n for n, _ in picked])
         started: set[str] = set()
         for m in modules:
-            nodes_here = {rec["node"] for _, rec in picked if rec["module"] == m}
+            nodes_here = set().union(*(_nodes_of(rec) for _, rec in picked if rec["module"] == m))
             nodes_now = approved_before.get(m, set()) | nodes_here
             tier = flow.tier(db, project, m)      # crew-flow-v2 decision 5: a flow v2 module starts without a Plan
             if tier is not None:
@@ -1507,6 +1516,9 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
                         result.lines.append(f"{m}：{why}")
                     continue
             elif not {MARK_TARGET[n] for n in nodes_now if n in MARK_TARGET} >= {"spec", "plan"}:   # interface counts as Spec
+                if "plan" in nodes_here:          # T750: say why instead of skipping the start notice silently
+                    result.lines.append(f"{m}：这一轮还没批 Spec，没有发开工通知；Spec 批准后（或 Plan 交审时附上 "
+                                        f"spec/{m}.md 一起批）才发")
                 continue
             elif "plan" not in nodes_here:        # S53: a Spec revision alone does not start the build
                 result.lines.append(f"{m}：这次没批 Plan，没有发开工通知。以前批过的 Plan 仍是批准状态；Spec 修订后 Plan "
