@@ -56,13 +56,17 @@ def _git(root: Path, *args: str) -> str:
 
 
 def changed_files(root: Path, branch: str) -> list[tuple[str, str]]:
-    """(status, path) of every change in the working tree since the merge-base, untracked files included."""
+    """(status, path) of every change in the working tree since the merge-base, untracked files included.
+
+    Untracked bytecode (`__pycache__/`, `*.pyc`) is not a change: importing module_crew or running the tests writes
+    it when the tree has no .gitignore for it or PYTHONDONTWRITEBYTECODE is unset (T760)."""
     base = _git(root, "merge-base", "HEAD", f"refs/heads/{branch}").strip()
     out = []
     for line in _git(root, "diff", "--name-status", "--no-renames", base).splitlines():
         status, _, path = line.partition("\t")
         out.append((status[:1], path))
-    out += [("A", p) for p in _git(root, "ls-files", "--others", "--exclude-standard").splitlines() if p]
+    out += [("A", p) for p in _git(root, "ls-files", "--others", "--exclude-standard").splitlines()
+            if p and "__pycache__" not in p.split("/") and not p.endswith(".pyc")]
     return out
 
 

@@ -7,6 +7,7 @@ from datetime import datetime
 from helpers import MergeCase, git
 
 from module_crew import failure, hooks, inbox, merge, review, store
+from module_crew.stall import _iso
 
 from helpers import wait_user
 
@@ -25,7 +26,7 @@ class CommitFactsTest(StallCase):
         row = self.rows()["b"]
         self.assertEqual(row["commits"]["ahead"], 1)
         self.assertEqual(row["commits"]["last"]["commit"], git(self.wt["b"], "rev-parse", "HEAD").strip())
-        self.assertEqual(row["commits"]["last"]["at"], git(self.wt["b"], "log", "-1", "--format=%cI").strip())
+        self.assertEqual(row["commits"]["last"]["at"], _iso(git(self.wt["b"], "log", "-1", "--format=%cI")))
         datetime.fromisoformat(row["commits"]["last"]["at"])
         self.assertIsNone(row["commits"]["error"])
         (self.wt["b"] / "x.txt").write_text("x\n")
@@ -215,7 +216,7 @@ class HumanTextTest(StallCase):
         review.answer(self.db, plan, "Plan 改")
         git(self.wt["c"], "reset", "-q", "--hard", "main")
         text = "\n".join(failure.render_sessions(failure.sessions(self.db)))
-        at = datetime.fromisoformat(git(self.wt["b"], "log", "-1", "--format=%cI").strip()).strftime("%Y-%m-%d %H:%M")
+        at = datetime.fromisoformat(_iso(git(self.wt["b"], "log", "-1", "--format=%cI"))).strftime("%Y-%m-%d %H:%M")
         self.assertIn(f"  最近提交：{at}（0 分钟前），未合入集成分支 1 个", text)
         self.assertIn(f"  问过你：Plan 1 次（C{plan}）", text)
         self.assertIn("  最近提交：开工以来没有提交（开工 0 分钟前）", text)
