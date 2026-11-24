@@ -4,7 +4,7 @@ import copy
 import json
 import unittest
 
-from helpers import START_MAP, MergeCase, RepoCase, StartCase, git, review_text
+from helpers import START_MAP, MergeCase, RepoCase, ReviewCase, StartCase, git, review_text
 
 from module_crew import hooks, merge, review, stall, start, store
 
@@ -392,3 +392,50 @@ class FreshStoreRoundTest(StartCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReopenPlanCarriesSpecTest(ReviewCase):
+    """T750: round 2 sends only a Plan with the revised Spec in it; approving it starts the build."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = store.open_store(self.repo)
+        s = review.add(self.db, self.spec_review("b"), "shop-b", 700).number
+        assert review.approve(self.repo, [s], "批准 b 的 Spec").code == 0
+        branch = store.get(self.db, "config", "main")["integrationBranch"]
+        git(self.wt["b"], "merge", "-q", "--no-edit", "-X", "theirs", branch)
+        since = max(int(k) for k in store.records(self.db, "item"))
+        with self.db.transaction(actor="t") as tx:      # reopened in place: earlier items belong to round 1
+            rec = tx.records("session")["shop-b"]
+            tx.put("session", "shop-b", dict(rec, reopen={"round": 2, "since": since,
+                                                          "review": {"spec": "pending", "plan": "pending"}}),
+                   action="registered")
+
+    def plan_with_revised_spec(self):
+        spec = self.wt["b"] / "spec" / "b.md"
+        spec.write_text(spec.read_text(encoding="utf-8") + "## 第 2 轮补的一条\n", encoding="utf-8")
+        git(self.wt["b"], "commit", "-qam", "b: revise spec for round 2")
+        files = [(f"tasks/b/{n}", self.wt["b"] / "tasks" / "b" / n) for n in ("plan.md", "todo.md")]
+        files.append(("spec/b.md", spec))
+        out = review.add(self.db, review_text("b", "Plan", files), "shop-b", 701)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertIn("specRevised", store.get(self.db, "item", str(out.number)))
+        return out
+
+    def test_plan_with_revised_spec_starts_build(self):
+        out = self.plan_with_revised_spec()
+        res = review.approve(self.repo, [out.number], "批准 Plan，同时批准修订后的 Spec")
+        self.assertEqual(res.code, 0, res.lines)
+        starts = [s for s in res.sends if s["kind"] == "coordination-notice" and s["to"] == "shop-b"]
+        self.assertEqual(len(starts), 1, (res.sends, res.lines))
+        self.assertIn("开工", starts[0]["path"].read_text(encoding="utf-8"))
+        self.assertIn("spec", review._approved_nodes(self.db).get("b", set()))
+
+    def test_plan_without_spec_says_why(self):
+        files = [(f"tasks/b/{n}", self.wt["b"] / "tasks" / "b" / n) for n in ("plan.md", "todo.md")]
+        out = review.add(self.db, review_text("b", "Plan", files), "shop-b", 702)
+        self.assertEqual(out.code, 0, out.lines)
+        res = review.approve(self.repo, [out.number], "批准 Plan")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertFalse([s for s in res.sends if s["kind"] == "coordination-notice" and s["to"] == "shop-b"])
+        self.assertTrue(any(x.startswith("b：") and "开工通知" in x for x in res.lines), res.lines)
