@@ -79,7 +79,7 @@ module-crew status
    你点名的模块依赖还没做完时也能提前开工，只写 Spec 与 Plan；依赖合入后模块协调问你一次，再用 `module-crew start kickoff <模块>` 发开工通知。
 3. **写 Spec 与 Plan**：模块会话写好后发【交审】，模块协调汇总给你审；你批准后它 `module-crew review approve`，模块会话收到开工通知再构建。
 4. **合并**：模块做完发最终验收，你批准后模块协调 `module-crew merge run` 合入本地集成分支并跑完整检查，不过就自动退回。
-5. **推送**：你授权后 `module-crew merge push` 推到远端新分支并开 PR；远端合并由你自己做。
+5. **推送与远端合并**：你授权后 `module-crew merge push` 推到远端新分支并开 PR；模块协调问你「可以合并吗」，你在对话里回「合并」，它就用 `module-crew merge pr-merge` 让 GitHub 等必需检查通过后合并，再用 `merge pr-check` 核实、告诉你合并提交，不用去 GitHub 点。仓库没开 Allow auto-merge 或主干没有必需检查时它会拒绝，不会直接合并。
 
 完整流程、每一步的细节与出状况时怎么办见[使用手册](docs/guide.md)。
 

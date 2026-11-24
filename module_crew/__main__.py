@@ -1036,6 +1036,11 @@ def _merge(args) -> int:
         print(f"发送 退回通知（{'检查环境出了问题' if args.kind == 'env' else '模块需要修改'}）→ {note.to}，正文文件：{note.path}")
         _sent(note.to)
         return 0
+    if args.action == "pr-check":          # crew-merge decision 13: read only, no user words needed
+        res = merge.pr_check(".", args.number, args.wait)
+        for line in res.lines:
+            print(line, file=sys.stderr if res.code == 3 else sys.stdout)
+        return res.code
     original = _original(args.original, args.original_file)
     if original is None:
         return 2
@@ -1118,6 +1123,8 @@ def _merge(args) -> int:
         res = merge.cleanup(".", args.module, original)
     elif args.action == "push-tag":
         res = merge.push_tag(".", args.tag, original)
+    elif args.action == "pr-merge":        # crew-merge decision 12 (standard v1.5 F3)
+        res = merge.pr_merge(".", args.number, original)
     else:
         res = merge.push(".", original, args.pr_base)
     for line in res.lines:
@@ -1525,6 +1532,9 @@ def _main(argv: list[str] | None = None) -> int:
     mres.add_argument("number", nargs="?", type=refs.parse)
     mres.add_argument("--wait", type=float, default=0, help="最多等这么多分钟（上限 8）")
     mres.add_argument("--json", action="store_true")
+    prc = mgs.add_parser("pr-check", help="核实 merge pr-merge 下令的 PR 合了没有，合了记下合并提交（只读 GitHub，不需要用户原话）")
+    prc.add_argument("number", type=refs.parse)
+    prc.add_argument("--wait", type=float, default=0, help="最多等这么多秒，每 30 秒读一次（放后台跑）")
     rn2 = mgs.add_parser("renotice", help="按另一种原因重发退回通知（模块协调判断，不需要用户原话）")
     rn2.add_argument("number", type=refs.parse)
     kg = rn2.add_mutually_exclusive_group(required=True)
@@ -1533,7 +1543,7 @@ def _main(argv: list[str] | None = None) -> int:
     for name, positional in (("approve", ("numbers", refs.parse)), ("accept", ("numbers", refs.parse)),
                              ("revoke", ("number", refs.parse)),
                              ("cleanup", ("module", str)), ("tick", ("module", str)), ("record", ("number", refs.parse)),
-                             ("push", None), ("push-tag", ("tag", str))):
+                             ("push", None), ("push-tag", ("tag", str)), ("pr-merge", ("number", refs.parse))):
         c = mgs.add_parser(name)
         if positional:
             c.add_argument(positional[0], type=positional[1], **({"nargs": "+"} if name in ("approve", "accept") else {}))
