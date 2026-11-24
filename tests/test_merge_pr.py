@@ -52,8 +52,9 @@ sys.exit(2)
 """
 
 
-def view(state="OPEN", head=None, base="main", auto=None, merge_commit=None):
+def view(state="OPEN", head=None, base="main", auto=None, merge_commit=None, merge_state=None):
     return {"state": state, "baseRefName": base, "headRefOid": head, "autoMergeRequest": auto,
+            "mergeStateStatus": merge_state,
             "mergeCommit": {"oid": merge_commit} if merge_commit else None,
             "mergedAt": "2026-11-24T10:00:00Z" if merge_commit else None}
 
@@ -108,6 +109,29 @@ class PrMergeTest(PrCase):
         self.assertEqual(self.rec()["mergeRequest"]["original"], "合并")
         self.assertEqual(self.rec()["mergeRequest"]["headCommit"], self.head)
         self.assertIn("CI required", "\n".join(res.lines))
+
+    def test_clean_merges_directly(self):                      # standard v1.5.1
+        self.scene(views=[view(head=self.head, merge_state="CLEAN")],
+                   afterMerge=[view(state="MERGED", head=self.head, merge_commit="abc1234def")])
+        res = merge.pr_merge(self.repo, self.n, "合并")
+        self.assertEqual(res.code, 0, res.lines)
+        [call] = self.merge_calls()
+        self.assertEqual(call, ["pr", "merge", PR, "--merge", "--match-head-commit", self.head])
+        self.assertEqual(self.rec()["mergeRequest"]["mode"], "direct")
+        self.assertEqual(self.rec()["merged"]["mergeCommit"], "abc1234def")
+        self.assertIn("已直接合并", "\n".join(res.lines))
+
+    def test_checks_not_done_still_auto(self):                 # standard v1.5.1
+        for state in ("BLOCKED", "UNKNOWN"):
+            with self.subTest(state=state):
+                self.log.unlink(missing_ok=True)
+                self.scene(views=[view(head=self.head, merge_state=state)],
+                           afterMerge=[view(head=self.head, auto={"enabledAt": "x"}, merge_state=state)])
+                res = merge.pr_merge(self.repo, self.n, "合并")
+                self.assertEqual(res.code, 6, res.lines)
+                [call] = self.merge_calls()
+                self.assertEqual(call, ["pr", "merge", PR, "--auto", "--merge", "--match-head-commit", self.head])
+                self.assertEqual(self.rec()["mergeRequest"]["mode"], "auto")
 
     def test_merged_right_away(self):                          # acceptance 26
         self.scene(afterMerge=[view(state="MERGED", head=self.head, merge_commit="abc1234def")])
