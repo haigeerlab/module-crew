@@ -46,7 +46,7 @@
   - 补记（2026-10-22）：拿本机真 spec-guard 0.83.0 的 gate_tick.py 预览时发现输出格式和替身不同（勾上时最后一行才是 `ticked; N unchecked item(s) left`，早已勾过是 `<文件>: the final gate is already ticked; …`），原解析会把真实输出当成看不懂；已改为按整段输出判断，替身照真实格式重写；在 scratchpad 副本上用真 gateTick 预览、勾上、重复勾三步核对一致；全量 493 个测试通过
   - 补记（2026-10-22）：spec-guard 0.83.1 改了 gateTick 预览输出（先打原行，再打「preview only, would become: …」），`--confirm` 输出不变；module-crew 只用 `--confirm`，代码不用改；测试替身照 0.83.1 真实输出重写（含 `--confirm` 时打勾后那一行），在 scratchpad 副本上用真 0.83.1 预览、勾上、重复勾核对一致；全量 493 个测试通过
 - [ ] 修订（2026-11-24 追加，规范 v1.5 F3）：用户在对话里说「合并」后由 module-crew 执行 `gh pr merge --auto` 并核实合并；先改 Spec 交复审，再细化 Plan 交审（来源 ecosystem-lead #22516，用户原话「重开 crew-merge」）
-- [ ] Task R1：`merge pr-merge` 的只读核对与下令（验收 26、27、28）
+- [x] Task R1：`merge pr-merge` 的只读核对与下令（验收 26、27、28）——tests/test_merge_pr.py 9 个用例通过；推送记录加 `head`
 - [ ] Task R2：`merge pr-check` 与 `--wait`（验收 29）
 - [ ] Task R3：命令行、提示文字、两份协调会话 skill 与文档（验收 11、30）
 - [ ] 修订检查点（gate）：最终验收——快检查通过、逐条对照验收 11、26–30、列改动文件、附 Spec 修订差异

@@ -1275,7 +1275,7 @@ def push_plan(project: str | os.PathLike, pr_base: str | None = None) -> PushPla
     title = f"module-crew：合入 {names}"
     module_lines = [f"- {m['module']}：合并批准事项 C{m['approval']}，合并提交 {m['mergeCommit'][:7]}"
                     for m in modules] or ["- （无）"]
-    body = "\n".join(["本批由 module-crew 的模块协调在本地集成分支合入，远端合并请由你决定。", "",
+    body = "\n".join(["本批由 module-crew 的模块协调在本地集成分支合入；你在对话里说「合并」后，由 module-crew 下令 GitHub 等必需检查通过后合并。", "",
                       "## 合入的模块", *module_lines, "", "## 提交", *[f"- {c}" for c in commits]]) + "\n"
     lines = [f"远端 {remote}，新分支 {branch} → PR 开向 {base}", f"{len(commits)} 个提交"] + ([note] if note else [])
     return PushPlan(0, lines, remote, branch, base, commits, title, body, modules)
@@ -1332,6 +1332,7 @@ def push(project: str | os.PathLike, original: str, pr_base: str | None = None) 
         body_no = tx.allocate_number()
         meta = tx.write_body(body_no, plan.body)
         rec = {"state": "closed", "kind": "push", "closedReason": "pushed", "remoteBranch": plan.branch, "base": plan.base,
+               "head": _git(project, "rev-parse", cfg["integrationBranch"]).stdout.strip(),   # pr-merge checks it
                "commits": plan.commits, "mergeCommits": [m["mergeCommit"] for m in plan.modules], "pr": None,
                "body": body_no, "answer": {"original": original, "answeredAt": store.now(), **store.source_field()}}
         tx.put("item", str(number), rec, action="pushed")
@@ -1344,7 +1345,7 @@ def push(project: str | os.PathLike, original: str, pr_base: str | None = None) 
                                "--body-file", str(body_path)], cwd=project, capture_output=True, text=True, timeout=120)
         if made.returncode == 0:
             pr = made.stdout.strip().splitlines()[-1] if made.stdout.strip() else None
-            result.lines.append(f"已开 PR：{pr}（请你在远端合并；没有开自动合并）")
+            result.lines.append(f"已开 PR：{pr}（没有开自动合并；用户在对话里说「合并」后用 merge pr-merge C{number}）")
             with db.transaction(actor="coordinator") as tx:
                 tx.put("item", str(number), dict(rec, pr=pr), action="pr-opened")
         else:
@@ -1358,6 +1359,184 @@ def push(project: str | os.PathLike, original: str, pr_base: str | None = None) 
     if f"batch-{number}" not in plan.branch:
         result.lines.append(f"注意：分支名用的是 {plan.branch}，推送记录编号是 C{number}（期间有其他写入）")
     return result
+
+
+PR_POLL_ENV = "MODULE_CREW_PR_POLL"      # seconds between pr-check --wait reads; tests set it short
+PR_FIELDS = "state,baseRefName,headRefOid,mergeCommit,mergedAt,autoMergeRequest"
+GH_TIMEOUT = 60
+
+
+@dataclass
+class PrResult:
+    code: int
+    lines: list[str] = field(default_factory=list)
+
+
+def _gh_run(gh: str, args: list[str], cwd: Path) -> subprocess.CompletedProcess | str:
+    """gh with a timeout; the error text when it could not run."""
+    try:
+        return subprocess.run([gh, *args], cwd=cwd, capture_output=True, text=True, timeout=GH_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return f"gh {' '.join(args[:2])} 超时（{GH_TIMEOUT} 秒）"
+    except OSError as exc:
+        return f"gh 没有跑起来：{exc}"
+
+
+def _gh_json(gh: str, args: list[str], cwd: Path):
+    """(data, None) or (None, error text)."""
+    done = _gh_run(gh, args, cwd)
+    if isinstance(done, str):
+        return None, done
+    if done.returncode != 0:
+        return None, (done.stderr.strip() or done.stdout.strip() or f"gh 退出码 {done.returncode}")[:300]
+    try:
+        return json.loads(done.stdout), None
+    except ValueError:
+        return None, f"gh {' '.join(args[:2])} 的输出不是 JSON"
+
+
+def _pr_repo(pr: str) -> str | None:
+    got = re.match(r"^https://github\.com/([^/\s]+)/([^/\s]+)/pull/\d+/?$", pr.strip())
+    return f"{got.group(1)}/{got.group(2)}" if got else None
+
+
+def _push_record(db: store.Store, n: int) -> tuple[dict | None, str | None]:
+    rec = store.get(db, "item", str(n))
+    if not rec or rec.get("kind") != "push":
+        return None, f"C{n} 不是推送记录（merge push 记下的那条）"
+    if not rec.get("pr"):
+        return None, f"推送记录 C{n} 没有 PR 链接：PR 没开成，或远端不是 GitHub"
+    return rec, None
+
+
+def _required_checks(gh: str, repo: str, base: str, cwd: Path) -> tuple[list[str] | None, str | None]:
+    """Required status checks on <base> from classic branch protection and from rulesets, deduplicated."""
+    from urllib.parse import quote
+    branch = quote(base, safe="")
+    names: list[str] = []
+    done = _gh_run(gh, ["api", f"repos/{repo}/branches/{branch}/protection/required_status_checks"], cwd)
+    if isinstance(done, str):
+        return None, done
+    if done.returncode == 0:
+        try:
+            data = json.loads(done.stdout)
+        except ValueError:
+            return None, "读经典分支保护的输出不是 JSON"
+        names += list(data.get("contexts") or []) + [c.get("context") for c in data.get("checks") or []]
+    elif "404" not in done.stderr + done.stdout:
+        return None, (done.stderr.strip() or f"gh 退出码 {done.returncode}")[:300]
+    rules, err = _gh_json(gh, ["api", f"repos/{repo}/rules/branches/{branch}"], cwd)
+    if err:
+        return None, err
+    for rule in rules or []:
+        if rule.get("type") == "required_status_checks":
+            names += [c.get("context") for c in (rule.get("parameters") or {}).get("required_status_checks") or []]
+    return sorted({n for n in names if n}), None
+
+
+def _judge(db: store.Store, n: int, view: dict) -> PrResult:
+    """crew-merge decision 13: merged → record it (0); auto-merge queued → 6; anything else open or closed → 4."""
+    state = view.get("state")
+    if state == "MERGED":
+        commit = (view.get("mergeCommit") or {}).get("oid")
+        with db.transaction(actor="coordinator") as tx:
+            rec = tx.get("item", str(n))
+            tx.put("item", str(n), dict(rec, merged={"mergeCommit": commit, "mergedAt": view.get("mergedAt"),
+                                                     "checkedAt": store.now()}), action="pr-merged")
+        return PrResult(0, [f"PR 已合并：合并提交 {commit}（{view.get('mergedAt')}）",
+                            "本地集成分支可取远端后快进"])
+    if state == "OPEN" and view.get("autoMergeRequest"):
+        return PrResult(6, ["已排上自动合并，等必需检查通过后由 GitHub 合并：稍后 merge pr-check C" + str(n)])
+    if state == "OPEN":
+        return PrResult(4, ["PR 还开着，但自动合并没有排上（被取消，或必需检查失败后 GitHub 撤了）：交用户决定，不自动重下令"])
+    return PrResult(4, [f"PR 已关闭、没有合并（状态 {state}）：交用户决定"])
+
+
+def pr_merge(project: str | os.PathLike, n: int, original: str) -> PrResult:
+    """crew-merge decision 12 (standard v1.5 F3): with the user's 「合并」, order GitHub to merge the batch PR once its
+    required checks pass (`gh pr merge --auto --merge`); refuse rather than fall back to a direct merge."""
+    project = Path(project)
+    if not original or not original.strip():
+        return PrResult(3, ["用户原话不能为空：下令合并要用户在对话里说「合并」"])
+    db = store.open_store(project)
+    rec, err = _push_record(db, n)
+    if err:
+        return PrResult(3, [err])
+    gh = _gh()
+    if not gh:
+        return PrResult(3, ["没有 gh：没法下令合并，请用户在 GitHub 上处理"])
+    pr = rec["pr"]
+    repo = _pr_repo(pr)
+    if not repo:
+        return PrResult(3, [f"PR {pr} 不在 GitHub 上：module-crew 只对 GitHub 下令自动合并"])
+    view, err = _gh_json(gh, ["pr", "view", pr, "--json", PR_FIELDS], project)
+    if err:
+        return PrResult(4, [f"读不到 PR 状态：{err}"])
+    if view.get("state") == "MERGED":
+        res = _judge(db, n, view)
+        res.lines.insert(0, "PR 早已合并，没有下令")
+        return res
+    if view.get("state") != "OPEN":
+        return PrResult(3, [f"PR 不是开着的（状态 {view.get('state')}）：没有下令"])
+    if view.get("baseRefName") != rec.get("base"):
+        return PrResult(3, [f"PR 的目标分支是 {view.get('baseRefName')}，推送记录是 {rec.get('base')}：没有下令"])
+    head = view.get("headRefOid") or ""
+    expected = rec.get("head") or (rec.get("commits") or [""])[0].split(" ")[0]
+    if not expected or not head.startswith(expected) or len(expected) < 7:
+        return PrResult(3, [f"PR 的头提交 {head[:7]} 不是推送时的 {expected[:7]}（推送后 batch 分支被改过）：没有下令"])
+    info, err = _gh_json(gh, ["api", f"repos/{repo}"], project)
+    if err:
+        return PrResult(4, [f"读不到仓库设置：{err}"])
+    if info.get("allow_auto_merge") is not True:
+        return PrResult(3, [f"仓库 {repo} 没开 Allow auto-merge：由 ecosystem-lead 取用户同意后开；没有下令，也不改成直接合并"])
+    checks, err = _required_checks(gh, repo, rec["base"], project)
+    if err:
+        return PrResult(4, [f"读不到 {rec['base']} 的必需检查：{err}"])
+    if not checks:
+        return PrResult(3, [f"{rec['base']} 没有必需检查（经典分支保护和规则集里都没有）：--auto 会不等 CI 直接合并，没有下令"])
+    with db.transaction(actor="coordinator") as tx:
+        cur = tx.get("item", str(n))
+        tx.put("item", str(n), dict(cur, mergeRequest={"original": original, "requestedAt": store.now(),
+                                                       "headCommit": head, "error": None,
+                                                       **store.source_field()}), action="pr-merge-requested")
+    lines = [f"必需检查：{'、'.join(checks)}"]
+    done = _gh_run(gh, ["pr", "merge", pr, "--auto", "--merge", "--match-head-commit", head], project)
+    failed = done if isinstance(done, str) else (
+        None if done.returncode == 0 else (done.stderr.strip() or done.stdout.strip() or f"gh 退出码 {done.returncode}")[:300])
+    if failed:
+        with db.transaction(actor="coordinator") as tx:
+            cur = tx.get("item", str(n))
+            tx.put("item", str(n), dict(cur, mergeRequest=dict(cur["mergeRequest"], error=failed)),
+                   action="pr-merge-failed")
+        return PrResult(4, lines + [f"下令合并失败：{failed}"])
+    lines.append(f"已下令 GitHub 在必需检查通过后合并 {pr}（合并提交方式）")
+    view, err = _gh_json(gh, ["pr", "view", pr, "--json", PR_FIELDS], project)
+    if err:
+        return PrResult(4, lines + [f"下令后读不到 PR 状态：{err}；稍后 merge pr-check C{n}"])
+    res = _judge(db, n, view)
+    res.lines = lines + res.lines
+    return res
+
+
+def pr_check(project: str | os.PathLike, n: int, wait: float = 0) -> PrResult:
+    """crew-merge decision 13: read only from GitHub; records `merged` on this push record when the PR has merged."""
+    import time
+    project = Path(project)
+    db = store.open_store(project)
+    rec, err = _push_record(db, n)
+    if err:
+        return PrResult(3, [err])
+    gh = _gh()
+    if not gh:
+        return PrResult(3, ["没有 gh：没法读 PR 状态"])
+    interval = float(os.environ.get(PR_POLL_ENV) or 30)
+    deadline = time.monotonic() + max(0.0, wait)
+    while True:
+        view, err = _gh_json(gh, ["pr", "view", rec["pr"], "--json", PR_FIELDS], project)
+        res = PrResult(4, [f"读不到 PR 状态：{err}"]) if err else _judge(db, n, view)
+        if res.code != 6 or time.monotonic() + interval > deadline:
+            return res
+        time.sleep(interval)
 
 
 def _remote_tag_commit(project: Path, remote: str, tag: str) -> tuple[bool, str | None]:
