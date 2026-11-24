@@ -1,5 +1,7 @@
 """crew-flow-v2: spec-guard flow v2 modules (interface 1.18 tier) -- review nodes, starting, approvers, display."""
 
+from __future__ import annotations
+
 import json
 import unittest
 
