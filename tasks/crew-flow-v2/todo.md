@@ -11,10 +11,10 @@
 - [x] Checkpoint 2（report）：批准链路就位——本模块 36 个与接管、旧档位、声明范围、钩子、只读与钩子、最终验收、合并、检查账、probe、开工通知等 13 个文件 280 个通过（2dfbb49）
 - [x] Task 6：最终验收按回归（Spec 决策 11；验收 7）——实现先于测试；新模块「验收结果」至少一行 `R<n>：`，装的 spec-guard 有 `regressionView`（名称按草案，Checkpoint 4 核对）时列出缺的用例、manual 不算缺；老模块照旧；变异转红（817dd20）
 - [x] Task 7：显示（Spec 决策 4、10；验收 9）——实现先于测试；交审事项记 `tier`，钩子「当前」一句按它给新模块四种阶段（不在钩子里读 /map）、新模块的放行也算批准；`start plan` 把 design／regression 写成「写技术方案」「写回归」；spec-guard 接口 ≥ 1.18 时开工说明第一步补一句新流程写法；变异转红（2dfbb49）
-- [ ] Checkpoint 3（gate）：契约 v2.10 发版
-- [ ] Task 8：协议认「技术方案」（Spec 决策 2、9；验收 10）
+- [x] Checkpoint 3（gate）：契约 v2.10 发版——session-protocol v2.10 于 03cabf3 合入（W705 已结）；用户答复 C709「C709 A」继续后半段
+- [x] Task 8：协议认「技术方案」（Spec 决策 2、9；验收 10）——实现先于测试；`CONTRACT_VERSION` 2.10，【交审】节点表加「技术方案」（【审查结论】另用 `CONCLUSION_NODES` 不加），技术方案节点缺文件报 `missing-design-file:*`（排在 bad-file-line 之后），放行节点正则加「技术方案」并按匹配文字取代码，`WAIT_KINDS`／`REVIEW_POINTS` 加七个小项；样例复制到 `tests/fixtures/session-protocol/v2.10/`（SHA256SUMS 全过），v2.2～v2.10 全部通过（v2.10 解析 130 份）；过渡写法仍收并提示改写；卡片类型改为「技术方案」；变异（节点表去掉技术方案）3 个转红；`interface.json` 的 contract 已发【公共变更请求】#22421，回复前 test_hub_output 的 test_interface_json 红（bf0b973）
 - [ ] Task 9：多模块布局，按 sg-coord 采纳决策 8 后的回告做或取消；`*.regression.md` 的读取等 regression-doc-check 发版（Spec 决策 8；验收 8）
-- [ ] Checkpoint 4（gate）：上游发版与实测（spec-guard interface 1.18）
+- [ ] Checkpoint 4（gate）：上游发版与实测（spec-guard interface 1.18）——实测（未勾，等用户）：本机 spec-guard 0.94.0，interface 1.18；本仓库 /map 43 个模块 tier 全为 null（老模块不变）；临时项目里带 flow v2 行的两个模块 tier 读成 important（规则判 multi-module，写 bug 的也按 important）、step 为 regression／design，flow.summarize、step_word、refuse 照预期；本机没有 takeover.design、designApproval、regressionView（spec-guard 后续模块未发），delegate 最高 0.11.0／接口 1.6（1.7 未发）：技术方案一律人批、最终验收只查有 R<n>，照兜底交付
 - [ ] Task 10：文档（公共变更请求）、同步后全量测试、本机实测（验收 1、11）
 - [ ] Checkpoint 5（gate）：最终验收
 - [ ] 回告：经模块协调转告 ecosystem-lead 与 sg-coord
