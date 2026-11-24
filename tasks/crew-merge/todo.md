@@ -49,4 +49,4 @@
 - [x] Task R1：`merge pr-merge` 的只读核对与下令（验收 26、27、28）——tests/test_merge_pr.py 9 个用例通过；推送记录加 `head`
 - [x] Task R2：`merge pr-check` 与 `--wait`（验收 29）——实现随 R1 写入 merge.py，本步补 5 个用例，tests/test_merge_pr.py 共 14 个通过
 - [x] Task R3：命令行、提示文字、两份协调会话 skill 与文档（验收 11、30）——`merge pr-merge`、`merge pr-check` 子命令；skill 测试改为两份都查；README 中英、guide、architecture、requirements-record 改为 F3 写法
-- [ ] 修订检查点（gate）：最终验收——快检查通过、逐条对照验收 11、26–30、列改动文件、附 Spec 修订差异
+- [x] 修订检查点（gate）：最终验收——快检查通过、逐条对照验收 11、26–30、列改动文件、附 Spec 修订差异
