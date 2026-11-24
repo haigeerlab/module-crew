@@ -191,5 +191,42 @@ class PrMergeTest(PrCase):
         self.assertEqual(merge.pr_merge(self.repo, self.n, "合并").code, 6)
 
 
+class PrCheckTest(PrCase):                                    # acceptance 29
+    def test_merged(self):
+        self.scene(views=[view(state="MERGED", head=self.head, merge_commit="0417770ad7")])
+        res = merge.pr_check(self.repo, self.n)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertIn("0417770ad7", "\n".join(res.lines))
+        self.assertIn("快进", "\n".join(res.lines))
+        self.assertEqual(self.rec()["merged"]["mergeCommit"], "0417770ad7")
+        self.assertEqual(self.merge_calls(), [])
+
+    def test_queued_withdrawn_closed(self):
+        self.scene(views=[view(head=self.head, auto={"enabledAt": "x"})])
+        self.assertEqual(merge.pr_check(self.repo, self.n).code, 6)
+        self.scene(views=[view(head=self.head)])
+        self.assertEqual(merge.pr_check(self.repo, self.n).code, 4)
+        self.scene(views=[view(state="CLOSED", head=self.head)])
+        self.assertEqual(merge.pr_check(self.repo, self.n).code, 4)
+        self.assertNotIn("merged", self.rec())
+
+    def test_wait_returns_when_merged(self):
+        queued = view(head=self.head, auto={"enabledAt": "x"})
+        self.scene(views=[queued, queued, view(state="MERGED", head=self.head, merge_commit="abc1234")])
+        res = merge.pr_check(self.repo, self.n, wait=30)
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(len([c for c in self.calls() if c[:2] == ["pr", "view"]]), 3)
+
+    def test_wait_runs_out(self):
+        self.scene(views=[view(head=self.head, auto={"enabledAt": "x"})])
+        self.assertEqual(merge.pr_check(self.repo, self.n, wait=0.05).code, 6)
+
+    def test_refused(self):
+        self.scene()
+        self.assertEqual(merge.pr_check(self.repo, 9999).code, 3)
+        os.environ["MODULE_CREW_GH"] = ""
+        self.assertEqual(merge.pr_check(self.repo, self.n).code, 3)
+
+
 if __name__ == "__main__":
     unittest.main()
