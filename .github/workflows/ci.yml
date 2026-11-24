@@ -1,18 +1,21 @@
 name: CI
 
+# 「CI required」是汇总任务，供主干保护设为合并前必须通过；所以本 workflow 不加路径过滤（被过滤掉的运行不会上报，PR 会一直等它）。
 on:
   pull_request:
   push:
     branches: [main]
 
-permissions:
-  contents: read
+# 顶层不给任何权限，每个任务按需单独放权。
+permissions: {}
 
 jobs:
   test:
     name: test (${{ matrix.python }})
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -54,3 +57,72 @@ jobs:
 
       - name: 全量检查
         run: bash scripts/validate.sh
+
+  plugin:
+    name: plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+
+      # 只在 CI 里装 PyYAML 解析 frontmatter；插件本身仍只用标准库。
+      - name: 校验 skill、command、agent 的 frontmatter
+        run: |
+          python3 -m pip install --disable-pip-version-check pyyaml==6.0.2
+          python3 - <<'EOF'
+          import glob, sys, yaml
+          files = sorted(set(glob.glob("skills/*/SKILL.md") + glob.glob("codex-skills/*/SKILL.md")
+                             + glob.glob("commands/**/*.md", recursive=True) + glob.glob("agents/**/*.md", recursive=True)))
+          bad = []
+          for path in files:
+              text = open(path, encoding="utf-8").read()
+              parts = text.split("\n---\n", 1) if text.startswith("---\n") else None
+              if not parts:
+                  bad.append(f"{path}: 没有 frontmatter"); continue
+              try:
+                  meta = yaml.safe_load(parts[0][4:])
+              except yaml.YAMLError as e:
+                  bad.append(f"{path}: YAML 解析失败：{e}"); continue
+              if not isinstance(meta, dict):
+                  bad.append(f"{path}: frontmatter 不是映射"); continue
+              for key in ("name", "description"):
+                  if not isinstance(meta.get(key), str) or not meta[key].strip():
+                      bad.append(f"{path}: 缺少 {key}")
+          print(f"检查了 {len(files)} 个文件")
+          for line in bad:
+              print(f"::error::{line}")
+          sys.exit(1 if bad or not files else 0)
+          EOF
+
+      - name: 安装 Claude Code
+        run: |
+          npm install -g @anthropic-ai/claude-code@latest
+          claude --version
+      - name: claude plugin validate
+        run: claude plugin validate .
+
+      # 预留：zizmor 与 hub 共享检查由 hub 提供，接入时加在这里，不在本仓库另写。
+
+  required:
+    name: CI required
+    if: always()
+    needs: [test, plugin]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: 汇总
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "各任务结果：$RESULTS"
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*) exit 1 ;;
+          esac
