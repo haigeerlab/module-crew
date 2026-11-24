@@ -1,5 +1,7 @@
 """crew-codex-coordinator: the module coordinator running in Codex desktop (see the Spec)."""
 
+from __future__ import annotations
+
 import io
 import json
 import os

@@ -1,6 +1,8 @@
 """crew-takeover-merge: merge stage one for modules whose takeover says merge=auto — Codex reviews the final patch,
 module-crew releases and merges it locally, records the first stage for autopilot (see spec/crew-takeover-merge.md)."""
 
+from __future__ import annotations
+
 import hashlib
 import json
 import os
