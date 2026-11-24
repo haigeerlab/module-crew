@@ -8,20 +8,23 @@
 ## 目标
 
 用户批准某个模块的最终验收后，协调会话把它按 Build order 一次一个、`--no-ff` 合入本地集成分支，合后跑完整检查；不过就撤销并退回模块。
-一批合完，经用户明确授权推送到远端的一个新分支并开一个 PR，由用户在远端合并。模块做完后，经用户同意收回它的 worktree、退役会话登记。
+一批合完，经用户明确授权推送到远端的一个新分支并开一个 PR；用户在对话里说「合并」后，由 module-crew 凭原话下令 GitHub 等必需检查通过后合并（`gh pr merge --auto`），再核实已合并（2026-11-24 修订，规范 v1.5 F3）。模块做完后，经用户同意收回它的 worktree、退役会话登记。
 
 ## 范围
 
 **范围内**
 
-- `module_crew/merge.py` 与命令 `module-crew merge approve|queue|run|cleanup|push-plan|push`。
+- `module_crew/merge.py` 与命令 `module-crew merge approve|queue|run|cleanup|push-plan|push|pr-merge|pr-check`。
 - `item`（`kind: "merge-approval"`）的字段与流转；运行配置新增 `checkCommand`、`checkTimeout`、`remote`、`prBase`。
-- 合并、检查、撤销、退回；收尾与同步基线通知；worktree 收回与会话退役；推送与开 PR。
-- `skills/crew-coordinator/SKILL.md` 增加「合并与收尾」一节。
+- 合并、检查、撤销、退回；收尾与同步基线通知；worktree 收回与会话退役；推送与开 PR；凭用户原话下令远端 PR 自动合并并核实（2026-11-24 新增）。
+- `skills/crew-coordinator/SKILL.md` 增加「合并与收尾」一节（`codex-skills/crew-coordinator/SKILL.md` 同步）。
 
 **范围外**
 
-- 远端 PR 的合并（用户做）；GitHub 自动合并（不开）。
+- 替用户决定远端合并：远端 PR 只在用户在对话里说「合并」后才下令合并；「合并：自动」（验证通过后不问就合）不开（2026-11-24 修订，原为「远端 PR 的合并由用户做；GitHub 自动合并不开」）。
+- 打开仓库的 Allow auto-merge 与设必需检查：由 ecosystem-lead 逐仓取用户同意后做，module-crew 只读核对。
+- 远端合并后把本地集成分支快进到远端：照旧由协调会话另做，本模块只在输出里提示。
+- 接管到合并（crew-takeover-merge）的第一段之后归 autopilot 的远端合并：不在本模块改。
 - agent-relay 邮箱身份的退役：`merge cleanup` 只列出待退役的名字，经用户同意后由用户在 Claude Code 里用 `/agent-relay:collaboration`（或 Codex 的 collaboration-ops skill、或 agent-relay 插件的退役脚本）退役；module-crew 不定位也不运行 agent-relay 的脚本（2026-10-18 修订）。
 - spec-guard 进度重算（`/map` 自己算）。
 
@@ -33,7 +36,8 @@
 4. 退回用新的【协调通知】类型「退回」——先改契约（已提需求）。（2026-10-18 契约 v1.5 已发版，见变更记录。）
 5. 合并成功：给该模块发收尾通知、其他在用模块发同步基线通知，关最终验收交审。
 6. `merge cleanup <模块> --original-file` 经用户同意：`git worktree remove`（不加 `--force`，不干净就拒绝）、会话登记改为退役；邮箱退役由协调会话用 agent-relay 工具做。
-7. `merge push-plan` 只读预告；`merge push --original-file` 经用户明确授权推送并 `gh pr create` 开一个 PR；无远端报出，无 `gh` 打印 PR 正文；不开自动合并。
+7. `merge push-plan` 只读预告；`merge push --original-file` 经用户明确授权推送并 `gh pr create` 开一个 PR；无远端报出，无 `gh` 打印 PR 正文；开 PR 时不开自动合并。
+9. （2026-11-24 新增，规范 v1.5 F3，待用户确认）协调会话问「可以合并吗」、用户在对话里回「合并」后，`merge pr-merge <推送记录 C号> --original-file` 凭这句原话执行 `gh pr merge --auto --merge`；GitHub 等必需检查通过后合并；`merge pr-check` 核实 PR 已合并并记下合并提交。用户不用去 GitHub 点合并，也不用回来报「合完了」。
 8. 合并后 `/map` 自己重算；下游靠同步基线通知合入集成分支。
 
 ## 关键决策与取舍（请重点审）
@@ -61,6 +65,13 @@
 
 11. **推送不设短超时、失败一律非零**（2026-10-23 新增，0.11.3）：`merge push` 的 `git push` 不走通用 git 调用的 30 秒超时，改用运行配置的 `checkTimeout`（默认 30 分钟），因为项目的 pre-push 钩子可能跑完整检查。超时、git 报错或调用本身出错时都退出码 4，输出可读原因（超时写明超时秒数，并提示看钩子的输出、远端可能没有新分支），不抛 Python 栈；推送放行令牌照旧当次作废。
 
+12. **用户说「合并」后由 module-crew 下令自动合并**（2026-11-24 新增，规范 v1.5 F3）：`merge pr-merge <C号>` 的 C号 是 `merge push` 记下的推送记录（`kind: "push"`，带 PR 链接）。先只读核对三件事，任一不满足退出码 3、什么都不调用、写明原因，**不退化成直接合并**：
+    - PR 在 GitHub 上还开着、目标分支是推送记录的 `base`、头提交等于推送记录里集成分支的顶端（推送后有人往 batch 分支加了提交就拒绝）；PR 已合并时不下令，直接按 `pr-check` 记下合并提交、退出码 0。
+    - 仓库开了 Allow auto-merge（`gh api repos/<owner>/<repo>` 的 `allow_auto_merge`）；没开时提示「由 ecosystem-lead 取用户同意后开」。
+    - 目标分支至少有一项必需检查（经典分支保护或规则集任一处有）：没有必需检查时 `--auto` 会不等 CI 直接合并，所以拒绝；输出列出读到的必需检查名。
+    核对都过：先把原话记进推送记录（`mergeRequest`：原话、时间），再执行 `gh pr merge <PR> --auto --merge --match-head-commit <头提交>`。合并方式固定为合并提交（`--merge`），与本仓以往 PR 一致，也保住 batch 分支上的提交号：本地集成分支能快进到远端、`merge push-tag` 要求的「标签提交在远端集成分支上」照旧成立；不用 squash、rebase，不加 `--admin`、`--delete-branch`。gh 报错退出码 4，`mergeRequest` 保留并记下失败原因。下令成功后立刻按 `pr-check` 读一次状态。
+13. **核实合并**（2026-11-24 新增）：`merge pr-check <C号> [--wait <秒>]` 只读 GitHub（`gh pr view --json state,mergeCommit,mergedAt,autoMergeRequest,headRefOid`），只写本推送记录：已合并就记 `merged`（合并提交、合并时间），输出合并提交，并提示「本地集成分支可取远端后快进」；还开着且自动合并排着（`autoMergeRequest` 非空）退出码 6「等必需检查」；还开着但自动合并没排上（被取消，或必需检查失败后 GitHub 撤了），或 PR 已关闭未合并，退出码 4 并写明，交用户决定，不自动重下令。`--wait` 在命令里每 30 秒读一次、最多等给定秒数（协调会话放后台跑，不另行轮询）。不需要用户原话：它只核对、不下令。
+
 
 ## 接口约定
 
@@ -73,7 +84,9 @@
  "closedReason": null, "mergeCommit": null, "revertCommit": null, "resetTo": null, "reason": null}
 // 合并成功：state=closed, closedReason=merged, mergeCommit=...
 // 退回：state=closed, closedReason=returned, reason=..., resetTo=<合并前的提交>（冲突时为 null）；revertCommit 只在修订前的记录里出现
-// item kind=push：{"state": "closed", "kind": "push", "closedReason": "pushed", "remoteBranch": "crew/batch-40", "commits": [...], "pr": "<链接或 null>", "answer": {...}}
+// item kind=push：{"state": "closed", "kind": "push", "closedReason": "pushed", "remoteBranch": "crew/batch-40", "commits": [...], "pr": "<链接或 null>", "answer": {...},
+//   "mergeRequest": {"original": "合并", "requestedAt": "...", "headCommit": "...", "error": null},   // pr-merge 下令后（2026-11-24 新增）
+//   "merged": {"mergeCommit": "...", "mergedAt": "...", "checkedAt": "..."}}                          // pr-check 核实已合并后
 ```
 
 ### 命令
@@ -86,6 +99,8 @@ bin/module-crew merge run [--check-command "<命令>" [--replace-check]]
 bin/module-crew merge cleanup <模块 id> (--original <原话> | --original-file <文件>)
 bin/module-crew merge push-plan [--json]
 bin/module-crew merge push (--original <原话> | --original-file <文件>)
+bin/module-crew merge pr-merge <推送记录 C号> (--original <原话> | --original-file <文件>)
+bin/module-crew merge pr-check <推送记录 C号> [--wait <秒>]
 ```
 
 - `approve`：可一次给多个编号，逐个记批准并各生成【用户答复】（输出发送参数）；`0` 成功；`3` 任一交审不存在、已关闭或不是最终验收（什么都不写）。
@@ -95,7 +110,9 @@ bin/module-crew merge push (--original <原话> | --original-file <文件>)
 - `cleanup`：`0` 成功（输出列出待退役的邮箱名与退役做法，以及该模块还开着的等待单编号，只提醒不自动关）；`3` 模块未合并、worktree 不干净或不存在。
 - `push-plan [--pr-base <分支>]`：列出远端、新分支名、`prBase`（及它的来源：命令参数、配置、集成分支、远端默认分支）、要推送的提交（相对 `<remote>/<prBase>`）、PR 标题与正文；`0` 有可推送的提交；`3` 没有、没有远端或取不到 `prBase`。
 - `push [--pr-base <分支>]`：`0` 推送成功（远端是 github.com 且有 `gh` 时附 PR 链接；其他远端或没有 `gh` 时打印 PR 标题与正文）；`3` 检查不过；`4` 推送或开 PR 失败。
-  PR 正文先随推送记录写进状态库（落盘）再调 `gh`，开好后另记一次 PR 链接（2026-10-18 修订）。
+  PR 正文先随推送记录写进状态库（落盘）再调 `gh`，开好后另记一次 PR 链接（2026-10-18 修订）。开好 PR 后的提示改为「用户在对话里说『合并』后用 merge pr-merge C<号>」（2026-11-24 修订）。
+- `pr-merge`：`0` 已下令且已合并，或 PR 早已合并（记下合并提交）；`6` 已下令、自动合并排着等必需检查；`3` 核对不过（原话为空、推送记录不存在或没有 PR、没有 `gh`、远端不是 GitHub、PR 不是开着、目标分支或头提交对不上、没开 Allow auto-merge、没有必需检查），什么都没调用；`4` gh 下令或读状态失败。
+- `pr-check`：`0` 已合并（记下合并提交）；`6` 还在等必需检查；`4` 自动合并没排上或 PR 已关闭未合并、或读不到状态；`3` 推送记录不存在、没有 PR、没有 `gh`。
 
 ## 项目结构
 
@@ -105,6 +122,7 @@ module_crew/__main__.py            加 merge 子命令
 skills/crew-coordinator/SKILL.md   加「合并与收尾」一节
 tests/test_merge_run.py            批准、队列、合并、检查、撤销、冲突
 tests/test_merge_finish.py         收回、推送预告、推送（本地裸仓库作远端，假 gh）
+tests/test_merge_pr.py             pr-merge、pr-check（假 gh 按场景回 JSON，记录参数）
 ```
 
 ## 命令
@@ -122,13 +140,13 @@ python3 -m unittest discover -s tests -v
 - 复用 crew-review-batch 的测试基类（b、c 两个模块会话），在模块 worktree 里写代码并提交，构造最终验收【交审】。
 - 完整检查命令用临时目录里的小脚本（按文件是否存在决定成败），验证通过、失败撤销、超时三种。
 - 冲突：在集成分支与模块分支上改同一行。
-- 远端：临时目录里的裸仓库；`gh` 用放在临时 PATH 里的假脚本记录参数。
+- 远端：临时目录里的裸仓库；`gh` 用放在临时 PATH 里的假脚本记录参数。`pr-merge`、`pr-check` 的假 `gh` 按场景回 `pr view`、`api` 的 JSON，测试断言下令参数，不访问网络。
 
 ## 边界
 
 - **始终**：一次只合一个；合前清单全过才动；推送前有用户原话。
-- **先问**：修改已写定的检查命令；收回 worktree；推送与开 PR。
-- **绝不**：推送集成分支本身到远端同名分支；`--force`；删除模块分支；开自动合并；改写集成分支历史。
+- **先问**：修改已写定的检查命令；收回 worktree；推送与开 PR；下令远端 PR 合并（用户在对话里说「合并」）。
+- **绝不**：推送集成分支本身到远端同名分支；`--force`；删除模块分支；没有用户「合并」原话就开自动合并（含开 PR 时顺带开）；不带 `--auto` 直接合并或用 `--admin` 绕过检查；目标分支没有必需检查时下令合并；改写集成分支历史。（2026-11-24 修订，原为「开自动合并」）
 
 ## 验收标准
 
@@ -148,7 +166,7 @@ python3 -m unittest discover -s tests -v
 15. `merge tick b`：已合并时经 gateTick 勾上并提交（早已勾过时退出码 0、不提交）；未合并、gateTick 拒绝、原话为空时退出码 3 且不改动。（0.9.6 改）
 16. `merge push`：假 `gh` 被调用时 `--body-file` 指向的正文文件已经存在；远端不是 github.com 时不调用 `gh`、打印 PR 正文、退出码 0。
 17. `merge cleanup`：输出列出待退役的邮箱名与 `/agent-relay:collaboration` 的做法，不含 agent-relay 脚本的路径；该模块有开着的等待单时列出编号、不关单。
-11. 协调会话 skill 有「合并与收尾」一节：`review add`／`merge approve` → `merge run` 一次一个、发通知 → 退回时转告原因 → 用户同意后 `merge cleanup` 并用 agent-relay 退役邮箱 → `merge push-plan` 给用户看 → 用户授权后 `merge push` → 远端 PR 由用户合并。
+11. 协调会话 skill 有「合并与收尾」一节：`review add`／`merge approve` → `merge run` 一次一个、发通知 → 退回时转告原因 → 用户同意后 `merge cleanup` 并用 agent-relay 退役邮箱 → `merge push-plan` 给用户看 → 用户授权后 `merge push` → 问用户「可以合并吗」，用户在对话里回「合并」后 `merge pr-merge` → `merge pr-check` 核实已合并、记下合并提交再告诉用户（2026-11-24 修订，原为「远端 PR 由用户合并」；Claude 版与 Codex 版 skill 一致）。
 
 18. 退回后再合：模块分支不改、修好后（或检查环境恢复后）重新交审并 `merge run`，集成分支上出现模块的全部改动；模块把集成分支合进自己的分支不会删掉自己的文件。
 19. 集成分支顶端在检查期间被别的提交推进（不是本次合并提交）：不重置、退出码 4、集成分支不变。
@@ -159,6 +177,11 @@ python3 -m unittest discover -s tests -v
 
 24. 集成分支在远端没有跟踪分支、也没设 `prBase`：`push-plan` 的 PR 目标是远端默认分支、提交只列相对它多出的；远端默认分支也取不到时退出码 3、提示 `--pr-base`；带 `--pr-base` 时用它。
 25. 推送被 pre-push 钩子拖过超时（测试里把超时设短）、或 git push 失败：退出码 4、输出可读原因、没有 Python 栈；推送超时不再是 30 秒。
+26. `merge pr-merge`：PR 开着、头提交与目标分支对得上、开了 Allow auto-merge、有必需检查时，假 `gh` 收到 `pr merge <PR> --auto --merge --match-head-commit <头提交>`，不含 `--admin`、`--squash`、`--rebase`、`--delete-branch`；推送记录记下 `mergeRequest`（原话）；假 gh 回「已合并」时退出码 0 并记 `merged`，回「自动合并排着」时退出码 6。
+27. `merge pr-merge` 核对不过时退出码 3、假 `gh` 没收到 `pr merge`、推送记录不变：原话为空；没开 Allow auto-merge；经典保护与规则集都没有必需检查；PR 头提交不等于推送时的提交；PR 已关闭未合并；远端不是 GitHub 或没有 `gh`。PR 早已合并时不下令、退出码 0、记 `merged`。
+28. 经典分支保护 404、规则集里有 `required_status_checks` 时算有必需检查；反过来也算；输出列出检查名。
+29. `merge pr-check`：已合并时退出码 0、记 `merged`、输出合并提交与快进提示；排着时退出码 6；自动合并被撤（开着、`autoMergeRequest` 为空）或 PR 关闭未合并时退出码 4；`--wait` 在等到合并时提前返回 0（测试把间隔设短）。
+30. 开 PR 后的提示、协调会话 skill（两份）、README（中英）、`docs/guide.md`、`docs/architecture.md`、`docs/requirements-record.md` 里不再写「远端合并由用户自己做／不开自动合并」，改为 F3 的说法；`merge push` 仍不开自动合并（验收 10 不变）。
 
 
 ## 未决问题
@@ -168,6 +191,8 @@ python3 -m unittest discover -s tests -v
 ## 文档建议
 
 README「一次完整流程」补上合并、退回、收尾、推送与 PR 一节，强调远端合并由用户做。
+
+2026-11-24 修订：README 中英「推送」一步改为「用户在对话里说『合并』后，module-crew 下令 GitHub 等 CI 通过后合并并核实」；`docs/guide.md`、`docs/architecture.md`、`docs/requirements-record.md` 同步。
 
 ## 变更记录
 
@@ -182,3 +207,4 @@ README「一次完整流程」补上合并、退回、收尾、推送与 PR 一�
 - 2026-10-22：最终验收的勾选改为调 spec-guard 接口 1.7 的 `gateTick`（关键决策 8、`tick`、验收 13、15），不再用自己的正则找「唯一未勾项」；spec-guard 低于 1.7 时不勾、提示升级后补勾；发 0.9.6。原因：todo 的勾选规则归 spec-guard，自己勾会和它的判定不一致（职责边界审查第 3 条）；来源：spec-guard 负责人经总协调答复并告知 0.83.0（v0.83.0 = af39a0b，interface 1.7）已发 gateTick，用户在 spec-guard 侧选「新增 gateTick」。
 - 2026-10-22：新增关键决策 10 与验收 22、23：构建中修订过的 Spec 在交最终验收时比对并记 `specRevised`，`merge approve` 记 `specRevisionApproved`，`merge run` 合入通过检查后经 spec-guard `reviewMark` 在集成分支记下修订后 Spec 的批准并单独提交，失败只报告；发 0.11.1。原因：修订后的 Spec 合入集成分支后评审标记仍是旧的或待批准，spec-guard 判为未批准，要人手动补 review-mark；来源：用户 2026-10-22 批准（「1 批准」）。
 - 2026-10-23：关键决策 1 的 `prBase` 取法改为命令参数 → 配置 → 远端有跟踪的集成分支 → 远端默认分支，都没有时请用户 `--pr-base`；新增关键决策 11 与验收 24、25：推送用 `checkTimeout`、失败一律退出码 4 且给可读原因；发 0.11.3。原因：spec-guard 修复批次推送时 pre-push 钩子跑完整检查超过 30 秒被杀、命令抛栈；集成分支只在本地时 PR 开向不存在的分支、提交按全部历史列（sg-coord 经用户同意直接报告）；来源：用户 2026-10-23 选 A 发热修 0.11.3，本修订待复审。
+- 2026-11-24：新增关键决策 12、13 与命令 `merge pr-merge`、`merge pr-check`、验收 26–30；改目标、范围、假设 7 并加假设 9、「先问」「绝不」两节、验收 11：用户在对话里说「合并」后由 module-crew 执行 `gh pr merge --auto --merge` 并核实合并，前提是仓库开了 Allow auto-merge、目标分支有必需检查，不满足时拒绝、不退化成直接合并；「合并：自动」不开。原因：各插件仓库合并方式不一，用户要在几处来回跑；来源：规范 v1.5 F3（ecosystem-lead #22516，S109），用户在 mc-coord 答复「重开 crew-merge」。本修订待复审。
