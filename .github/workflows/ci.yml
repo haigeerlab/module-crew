@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.python }})
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.13']
+    defaults:
+      run:
+        shell: bash
+    # 测试会在临时仓库里提交；关掉 runner 上 git 的后台自动维护，避免 maintenance.lock 导致的偶发失败（规范 C3）。
+    env:
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: maintenance.auto
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: gc.auto
+      GIT_CONFIG_VALUE_1: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # 3.9 用 Apple 命令行工具自带的 /usr/bin/python3：macOS 用户实际在用的版本。
+      - name: Python 3.9（Apple 命令行工具）
+        if: matrix.python == '3.9'
+        run: |
+          mkdir -p "$RUNNER_TEMP/py39"
+          ln -s /usr/bin/python3 "$RUNNER_TEMP/py39/python3"
+          echo "$RUNNER_TEMP/py39" >> "$GITHUB_PATH"
+      - name: Python 3.13
+        if: matrix.python == '3.13'
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+
+      - name: 核对 Python 版本
+        env:
+          WANT_PYTHON: ${{ matrix.python }}
+        run: |
+          git --version
+          python3 -c 'import os, sys; want = tuple(map(int, os.environ["WANT_PYTHON"].split("."))); print(sys.executable, sys.version.split()[0]); sys.exit(sys.version_info[:2] != want)'
+
+      - name: 全量检查
+        run: bash scripts/validate.sh
