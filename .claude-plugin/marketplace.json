@@ -1,5 +1,6 @@
 {
   "name": "module-crew-local",
+  "description": "module-crew 插件的本地市场：多模块并行开发的运行层。",
   "owner": {
     "name": "haigeerlab"
   },
