@@ -1,4 +1,4 @@
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 # Implementation Plan: crew-merge
 
@@ -65,4 +65,27 @@
 - 要改：用户在对话里说「合并」后，由 module-crew 凭原话执行 `gh pr merge --auto`（合并方式按本仓现有习惯），等必需检查 `CI required` 通过后由 GitHub 合并，再核实 PR 已合并、记下合并提交；用户不用去 GitHub 点。「合并：自动」（不问就合）不开。
 - 前提：仓库开了 Allow auto-merge（ecosystem-lead 逐仓取用户同意后统一开，本模块不开），主干已有必需检查；不满足时命令拒绝并说明，不退化成直接合并。
 - 影响面：`spec/crew-merge.md`（第 11 条、范围、「绝不」一节与对应验收条）、`docs/requirements-record.md`、两份 `crew-coordinator` skill、`module_crew/merge.py` 的 PR 提示文字、README 中英、`docs/guide.md`、`docs/architecture.md`，以及 CLAUDE.md／AGENTS.md 共享段中相应写法。
-- 先改 Spec 交复审，Spec 批准后再细化本节任务并交审本 Plan；批准前不改代码。
+- 先改 Spec 交复审，Spec 批准后再细化本节任务并交审本 Plan；批准前不改代码。（2026-11-24 改为 Spec 修订与本 Plan 一起交审，依开工背景。）
+- Spec 改动：新增关键决策 12（`merge pr-merge`）、13（`merge pr-check`），验收 26–30；改目标、范围、假设 7、9、「先问」「绝不」、验收 11。
+
+### 修订任务（2026-11-24）
+
+- [ ] Task R1：`merge pr-merge` 的只读核对与下令（验收 26、27、28）
+  - 核对：推送记录有 PR；`gh pr view <PR> --json state,baseRefName,headRefOid,mergeCommit,mergedAt,autoMergeRequest`；`gh api repos/<owner>/<repo> --jq .allow_auto_merge`；
+    必需检查读 `gh api repos/<o>/<r>/branches/<base>/protection/required_status_checks`（404 视为没有）与 `gh api repos/<o>/<r>/rules/branches/<base>` 里 `type == "required_status_checks"` 的项，两处合并去重。
+  - 下令：先在事务里记 `mergeRequest`，再 `gh pr merge <PR> --auto --merge --match-head-commit <头提交>`，然后读一次状态（同 R2 的判定）。
+  - owner/repo 用已有 `_repo_name(url)`；`gh` 用已有 `_gh()`（测试用 `MODULE_CREW_GH` 指向假脚本）；外部命令一律参数列表、带超时。
+  - 验证：`tests/test_merge_pr.py` 的假 gh 按场景回 JSON 并把参数写进文件；断言参数、退出码与推送记录。
+- [ ] Task R2：`merge pr-check` 与 `--wait`（验收 29）
+  - 判定：`MERGED` → 记 `merged` 退出码 0；`OPEN` 且 `autoMergeRequest` 非空 → 6；`OPEN` 且为空、或 `CLOSED` → 4；读不到 → 4。
+  - `--wait <秒>`：每 30 秒读一次（间隔经环境变量 `MODULE_CREW_PR_POLL` 可调，只给测试用），等到 0 或 4 就返回，到时仍排着返回 6。
+- [ ] Task R3：命令行、提示文字与文档（验收 11、30）
+  - `module_crew/__main__.py` 加 `pr-merge`、`pr-check` 子命令（原话参数与 `push` 同样两种写法）；`merge push` 开 PR 后的提示改为「用户在对话里说『合并』后用 merge pr-merge C<号>」，PR 正文首句同步。
+  - `skills/crew-coordinator/SKILL.md`、`codex-skills/crew-coordinator/SKILL.md` 的推送一步改成 F3 流程；`README.md`、`README.en.md`、`docs/guide.md`、`docs/architecture.md`、`docs/requirements-record.md` 里「远端合并由用户做／不开自动合并」改为 F3 写法。
+  - CLAUDE.md／AGENTS.md 共享段经核没有「由用户合并」的写法，不改；若构建中发现要改，按公共文件发【公共变更请求】。
+  - 验证：`tests/test_skills.py` 加断言两份 skill 都有 `merge pr-merge`、`merge pr-check`，且不再有「PR 由用户在远端合并」。
+
+### 修订检查点（gate）：最终验收
+
+- [ ] `module-crew check quick` 通过；逐条对照验收 11、26–30 写明由哪个测试覆盖；列出实际改动的文件与行数；附 Spec 修订差异（一次批准同时批准修订后的 Spec）
+- 本 Plan 获批即授权：在本模块分支做 R1–R3 的本地提交；测试只用假 `gh`，不访问网络，不对真实仓库下令合并；不推送。
