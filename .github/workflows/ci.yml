@@ -116,8 +116,14 @@ jobs:
         run: |
           npm install -g @anthropic-ai/claude-code@latest
           claude --version
-      - name: claude plugin validate
-        run: claude plugin validate --strict .
+      # 仓库根就是插件根；根目录的 CLAUDE.md、AGENTS.md 是开发规矩，不是插件内容，--strict 会因它们告警。
+      # 所以对 git archive 导出的、去掉这两份的副本跑。
+      - name: claude plugin validate --strict
+        run: |
+          dir="$RUNNER_TEMP/plugin-export"
+          mkdir -p "$dir"
+          git archive HEAD -- . ':(exclude)CLAUDE.md' ':(exclude)AGENTS.md' | tar -x -C "$dir"
+          claude plugin validate --strict "$dir"
 
       # 预留：zizmor 与 hub 共享检查由 hub 提供，接入时加在这里，不在本仓库另写。
 
