@@ -83,7 +83,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
     from module_crew import autonomy
     tier = flow.tier(db, autonomy.project_of(db), sub["module"])          # crew-flow-v2 decisions 1, 3, 9
     transition = flow.transition_node(tier, sub["node"], sub["files"], sub["module"])
-    if transition != sub["node"]:
+    transitional = transition != sub["node"]
+    if transitional:
         sub["node"] = transition
     refused = flow.refuse(tier, sub["node"], sub["module"])
     if refused:
@@ -175,6 +176,8 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             out.lines.append(f"{revised['path']} 在构建中改过（和集成分支上已批准的不同）：提请用户批准这次最终验收时附上 Spec 的改动差异"
                              f"（review show C{n} --spec-diff），写明一次批准同时批准修订后的 Spec；合入后由 merge run 记下它的批准")
         out.lines += _ledger_lines(ledger)
+        if transitional:                   # crew-flow-v2 decision 9: still taken for one release
+            out.lines.append(f"这份技术方案按过渡写法「节点：Spec」交来，已记作技术方案；契约 v2.10 起请模块改写「节点：技术方案」")
     if skip:                               # crew-flow-v2 decision 6: no one reviews it, land it and start the build
         landed = _approve(autonomy.project_of(db), [n], "", codex={"report": None, "skip": SKIP_WHY, "rounds": 0,
                                                                    "suggestions": 0})

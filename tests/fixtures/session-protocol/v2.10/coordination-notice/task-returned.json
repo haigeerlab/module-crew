@@ -1,0 +1,42 @@
+{
+  "parse": {
+    "type": "coordination-notice",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "类型": "退回",
+      "依据": "最终验收批准事项 #55（T3）；合入后检查失败：tests/test_cache.py 2 failed",
+      "要你做什么": "同步集成基线 c7d8e9f，修好后重新发最终验收【交审】",
+      "任务": "T3"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "notice": {
+      "kind": "returned",
+      "refs": [
+        55
+      ]
+    },
+    "task": "T3"
+  }
+}

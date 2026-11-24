@@ -124,7 +124,7 @@ def after_release(tier_value: str | None, node: str, module_id: str) -> str | No
         return None
     if node in SPEC_NODES and full_docs(tier_value):
         return (f"写技术方案 tasks/{module_id}/design.md 与回归 tasks/{module_id}/regression.md，"
-                "一起交审（节点 技术方案；契约 v2.10 之前写「节点：Spec」、文件只列这两份）")
+                "一起交审（节点 技术方案）")
     return "等开工通知"
 
 

@@ -1,0 +1,84 @@
+{
+  "parse": {
+    "type": "wait-user",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "来自": "module-crew 模块协调",
+      "项目": "module-crew",
+      "要你决定": "交审 C25（crew-flow-v2 的技术方案）批不批",
+      "要点": "现状调研：交审节点只认 Spec、Plan、接口提案、最终验收\n影响面：protocol.py、sources.py、start.py\n实现方案：节点表加「技术方案」，新流程模块的 Plan 交审拒收\n风险与回滚：老模块误判成新流程；回滚即撤掉节点表那一行\n回归用例：共 2 条\nR1 老模块交 Plan 照旧登记\nR2 新模块交技术方案缺 regression.md 被拒\n受影响的老功能：无\n未决问题：无",
+      "模块": "crew-flow-v2",
+      "类型": "技术方案",
+      "批了会怎样": "模块会话写 Plan、todo 后直接构建，Plan 不再交审",
+      "选项与我的建议": "推荐 A：批准\n  选了会怎样：开始写 Plan、todo 并构建\nB. 退回\n  选了会怎样：按你的意见改完再交",
+      "你该回": "C25 A",
+      "是否完全停住": "是"
+    },
+    "options": [
+      {
+        "letter": "A",
+        "text": "批准",
+        "consequence": "开始写 Plan、todo 并构建"
+      },
+      {
+        "letter": "B",
+        "text": "退回",
+        "consequence": "按你的意见改完再交"
+      }
+    ],
+    "recommended": "A",
+    "suggestedReply": "C25 A",
+    "fullyStopped": true,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "module": "crew-flow-v2",
+    "waitKind": "design",
+    "points": [
+      {
+        "name": "现状调研",
+        "text": "交审节点只认 Spec、Plan、接口提案、最终验收"
+      },
+      {
+        "name": "影响面",
+        "text": "protocol.py、sources.py、start.py"
+      },
+      {
+        "name": "实现方案",
+        "text": "节点表加「技术方案」，新流程模块的 Plan 交审拒收"
+      },
+      {
+        "name": "风险与回滚",
+        "text": "老模块误判成新流程；回滚即撤掉节点表那一行"
+      },
+      {
+        "name": "回归用例",
+        "text": "共 2 条\nR1 老模块交 Plan 照旧登记\nR2 新模块交技术方案缺 regression.md 被拒"
+      },
+      {
+        "name": "受影响的老功能",
+        "text": "无"
+      },
+      {
+        "name": "未决问题",
+        "text": "无"
+      }
+    ]
+  }
+}

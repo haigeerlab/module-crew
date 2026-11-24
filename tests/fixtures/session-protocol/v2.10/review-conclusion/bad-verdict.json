@@ -1,0 +1,37 @@
+{
+  "parse": {
+    "type": "review-conclusion",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "审查编号": "R-6",
+      "节点": "Plan",
+      "送审方": "前端",
+      "结论": "差不多"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "bad-verdict"
+    ],
+    "hints": []
+  }
+}

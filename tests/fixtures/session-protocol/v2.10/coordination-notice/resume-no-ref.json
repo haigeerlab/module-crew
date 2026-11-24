@@ -1,0 +1,40 @@
+{
+  "parse": {
+    "type": "coordination-notice",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "类型": "恢复",
+      "依据": "外部条件已满足",
+      "要你做什么": "从原停点继续"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "missing-approval-ref"
+    ],
+    "hints": [],
+    "notice": {
+      "kind": "resume",
+      "refs": []
+    }
+  }
+}

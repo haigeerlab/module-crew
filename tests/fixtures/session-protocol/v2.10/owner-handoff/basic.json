@@ -1,0 +1,43 @@
+{
+  "parse": {
+    "type": "owner-handoff",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": 1007,
+    "fields": {
+      "事项": "#1007（由架构审查抛出，原消息 #650）",
+      "来自": "架构审查",
+      "用户原话": "同意接口提案，先按 v2 字段做",
+      "答复时间": "2026-10-18T15:30:00+08:00",
+      "转交范围": "前端并行线按 v2 字段实现 pay 的接口；不动 refund"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "origin": {
+      "originals": [
+        650
+      ],
+      "relayedFrom": null,
+      "relayMessage": null
+    }
+  }
+}

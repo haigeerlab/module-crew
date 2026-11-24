@@ -213,18 +213,31 @@ class StartTest(FlowReviewMixin, ReviewCase):
         self.assertTrue(start.flow_v2(self.repo, "b"))
         self.assertFalse(start.flow_v2(self.repo, "c"))
 
-    def test_hub_card_type_before_contract(self):
+    def test_hub_card_type(self):
         from module_crew import protocol
-        self.assertNotIn("技术方案", protocol.WAIT_KINDS)          # contract v2.9: Task 8 changes this
+        self.assertIn("技术方案", protocol.WAIT_KINDS)             # contract v2.10 (Task 8)
         self.set_flow({"b": "normal"})
-        d = self.ok(self.design_review("b", node="Spec"))
+        d = self.ok(self.design_review("b"))
         db = self.db()
         item = {"number": d, "node": "design", "round": 0, "reviews": [], "decisions": []}
         lines = review._card_fields(db, [item], [])
-        self.assertEqual(lines[0], "类型：Spec")
+        self.assertEqual(lines[0], "类型：技术方案")
+
+    def test_contract_node_and_transition_hint(self):
+        from module_crew import protocol
+        self.set_flow({"b": "normal"})
+        msg = protocol.parse(self.design_review("b"))
+        self.assertEqual(msg.contract()["submission"]["node"], "design")
+        out = self.add(self.design_review("b"), rid=7)
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertNotIn("过渡写法", "\n".join(out.lines))
+        out = self.add(self.design_review("b", node="Spec"), rid=8)
+        self.assertIn("请模块改写「节点：技术方案」", "\n".join(out.lines))
+        bad = protocol.parse(self.design_review("b", files=("design.md",)))
+        self.assertIn("missing-design-file:regression.md", bad.problems)
 
     def test_release_next_step(self):
-        self.assertIn("一起交审（节点 技术方案", flow.after_release("normal", "spec", "b"))
+        self.assertTrue(flow.after_release("normal", "spec", "b").endswith("一起交审（节点 技术方案）"))
         self.assertEqual(flow.after_release("bug", "spec", "b"), "等开工通知")
         self.assertIsNone(flow.after_release(None, "spec", "b"))
 

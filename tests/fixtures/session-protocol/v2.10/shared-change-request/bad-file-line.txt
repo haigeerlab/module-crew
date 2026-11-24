@@ -1,0 +1,11 @@
+【公共变更请求】
+结束：无
+来自：crew-store
+文件：
+- package.json
+- packages/*/tsconfig.json
+- scripts/
+- 还有根目录的配置文件，具体哪个没定
+改什么：统一打开 strict
+为什么：状态库的类型要严格检查
+是否完全停住：否

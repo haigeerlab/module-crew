@@ -1,0 +1,5 @@
+【协调通知】
+类型：开工
+依据：用户批准事项 #7（crew-store 的 Spec 与 Plan），批准记录已提交到集成基线 4c5d6e7
+要你做什么：在本 worktree 按 tasks/crew-store/plan.md 开始构建；
+  公共文件只能经【公共变更请求】改

@@ -1,0 +1,35 @@
+{
+  "parse": {
+    "type": "user-reply",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "事项": "C40（你的原消息 #4540）",
+      "用户原话": "C40 A；D1 B",
+      "答复时间": "2026-10-19T10:10:00+08:00"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "localItem": "C40"
+  }
+}

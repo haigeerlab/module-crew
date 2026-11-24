@@ -1,0 +1,52 @@
+{
+  "parse": {
+    "type": "review-conclusion",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "审查编号": "R-9",
+      "节点": "最终验收",
+      "送审方": "前端",
+      "结论": "有须修改项2条",
+      "来自": "前端架构审查",
+      "要点": "T3 的修复方向对，测试和错误信息各有一处要改",
+      "任务": "T3",
+      "须修改": "1. 空输入的测试没覆盖只有空白字符的情况\n2. 错误信息里带了用户输入原文，属于安全缺陷"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": {
+      "ref": "R-9",
+      "node": "final",
+      "submitter": "前端",
+      "verdict": "changes-required",
+      "adviceCount": null,
+      "module": null,
+      "changeCount": 2,
+      "changes": [
+        "空输入的测试没覆盖只有空白字符的情况",
+        "错误信息里带了用户输入原文，属于安全缺陷"
+      ]
+    },
+    "problems": [],
+    "hints": [],
+    "task": "T3"
+  }
+}

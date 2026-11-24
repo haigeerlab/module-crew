@@ -1,0 +1,45 @@
+{
+  "generate": {
+    "kind": "user-reply",
+    "inputs": {
+      "item": 12,
+      "original": "12 A 先接微信支付",
+      "answeredAt": "2026-10-17T10:10:00+08:00",
+      "optionText": "A：先接微信支付",
+      "sourceRelayId": 4540
+    }
+  },
+  "parse": {
+    "type": "user-reply",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": 12,
+    "fields": {
+      "事项": "#12（你的原消息 #4540）",
+      "用户原话": "12 A 先接微信支付",
+      "选项原文": "A：先接微信支付",
+      "答复时间": "2026-10-17T10:10:00+08:00"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": []
+  }
+}
