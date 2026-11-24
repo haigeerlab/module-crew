@@ -1,0 +1,44 @@
+{
+  "parse": {
+    "type": "coordination-notice",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "类型": "放行",
+      "依据": "C702（beta 的技术方案由第二审查者审过放行；Spec 以前批准于 C690；交审 C26）",
+      "要你做什么": "写 Plan、todo，不交审，提交后按它构建"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "notice": {
+      "kind": "approved-by-review",
+      "refs": [],
+      "localRefs": [
+        "C702",
+        "C690",
+        "C26"
+      ],
+      "node": "design"
+    }
+  }
+}

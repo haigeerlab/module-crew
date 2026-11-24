@@ -15,7 +15,7 @@ FIXTURES = ROOT / "v2.6"
 # Every pinned contract version runs against the current parser (contracts only add): commit, parse count, generate count.
 PINNED = {"v2.2": ("f5bc04e", 97, 3), "v2.3": ("6b8810e", 101, 3), "v2.4": ("495b475", 104, 3),
           "v2.5": ("566f0de", 110, 3), "v2.6": ("92309e7", 115, 3), "v2.7": ("d1bdb05", 116, 3),
-          "v2.8": ("486e1ee", 119, 3), "v2.9": ("21eff81", 124, 3)}
+          "v2.8": ("486e1ee", 119, 3), "v2.9": ("21eff81", 124, 3), "v2.10": ("03cabf3", 130, 3)}
 
 # Types this plugin parses / generates (spec 假设 2、3). Everything else is skipped and listed.
 PARSED = {"hub-receipt", "review-conclusion", "review-request", "shared-change-request", "coordination-notice", "wait-user", "wait-session", "resumed", "withdraw", "user-reply", "owner-handoff", "unknown"}

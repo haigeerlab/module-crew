@@ -1,0 +1,91 @@
+{
+  "parse": {
+    "type": "wait-user",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "来自": "前端模块协调",
+      "项目": "crew-rehearsal",
+      "要你决定": "alpha 的 Spec 与 Plan，批不批",
+      "要点": "C15 alpha 的 Spec（审查：R-33 通过）：\n目标：登录页与令牌刷新\n做／不做：做登录页和刷新；不做第三方登录\n要你确认的假设：令牌有效期 15 分钟\n验收标准：共 2 条\nAC1 过期令牌自动刷新一次\nAC2 刷新失败回到登录页\n附带的小决定：无\nC16 alpha 的 Plan（审查：R-34 通过）：\n分几步：Task 1 写测试；Task 2 实现；Task 3 跑验收\n会改哪些文件：新增 src/login.js、test/login.test.js；不加依赖\n风险：低\n中途会停下来问你的地方：无，做完直接交最终验收",
+      "类型": "Spec 与 Plan",
+      "注意": "无",
+      "批了会怎样": "按 Plan 连续做到最终验收，期间本地提交不再问你；推送另外问",
+      "选项与我的建议": "推荐 A：批准\n  选了会怎样：按 Plan 开工\nB. 退回\n  选了会怎样：按你的意见改完再交",
+      "你该回": "41 A",
+      "是否完全停住": "是"
+    },
+    "options": [
+      {
+        "letter": "A",
+        "text": "批准",
+        "consequence": "按 Plan 开工"
+      },
+      {
+        "letter": "B",
+        "text": "退回",
+        "consequence": "按你的意见改完再交"
+      }
+    ],
+    "recommended": "A",
+    "suggestedReply": "41 A",
+    "fullyStopped": true,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "waitKind": "spec-plan",
+    "points": [
+      {
+        "name": "目标",
+        "text": "登录页与令牌刷新"
+      },
+      {
+        "name": "做／不做",
+        "text": "做登录页和刷新；不做第三方登录"
+      },
+      {
+        "name": "要你确认的假设",
+        "text": "令牌有效期 15 分钟"
+      },
+      {
+        "name": "验收标准",
+        "text": "共 2 条\nAC1 过期令牌自动刷新一次\nAC2 刷新失败回到登录页"
+      },
+      {
+        "name": "附带的小决定",
+        "text": "无\nC16 alpha 的 Plan（审查：R-34 通过）："
+      },
+      {
+        "name": "分几步",
+        "text": "Task 1 写测试；Task 2 实现；Task 3 跑验收"
+      },
+      {
+        "name": "会改哪些文件",
+        "text": "新增 src/login.js、test/login.test.js；不加依赖"
+      },
+      {
+        "name": "风险",
+        "text": "低"
+      },
+      {
+        "name": "中途会停下来问你的地方",
+        "text": "无，做完直接交最终验收"
+      }
+    ]
+  }
+}

@@ -8,7 +8,7 @@
 
 ## 它解决什么
 
-[spec-guard](https://github.com/haigeerlab/spec-guard-plugin) 按能力图一个模块接一个模块推进（Spec → Plan → 实现），模块多、彼此又独立时，整体进度被串行和逐个审查拖慢。
+[spec-guard](https://github.com/haigeerlab/spec-guard-plugin) 按能力图一个模块接一个模块推进（Spec → Plan → 实现；0.94.0 起的新流程模块是需求 → 技术方案（含回归）→ 实现，Plan 不交审），模块多、彼此又独立时，整体进度被串行和逐个审查拖慢。
 module-crew 在它之上加一层运行层：
 
 - **一个模块协调统筹**：开模块、收件记账、转达用户的决定、管集成分支与公共文件、合并。
@@ -91,7 +91,7 @@ module-crew status
 |---|---|---|
 | `declaredScope` 声明范围 | Plan 里预先声明的公共文件，模块直接在自己分支改，最终验收一并审 | [使用手册](docs/guide.md#声明范围declaredscope) |
 | `checkLedger` 检查记账 | 平时只跑快检查、按树哈希记账；完整检查只在合并队列里跑 | [使用手册](docs/guide.md#检查记账checkledger) |
-| `takeover` 接管档位（spec-guard） | 不接管（默认）／只接管 Plan／接管到合并／自定义：Spec、Plan 勾了「Codex 放行」时由 Codex 审、没有阻断就放行（两轮都有阻断就交用户，Codex 不可用就停下等用户），出事自动收窄。勾了「合并：自动」时最终验收由 Codex 审最终补丁，无阻断就自动合进本地集成分支（合并第一段），推送与远端合并归 autopilot。`autonomyTier` 已退役 | [使用手册](docs/guide.md#接管档位takeover) |
+| `takeover` 接管档位（spec-guard） | 不接管（默认）／只接管 Plan／接管到合并／自定义：Spec、Plan 勾了「Codex 放行」时由 Codex 审、没有阻断就放行（两轮都有阻断就交用户，Codex 不可用就停下等用户），出事自动收窄。spec-guard 新流程模块的需求永远人批，技术方案可交第二审查者（见[使用手册](docs/guide.md#新流程模块spec-guard-flow-v2)）。勾了「合并：自动」时最终验收由 Codex 审最终补丁，无阻断就自动合进本地集成分支（合并第一段），推送与远端合并归 autopilot。`autonomyTier` 已退役 | [使用手册](docs/guide.md#接管档位takeover) |
 | `digest` 收尾汇总 | 同步、检查账、不经队列的提交、提前落地不逐条说，收尾时 `tier digest` 一次说明 | [使用手册](docs/guide.md#接管档位takeover) |
 | `codexOffload` 额度外包 | Claude 额度紧张时，开工后的模块把 Task 交给同一个 Codex 会话实现，模块会话核对后提交 | [使用手册](docs/guide.md#额度外包codexoffload) |
 

@@ -1,0 +1,44 @@
+{
+  "generate": {
+    "kind": "user-reply",
+    "inputs": {
+      "item": 12,
+      "original": "  先别上线，等我看过页面  ",
+      "answeredAt": "2026-10-17T10:10:00+08:00",
+      "optionText": null,
+      "sourceRelayId": null
+    }
+  },
+  "parse": {
+    "type": "user-reply",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": 12,
+    "fields": {
+      "事项": "#12",
+      "用户原话": "先别上线，等我看过页面",
+      "答复时间": "2026-10-17T10:10:00+08:00"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": []
+  }
+}

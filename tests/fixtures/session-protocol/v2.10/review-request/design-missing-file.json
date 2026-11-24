@@ -1,0 +1,77 @@
+{
+  "parse": {
+    "type": "review-request",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "模块": "crew-flow-v2",
+      "节点": "技术方案",
+      "文件": "- tasks/crew-flow-v2/design.md sha256:5b8e2d4f1a9c",
+      "要点": "现状调研：交审节点只认四种\n影响面：protocol.py\n实现方案：节点表加「技术方案」\n风险与回滚：回滚即撤掉节点表那一行\n回归用例：R1 老模块交 Plan 照旧登记\n受影响的老功能：无\n未决问题：无"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "missing-design-file:regression.md"
+    ],
+    "hints": [],
+    "submission": {
+      "module": "crew-flow-v2",
+      "node": "design",
+      "files": [
+        {
+          "path": "tasks/crew-flow-v2/design.md",
+          "fingerprint": "sha256:5b8e2d4f1a9c"
+        }
+      ]
+    },
+    "points": [
+      {
+        "name": "现状调研",
+        "text": "交审节点只认四种"
+      },
+      {
+        "name": "影响面",
+        "text": "protocol.py"
+      },
+      {
+        "name": "实现方案",
+        "text": "节点表加「技术方案」"
+      },
+      {
+        "name": "风险与回滚",
+        "text": "回滚即撤掉节点表那一行"
+      },
+      {
+        "name": "回归用例",
+        "text": "R1 老模块交 Plan 照旧登记"
+      },
+      {
+        "name": "受影响的老功能",
+        "text": "无"
+      },
+      {
+        "name": "未决问题",
+        "text": "无"
+      }
+    ]
+  }
+}

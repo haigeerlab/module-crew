@@ -1,0 +1,45 @@
+{
+  "parse": {
+    "type": "coordination-notice",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "类型": "放行",
+      "依据": "C612（alpha 由 Codex 审过放行；交审 C20）",
+      "要你做什么": "写 Plan 交审"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "missing-approval-node"
+    ],
+    "hints": [],
+    "notice": {
+      "kind": "approved-by-review",
+      "refs": [],
+      "localRefs": [
+        "C612",
+        "C20"
+      ],
+      "node": null
+    }
+  }
+}

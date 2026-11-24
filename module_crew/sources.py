@@ -14,7 +14,7 @@ from module_crew import protocol, store
 KINDS = ("hub", "lead")
 PROTOCOLS = ("2.2", "2.3", "2.4", "2.5", "2.6")   # session-protocol versions a decision inbox may speak (crew-hub-card-fields)
 OLDEST_HUB = "2.4"                      # 0.9.5: every inbox here speaks v2.3+; unset or 2.2 registrations count as 2.4
-NODES = ("spec", "plan", "interface", "final")       # review nodes a reviewer can be responsible for (crew-routing-fixes)
+NODES = ("spec", "plan", "interface", "design", "final")       # review nodes a reviewer can be responsible for (crew-routing-fixes)
 ALL = "all"
 ALL_WORDS = ("all", "全部")
 ALL_SCOPE = {"modules": ALL, "nodes": ALL}

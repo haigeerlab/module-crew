@@ -21,7 +21,7 @@ spec-guard 新流程（需求文档 → 技术方案 → 回归测试文档 → 
 - **谁批跟着换**：需求永远用户批；技术方案按 spec-guard 给的生效档位，人批或交第二审查者审一轮、改一轮；重要需求的技术方案永远人批。
 - **开工跟着换**：新模块在需求（bug、小改动）或技术方案（普通、重要）批准后发开工通知，通知里写「写 Plan、todo，不交审，提交后按它构建」。
 - **验收按回归**：新模块的最终验收「验收结果」按回归文档的用例编号逐条写。
-- **多模块写法**：一个需求拆成多个模块时，需求写在需求一级，技术方案与回归按模块写，另加一份整体联调回归；module-crew 在交审、开工、推送前按这个布局提示与把关。
+- ~~**多模块写法**~~：已取消（用户 C715「B」，见变更记录）；多模块布局的提案留给 spec-guard `regression-doc-check`，本模块不实现。
 
 ## 范围
 
@@ -33,7 +33,7 @@ spec-guard 新流程（需求文档 → 技术方案 → 回归测试文档 → 
 4. **谁批**：新模块的「Spec」永远人批；「技术方案」按 spec-guard 的生效档位人批或交第二审查者（决策 6、7）。
 5. **开工与放行通知的文字**：开工通知、放行通知、`start plan`、`status`、钩子注入的「当前」一句按新流程写下一步（决策 5、10）。
 6. **最终验收**：新模块「验收结果」按回归用例编号核对（决策 11）。
-7. **多模块布局**：需求一级文档、按模块的技术方案与回归、整体联调回归的位置与时机（决策 8）；module-crew 侧只做交审时一并交、推送前提示联调回归。
+7. ~~**多模块布局**~~：已取消（用户 C715「B」）。
 8. **skill 与文档**：`crew-coordinator`、`crew-dev`（Claude 与 Codex 各一份）、README、`interface.json`（契约版本）。
 
 **范围外**
@@ -100,7 +100,7 @@ spec-guard 新流程（需求文档 → 技术方案 → 回归测试文档 → 
    - `reviewer.selection` 为 `none`（没有可用审查者）：**取代**今天「Codex 不可用一律停下等用户」那一条（需求第五节第 4 条）。普通需求记为「未审」放行、写明由回归兜底；
      重要需求本来就人批，不走到这里。（这一条请确认，见假设 A3。）
    - 写代码的会话不审自己：审查由模块协调发起，`--author-host` 填模块会话的宿主，delegate 据此选别的厂商或同厂商独立会话。
-8. **多模块布局（给 spec-guard 的接口提案，新）**：一个需求拆成多个模块时（即今天有用法草案 `spec/usage/<需求>.md` 的情形）：
+8. **多模块布局（给 spec-guard 的接口提案，新）——本模块已取消实现（用户 C715「B」）**，下面的提案原样留作给 spec-guard `regression-doc-check` 的参考：一个需求拆成多个模块时（即今天有用法草案 `spec/usage/<需求>.md` 的情形）：
 
    | 文档 | 位置 | 谁写、何时 | 谁批 |
    |---|---|---|---|
@@ -130,7 +130,7 @@ spec-guard 新流程（需求文档 → 技术方案 → 回归测试文档 → 
 ## 项目结构
 
 - 改：`module_crew/probe.py`（读 `tier`、`step`）、`protocol.py`（节点、要点、放行节点）、`review.py`（合法节点、开工判定、最终验收按回归、免审放行）、`takeover.py`（新模块的批准方、生效档位）、
-  `sources.py`（`design` 节点）、`start.py`、`hooks.py`、`present.py`（显示）、`merge.py`（`push-plan` 联调提示）、`__main__.py`（如有参数变化）。
+  `sources.py`（`design` 节点）、`start.py`、`hooks.py`、`present.py`（显示）、`__main__.py`（如有参数变化）。
 - 改：`skills/crew-coordinator/`、`skills/crew-dev/`、`codex-skills/` 两份、`README.md`、`README.en.md`、`interface.json`、`CHANGELOG.md`。
 - 新增测试：`tests/test_flow_v2.py`；夹具按 interface 1.18 的 `/map --json` 形状造。
 
@@ -166,14 +166,14 @@ module-crew check quick
 - **AC5** 新模块 Spec 在旧档位为 Codex 时仍送用户；技术方案在 `takeover.design=reviewer` 时交第二审查者、`human` 或读不到时送用户、免审时直接放行并发开工通知。
 - **AC6** 第二审查者：命令带 `--profile design --backend auto --author-host`，第二轮带 `--previous-report`；两轮后仍有阻断送用户；`same_vendor` 写进显示；`selection=none` 普通需求记「未审」放行。
 - **AC7** 新模块最终验收：缺 `R<n>` 行被拒；有 `regression_view` 时缺哪条用例被列出。
-- **AC8** 多模块：同一需求的模块 Spec 在 `review batch` 并成一张卡；`push-plan` 在联调回归没有结论时提示（不拦）。
+- ~~**AC8**~~ 已取消（用户 C715「B」）。
 - **AC9** 钩子、`status`、`start plan` 在五种档位与 `step=design／regression` 上的文字按决策 10。
 - **AC10** 契约 v2.10 发版后协议自检认「技术方案」节点；发版前按决策 9 过渡。
 - **AC11** 变异测试见测试策略，全部变红；`module-crew check quick` 通过。
 
 ## 并行边界
 
-- 独占：`spec/crew-flow-v2.md`、`tasks/crew-flow-v2/`、`module_crew/probe.py`、`module_crew/protocol.py`、`module_crew/review.py`、`module_crew/takeover.py`、`module_crew/sources.py`、`module_crew/start.py`、`module_crew/hooks.py`、`module_crew/present.py`、`module_crew/merge.py`、`tests/test_flow_v2.py`
+- 独占：`spec/crew-flow-v2.md`、`tasks/crew-flow-v2/`、`module_crew/probe.py`、`module_crew/protocol.py`、`module_crew/review.py`、`module_crew/takeover.py`、`module_crew/sources.py`、`module_crew/start.py`、`module_crew/hooks.py`、`module_crew/present.py`、`module_crew/flow.py`、`tests/test_flow_v2.py`
 - 公共：`skills/`、`codex-skills/`、`README.md`、`README.en.md`、`interface.json`、`CHANGELOG.md`（发【公共变更请求】）
 
 ## 并行说明
@@ -192,14 +192,15 @@ module-crew check quick
 ## 未决问题
 
 - **Q1** 契约 v2.10：节点「技术方案」的要点固定项按决策 2 提，是否同意先向 session-protocol 提这份需求？（推荐：同意，提完经用户批准再改。）
-- **Q2** 多模块布局（决策 8）由 sg-coord 采纳与否；不采纳时本模块去掉第 7 条与 AC8，其余照做。
+- **Q2** 多模块布局（决策 8）：用户 C715「B」不等 sg-coord，本模块去掉范围第 7 条与 AC8，其余照做。
 - **Q3** spec-guard `plan-auto-approve` 晚于本模块构建完时，新模块写完 Plan 后 `/build` 会不会因 Plan 未批准停下：推荐等它发版再开工构建新模块（本模块构建不受影响，只是试点要等）；不由模块协调代写批准标记。
 - **Q4** 挂起的 `crew-takeover-merge` 剩余 Task 9～12：Task 9（Codex 最终验收不判流程文件越界）在新流程不再用 Codex 最终验收、可撤；Task 10 里「同一次 `merge run` 同步通知不重复」（问题 K）是通用缺陷，推荐另开轻任务；其余撤。由用户定。
 
 ## 文档建议
 
-README「流程」一节加「新流程模块」：节点、谁批、何时开工、多模块写法；`crew-dev`、`crew-coordinator` 两份 skill 同步。项目没有文档基线。
+README「流程」一节加「新流程模块」：节点、谁批、何时开工；`crew-dev`、`crew-coordinator` 两份 skill 同步。项目没有文档基线。
 
 ## 变更记录
 
 - 2026-11-24：「并行边界」独占文件由花括号写法改为逐个列出；原因：module-crew 读并行边界时把花括号路径报为 bad-path，内容不变；来源：mc-coord #22376（随 C698 批准附带的修改要求）。
+- 2026-11-24：取消范围第 7 条（多模块布局）与 AC8，决策 8 的提案原文保留作参考；并行边界独占改为去掉 `module_crew/merge.py`（不再改）、加上 `module_crew/flow.py`（Plan 已批的新文件）。原因：sg-coord 对决策 8 还没有定论，用户选不等；来源：用户在 mc-coord 答复 C715「C715 B」（#22427），即 Spec Q2 的退路。
