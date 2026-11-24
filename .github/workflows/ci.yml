@@ -1,0 +1,144 @@
+name: CI
+
+# 「CI required」是汇总任务，供主干保护设为合并前必须通过；所以本 workflow 不加路径过滤（被过滤掉的运行不会上报，PR 会一直等它）。
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# 顶层不给任何权限，每个任务按需单独放权。
+permissions: {}
+
+jobs:
+  test:
+    name: test (${{ matrix.python }})
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.13']
+    defaults:
+      run:
+        shell: bash
+    # 测试会在临时仓库里提交；关掉 runner 上 git 的后台自动维护，避免 maintenance.lock 导致的偶发失败（规范 C3）。
+    env:
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: maintenance.auto
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: gc.auto
+      GIT_CONFIG_VALUE_1: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # 3.9 用 Apple 命令行工具自带的 /usr/bin/python3：macOS 用户实际在用的版本。
+      - name: Python 3.9（Apple 命令行工具）
+        if: matrix.python == '3.9'
+        run: |
+          mkdir -p "$RUNNER_TEMP/py39"
+          ln -s /usr/bin/python3 "$RUNNER_TEMP/py39/python3"
+          echo "$RUNNER_TEMP/py39" >> "$GITHUB_PATH"
+      - name: Python 3.13
+        if: matrix.python == '3.13'
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+
+      - name: 核对 Python 版本
+        env:
+          WANT_PYTHON: ${{ matrix.python }}
+        run: |
+          git --version
+          python3 -c 'import os, sys; want = tuple(map(int, os.environ["WANT_PYTHON"].split("."))); print(sys.executable, sys.version.split()[0]); sys.exit(sys.version_info[:2] != want)'
+
+      - name: 全量检查
+        run: bash scripts/validate.sh
+      - name: 检查没有改动已跟踪文件
+        run: git diff --exit-code
+
+  plugin:
+    name: plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+
+      # claude plugin validate 不查 YAML 能否解析，所以另用脚本真正解析 frontmatter。只在 CI 里装 PyYAML；插件本身仍只用标准库。
+      # skill、agent 要 name 与 description；command 只要 description（名字取自文件名）。
+      - name: 校验 skill、command、agent 的 frontmatter
+        run: |
+          python3 -m pip install --disable-pip-version-check pyyaml==6.0.2
+          python3 - <<'EOF'
+          import glob, sys, yaml
+          def find(*patterns):
+              return sorted({p for pat in patterns for p in glob.glob(pat, recursive=True)})
+          groups = [
+              (find("skills/*/SKILL.md", "codex-skills/*/SKILL.md"), ("name", "description")),
+              (find("agents/**/*.md"), ("name", "description")),
+              (find("commands/**/*.md"), ("description",)),
+          ]
+          bad, count = [], 0
+          for files, required in groups:
+              for path in files:
+                  count += 1
+                  text = open(path, encoding="utf-8").read()
+                  parts = text.split("\n---\n", 1) if text.startswith("---\n") else None
+                  if not parts or len(parts) < 2:
+                      bad.append(f"{path}: 没有 frontmatter"); continue
+                  try:
+                      meta = yaml.safe_load(parts[0][4:])
+                  except yaml.YAMLError as e:
+                      bad.append(f"{path}: YAML 解析失败：{e}"); continue
+                  if not isinstance(meta, dict):
+                      bad.append(f"{path}: frontmatter 不是映射"); continue
+                  for key in required:
+                      if not isinstance(meta.get(key), str) or not meta[key].strip():
+                          bad.append(f"{path}: 缺少 {key}")
+          print(f"检查了 {count} 个文件")
+          for line in bad:
+              print(f"::error::{line}")
+          sys.exit(1 if bad or not count else 0)
+          EOF
+
+      - name: 安装 Claude Code
+        run: |
+          npm install -g @anthropic-ai/claude-code@latest
+          claude --version
+      # 仓库根就是插件根；根目录的 CLAUDE.md、AGENTS.md 是开发规矩，不是插件内容，--strict 会因它们告警。
+      # 所以对 git archive 导出的、去掉这两份的副本跑。
+      - name: claude plugin validate --strict
+        run: |
+          dir="$RUNNER_TEMP/plugin-export"
+          mkdir -p "$dir"
+          git archive HEAD -- . ':(exclude)CLAUDE.md' ':(exclude)AGENTS.md' | tar -x -C "$dir"
+          claude plugin validate --strict "$dir"
+
+      # 预留：zizmor 与 hub 共享检查由 hub 提供，接入时加在这里，不在本仓库另写。
+
+  required:
+    name: CI required
+    if: always()
+    needs: [test, plugin]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: 汇总
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "各任务结果：$RESULTS"
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*) exit 1 ;;
+          esac

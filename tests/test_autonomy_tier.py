@@ -1,6 +1,8 @@
 """crew-autonomy-tier: spec-guard autonomyTier, the step-down cap, standard and relaxed, step-up advice
 (see spec/crew-autonomy-tier.md)."""
 
+from __future__ import annotations
+
 import io
 import json
 import os

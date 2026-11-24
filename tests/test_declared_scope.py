@@ -1,6 +1,8 @@
 """crew-declared-scope: declared public files edited in the module branch, early landing, the final-review section,
 modules with a dependency not opened together (see spec/crew-declared-scope.md)."""
 
+from __future__ import annotations
+
 import json
 import os
 import unittest

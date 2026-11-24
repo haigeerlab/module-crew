@@ -4,6 +4,8 @@ Contract tags (【…】) and contract field names keep their contract spelling 
 code identifiers are not strings people read, and docstrings are developer notes in English.
 """
 
+from __future__ import annotations
+
 import ast
 import re
 import unittest

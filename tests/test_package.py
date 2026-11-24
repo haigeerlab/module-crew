@@ -1,12 +1,30 @@
 import ast
+import importlib.util
 import json
 import re
 import sys
+import sysconfig
 import unittest
 
 from helpers import PLUGIN_ROOT, RepoCase, git, make_worktree
 
 PKG = PLUGIN_ROOT / "module_crew"
+
+
+def is_stdlib(top: str) -> bool:
+    """sys.stdlib_module_names is 3.10+; on 3.9 fall back to where the module is installed."""
+    names = getattr(sys, "stdlib_module_names", None)
+    if names is not None:
+        return top in names
+    if top in sys.builtin_module_names:
+        return True
+    spec = importlib.util.find_spec(top)
+    if spec is None or spec.origin is None:
+        return False
+    if spec.origin in ("built-in", "frozen"):
+        return True
+    stdlib = (sysconfig.get_paths()["stdlib"], sysconfig.get_paths()["platstdlib"])
+    return spec.origin.startswith(stdlib) and "site-packages" not in spec.origin
 
 
 class ManifestTest(unittest.TestCase):
@@ -33,7 +51,7 @@ class StaticScanTest(unittest.TestCase):
                     continue
                 for name in names:
                     top = name.split(".")[0]
-                    self.assertTrue(top in sys.stdlib_module_names or top == "module_crew",
+                    self.assertTrue(is_stdlib(top) or top == "module_crew",
                                     f"{path.name}: non-stdlib import {name}")
 
     def test_no_deletion_calls(self):
