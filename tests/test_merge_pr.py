@@ -228,5 +228,18 @@ class PrCheckTest(PrCase):                                    # acceptance 29
         self.assertEqual(merge.pr_check(self.repo, self.n).code, 3)
 
 
+class PrCliTest(PrCase):
+    def test_cli(self):
+        self.scene(afterMerge=[view(state="MERGED", head=self.head, merge_commit="abc1234")])
+        words = self.tmp / "words.txt"
+        words.write_text("合并")
+        done = self.run_cli("merge", "pr-merge", f"C{self.n}", "--original-file", str(words))
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("abc1234", done.stdout)
+        done = self.run_cli("merge", "pr-check", f"C{self.n}")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(self.run_cli("merge", "pr-merge", f"C{self.n}").returncode, 2)   # argparse: words required
+
+
 if __name__ == "__main__":
     unittest.main()

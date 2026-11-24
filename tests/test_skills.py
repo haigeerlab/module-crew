@@ -116,11 +116,15 @@ class SkillsTest(unittest.TestCase):
             self.assertIn(words, section)
 
     def test_coordinator_merge_section(self):
-        _, text = read("crew-coordinator")
-        section = text.split("## 合并与收尾", 1)[1].split("\n## ", 1)[0]
-        for words in ("review add", "merge approve", "merge run", "一次只合", "退回", "merge cleanup", "agent-relay",
-                      "merge push-plan", "merge push", "用户在远端合并", "不开自动合并"):
-            self.assertIn(words, section)
+        """crew-merge AC 11 (2026-11-24, standard v1.5 F3): both hosts' skills carry the same remote-merge flow."""
+        for root in ("skills", "codex-skills"):
+            text = (PLUGIN_ROOT / root / "crew-coordinator" / "SKILL.md").read_text(encoding="utf-8")
+            section = text.split("## 合并与收尾", 1)[1].split("\n## ", 1)[0]
+            for words in ("review add", "merge approve", "merge run", "一次只合", "退回", "merge cleanup", "agent-relay",
+                          "merge push-plan", "merge push", "可以合并吗", "merge pr-merge", "merge pr-check",
+                          "开 PR 时不开自动合并"):
+                self.assertIn(words, section, root)
+            self.assertNotIn("PR 由用户在远端合并", section, root)
 
     def test_dev_sync_section(self):
         _, text = read("crew-dev")
