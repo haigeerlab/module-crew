@@ -57,6 +57,8 @@ jobs:
 
       - name: 全量检查
         run: bash scripts/validate.sh
+      - name: 检查没有改动已跟踪文件
+        run: git diff --exit-code
 
   plugin:
     name: plugin
@@ -73,33 +75,41 @@ jobs:
         with:
           python-version: '3.13'
 
-      # 只在 CI 里装 PyYAML 解析 frontmatter；插件本身仍只用标准库。
+      # claude plugin validate 不查 YAML 能否解析，所以另用脚本真正解析 frontmatter。只在 CI 里装 PyYAML；插件本身仍只用标准库。
+      # skill、agent 要 name 与 description；command 只要 description（名字取自文件名）。
       - name: 校验 skill、command、agent 的 frontmatter
         run: |
           python3 -m pip install --disable-pip-version-check pyyaml==6.0.2
           python3 - <<'EOF'
           import glob, sys, yaml
-          files = sorted(set(glob.glob("skills/*/SKILL.md") + glob.glob("codex-skills/*/SKILL.md")
-                             + glob.glob("commands/**/*.md", recursive=True) + glob.glob("agents/**/*.md", recursive=True)))
-          bad = []
-          for path in files:
-              text = open(path, encoding="utf-8").read()
-              parts = text.split("\n---\n", 1) if text.startswith("---\n") else None
-              if not parts:
-                  bad.append(f"{path}: 没有 frontmatter"); continue
-              try:
-                  meta = yaml.safe_load(parts[0][4:])
-              except yaml.YAMLError as e:
-                  bad.append(f"{path}: YAML 解析失败：{e}"); continue
-              if not isinstance(meta, dict):
-                  bad.append(f"{path}: frontmatter 不是映射"); continue
-              for key in ("name", "description"):
-                  if not isinstance(meta.get(key), str) or not meta[key].strip():
-                      bad.append(f"{path}: 缺少 {key}")
-          print(f"检查了 {len(files)} 个文件")
+          def find(*patterns):
+              return sorted({p for pat in patterns for p in glob.glob(pat, recursive=True)})
+          groups = [
+              (find("skills/*/SKILL.md", "codex-skills/*/SKILL.md"), ("name", "description")),
+              (find("agents/**/*.md"), ("name", "description")),
+              (find("commands/**/*.md"), ("description",)),
+          ]
+          bad, count = [], 0
+          for files, required in groups:
+              for path in files:
+                  count += 1
+                  text = open(path, encoding="utf-8").read()
+                  parts = text.split("\n---\n", 1) if text.startswith("---\n") else None
+                  if not parts or len(parts) < 2:
+                      bad.append(f"{path}: 没有 frontmatter"); continue
+                  try:
+                      meta = yaml.safe_load(parts[0][4:])
+                  except yaml.YAMLError as e:
+                      bad.append(f"{path}: YAML 解析失败：{e}"); continue
+                  if not isinstance(meta, dict):
+                      bad.append(f"{path}: frontmatter 不是映射"); continue
+                  for key in required:
+                      if not isinstance(meta.get(key), str) or not meta[key].strip():
+                          bad.append(f"{path}: 缺少 {key}")
+          print(f"检查了 {count} 个文件")
           for line in bad:
               print(f"::error::{line}")
-          sys.exit(1 if bad or not files else 0)
+          sys.exit(1 if bad or not count else 0)
           EOF
 
       - name: 安装 Claude Code
@@ -107,7 +117,7 @@ jobs:
           npm install -g @anthropic-ai/claude-code@latest
           claude --version
       - name: claude plugin validate
-        run: claude plugin validate .
+        run: claude plugin validate --strict .
 
       # 预留：zizmor 与 hub 共享检查由 hub 提供，接入时加在这里，不在本仓库另写。
 

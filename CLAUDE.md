@@ -53,7 +53,7 @@
 ## 项目规矩（Claude 与 Codex 共用）
 
 - 本仓库遵循 haigeerlab《插件开发规范》v1.1。
-- 统一检查入口：`scripts/validate.sh` 跑全量测试，`scripts/validate.sh --quick` 只跑本分支改动涉及的测试，两档最后都用 `git diff --exit-code` 确认检查没改动已跟踪文件。CI（`.github/workflows/ci.yml`，名为 `CI`）在 PR 与推送 main 时用 Python 3.9 和 3.13 各跑一次全量检查，另跑 `claude plugin validate` 与 skill frontmatter 校验，由汇总任务「CI required」给出总结果。
+- 统一检查入口：`scripts/validate.sh` 跑全量测试，`scripts/validate.sh --quick` 只跑本分支改动涉及的测试，CI（`.github/workflows/ci.yml`，名为 `CI`）在 PR 与推送 main 时用 Python 3.9 和 3.13 各跑一次全量检查，跑完用 `git diff --exit-code` 确认没改动已跟踪文件；另跑 `claude plugin validate --strict` 与 skill、command、agent 的 frontmatter 校验，由汇总任务「CI required」给出总结果。
 - 代码要能在 Python 3.9 上运行，只用标准库，不加第三方依赖；shell 脚本兼容 Bash 3.2。
 - 提交信息用中文，带类型前缀（`feat:`、`fix:`、`docs:`、`test:`、`chore:` 等），做法见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 - `skills/` 与 `codex-skills/` 是同一套规矩的 Claude 版和 Codex 版，改一边时看另一边要不要跟着改。
