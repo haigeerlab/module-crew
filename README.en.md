@@ -10,7 +10,7 @@ A plugin that lets several Claude Code or Codex desktop sessions **develop sever
 
 ## What it solves
 
-[spec-guard](https://github.com/haigeerlab/spec-guard-plugin) drives a project one module at a time along its capability map (Spec → Plan → implementation). When there are many independent modules, that serial flow and one-by-one review slow everything down.
+[spec-guard](https://github.com/haigeerlab/spec-guard-plugin) drives a project one module at a time along its capability map (Spec → Plan → implementation; from 0.94.0, flow v2 modules go requirement → design with regression cases → implementation, and the Plan is no longer reviewed). When there are many independent modules, that serial flow and one-by-one review slow everything down.
 module-crew adds a runtime layer on top of it:
 
 - **One module coordinator (模块协调)** runs the show: opens modules, keeps the books on incoming messages, relays the user's decisions, owns the integration branch and shared files, and merges.
@@ -93,7 +93,7 @@ All off by default; the coordinator turns them on only with the user's own words
 |---|---|---|
 | `declaredScope` (declared scope) | Shared files declared up front in a module's Plan are edited directly on the module branch and reviewed at final acceptance | [User guide](docs/guide.md#声明范围declaredscope) |
 | `checkLedger` (check ledger) | Day to day only the quick check runs, recorded per tree hash; the full check runs only in the merge queue | [User guide](docs/guide.md#检查记账checkledger) |
-| `takeover` (spec-guard takeover) | none (default) / Plan only / up to merge / custom: a Spec or Plan ticked "Codex approves" is reviewed by Codex and released when it has no blocking finding (two rounds with blocking findings hand it to the user; if Codex is unavailable it stops and waits for the user); narrows automatically after an incident. `autonomyTier` is retired | [User guide](docs/guide.md#接管档位takeover) |
+| `takeover` (spec-guard takeover) | none (default) / Plan only / up to merge / custom: a Spec or Plan ticked "Codex approves" is reviewed by Codex and released when it has no blocking finding (two rounds with blocking findings hand it to the user; if Codex is unavailable it stops and waits for the user); narrows automatically after an incident. In spec-guard flow v2 modules the requirement is always approved by the user and the design can go to a second reviewer. `autonomyTier` is retired | [User guide](docs/guide.md#接管档位takeover) |
 | `digest` (wrap-up digest) | sync, check-ledger, unqueued-commit and early-landing messages are summarised once at wrap-up with `tier digest` | [User guide](docs/guide.md#接管档位takeover) |
 | `codexOffload` (quota offload) | When Claude quota is tight, modules opened afterwards hand their Tasks to one Codex session; the module session checks and commits | [User guide](docs/guide.md#额度外包codexoffload) |
 
