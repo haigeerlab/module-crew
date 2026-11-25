@@ -102,11 +102,11 @@ class PushTimeoutTest(LocalIntegrationCase):
 
     def test_slow_hook_times_out_readably(self):
         with self.db.transaction(actor="t") as tx:
-            tx.put("config", "main", dict(tx.get("config", "main"), checkTimeout=2), action="updated")
-        self.hook("#!/bin/sh\nsleep 6\n")
+            tx.put("config", "main", dict(tx.get("config", "main"), checkTimeout=1), action="updated")
+        self.hook(f"#!/bin/sh\n{self.hold()}\n")               # T799: outlasts checkTimeout without sleeping
         res = merge.push(self.repo, "推送", pr_base="trunk")
         self.assertEqual(res.code, 4, res.lines)
-        self.assertIn("超时（2 秒）", " ".join(res.lines))
+        self.assertIn("超时（1 秒）", " ".join(res.lines))
         self.assertNotIn("crew/", git(self.remote, "branch", "--list"))
 
     def test_push_timeout_is_check_timeout(self):

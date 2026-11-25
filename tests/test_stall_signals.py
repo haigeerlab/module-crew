@@ -1,5 +1,6 @@
 """crew-stall-signals: read-only facts in sessions --json for the decision inbox (spec/crew-stall-signals.md)."""
 
+import os
 import shutil
 import unittest
 from datetime import datetime
@@ -149,15 +150,17 @@ class AnswersTest(StallCase):
         git(self.wt[m], "commit", "-q", "-m", message)
 
     def test_progress_after_each_answer(self):
-        import time
+        from unittest import mock
+        clock = self.fake_clock()                        # T799: advance() instead of sleeping past each second
         first = review.add(self.db, self.spec_review("b"), "shop-b", 7501).number
         review.answer(self.db, first, "Spec 改一下")
-        time.sleep(1.1)
-        self.tick("b", "b: task 1")                      # progress after the first answer
-        time.sleep(1.1)
+        clock.advance()
+        with mock.patch.dict(os.environ, clock.git_env()):
+            self.tick("b", "b: task 1")                  # progress after the first answer
+        clock.advance()
         second = review.add(self.db, self.spec_review("b"), "shop-b", 7502).number
         review.answer(self.db, second, "再改")
-        time.sleep(1.1)
+        clock.advance()
         third = inbox.add(self.db, wait_user(sender="shop-b"), "shop-b", 7503).number
         inbox.answer(self.db, third, "A")                  # nothing happened in between
         got = [(a["ref"], a["commitsAfter"], a["ticksAfter"]) for a in self.rows()["b"]["answers"]]

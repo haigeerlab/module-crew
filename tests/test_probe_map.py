@@ -66,7 +66,7 @@ class SpecGuardTest(ProbeCase):
             with self.subTest(mode):
                 self.plugins.entries.clear()
                 self.install("1.0", mode=mode)
-                sg, _, doc = self.checks(timeout=1)
+                sg, _, doc = self.checks(timeout=0.3 if mode == "slow" else 1)   # T799: slow only waits the limit
                 self.assertEqual(sg.state, "blocker")
                 self.assertIsNone(doc)
                 reasons[mode] = sg.reason

@@ -23,10 +23,13 @@ class TimeoutCase(MergeCase):
         with self.db.transaction(actor="test") as tx:
             tx.put("config", "main", dict(tx.get("config", "main"), checkTimeout=seconds), action="t")
 
-    def slow_hook(self, name, seconds=5):
-        """A hook whose child process sleeps; the token in its command line finds leftovers."""
+    def slow_hook(self, name, seconds=None):
+        """A hook whose child process sleeps `seconds`, or by default holds until the test ends (T799: it only has
+        to outlast checkTimeout); the token in its command line finds leftovers."""
         path = self.repo / ".git" / "hooks" / name
-        path.write_text(f'#!/bin/sh\npython3 -c "import time; time.sleep({seconds})" {self.token}\n', encoding="utf-8")
+        child = (self.hold(self.token) if seconds is None
+                 else f'python3 -c "import time; time.sleep({seconds})" {self.token}')
+        path.write_text(f'#!/bin/sh\n{child}\n', encoding="utf-8")
         os.chmod(path, 0o755)
 
     def assert_no_leftover(self):

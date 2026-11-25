@@ -254,8 +254,9 @@ class SessionsTest(FailureCase):
         self.assertIn("等设计稿", text)
 
     def test_last_activity_is_per_session(self):
+        clock = self.fake_clock()                       # T799: a later second without sleeping
         before = {r["module"]: r["lastActivity"] for r in failure.sessions(self.db)}
-        import time; time.sleep(1.1)
+        clock.advance()
         inbox.add(self.db, wait_user(sender="shop-c"), "shop-c", 902)
         after = {r["module"]: r["lastActivity"] for r in failure.sessions(self.db)}
         self.assertEqual(after["b"], before["b"])
