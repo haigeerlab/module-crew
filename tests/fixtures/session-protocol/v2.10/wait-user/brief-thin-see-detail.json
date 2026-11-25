@@ -1,0 +1,50 @@
+{
+  "parse": {
+    "type": "wait-user",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "来自": "前端",
+      "要你决定": "Spec 是否批准",
+      "要点": "支付页接入微信支付与支付宝两种方式\n取舍理由详见 spec/pay.md",
+      "选项与我的建议": "推荐 A：批准\n  选了会怎样：开始写计划\nB：先不批\n  选了会怎样：说明要改哪里",
+      "你该回": "18 A",
+      "是否完全停住": "是"
+    },
+    "options": [
+      {
+        "letter": "A",
+        "text": "批准",
+        "consequence": "开始写计划"
+      },
+      {
+        "letter": "B",
+        "text": "先不批",
+        "consequence": "说明要改哪里"
+      }
+    ],
+    "recommended": "A",
+    "suggestedReply": "18 A",
+    "fullyStopped": true,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [
+      "brief-thin"
+    ]
+  }
+}

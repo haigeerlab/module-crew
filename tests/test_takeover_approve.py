@@ -1,6 +1,8 @@
 """crew-takeover-approve: spec-guard takeover, Codex as a reviewer, separate bookkeeping, narrowing on incidents,
 and the retirement of autonomyTier (see spec/crew-takeover-approve.md)."""
 
+from __future__ import annotations
+
 import json
 import unittest
 from pathlib import Path

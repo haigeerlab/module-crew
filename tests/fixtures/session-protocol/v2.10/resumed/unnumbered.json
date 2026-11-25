@@ -1,0 +1,30 @@
+{
+  "parse": {
+    "type": "resumed",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": false,
+      "unnumberedReason": "对方没给编号"
+    },
+    "markers": [],
+    "item": null,
+    "fields": {},
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": []
+  }
+}

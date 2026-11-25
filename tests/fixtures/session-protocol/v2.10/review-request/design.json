@@ -1,0 +1,79 @@
+{
+  "parse": {
+    "type": "review-request",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "模块": "crew-flow-v2",
+      "节点": "技术方案",
+      "文件": "- tasks/crew-flow-v2/design.md sha256:5b8e2d4f1a9c\n- tasks/crew-flow-v2/regression.md sha256:c4a1f7e9d03b",
+      "要点": "现状调研：交审节点只认 Spec、Plan、接口提案、最终验收，review add 按节点登记\n影响面：protocol.py、sources.py、start.py\n实现方案：节点表加「技术方案」，新流程模块的 Plan 交审拒收\n风险与回滚：老模块误判成新流程；回滚即撤掉节点表那一行\n回归用例：共 2 条\nR1 老模块交 Plan 照旧登记\nR2 新模块交技术方案缺 regression.md 被拒\n受影响的老功能：无\n未决问题：无"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "submission": {
+      "module": "crew-flow-v2",
+      "node": "design",
+      "files": [
+        {
+          "path": "tasks/crew-flow-v2/design.md",
+          "fingerprint": "sha256:5b8e2d4f1a9c"
+        },
+        {
+          "path": "tasks/crew-flow-v2/regression.md",
+          "fingerprint": "sha256:c4a1f7e9d03b"
+        }
+      ]
+    },
+    "points": [
+      {
+        "name": "现状调研",
+        "text": "交审节点只认 Spec、Plan、接口提案、最终验收，review add 按节点登记"
+      },
+      {
+        "name": "影响面",
+        "text": "protocol.py、sources.py、start.py"
+      },
+      {
+        "name": "实现方案",
+        "text": "节点表加「技术方案」，新流程模块的 Plan 交审拒收"
+      },
+      {
+        "name": "风险与回滚",
+        "text": "老模块误判成新流程；回滚即撤掉节点表那一行"
+      },
+      {
+        "name": "回归用例",
+        "text": "共 2 条\nR1 老模块交 Plan 照旧登记\nR2 新模块交技术方案缺 regression.md 被拒"
+      },
+      {
+        "name": "受影响的老功能",
+        "text": "无"
+      },
+      {
+        "name": "未决问题",
+        "text": "无"
+      }
+    ]
+  }
+}

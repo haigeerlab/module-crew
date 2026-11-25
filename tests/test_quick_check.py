@@ -1,6 +1,7 @@
 """scripts/quick_check.py picks only the tests touched by a branch, and falls back to the full check (T652)."""
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -163,15 +164,16 @@ class RunTest(RepoCase):
         self.write("tests/test_other.py", "import unittest\nfrom helpers import *\n"
                                           "class T(unittest.TestCase):\n    def test_x(self):\n        self.fail()\n")
         self.commit()
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONDONTWRITEBYTECODE"}   # CI writes bytecode (T760)
         done = subprocess.run([sys.executable, "scripts/quick_check.py"], cwd=self.root, capture_output=True,
-                              text=True, timeout=120)
+                              text=True, timeout=120, env=env)
         self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
         self.assertIn("test_other：改了测试文件", done.stdout)
         self.assertIn("FAILED", done.stderr)
         self.write("tests/test_other.py", "import unittest\nclass T(unittest.TestCase):\n    def test_x(self):\n"
                                           "        pass\n")
         done = subprocess.run([sys.executable, "scripts/quick_check.py"], cwd=self.root, capture_output=True,
-                              text=True, timeout=120)
+                              text=True, timeout=120, env=env)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
 
 

@@ -1,0 +1,14 @@
+【交审】
+结束：无
+模块：alpha
+节点：技术方案
+文件：
+- tasks/beta/design.md sha256:5b8e2d4f1a9c
+- tasks/alpha/regression.md
+要点：现状调研：登录页只有密码登录
+影响面：auth/login.ts
+实现方案：加令牌刷新
+风险与回滚：刷新失败时回到登录页
+回归用例：R1 密码登录照旧
+受影响的老功能：密码登录
+未决问题：无

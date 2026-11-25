@@ -35,10 +35,14 @@ class Items:
     usable: bool = False
     reason: str | None = None
     narrowed: dict | None = None
+    tier: str | None = None             # crew-flow-v2: the flow v2 tier, None for an old module
+    design: str = "human"               # crew-flow-v2 decision 6: human | reviewer | skip | none (no design document)
+    design_why: str | None = None
 
     @property
     def active(self) -> bool:
-        return self.usable and (any(getattr(self, k) != "human" for k in ITEMS) or bool(self.forced))
+        return self.usable and (any(getattr(self, k) != "human" for k in ITEMS) or bool(self.forced)
+                                or self.tier is not None)       # crew-flow-v2: always say how a flow v2 module is approved
 
 
 def _version(text: str | None) -> tuple[int, ...] | None:
@@ -138,7 +142,41 @@ def module(db: store.Store, project: str | os.PathLike, module_id: str, plan_roo
     why = predeclares(Path(plan_root), module_id) if out.plan == "codex" and plan_root is not None else None
     if why:
         out.forced["plan"] = why
+    from module_crew import flow
+    out.tier = flow.tier_of(row)
+    if out.tier is not None:            # crew-flow-v2 decision 6
+        if out.spec == "codex":
+            out.forced["spec"] = FLOW_SPEC
+        out.plan = "human"
+        out.forced.pop("plan", None)
+        out.design, out.design_why = _design(row, out.tier)
     return out
+
+
+FLOW_SPEC = "新流程：需求永远由用户确认"
+DESIGN_IMPORTANT = "重要需求：技术方案由用户批"
+DESIGN_UPSTREAM = "因上游未发版而人批（spec-guard 还没有技术方案的档位）"
+# Names from the spec-guard interface draft v1 (#22365); checked against the released interface at Checkpoint 4
+DESIGN_NOT_REQUIRED = "not-required"
+
+
+def _design(row: dict, tier: str) -> tuple[str, str | None]:
+    """Who approves a flow v2 module's design: the effective takeover design item spec-guard gives (important
+    requirements already counted in), skip when spec-guard says this one needs no review, human when unreadable."""
+    from module_crew import flow
+    if not flow.full_docs(tier):
+        return "none", None
+    if tier == "important":
+        return "human", DESIGN_IMPORTANT
+    approval = row.get("designApproval")
+    if isinstance(approval, dict) and approval.get("status") == DESIGN_NOT_REQUIRED:
+        return "skip", None
+    value = (row.get("takeover") or {}).get("design")
+    if value == "reviewer":
+        return "reviewer", None
+    if value == "human":
+        return "human", None
+    return "human", DESIGN_UPSTREAM
 
 
 def approver(db: store.Store, project: str | os.PathLike, module_id: str, node: str,
@@ -154,6 +192,10 @@ def approval(db: store.Store, project: str | os.PathLike, module_id: str, node: 
     Plan's pre-declared section (M1 notes 1, 11). The final acceptance: crew-takeover-merge's final_reason."""
     if node == "final":
         who, why = final_reason(db, project, module_id)
+    elif node == "design":              # crew-flow-v2 decision 6: codex here means the second reviewer
+        got = module(db, project, module_id)
+        who = {"reviewer": "codex", "skip": "skip"}.get(got.design, "human") if got.tier is not None else "human"
+        why = got.design_why if who == "human" else None
     else:
         item = {"spec": "spec", "interface": "spec", "plan": "plan"}.get(node)
         if item is None:
@@ -197,12 +239,18 @@ def final_reason(db: store.Store, project: str | os.PathLike, module_id: str) ->
     return "codex", None
 
 
+DESIGN_WORDS = {"human": "人批", "reviewer": "第二审查者审过即可", "skip": "免审", "none": "无（只写一份文档）"}
+
+
 def line(items: Items) -> str:
     """Decision 2: 批准方式：Spec …、Plan …、合并 …"""
     def word(item: str) -> str:
         if item in items.forced:
             return f"人批（{items.forced[item]}）"
         return WORDS[getattr(items, item)]
+    if items.tier is not None:          # crew-flow-v2 decision 6
+        design = DESIGN_WORDS[items.design] + (f"（{items.design_why}）" if items.design_why else "")
+        return f"批准方式：需求 人批、技术方案 {design}、Plan 不交审（旧档位的 Plan 一项已不生效）、合并 {MERGE_WORDS[items.merge]}"
     return f"批准方式：Spec {word('spec')}、Plan {word('plan')}、合并 {MERGE_WORDS[items.merge]}"
 
 
@@ -475,6 +523,8 @@ def codex_command(db: store.Store, n: int) -> tuple[list[str], Path]:
     path = db.path / CODEX_DIR / f"C{n}-r{len(reports) + 1}.json"
     session = store.get(db, "session", rec["from"]) or {}
     worktree = session.get("worktree", "")
+    if rec["node"] == "design":
+        return _design_command(rec, n, reports, path, session, worktree)
     args = ["/delegate:review", "--backend", "codex", "--repo", worktree]
     recheck = []
     if rec["node"] == "final":          # crew-takeover-merge decision 2: the final patch as a commit range
@@ -518,7 +568,39 @@ def codex_command(db: store.Store, n: int) -> tuple[list[str], Path]:
     return lines, path
 
 
-def _report(path: str | os.PathLike) -> tuple[dict | None, str | None]:
+DESIGN_TEXT = ("按 delegate 的 design-v1 判据审这份技术方案与回归测试文档：对照仓库里的真实代码，阻断只限能拿代码证明照它做会出错的问题，"
+               "其余写成建议")
+
+
+def author_host(session: dict) -> str:
+    """delegate --author-host from the module session's host (crew-flow-v2 decision 7)."""
+    return "codex" if str(session.get("host") or "").startswith("codex") else "claude-code"
+
+
+def _design_command(rec: dict, n: int, reports: list[str], path: Path, session: dict, worktree: str):
+    """crew-flow-v2 decision 7: delegate 1.7's design review, the second round a recheck of the first."""
+    m = rec["module"]
+    args = ["/delegate:review", "--profile", "design", "--backend", "auto", "--author-host", author_host(session),
+            "--repo", worktree]
+    for f in (f"tasks/{m}/design.md", f"tasks/{m}/regression.md"):
+        args += ["--paths", f]
+    args += ["--spec", f"spec/{m}.md"]
+    for f in _context_files(dict(rec, node="spec"), Path(worktree), {f["path"] for f in rec["files"]}) if worktree else []:
+        args += ["--spec", f]
+    if reports:
+        args += ["--previous-report", reports[-1]]
+    args.append(json.dumps(DESIGN_TEXT, ensure_ascii=False))
+    lines = [f"C{n}（{m} 的 技术方案）第 {len(reports) + 1} 次交第二审查者：由模块协调在本会话运行",
+             "  " + " ".join(args),
+             f"把标准输出的那份 JSON 原样存到 {path}，再运行 module-crew review codex-note C{n} --report {path}",
+             "审查跑不成也照样交给 codex-note；写代码的会话不审自己的东西，不要自己审"]
+    return lines, path
+
+
+UNREVIEWED = "未审：本机没有可用的第二审查者，由回归测试兜底"
+
+
+def _report(path: str | os.PathLike, node: str = "spec") -> tuple[dict | None, str | None]:
     """The report, or why there is no conclusion (spec-guard codex-approval assumption 2)."""
     try:
         doc = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -526,7 +608,7 @@ def _report(path: str | os.PathLike) -> tuple[dict | None, str | None]:
         return None, f"审查报告读不出（{exc.__class__.__name__}）"
     if not isinstance(doc, dict):
         return None, "审查报告不是 JSON 对象"
-    if doc.get("backend") != "codex":
+    if doc.get("backend") != "codex" and node != "design":      # crew-flow-v2: a design review may pick another backend
         return None, f"审查后端不是 codex（{doc.get('backend')}）"
     if doc.get("execution_status") != "completed":
         diag = [str(x) for x in doc.get("diagnostics") or [] if x]
@@ -537,6 +619,16 @@ def _report(path: str | os.PathLike) -> tuple[dict | None, str | None]:
     if doc.get("unreviewed"):
         return None, "Codex 审查只覆盖了一部分文件"
     return doc, None
+
+
+def _no_reviewer(path: str | os.PathLike) -> bool:
+    """delegate 1.7: no reviewer was available (reviewer.selection none, conditions_missing, no_reviewer_available)."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    who = doc.get("reviewer") if isinstance(doc, dict) else None
+    return isinstance(who, dict) and who.get("selection") == "none"
 
 
 def _repeats(path: str | os.PathLike) -> bool:
@@ -608,7 +700,7 @@ def _blocking(doc: dict) -> tuple[list[str], list[str]]:
     return block, advice
 
 
-WHAT = {"spec": "Spec", "interface": "接口提案", "plan": "Plan", "final": "最终验收"}
+WHAT = {"spec": "Spec", "interface": "接口提案", "plan": "Plan", "design": "技术方案", "final": "最终验收"}
 
 
 def _coordinator(db: store.Store) -> str:
@@ -666,7 +758,12 @@ def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) ->
     project = Path(project)
     db = store.open_store(project)
     rec = _codex_item(db, n)
-    doc, why = _report(report)
+    if rec["node"] == "design" and _no_reviewer(report):        # crew-flow-v2 decision 7 (requirement 5.3, 5.4)
+        landed = review._approve(project, [n], "", codex={"report": str(report), "unreviewed": UNREVIEWED, "rounds": 0,
+                                                          "suggestions": 0})
+        return CodexResult(landed.code if landed.code in (0, 3) else 4, [f"C{n} {UNREVIEWED}：放行"] + landed.lines,
+                           sends=landed.sends)
+    doc, why = _report(report, rec["node"])
     if doc is None:
         with db.transaction(actor="coordinator") as tx:
             tx.put("item", str(n), tx.get("item", str(n)), action="codex-unavailable", data={"reason": why,
@@ -712,6 +809,7 @@ def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) ->
                 return res
             target = _target(cur)
             first = ("按 Codex 对最终补丁的阻断意见改（最终验收这一轮不用在文件里记）：\n" if cur["node"] == "final" else
+                     "按第二审查者的阻断意见改技术方案与回归（第二轮只核对这几条）：\n" if cur["node"] == "design" else
                      f"先在你的 worktree 运行 /spec-guard:review-mark --target {target} --state codex-reviewed "
                      f"--review {saved} --confirm（把这一轮记进文件），再按阻断意见改：\n")
             todo = (first
@@ -735,9 +833,15 @@ def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) ->
         res.lines += [f"C{n} Codex 对最终补丁没有阻断意见（建议 {len(advice)} 条）：可以自动合",
                       f"下一步：module-crew merge auto C{n}（放后台跑：放行、合进集成分支、跑完整检查；不问用户）"]
         return res
-    landed = review._approve(project, [n], "", codex={"report": str(saved), "rounds": rounds, "suggestions": len(advice)})
+    extra = {}
+    if rec["node"] == "design":         # crew-flow-v2 decision 7: say when the reviewer is the author's vendor
+        who = doc.get("reviewer") if isinstance(doc.get("reviewer"), dict) else {}
+        extra = {"design": True, "vendor": who.get("vendor"), "sameVendor": who.get("same_vendor") is True}
+    landed = review._approve(project, [n], "", codex={"report": str(saved), "rounds": rounds, "suggestions": len(advice),
+                                                      **extra})
     res.code = landed.code if landed.code in (0, 3) else 4
-    res.lines += [f"C{n} Codex 没有阻断意见（建议 {len(advice)} 条）：放行"] + landed.lines
+    who = ("第二审查者" + ("（同厂商审查）" if extra.get("sameVendor") else "") + " ") if extra else "Codex "
+    res.lines += [f"C{n} {who}没有阻断意见（建议 {len(advice)} 条）：放行"] + landed.lines
     res.sends += landed.sends
     if res.code == 4:                   # M1-M2 report C: the pass stands, the landing did not; the user decides
         why = ((landed.lines[0].split("已停下：", 1)[-1] if landed.lines else "").strip() or

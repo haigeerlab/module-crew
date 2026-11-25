@@ -10,7 +10,7 @@ A plugin that lets several Claude Code or Codex desktop sessions **develop sever
 
 ## What it solves
 
-[spec-guard](https://github.com/haigeerlab/spec-guard-plugin) drives a project one module at a time along its capability map (Spec → Plan → implementation). When there are many independent modules, that serial flow and one-by-one review slow everything down.
+[spec-guard](https://github.com/haigeerlab/spec-guard-plugin) drives a project one module at a time along its capability map (Spec → Plan → implementation; from 0.94.0, flow v2 modules go requirement → design with regression cases → implementation, and the Plan is no longer reviewed). When there are many independent modules, that serial flow and one-by-one review slow everything down.
 module-crew adds a runtime layer on top of it:
 
 - **One module coordinator (模块协调)** runs the show: opens modules, keeps the books on incoming messages, relays the user's decisions, owns the integration branch and shared files, and merges.
@@ -81,7 +81,7 @@ It checks seven things — git, agent-relay, spec-guard, whether spec-guard is e
    A module you name can open before its dependencies are done, for its Spec and Plan only; once they merge, the coordinator asks you once and sends the start notice with `module-crew start kickoff <module>`.
 3. **Spec and Plan**: each module session sends a review request (【交审】); the coordinator batches them for you. After you approve, it runs `module-crew review approve`, and module sessions start building once they get the kickoff notice.
 4. **Merge**: when a module is done it asks for final acceptance; after you approve, the coordinator's `module-crew merge run` merges it into the local integration branch and runs the full check, sending it back automatically if the check fails.
-5. **Push**: once you authorize it, `module-crew merge push` pushes to a new remote branch and opens a PR. Merging on the remote is always up to you.
+5. **Push and remote merge**: once you authorize it, `module-crew merge push` pushes to a new remote branch and opens a PR. The coordinator asks "may I merge?"; when you answer "merge" in the conversation, `module-crew merge pr-merge` tells GitHub to merge once the required checks pass, and `merge pr-check` confirms it and reports the merge commit, so you never have to click merge on GitHub. It refuses, rather than merging directly, when the repository has Allow auto-merge off or the main branch has no required check.
 
 The full flow, every step in detail and what to do when things go wrong are in the [user guide](docs/guide.md).
 
@@ -93,7 +93,7 @@ All off by default; the coordinator turns them on only with the user's own words
 |---|---|---|
 | `declaredScope` (declared scope) | Shared files declared up front in a module's Plan are edited directly on the module branch and reviewed at final acceptance | [User guide](docs/guide.md#声明范围declaredscope) |
 | `checkLedger` (check ledger) | Day to day only the quick check runs, recorded per tree hash; the full check runs only in the merge queue | [User guide](docs/guide.md#检查记账checkledger) |
-| `takeover` (spec-guard takeover) | none (default) / Plan only / up to merge / custom: a Spec or Plan ticked "Codex approves" is reviewed by Codex and released when it has no blocking finding (two rounds with blocking findings hand it to the user; if Codex is unavailable it stops and waits for the user); narrows automatically after an incident. `autonomyTier` is retired | [User guide](docs/guide.md#接管档位takeover) |
+| `takeover` (spec-guard takeover) | none (default) / Plan only / up to merge / custom: a Spec or Plan ticked "Codex approves" is reviewed by Codex and released when it has no blocking finding (two rounds with blocking findings hand it to the user; if Codex is unavailable it stops and waits for the user); narrows automatically after an incident. In spec-guard flow v2 modules the requirement is always approved by the user and the design can go to a second reviewer. `autonomyTier` is retired | [User guide](docs/guide.md#接管档位takeover) |
 | `digest` (wrap-up digest) | sync, check-ledger, unqueued-commit and early-landing messages are summarised once at wrap-up with `tier digest` | [User guide](docs/guide.md#接管档位takeover) |
 | `codexOffload` (quota offload) | When Claude quota is tight, modules opened afterwards hand their Tasks to one Codex session; the module session checks and commits | [User guide](docs/guide.md#额度外包codexoffload) |
 

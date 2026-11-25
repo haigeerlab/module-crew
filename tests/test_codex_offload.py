@@ -1,6 +1,8 @@
 """crew-codex-offload, round 2: the module session hands its Tasks to one Codex session through delegate >= 1.3,
 checks what comes back and commits it itself (see spec/crew-codex-offload.md)."""
 
+from __future__ import annotations
+
 import hashlib
 import json
 import os

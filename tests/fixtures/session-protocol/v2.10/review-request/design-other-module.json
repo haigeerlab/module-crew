@@ -1,0 +1,79 @@
+{
+  "parse": {
+    "type": "review-request",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "模块": "alpha",
+      "节点": "技术方案",
+      "文件": "- tasks/beta/design.md sha256:5b8e2d4f1a9c\n- tasks/alpha/regression.md",
+      "要点": "现状调研：登录页只有密码登录\n影响面：auth/login.ts\n实现方案：加令牌刷新\n风险与回滚：刷新失败时回到登录页\n回归用例：R1 密码登录照旧\n受影响的老功能：密码登录\n未决问题：无"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "bad-file-line",
+      "missing-design-file:design.md",
+      "missing-design-file:regression.md"
+    ],
+    "hints": [],
+    "submission": {
+      "module": "alpha",
+      "node": "design",
+      "files": [
+        {
+          "path": "tasks/beta/design.md",
+          "fingerprint": "sha256:5b8e2d4f1a9c"
+        }
+      ]
+    },
+    "points": [
+      {
+        "name": "现状调研",
+        "text": "登录页只有密码登录"
+      },
+      {
+        "name": "影响面",
+        "text": "auth/login.ts"
+      },
+      {
+        "name": "实现方案",
+        "text": "加令牌刷新"
+      },
+      {
+        "name": "风险与回滚",
+        "text": "刷新失败时回到登录页"
+      },
+      {
+        "name": "回归用例",
+        "text": "R1 密码登录照旧"
+      },
+      {
+        "name": "受影响的老功能",
+        "text": "密码登录"
+      },
+      {
+        "name": "未决问题",
+        "text": "无"
+      }
+    ]
+  }
+}

@@ -97,6 +97,8 @@ class PushTest(MergeCase):
         rec = store.get(self.db, "item", str(res.record))
         self.assertEqual((rec["kind"], rec["remoteBranch"], rec["pr"]), ("push", res.branch, "https://example.invalid/pr/1"))
         self.assertEqual(rec["answer"]["original"], "推吧")
+        self.assertEqual(rec["head"], git(self.repo, "rev-parse", "main").strip())     # pr-merge checks it
+        self.assertIn(f"merge pr-merge C{res.record}", " ".join(res.lines))
 
     def test_push_without_gh_prints_body(self):
         os.environ["MODULE_CREW_GH"] = ""

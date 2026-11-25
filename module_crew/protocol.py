@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-CONTRACT_VERSION = "2.9"
+CONTRACT_VERSION = "2.10"
 
 KIND_TAGS = {
     "等待用户": "wait-user",
@@ -67,15 +67,16 @@ _PROSE_RE = re.compile(r"[：，。；！？]")          # S27: sentence punctua
 _PROSE_HINT_RE = re.compile(r"[\s\u4e00-\u9fff]")    # spaces or Chinese: allowed only when the line still reads as a path
 _PATHISH_RE = re.compile(r"/|\.[A-Za-z0-9]+$")
 _FILE_FINGERPRINT_RE = re.compile(r"(?<=\S) sha256:[0-9a-f]{12,64}$")   # S54 (v2.8): one space + lowercase digest, stripped
-REVIEW_NODES = {"Spec": "spec", "Plan": "plan", "接口提案": "interface", "最终验收": "final"}
+CONCLUSION_NODES = {"Spec": "spec", "Plan": "plan", "接口提案": "interface", "最终验收": "final"}
+REVIEW_NODES = {**CONCLUSION_NODES, "技术方案": "design"}              # v2.10: only 【交审】 takes 技术方案
 NOTICE_KINDS = {"开工": "start", "同步基线": "sync-baseline", "接口变更": "interface-change", "收尾": "wrap-up", "退回": "returned",
                 "挂起": "suspend", "恢复": "resume", "返工": "rework", "撤销批准": "approval-revoked",
                 "放行": "approved-by-review"}                                     # v2.9
 # notices whose 依据 must cite the user's approval: a hub item #N, or the coordinator's own approval C<N> (v2.0 draft)
 NEED_REF = ("start", "returned", "suspend", "resume", "approval-revoked", "approved-by-review")
 # v2.9: the node a 放行 notice approves — Spec / Plan (case sensitive, not touching a Latin letter) or 接口提案; the first wins
-_NOTICE_NODE_RE = re.compile(r"(?<![A-Za-z])(Spec|Plan)(?![A-Za-z])|接口提案")
-_NOTICE_NODES = {"Spec": "spec", "Plan": "plan"}
+_NOTICE_NODE_RE = re.compile(r"(?<![A-Za-z])(Spec|Plan)(?![A-Za-z])|接口提案|技术方案")    # v2.10: 技术方案
+_NOTICE_NODES = {"Spec": "spec", "Plan": "plan", "接口提案": "interface", "技术方案": "design"}
 _CREW_RE = re.compile(r"(?<![A-Za-z])C\s*(\d+)")
 _REVIEW_ID_RE = re.compile(r"(?<![A-Za-z])R-?\d+")
 _ARTIFACT_RE = re.compile(r"^(?:([^\s：:/]+)\s*[：:]\s*)?(/\S.*?)\s*[＠@]\s*([0-9a-f]{7,40})\s*(?:（\s*上一版\s*([0-9a-f]{7,40})\s*）)?$")
@@ -371,7 +372,7 @@ def _decisions(block: str, problems: list[str]) -> list[dict]:
 def _conclusion(fields: dict, problems: list[str], hints: list[str]) -> dict | None:
     _require(fields, ("审查编号", "节点", "送审方", "结论"), problems)
     raw_node = fields.get("节点", "").strip()
-    node = REVIEW_NODES.get(raw_node)
+    node = CONCLUSION_NODES.get(raw_node)
     if raw_node and node is None:
         problems.append("bad-node")
     raw = fields.get("结论", "").strip()
@@ -519,6 +520,11 @@ def parse(text: str) -> Message:
                 bad_line = True
         if bad_line:
             problems.append("bad-file-line")
+        module_id = fields.get("模块", "").strip()
+        if node == "design" and module_id:            # v2.10: both documents, exact paths, good lines only
+            listed = {f["path"] for f in files}
+            problems += [f"missing-design-file:{name}" for name in ("design.md", "regression.md")
+                         if f"tasks/{module_id}/{name}" not in listed]
         if fields.get("要点", "").strip() and _brief_thin(fields["要点"]):
             hints.append("brief-thin")
         extra = {"submission": {"module": fields.get("模块", "").strip() or None, "node": node, "files": files},
@@ -562,7 +568,7 @@ def parse(text: str) -> Message:
                             "localRefs": [f"C{n}" for n in _CREW_RE.findall(basis)]}}
         if notice_kind == "approved-by-review":          # v2.9
             hit = _NOTICE_NODE_RE.search(basis)
-            node = _NOTICE_NODES.get(hit.group(1), "interface") if hit else None
+            node = _NOTICE_NODES[hit.group(0)] if hit else None
             if node is None:
                 problems.append("missing-approval-node")
             extra["notice"]["node"] = node
@@ -720,7 +726,7 @@ def render_coordination_notice(kind: str, basis: str, todo: str, reason: str | N
     if (kind == "rework") != (round is not None):
         raise ValueError("「轮次」只用于返工类，且返工类必填")
     if kind == "approved-by-review" and not _NOTICE_NODE_RE.search(basis):
-        raise ValueError("放行类的「依据」必须写节点（Spec、Plan 或接口提案）")
+        raise ValueError("放行类的「依据」必须写节点（Spec、Plan、接口提案或技术方案）")
     if kind == "rework" and (not isinstance(round, int) or round < 1 or not _REVIEW_ID_RE.search(basis)):
         raise ValueError("返工类的「轮次」必须是正整数，「依据」必须写审查编号（R-N）")
     if (kind == "suspend") != bool(reason and reason.strip()):
@@ -738,6 +744,7 @@ GO_TO_SESSION_REQUIRED = ("会话", "被拦的操作", "点哪个按钮", "为�
 
 # v2.6: the upstream names (边界, 未决问题; Plan's 架构决定 and 未决问题) next to the old ones; each is kept as written.
 _SPEC_POINTS = ("目标", "做／不做", "边界", "要你确认的假设", "验收标准", "附带的小决定", "未决问题")
+_DESIGN_POINTS = ("现状调研", "影响面", "实现方案", "风险与回滚", "回归用例", "受影响的老功能", "未决问题")   # v2.10
 _PLAN_POINTS = ("架构决定", "分几步", "会改哪些文件", "风险", "中途会停下来问你的地方", "未决问题")
 # v2.3: 「类型」 name → (code, the fixed 要点 items in order); 去会话操作 is v2.2's and has none.
 WAIT_KINDS = {
@@ -750,10 +757,11 @@ WAIT_KINDS = {
     "最终验收": ("final", ("做了什么", "验收结果", "改了哪些文件", "Spec 中途改过吗")),
     "接口提案": ("interface", _SPEC_POINTS + ("改了哪个接口", "哪些模块要跟着改")),
     "卡住选做法": ("stuck", ("出了什么事",)),
+    "技术方案": ("design", _DESIGN_POINTS),                                          # v2.10
 }
 WAIT_KIND_NAME = {code: name for name, (code, _) in WAIT_KINDS.items()}
 REVIEW_POINTS = {code: names for code, names in ((c, n) for c, n in WAIT_KINDS.values())
-                 if code in ("spec", "plan", "interface", "final")}
+                 if code in ("spec", "plan", "interface", "design", "final")}
 
 
 def _point_names(names: tuple[str, ...]) -> list[tuple[re.Pattern, str]]:

@@ -1,5 +1,7 @@
 """0.11.1 (O8): the hook names the command entry of the loaded plugin; status reports a running/installed mismatch."""
 
+from __future__ import annotations
+
 import json
 import unittest
 from pathlib import Path

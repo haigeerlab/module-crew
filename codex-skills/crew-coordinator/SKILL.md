@@ -238,7 +238,8 @@ module-crew change accept <编号> --original-file <用户原话文件>     # �
    不要自己去找或猜 agent-relay 脚本的路径。输出里列出的还开着的等待记录，按下面「等待记录」一节处理。
 5. 一批合完：`module-crew merge push-plan` 把远端、新分支、提交与 PR 正文给用户看；用户明确授权后 `module-crew merge push --original-file <原话文件>`。
    push-plan 会写明 PR 开向哪个分支、是从哪里取的；集成分支只在本地、又读不出远端默认分支时它会停下，请用户说 PR 开向哪里，两条命令都带 `--pr-base <分支>`。项目的 pre-push 钩子会跑检查时推送要等较久（超时同完整检查）；`merge push` 要联网、写 `.git`，申请在沙箱外运行、前台跑；退出码 4 就把原因照实告诉用户。
-   推送去的是新分支 `crew/batch-<号>`，PR 由用户在远端合并；不开自动合并，不推集成分支本身。
+   推送去的是新分支 `crew/batch-<号>`，开 PR 时不开自动合并，不推集成分支本身。
+   远端合并（规范 v1.5 F3）：问用户「可以合并吗」；用户在对话里回「合并」后，`module-crew merge pr-merge <推送记录 C号> --original-file <原话文件>`，由 GitHub 等必需检查通过后合并（module-crew 用 `gh pr merge --auto --merge`；规范 v1.5.1：必需检查已全部通过、PR 状态为 CLEAN 时 `--auto` 会被 GitHub 拒绝，module-crew 改为直接 `gh pr merge --merge --match-head-commit`，退出码 0）。两条命令都要联网，申请在沙箱外运行。退出码 6 表示已排上、在等检查：跑 `module-crew merge pr-check <C号> --wait 1800`，不要自己轮询；0 才算合了，把它报的合并提交告诉用户，用户不用去 GitHub 点、也不用回来报。退出码 3 照输出原因告诉用户（仓库没开 Allow auto-merge、目标分支没有必需检查等，module-crew 不会改成直接合并），4 是自动合并被撤、PR 被关或 gh 出错，交用户决定、不要自己重下令。「合并：自动」（不问就合）不开。
 6. **合并前先复述**：每次 `merge run` 前，先把队首要合并的模块向用户复述一句（有决策收件箱时写进状态即可，不另问）。
    用户答错了、要收回还没合并的批准：用户同意后 `module-crew merge revoke <C号> --original-file <原话文件>`，把输出的撤销批准通知发给模块；已合并的撤不回，告诉用户只能另走回退。
 
@@ -276,6 +277,18 @@ module-crew change accept <编号> --original-file <用户原话文件>     # �
   收尾汇总是新开关 `config set --digest on|off`（要用户原话）——打开时同步通知、快检查与检查账、不经队列的提交、提前落地这几类不逐条告诉用户，**给用户发批量交审、最终验收，或 `merge cleanup` 本批收尾时**，先 `module-crew tier digest`，把正文写进那条消息，再 `module-crew tier digest --mark-told`（只是记账）；
   收窄通知、【等待用户】、修基线任务、权限弹窗和任何要用户决定的事不进汇总。
 - **底线**：三种必停情况（测试改不红、Spec 没覆盖的决策、高风险不可逆改动）照旧；合并队列里照样跑完整检查。
+
+## 新流程模块（spec-guard flow v2，S110）
+
+- **按 `/map --json` 的 `tier` 判**（spec-guard interface 1.18 起，老模块为空，一切照旧）。`review add` 自动拒收新流程模块的 Plan、bug／小改动的技术方案；
+  过渡写法「节点：Spec」只列 `design.md`、`regression.md` 的记作技术方案，并提示模块改写「节点：技术方案」。
+- **需求永远人批**：旧档位勾了 Spec 交 Codex 也不例外（批准方式写「新流程：需求永远由用户确认」，旧档位的 Plan 一项已不生效）。
+- **技术方案谁批**：重要需求人批；spec-guard 档位 `design=reviewer` 时登记行写「交第二审查者：下一步 review codex C<n>」，照「接管档位」一节的 `review codex`／`codex-note` 做——
+  命令是 `/delegate:review --profile design --backend auto --author-host <模块会话的宿主> …`，第 2 轮带 `--previous-report`，最多两轮，两轮仍有阻断交用户；
+  报告里没有可用审查者（`selection` 为 none）时 `codex-note` 记「未审放行」，由回归兜底；spec-guard 判这份免审时 `review add` 直接「免审放行」并发开工通知；读不到这些档位（上游未发版）一律人批。
+  对用户说「第二审查者放行」（同厂商时加「同厂商审查」）、「未审放行」、「免审放行」，不说成用户批准，也不发【用户答复】。
+- **开工通知的时机**：bug、小改动在需求批准后发；普通、重要在需求与技术方案都批准后发；通知让模块先写 Plan、todo、不交审，再构建。重批已批的那一份不再发开工通知。
+- **最终验收**：「验收结果」没有 `R<n>` 行的拒收；spec-guard 提供回归用例清单时，缺的用例（manual 除外）列出来拒收。
 
 ## 额度外包（项目开关 codexOffload，第十版第 2 轮）
 

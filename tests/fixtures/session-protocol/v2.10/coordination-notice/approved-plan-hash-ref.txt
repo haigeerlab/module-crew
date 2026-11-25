@@ -1,0 +1,4 @@
+【协调通知】
+类型：放行
+依据：#52（交审 C21）alpha 的 Plan 由 Codex 审过放行
+要你做什么：Plan 已由 Codex 放行，按 tasks/alpha/plan.md 开始构建

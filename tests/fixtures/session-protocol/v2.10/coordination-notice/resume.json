@@ -1,0 +1,41 @@
+{
+  "parse": {
+    "type": "coordination-notice",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "类型": "恢复",
+      "依据": "用户批准事项 #1015（恢复 vowels），挂起依据 #1012",
+      "要你做什么": "集成分支在挂起期间动过，先同步基线到 9a8b7c6，再从原停点继续"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": [],
+    "notice": {
+      "kind": "resume",
+      "refs": [
+        1015,
+        1012
+      ]
+    }
+  }
+}

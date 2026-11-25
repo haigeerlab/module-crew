@@ -1,0 +1,48 @@
+{
+  "generate": {
+    "kind": "multiline-user-reply",
+    "inputs": {
+      "item": 30,
+      "sender": "总协调",
+      "original": "30 A",
+      "answeredAt": "2026-10-17T11:00:00+08:00",
+      "waitUserFixture": "wait-user/multiline.txt",
+      "sourceRelayId": 4600,
+      "forSession": "API"
+    }
+  },
+  "parse": {
+    "type": "user-reply",
+    "valid": true,
+    "replyTo": null,
+    "end": {
+      "present": false,
+      "items": [],
+      "none": false,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": 30,
+    "fields": {
+      "事项": "#30（多线事项，发起方：总协调，原消息 #4600）",
+      "用户原话": "30 A",
+      "适用于你的范围": "改响应字段名并补兼容期旧字段，\n兼容期两周",
+      "答复时间": "2026-10-17T11:00:00+08:00",
+      "原事项全文": "【等待用户】\n结束：无\n来自：总协调\n要你决定：订单状态字段统一用哪套命名\n适用会话：前端、API\n各线范围：\n- 前端：只改类型定义和展示映射，不改接口调用\n- API：改响应字段名并补兼容期旧字段，\n  兼容期两周\n选项与我的建议：\n推荐 A：统一用 snake_case\n  选了会怎样：前端改映射，API 加兼容字段\nB：统一用 camelCase\n  选了会怎样：API 全量改名，前端不动\n你该回：30 A 统一用 snake_case\n是否完全停住：是"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": null,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [],
+    "hints": []
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "parse": {
+    "type": "shared-change-request",
+    "valid": false,
+    "replyTo": null,
+    "end": {
+      "present": true,
+      "items": [],
+      "none": true,
+      "unnumberedReason": null
+    },
+    "markers": [],
+    "item": null,
+    "fields": {
+      "来自": "crew-store",
+      "文件": ".gitignore",
+      "改什么": "忽略 .crew-tmp/ 目录",
+      "是否完全停住": "否"
+    },
+    "options": [],
+    "recommended": null,
+    "suggestedReply": null,
+    "fullyStopped": false,
+    "linesInScope": [],
+    "scopes": {},
+    "reviewLine": {
+      "status": "absent",
+      "adviceCount": null,
+      "ref": null
+    },
+    "conclusion": null,
+    "problems": [
+      "missing-field:为什么"
+    ],
+    "hints": [],
+    "changeRequest": {
+      "files": [
+        ".gitignore"
+      ]
+    }
+  }
+}

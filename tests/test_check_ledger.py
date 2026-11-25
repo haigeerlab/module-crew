@@ -1,4 +1,6 @@
 """crew-check-ledger: quick and full checks kept apart, results recorded per tree (see spec/crew-check-ledger.md)."""
+from __future__ import annotations
+
 import unittest
 
 from helpers import PLUGIN_ROOT, MergeCase, git
