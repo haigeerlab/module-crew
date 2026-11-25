@@ -1362,7 +1362,7 @@ def push(project: str | os.PathLike, original: str, pr_base: str | None = None) 
 
 
 PR_POLL_ENV = "MODULE_CREW_PR_POLL"      # seconds between pr-check --wait reads; tests set it short
-PR_FIELDS = "state,baseRefName,headRefOid,mergeCommit,mergedAt,autoMergeRequest"
+PR_FIELDS = "state,baseRefName,headRefOid,mergeCommit,mergedAt,autoMergeRequest,mergeStateStatus"
 GH_TIMEOUT = 60
 
 
@@ -1454,7 +1454,9 @@ def _judge(db: store.Store, n: int, view: dict) -> PrResult:
 
 def pr_merge(project: str | os.PathLike, n: int, original: str) -> PrResult:
     """crew-merge decision 12 (standard v1.5 F3): with the user's 「合并」, order GitHub to merge the batch PR once its
-    required checks pass (`gh pr merge --auto --merge`); refuse rather than fall back to a direct merge."""
+    required checks pass (`gh pr merge --auto --merge`); refuse rather than fall back to a direct merge.
+    Standard v1.5.1: when the required checks have already passed (mergeStateStatus CLEAN) GitHub rejects --auto,
+    so the PR is merged right away instead (`gh pr merge --merge --match-head-commit`), after the same refusals."""
     project = Path(project)
     if not original or not original.strip():
         return PrResult(3, ["用户原话不能为空：下令合并要用户在对话里说「合并」"])
@@ -1494,13 +1496,15 @@ def pr_merge(project: str | os.PathLike, n: int, original: str) -> PrResult:
         return PrResult(4, [f"读不到 {rec['base']} 的必需检查：{err}"])
     if not checks:
         return PrResult(3, [f"{rec['base']} 没有必需检查（经典分支保护和规则集里都没有）：--auto 会不等 CI 直接合并，没有下令"])
+    mode = "direct" if view.get("mergeStateStatus") == "CLEAN" else "auto"
     with db.transaction(actor="coordinator") as tx:
         cur = tx.get("item", str(n))
         tx.put("item", str(n), dict(cur, mergeRequest={"original": original, "requestedAt": store.now(),
-                                                       "headCommit": head, "error": None,
+                                                       "headCommit": head, "error": None, "mode": mode,
                                                        **store.source_field()}), action="pr-merge-requested")
     lines = [f"必需检查：{'、'.join(checks)}"]
-    done = _gh_run(gh, ["pr", "merge", pr, "--auto", "--merge", "--match-head-commit", head], project)
+    order = ["pr", "merge", pr] + (["--auto"] if mode == "auto" else []) + ["--merge", "--match-head-commit", head]
+    done = _gh_run(gh, order, project)
     failed = done if isinstance(done, str) else (
         None if done.returncode == 0 else (done.stderr.strip() or done.stdout.strip() or f"gh 退出码 {done.returncode}")[:300])
     if failed:
@@ -1509,7 +1513,8 @@ def pr_merge(project: str | os.PathLike, n: int, original: str) -> PrResult:
             tx.put("item", str(n), dict(cur, mergeRequest=dict(cur["mergeRequest"], error=failed)),
                    action="pr-merge-failed")
         return PrResult(4, lines + [f"下令合并失败：{failed}"])
-    lines.append(f"已下令 GitHub 在必需检查通过后合并 {pr}（合并提交方式）")
+    lines.append(f"必需检查已全部通过（CLEAN），已直接合并 {pr}（合并提交方式）" if mode == "direct"
+                 else f"已下令 GitHub 在必需检查通过后合并 {pr}（合并提交方式）")
     view, err = _gh_json(gh, ["pr", "view", pr, "--json", PR_FIELDS], project)
     if err:
         return PrResult(4, lines + [f"下令后读不到 PR 状态：{err}；稍后 merge pr-check C{n}"])
