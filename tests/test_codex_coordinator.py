@@ -240,20 +240,20 @@ def wait_until(cond, timeout=60.0):
     while time.monotonic() < end:
         if cond():
             return True
-        time.sleep(0.2)
+        time.sleep(0.05)
     return False
 
 
 class DetachCase(MergeCase):
-    """A final acceptance for b approved and queued; the full check sleeps so the merge outlives the parent."""
+    """A final acceptance for b approved and queued; a held full check makes the merge outlive the parent."""
 
     def setUp(self):
         super().setUp()
         self.db = store.open_store(self.repo)
         self.number = self.approve_final("b", 31)
 
-    def detach(self, sleep=3.0, fail_if=None):
-        return self.run_cli("merge", "run", "--check-command", self.check_script(fail_if=fail_if, sleep=sleep), "--detach")
+    def detach(self, hold=False, fail_if=None):
+        return self.run_cli("merge", "run", "--check-command", self.check_script(fail_if=fail_if, hold=hold), "--detach")
 
     def info(self):
         return json.loads((self.db.path / mergelock.INFO).read_text(encoding="utf-8"))
@@ -275,7 +275,7 @@ class DetachTest(DetachCase):
 
     def test_parent_returns_at_once_child_holds_the_lock(self):
         began = time.monotonic()
-        r = self.detach(sleep=4)
+        r = self.detach(hold=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertLess(time.monotonic() - began, 4)
         log = self.db.path / "merge-output" / f"C{self.number}.log"
@@ -285,6 +285,7 @@ class DetachTest(DetachCase):
         self.assertNotEqual(self.info()["pid"], os.getpid())
         self.assertEqual(self.run_cli("merge", "run", "--check-command", "python3 -c pass").returncode, 6)
         self.assertEqual(self.run_cli("coordinator", "down", "--original", "关").returncode, 6)
+        self.release()                                                      # T799: the held check ends now
         self.assertTrue(wait_until(lambda: "exitCode" in self.info()))      # written just after the lock goes
         self.assertFalse(mergelock.locked(self.db))
         info = self.info()
@@ -302,7 +303,7 @@ class DetachTest(DetachCase):
         self.assertFalse((self.db.path / "merge-output").exists())
 
     def test_killed_child_leaves_a_stale_lock(self):
-        self.assertEqual(self.detach(sleep=30).returncode, 0)
+        self.assertEqual(self.detach(hold=True).returncode, 0)
         self.assertTrue(wait_until(lambda: self.info().get("adopted")))      # the child has taken the lock over
         pid = self.info()["pid"]
         os.kill(pid, signal.SIGKILL)
@@ -339,11 +340,12 @@ class MergeResultTest(DetachCase):
         return wait_until(lambda: "exitCode" in case.info())
 
     def test_running_then_ready(self):
-        self.assertEqual(self.detach(sleep=6).returncode, 0)
+        self.assertEqual(self.detach(hold=True).returncode, 0)
         r = self.result()
         self.assertEqual(r.returncode, 6, r.stdout + r.stderr)
         self.assertIn("已跑", r.stdout)
-        self.assertEqual(self.result(f"C{self.number}", "--wait", "0.02").returncode, 6)     # minutes
+        self.assertEqual(self.result(f"C{self.number}", "--wait", "0.005").returncode, 6)    # minutes
+        self.release()
         r = self.result("--wait", "2")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn(f"C{self.number}", r.stdout)
@@ -358,7 +360,7 @@ class MergeResultTest(DetachCase):
                     if fail:
                         (c.tmp / "fail.flag").touch()
                 fore = fg.run_cli("merge", "run", "--check-command", fg.check_script(fail_if=flags[fg]))
-                self.assertEqual(bg.detach(sleep=0, fail_if=flags[bg]).returncode, 0)
+                self.assertEqual(bg.detach(fail_if=flags[bg]).returncode, 0)
                 self.assertTrue(self.finished(bg))
                 back = self.result(case=bg)
                 self.assertEqual((fore.returncode, back.returncode), (code, code), back.stdout)
@@ -377,7 +379,7 @@ class MergeResultTest(DetachCase):
         self.assertEqual(normalized(back.stdout, bg), normalized(fore.stdout + fore.stderr, fg))
 
     def test_read_once_status_line(self):
-        self.assertEqual(self.detach(sleep=0).returncode, 0)
+        self.assertEqual(self.detach().returncode, 0)
         self.assertTrue(self.finished())
         line = f"合并 C{self.number} 已结束，运行 merge result 取通知"
         self.assertIn(line, self.run_cli("status").stdout)

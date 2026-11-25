@@ -81,11 +81,12 @@ class OutputWaitTest(TimeoutCase):
     def test_daemon_holding_the_pipe_does_not_block(self):
         # the daemon leaves git's process group (setsid) but keeps the hook's stderr, i.e. git's pipe, open
         path = self.repo / ".git" / "hooks" / "pre-commit"
-        path.write_text(f'#!/bin/sh\npython3 -c "import os, time; os.setsid(); time.sleep(30)" {self.token} &\n'
-                        f'python3 -c "import time; time.sleep(5)" {self.token}\n', encoding="utf-8")
+        # T799: both children hold until the test ends instead of sleeping 30 s and 5 s
+        path.write_text(f'#!/bin/sh\n{self.hold(self.token, setsid=True)} &\n{self.hold(self.token)}\n',
+                        encoding="utf-8")
         os.chmod(path, 0o755)
         start = time.monotonic()
-        with mock.patch.object(probe, "OUTPUT_WAIT", 1):
+        with mock.patch.object(probe, "OUTPUT_WAIT", 0.3):
             with self.assertRaises(subprocess.TimeoutExpired):
                 probe._git(self.repo, "commit", "--allow-empty", "-q", "-m", "x", timeout=1)
         self.assertLess(time.monotonic() - start, 10)

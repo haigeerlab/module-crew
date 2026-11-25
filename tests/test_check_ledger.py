@@ -184,7 +184,7 @@ class QuickTest(LedgerCase):
         out = self.quick()
         self.assertEqual(out.returncode, 4, out.stdout + out.stderr)
         sleeper = self.tmp / "sleep.py"
-        sleeper.write_text("import time\ntime.sleep(5)\n", encoding="utf-8")
+        sleeper.write_text(self.hold_code(), encoding="utf-8")          # T799: outlasts checkTimeout without a sleep
         self.assertEqual(self.config_set("--quick-check-command", f"python3 {sleeper}").returncode, 0)
         from module_crew import merge
         merge._write_config(self.db, {**self.cfg(), "checkTimeout": 1})
@@ -391,7 +391,7 @@ class BaselineTest(LedgerCase):
         import subprocess, time
         from module_crew import mergelock
         slow = self.tmp / "slow.py"
-        slow.write_text("import time\ntime.sleep(4)\n", encoding="utf-8")
+        slow.write_text(self.hold_code(), encoding="utf-8")             # T799: runs until released
         self.switch_on(full=f"python3 {slow}")
         self.approve_final("b", 1)
         child = subprocess.Popen([str(PLUGIN_ROOT / "bin" / "module-crew"), "check", "baseline"], cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -405,6 +405,7 @@ class BaselineTest(LedgerCase):
             self.assertEqual(res.code, 6, res.lines)
             self.assertIn("基线检查", res.lines[0])
         finally:
+            self.release()
             out, err = child.communicate(timeout=60)
         self.assertEqual(child.returncode, 0, out + err)
         self.assertEqual(merge.run(self.repo).code, 0)

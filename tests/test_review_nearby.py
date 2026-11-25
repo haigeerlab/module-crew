@@ -587,7 +587,7 @@ class ReturnKindTest(MergeCase):
         n = self.approve_final("b", 1)
         with db.transaction(actor="t") as tx:       # S30: a check that cannot run is not returned; a timeout is
             tx.put("config", "main", dict(tx.get("config", "main") or {}, checkTimeout=1), action="set")
-        res = merge.run(self.repo, check_command=self.check_script(sleep=3))
+        res = merge.run(self.repo, check_command=self.check_script(hold=True))
         self.assertEqual(res.code, 5, res.lines)
         self.assertEqual(store.get(db, "item", str(n))["returnKind"], "env")
         [note] = [x for x in res.sends if x["to"] == "shop-b"]
