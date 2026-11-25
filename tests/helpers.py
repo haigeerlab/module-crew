@@ -72,6 +72,10 @@ class RepoCase(unittest.TestCase):
     SESSION_VARS = ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_CODE_HOST_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT")
 
     def setUp(self) -> None:
+        self._fresh_tmp()
+        self.repo = make_repo(self.tmp)
+
+    def _fresh_tmp(self) -> None:
         # 0.9.4: the conversation running the tests must not leak into them (start prepare binds the coordinator
         # from these); tests that need one set it explicitly. Restored afterwards; subprocesses inherit the removal.
         for key in self.SESSION_VARS:
@@ -80,7 +84,6 @@ class RepoCase(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="crew-test-")).resolve()
         assert self.tmp.is_relative_to(_TMP_ROOT), self.tmp
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self.repo = make_repo(self.tmp)
 
     def hold_code(self) -> str:
         """T799: Python lines that stand for "still running" without a fixed sleep: they wait until `release()` (or
@@ -233,6 +236,16 @@ class FakePlugins:
         self.count = 0
         self.write()
 
+    @classmethod
+    def load(cls, root: Path, count: int) -> "FakePlugins":
+        """T800: the fake records already on disk under `root` (a restored snapshot), without rewriting them."""
+        plugins = cls.__new__(cls)
+        plugins.root = root
+        plugins.records = root / "plugins" / "installed_plugins.json"
+        plugins.entries = json.loads(plugins.records.read_text())["plugins"]
+        plugins.count = count
+        return plugins
+
     def write(self) -> None:
         self.records.write_text(json.dumps({"version": 2, "plugins": self.entries}))
 
@@ -308,7 +321,10 @@ class ProbeCase(RepoCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.plugins = FakePlugins(self.tmp / "claude")
+        self._use_plugins(FakePlugins(self.tmp / "claude"))
+
+    def _use_plugins(self, plugins: "FakePlugins") -> None:
+        self.plugins = plugins
         old = os.environ.get("MODULE_CREW_PLUGINS_FILE")
         os.environ["MODULE_CREW_PLUGINS_FILE"] = str(self.plugins.records)
         self.addCleanup(lambda: os.environ.__setitem__("MODULE_CREW_PLUGINS_FILE", old) if old
@@ -377,6 +393,10 @@ class StartCase(ProbeCase):
         self.plugins.install("spec-guard", spec_guard_interface("1.7"), map_script=True)
         self.map_file = self.tmp / "map.json"
         self.set_map(START_MAP)
+        self._use_map()
+
+    def _use_map(self) -> None:
+        self.map_file = self.tmp / "map.json"
         os.environ["FAKE_MAP_FILE"] = str(self.map_file)
 
     def set_map(self, doc: dict) -> None:
@@ -391,10 +411,69 @@ def review_text(module: str, node: str, files: list[tuple[str, Path]], end: str 
                       "要点：", "- 做：页面与接口", "- 不做：后台"]) + "\n"
 
 
+# T800: test class -> (template dir, temp dir it was built in, plugin install count, module worktrees relative to it)
+_SNAPSHOTS: dict[type, tuple[Path, str, int, dict[str, str]]] = {}
+
+
+def _move_tree(root: Path, old: str) -> None:
+    """Point every absolute path under `root` that still names `old` (the dir it was built in) at `root` itself:
+    git worktree links (.git files, .git/worktrees/*/gitdir), the module-crew store and the fake plugin records.
+    Both paths come from mkdtemp with the same prefix, so they have the same length and binary files stay valid."""
+    src, dst = old.encode(), str(root).encode()
+    assert len(src) == len(dst), (old, root)
+    for dirpath, dirnames, filenames in os.walk(root):
+        if "objects" in dirnames and os.path.basename(dirpath) == ".git":
+            dirnames.remove("objects")              # compressed and content-addressed: never holds the temp path
+        for name in filenames:
+            path = Path(dirpath) / name
+            if path.is_symlink():
+                target = os.readlink(path)
+                if old in target:
+                    path.unlink()
+                    path.symlink_to(target.replace(old, str(root)))
+                continue
+            data = path.read_bytes()
+            if src in data:
+                path.write_bytes(data.replace(src, dst))
+
+
 class ReviewCase(StartCase):
-    """Two module worktrees (b, c) opened by crew-start, each with a committed Spec and Plan."""
+    """Two module worktrees (b, c) opened by crew-start, each with a committed Spec and Plan.
+
+    T800: the first test of each class builds this for real and keeps a copy; the later tests of the class get a fresh
+    copy of it under their own temp dir (paths rewritten, git index refreshed) instead of redoing crew-start."""
 
     def setUp(self) -> None:
+        snap = _SNAPSHOTS.get(type(self))
+        if snap is not None:
+            self._restore(*snap)
+            return
+        self._build()
+        self._snapshot()
+
+    def _snapshot(self) -> None:
+        template = Path(tempfile.mkdtemp(prefix="crew-tpl-")).resolve()
+        shutil.rmtree(template)
+        shutil.copytree(self.tmp, template, symlinks=True)
+        cls = type(self)
+        _SNAPSHOTS[cls] = (template, str(self.tmp), self.plugins.count,
+                           {m: str(wt.relative_to(self.tmp)) for m, wt in self.wt.items()})
+        cls.addClassCleanup(shutil.rmtree, template, True)
+        cls.addClassCleanup(_SNAPSHOTS.pop, cls, None)
+
+    def _restore(self, template: Path, old: str, count: int, worktrees: dict[str, str]) -> None:
+        self._fresh_tmp()
+        shutil.rmtree(self.tmp)
+        shutil.copytree(template, self.tmp, symlinks=True)
+        _move_tree(self.tmp, old)
+        self.repo = self.tmp / "repo"
+        self._use_plugins(FakePlugins.load(self.tmp / "claude", count))
+        self._use_map()
+        self.wt = {m: self.tmp / rel for m, rel in worktrees.items()}
+        for checkout in (self.repo, *self.wt.values()):     # copying changed inodes and ctimes: re-stat, not dirty
+            git(checkout, "update-index", "-q", "--refresh")
+
+    def _build(self) -> None:
         super().setUp()
         from module_crew import start
         res = start.prepare(self.repo, ["b", "c"], "开 b 和 c", short="shop", max_modules=3)  # room for a third
