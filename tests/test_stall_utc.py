@@ -18,10 +18,22 @@ def utc_commit(path, name="utc.txt"):
     subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", "utc"], check=True, env=env)
 
 
+def is_utc_iso(text):
+    """Newer git prints a UTC %cI as ...Z; the /usr/bin/git on the CI macOS runner prints ...+00:00 (T793)."""
+    return text.endswith(("Z", "+00:00"))
+
+
+class UtcSuffixTest(unittest.TestCase):
+    def test_accepts_z_and_offset(self):
+        self.assertTrue(is_utc_iso("2026-11-25T08:00:00Z"))
+        self.assertTrue(is_utc_iso("2026-11-25T08:00:00+00:00"))
+        self.assertFalse(is_utc_iso("2026-11-25T08:00:00+08:00"))
+
+
 class UtcCommitTest(ReviewCase):
     def test_git_prints_z(self):
         utc_commit(self.repo)
-        self.assertTrue(git(self.repo, "log", "-1", "--format=%cI").strip().endswith("Z"))
+        self.assertTrue(is_utc_iso(git(self.repo, "log", "-1", "--format=%cI").strip()))
 
     def test_first_parents_reads_utc(self):
         utc_commit(self.repo)
