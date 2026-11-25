@@ -69,8 +69,8 @@ class CleanupTimeoutTest(TimeoutCase):
         import shutil
         fake = self.tmp / "bin"            # a fake git on PATH whose worktree remove outlasts checkTimeout (1 s)
         fake.mkdir()
-        (fake / "git").write_text(f'#!/bin/sh\ncase "$*" in *"worktree remove"*) exec python3 -c "import time; '
-                                  f'time.sleep(5)" {self.token};; esac\nexec {shutil.which("git")} "$@"\n')
+        (fake / "git").write_text(f'#!/bin/sh\ncase "$*" in *"worktree remove"*) exec {self.hold(self.token)};; esac\n'
+                                  f'exec {shutil.which("git")} "$@"\n')
         (fake / "git").chmod(0o755)
         env = dict(os.environ, CLAUDE_CODE_SESSION_ID="sid-coord", PATH=f"{fake}:{os.environ['PATH']}")
         out = self.run_cli("merge", "cleanup", "b", "--original-file", str(words), env=env)

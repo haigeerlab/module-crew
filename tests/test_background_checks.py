@@ -102,12 +102,13 @@ class MergeRunLockTest(MergeCase):
 
     def test_lock_held_and_released(self):
         approval = self.approve_final("b", 5100)
-        proc = self.background_run(self.check_script(sleep=4))
+        proc = self.background_run(self.check_script(hold=True))
         info = mergelock.read(self.db)
         self.assertEqual((info["approval"], info["unit"]), (approval, "b"))
         second = self.run_cli("merge", "run")
         self.assertEqual(second.returncode, 6, second.stdout + second.stderr)
         self.assertIn("正在后台跑", second.stdout + second.stderr)
+        self.release()                                  # T799: the check ends now, not after a fixed sleep
         out, err = proc.communicate(timeout=120)
         self.assertEqual(proc.returncode, 0, out + err)
         self.assertIsNone(mergelock.read(self.db))

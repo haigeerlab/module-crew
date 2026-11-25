@@ -807,8 +807,12 @@ class NarrowTest(TierMixin, NarrowMixin, MergeCase):
     def test_env_return_does_not_narrow(self):
         from module_crew import merge
         self.with_narrow("merge")
-        self.approve_final("b", 1)
-        res = merge.run(self.repo, check_command=self.check_script(sleep=3))
+        n = self.approve_final("b", 1)
+        with self.db.transaction(actor="t") as tx:     # T799: the check really times out (an env return)
+            tx.put("config", "main", dict(tx.get("config", "main") or {}, checkTimeout=1), action="set")
+        res = merge.run(self.repo, check_command=self.check_script(hold=True))
+        self.assertEqual(res.code, 5, res.lines)
+        self.assertEqual(store.get(self.db, "item", str(n))["returnKind"], "env")
         self.assertNotIn("接管档位", "\n".join(res.lines))
         self.assertEqual(self.calls(), [])
 

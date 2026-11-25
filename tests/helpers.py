@@ -8,10 +8,18 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 _TMP_ROOT = Path(tempfile.gettempdir()).resolve()
+HOLD_CAP = 60
+
+HOLD_WAIT = f'''import os, time
+end = time.monotonic() + {HOLD_CAP}
+while not os.path.exists({{release!r}}) and time.monotonic() < end:
+    time.sleep(0.02)
+'''
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -41,6 +49,23 @@ def make_worktree(repo: Path, name: str) -> Path:
     return path
 
 
+class Clock:
+    """T799: an injectable store.now(); `advance()` stands in for sleeping past a whole second."""
+
+    def __init__(self, ahead: int = 0) -> None:
+        self.at = datetime.now().astimezone().replace(microsecond=0) + timedelta(seconds=ahead)
+
+    def __call__(self) -> str:
+        return self.at.isoformat(timespec="seconds")
+
+    def advance(self, seconds: int = 2) -> None:
+        self.at += timedelta(seconds=seconds)
+
+    def git_env(self) -> dict:
+        """Environment that dates a git commit at the clock's time."""
+        return {"GIT_COMMITTER_DATE": self(), "GIT_AUTHOR_DATE": self()}
+
+
 class RepoCase(unittest.TestCase):
     """Each test gets a fresh repo under the system temp dir; nothing else is touched."""
 
@@ -56,6 +81,36 @@ class RepoCase(unittest.TestCase):
         assert self.tmp.is_relative_to(_TMP_ROOT), self.tmp
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.repo = make_repo(self.tmp)
+
+    def hold_code(self) -> str:
+        """T799: Python lines that stand for "still running" without a fixed sleep: they wait until `release()` (or
+        the end of the test) and give up after HOLD_CAP seconds."""
+        release = self.tmp / "hold.release"
+        if not getattr(self, "_hold_cleanup", False):
+            self._hold_cleanup = True
+            self.addCleanup(self.release)               # runs before the temp dir goes
+        return HOLD_WAIT.format(release=str(release))
+
+    def hold(self, *extra: str, setsid: bool = False) -> str:
+        """A shell command running `hold_code()`; `extra` words (e.g. a pkill token) go on its command line,
+        `setsid` makes it leave its process group first, like a daemon."""
+        script = self.tmp / ("hold-setsid.py" if setsid else "hold.py")
+        script.write_text(("import os\nos.setsid()\n" if setsid else "") + self.hold_code(), encoding="utf-8")
+        return " ".join(["python3", str(script), *extra])
+
+    def fake_clock(self, ahead: int = 60) -> "Clock":
+        """T799: store.now() from a clock that moves only on `advance()`, so a test needs no sleep to get a later
+        second; it starts `ahead` seconds past the real clock so everything set up before reads as earlier."""
+        from unittest import mock
+        clock = Clock(ahead)
+        patcher = mock.patch("module_crew.store.now", clock)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return clock
+
+    def release(self) -> None:
+        """Lets every `hold()` command of this test finish."""
+        (self.tmp / "hold.release").touch()
 
     def run_cli(self, *args: str, cwd: Path | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
         env = dict(os.environ) if env is None else env
@@ -386,11 +441,12 @@ class MergeCase(ReviewCase):
         res = merge.approve(db, out.number, f"{m} 验收通过")
         return res.approval
 
-    def check_script(self, fail_if: str | None = None, sleep: float = 0) -> str:
-        """A full-check command: fails when file `fail_if` exists in the checkout, or sleeps."""
+    def check_script(self, fail_if: str | None = None, hold: bool = False) -> str:
+        """A full-check command: fails when file `fail_if` exists in the checkout. `hold` keeps it running until
+        `release()` (T799: instead of sleeping a fixed time)."""
         script = self.tmp / "check.py"
         script.write_text(
-            "import os, sys, time\n"
-            f"time.sleep({sleep})\n"
-            f"sys.exit(1 if {fail_if!r} and os.path.exists({fail_if!r}) else 0)\n", encoding="utf-8")
+            "import os, sys\n"
+            + (self.hold_code() if hold else "")
+            + f"sys.exit(1 if {fail_if!r} and os.path.exists({fail_if!r}) else 0)\n", encoding="utf-8")
         return f"python3 {script}"

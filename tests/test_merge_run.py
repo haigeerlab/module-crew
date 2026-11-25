@@ -176,7 +176,7 @@ class MergeTest(RunCase):
         with self.db.transaction(actor="t") as tx:
             tx.put("config", "main", dict(tx.get("config", "main"), checkTimeout=1), action="set")
         before = tree(self.repo)
-        res = merge.run(self.repo, check_command=self.check_script(sleep=3))
+        res = merge.run(self.repo, check_command=self.check_script(hold=True))
         self.assert_returned(res, n, "超时")
         self.assertEqual(tree(self.repo), before)
 
