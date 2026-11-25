@@ -1,17 +1,27 @@
 name: CI
 
+# 照 autopilot-hub 模板 examples/caller-ci-standard.yml（hub#69 之后）。hub 钉在 b34560f8d398cd946f2fc3f0cd7526d336f59a01，
+# 本文件里 hub 的 checkout ref、rules 的 uses: 与 hub_ref 三处必须是同一个 40 位 SHA；改本文件或换钉是 T4。
 # 「CI required」是汇总任务，供主干保护设为合并前必须通过；所以本 workflow 不加路径过滤（被过滤掉的运行不会上报，PR 会一直等它）。
 on:
   pull_request:
+    # edited：改标题或描述时整套 CI 重跑。edited 时不许跳过任何任务：「CI required」把 skipped 当通过，
+    # 跳过测试就会让改个标题把失败的 PR 变绿。
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
-# 顶层不给任何权限，每个任务按需单独放权。
+# 同一个 PR（或同一次推送 main）只留一次运行，新事件取消前一次。
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# 顶层不给任何权限，每个任务按需单独放权（C8）。
 permissions: {}
 
 jobs:
   test:
-    name: test (${{ matrix.python }})
+    name: test (${{ matrix.name }})
     runs-on: macos-15
     timeout-minutes: 45
     permissions:
@@ -19,7 +29,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ['3.9', '3.13']
+        include:
+          # C4：macOS 用户实际在用的系统 Python（/usr/bin/python3，3.9），和一个当前版本。
+          - {name: macos-system, python: ""}
+          - {name: "3.13", python: "3.13"}
     defaults:
       run:
         shell: bash
@@ -34,111 +47,92 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      # 3.9 用 Apple 命令行工具自带的 /usr/bin/python3：macOS 用户实际在用的版本。
-      - name: Python 3.9（Apple 命令行工具）
-        if: matrix.python == '3.9'
-        run: |
-          mkdir -p "$RUNNER_TEMP/py39"
-          ln -s /usr/bin/python3 "$RUNNER_TEMP/py39/python3"
-          echo "$RUNNER_TEMP/py39" >> "$GITHUB_PATH"
-      - name: Python 3.13
-        if: matrix.python == '3.13'
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: matrix.python != ''
         with:
-          python-version: '3.13'
-
-      - name: 核对 Python 版本
+          python-version: ${{ matrix.python }}
+      - name: 全量检查（C2）
         env:
-          WANT_PYTHON: ${{ matrix.python }}
+          MATRIX_PYTHON: ${{ matrix.python }}
         run: |
+          # 系统 Python 那一行把 /usr/bin/python3（3.9）放到 PATH 最前，validate.sh 跑的就是用户在用的版本。
+          if [ -z "$MATRIX_PYTHON" ]; then export PATH="/usr/bin:${PATH}"; fi
           git --version
-          python3 -c 'import os, sys; want = tuple(map(int, os.environ["WANT_PYTHON"].split("."))); print(sys.executable, sys.version.split()[0]); sys.exit(sys.version_info[:2] != want)'
-
-      - name: 全量检查
-        run: bash scripts/validate.sh
-      - name: 检查没有改动已跟踪文件
+          python3 --version
+          bash scripts/validate.sh
+      - name: 工作区仍然干净（C10）
         run: git diff --exit-code
 
-  plugin:
-    name: plugin
+  plugin-validate:
+    name: plugin validate (C7)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      # 所有仓库钉同一个 CLI 版本（发布至少 7 天）；要升就在各仓库一起改这里。
+      CLAUDE_CODE_VERSION: "2.1.321"
+      DISABLE_AUTOUPDATER: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      - name: 按钉住的 SHA 取 autopilot-hub（只用脚本）
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: '3.13'
-
-      # claude plugin validate 不查 YAML 能否解析，所以另用脚本真正解析 frontmatter。只在 CI 里装 PyYAML；插件本身仍只用标准库。
-      # skill、agent 要 name 与 description；command 只要 description（名字取自文件名）。
-      - name: 校验 skill、command、agent 的 frontmatter
+          repository: haigeerlab/autopilot-hub
+          ref: b34560f8d398cd946f2fc3f0cd7526d336f59a01
+          path: .hub
+          persist-credentials: false
+      - name: 对导出副本跑 claude plugin validate --strict
         run: |
-          python3 -m pip install --disable-pip-version-check pyyaml==6.0.2
-          python3 - <<'EOF'
-          import glob, sys, yaml
-          def find(*patterns):
-              return sorted({p for pat in patterns for p in glob.glob(pat, recursive=True)})
-          groups = [
-              (find("skills/*/SKILL.md", "codex-skills/*/SKILL.md"), ("name", "description")),
-              (find("agents/**/*.md"), ("name", "description")),
-              (find("commands/**/*.md"), ("description",)),
-          ]
-          bad, count = [], 0
-          for files, required in groups:
-              for path in files:
-                  count += 1
-                  text = open(path, encoding="utf-8").read()
-                  parts = text.split("\n---\n", 1) if text.startswith("---\n") else None
-                  if not parts or len(parts) < 2:
-                      bad.append(f"{path}: 没有 frontmatter"); continue
-                  try:
-                      meta = yaml.safe_load(parts[0][4:])
-                  except yaml.YAMLError as e:
-                      bad.append(f"{path}: YAML 解析失败：{e}"); continue
-                  if not isinstance(meta, dict):
-                      bad.append(f"{path}: frontmatter 不是映射"); continue
-                  for key in required:
-                      if not isinstance(meta.get(key), str) or not meta[key].strip():
-                          bad.append(f"{path}: 缺少 {key}")
-          print(f"检查了 {count} 个文件")
-          for line in bad:
-              print(f"::error::{line}")
-          sys.exit(1 if bad or not count else 0)
-          EOF
+          # 对 git archive 导出的副本校验。仓库根就是插件根时，去掉根目录的 CLAUDE.md、AGENTS.md：
+          # 官方命令在那里把它们当错误（规范 C7，v1.4）。
+          export_dir="${RUNNER_TEMP}/plugin-export"
+          mkdir -p "${export_dir}"
+          git archive HEAD | tar -x -C "${export_dir}"
+          if [ -f "${export_dir}/.claude-plugin/plugin.json" ]; then rm -f "${export_dir}/CLAUDE.md" "${export_dir}/AGENTS.md"; fi
+          cd "${export_dir}"
+          claude() { npx --yes "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "$@"; }
+          claude plugin validate --strict .
+          python3 - <<'PY' > "${RUNNER_TEMP}/plugin-dirs.txt"
+          import json, os
+          data = json.load(open(".claude-plugin/marketplace.json", encoding="utf-8"))
+          for entry in data.get("plugins") or []:
+              src = entry.get("source") if isinstance(entry, dict) else None
+              if isinstance(src, str) and os.path.normpath(src) not in (".", ""):
+                  print(os.path.normpath(src))
+          PY
+          while read -r dir; do claude plugin validate --strict "${dir}"; done < "${RUNNER_TEMP}/plugin-dirs.txt"
+      - name: skill、command、agent 的 frontmatter 真能解析（C7）
+        run: python3 -B .hub/rules/frontmatter.py --repo .
 
-      - name: 安装 Claude Code
-        run: |
-          npm install -g @anthropic-ai/claude-code@latest
-          claude --version
-      # 仓库根就是插件根；根目录的 CLAUDE.md、AGENTS.md 是开发规矩，不是插件内容，--strict 会因它们告警。
-      # 所以对 git archive 导出的、去掉这两份的副本跑。
-      - name: claude plugin validate --strict
-        run: |
-          dir="$RUNNER_TEMP/plugin-export"
-          mkdir -p "$dir"
-          git archive HEAD -- . ':(exclude)CLAUDE.md' ':(exclude)AGENTS.md' | tar -x -C "$dir"
-          claude plugin validate --strict "$dir"
+  rules:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: read
+    uses: haigeerlab/autopilot-hub/.github/workflows/rules.yml@b34560f8d398cd946f2fc3f0cd7526d336f59a01
+    with:
+      hub_ref: b34560f8d398cd946f2fc3f0cd7526d336f59a01
+      # 影子运行期间用 report；用户看过影子运行结果后再改成 enforce。
+      mode: report
 
-      # 预留：zizmor 与 hub 共享检查由 hub 提供，接入时加在这里，不在本仓库另写。
-
-  required:
+  ci-required:
     name: CI required
     if: always()
-    needs: [test, plugin]
+    needs: [test, plugin-validate, rules]
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     permissions: {}
     steps:
-      - name: 汇总
+      - name: 每个 CI 任务都成功（skipped 表示这类事件不跑，例如推送时的 rules）
         env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          echo "各任务结果：$RESULTS"
-          case " $RESULTS " in
-            *" failure "*|*" cancelled "*) exit 1 ;;
-          esac
+          printf '%s' "$NEEDS" | python3 -c '
+          import json, sys
+          bad = {job: r["result"] for job, r in json.load(sys.stdin).items() if r["result"] not in ("success", "skipped")}
+          print(bad or "all CI jobs succeeded")
+          sys.exit(1 if bad else 0)'
