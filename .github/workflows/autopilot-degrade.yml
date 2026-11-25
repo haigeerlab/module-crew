@@ -1,0 +1,29 @@
+# 照 autopilot-hub 模板 examples/caller-autopilot-degrade.yml（hub b34560f）。
+# uses: 与 hub_ref 两处必须是同一个 40 位 hub 提交 SHA；<MAIN_CI> 填本仓库主 CI 的 name:（CI）。
+# 增改本文件是 T4：仓库所有者提交，人来合并。
+name: autopilot-degrade
+
+on:
+  push:
+    branches: [main]
+  # 只读取 workflow_run 的结果，从不检出或执行 PR 代码；hub 体检 C9 另行守着这一点。
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  issues:
+    types: [labeled, closed]  # closed：切片 11，只有管理员关闭才解除降级 issue
+
+# 插件规范 C8：顶层不给权限，每个任务按需申请。
+permissions: {}
+
+jobs:
+  degrade:
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+      actions: read
+    uses: haigeerlab/autopilot-hub/.github/workflows/degrade.yml@b34560f8d398cd946f2fc3f0cd7526d336f59a01
+    with:
+      hub_ref: b34560f8d398cd946f2fc3f0cd7526d336f59a01
