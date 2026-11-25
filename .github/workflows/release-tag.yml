@@ -1,0 +1,37 @@
+# 照 autopilot-hub 模板 examples/caller-release-tag.yml（hub b34560f，插件规范 v1.5 B5）：检查每个推送的发版标签。
+# 已推送的标签拦不住；这里失败就删掉远端标签重打（附注标签，名为 v<版本>，打在默认分支上的提交）。改本文件是 T4。
+name: release-tag
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  release-tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - name: 按钉住的 SHA 取 autopilot-hub（只用脚本）
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: haigeerlab/autopilot-hub
+          ref: b34560f8d398cd946f2fc3f0cd7526d336f59a01
+          path: .hub
+          persist-credentials: false
+      - name: 标签名、附注、在默认分支上（B5）
+        env:
+          TAG: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # 推送可能带的是轻量标签、被 checkout 重建过；从远端读真实对象
+          git fetch --force origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          python3 -B .hub/rules/release_tag.py --repo . --tag "${TAG}" --default-branch "${DEFAULT_BRANCH}" --no-fetch
