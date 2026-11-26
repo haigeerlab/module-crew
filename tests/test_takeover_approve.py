@@ -38,19 +38,16 @@ class RetireTest(TierMixin, DeclaredMixin, ReviewCase):
             tx.put("config", "main", {**cfg, "autonomy": {"cap": "strict", "capFor": "standard"}}, action="tier-lowered")
         self.assertEqual(start.review_cadence(self.repo), "combined")   # only spec-guard's reviewCadence counts
 
-    def test_migration_hint(self):
+    def test_no_migration_hint(self):
+        """T827: the retired-tier hint is gone with the tier read."""
         self.with_tier()
-        code, out = self.cli("tier")
-        self.assertNotIn("autonomyTier 已退役", out)
         self.set_tier("relaxed")
         code, out = self.cli("tier")
         self.assertEqual(code, 0)
-        self.assertIn("autonomyTier 已退役、不再生效（旧值 relaxed 不映射为接管档位）", out)
-        doc = json.loads(self.cli("tier", "--json")[1])
-        self.assertEqual(doc["retiredTier"], "relaxed")
+        self.assertNotIn("autonomyTier 已退役", out)
+        self.assertNotIn("retiredTier", json.loads(self.cli("tier", "--json")[1]))
         code, out = self.cli("status")
-        self.assertIn("autonomyTier 已退役", out)
-        self.assertNotIn("可以建议升到", out)
+        self.assertNotIn("autonomyTier 已退役", out)
 
     def test_status_unchanged_without_old_tier(self):
         self.with_tier()
