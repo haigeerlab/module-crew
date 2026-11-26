@@ -4,7 +4,7 @@
 
 中文 | [English](README.en.md)
 
-> 版本 0.24.2 · 许可证 [MIT](LICENSE)
+> 版本 0.25.0 · 许可证 [MIT](LICENSE)
 
 ## 它解决什么
 
@@ -35,7 +35,7 @@ module-crew 在它之上加一层运行层：
 | [agent-relay](https://github.com/haigeerlab/agent-relay) | 必需，接口主版本 2。会话之间用它收发消息 |
 | [spec-guard](https://github.com/haigeerlab/spec-guard-plugin) | 必需，0.68.0 起（接口 1.1 的规划层）；项目已启用 spec-guard 的本地多 Spec 约定（`spec/CAPABILITY-MAP.md`）：还没启用就先在项目里跑 `/spec-guard:setup-convention local`，否则体检报阻塞、`start plan` 退出码 3。声明范围、额度外包要 0.85.0 起（接口 1.11）；接管档位要 0.91.0 起（接口 1.15） |
 | [delegate](https://github.com/haigeerlab/delegate-plugin) | 可选，打开额度外包时要 0.8.0 起（接口 1.3）；接管档位里有「Codex 放行」时要接口 1.5 起 |
-| session-protocol | 会话间消息的格式契约，module-crew 钉住 v2.9（契约本身随 module-crew 内置的解析器生效，不用另装）；决策收件箱讲的契约与它同为 2.x 即兼容 |
+| session-protocol | 会话间消息的格式契约，module-crew 钉住 v2.10（契约本身随 module-crew 内置的解析器生效，不用另装）；决策收件箱讲的契约与它同为 2.x 即兼容 |
 | 项目 | git 仓库，能建 worktree；有一条能在本地跑完的完整检查命令，合并后用它判断集成是否通过 |
 | 运行环境 | Python 3（只用标准库；开发与测试用 3.10） |
 
