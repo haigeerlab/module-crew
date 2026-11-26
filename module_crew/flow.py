@@ -169,5 +169,5 @@ def final_reasons(evidence: list[str], cases: list[dict] | None, module_id: str)
     if cases is None:
         return []
     missing = [str(c.get("id")) for c in cases
-               if c.get("id") and str(c.get("id")) not in have and (c.get("method") or c.get("execution")) != "manual"]
+               if c.get("id") and str(c.get("id")) not in have and c.get("method") != "manual"]
     return [f"「验收结果」缺这些回归用例：{'、'.join(missing)}（执行方式为 manual 的写「待用户测」即可）"] if missing else []
