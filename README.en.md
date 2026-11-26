@@ -37,7 +37,7 @@ There are also light tasks (轻任务: a single feature or bug that skips the Sp
 | [agent-relay](https://github.com/haigeerlab/agent-relay) | Required, interface major version 2. Sessions exchange messages through it |
 | [spec-guard](https://github.com/haigeerlab/spec-guard-plugin) | Required, 0.68.0 or later (planning layer, interface 1.1), with spec-guard's local multi-spec convention enabled in the project (`spec/CAPABILITY-MAP.md`): if it is not enabled yet, run `/spec-guard:setup-convention local` in the project first, otherwise the health check reports a blocker and `start plan` exits with 3. Declared scope and quota offload need 0.85.0 or later (interface 1.11); takeover needs 0.91.0 or later (interface 1.15) |
 | [delegate](https://github.com/haigeerlab/delegate-plugin) | Optional: quota offload needs 0.8.0 or later (interface 1.3); a takeover with "Codex approves" needs interface 1.5 or later |
-| session-protocol | The message format contract between sessions; module-crew pins v2.9 (enforced by module-crew's built-in parser, nothing to install); a decision inbox speaking any 2.x version of the contract is compatible |
+| session-protocol | The message format contract between sessions; module-crew pins v2.10 (enforced by module-crew's built-in parser, nothing to install); a decision inbox speaking any 2.x version of the contract is compatible |
 | Project | A git repository that can host worktrees, with one full check command that runs locally; it decides whether a merge passes |
 | Runtime | Python 3 (standard library only; developed and tested on 3.10) |
 
