@@ -2,6 +2,27 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.25.0 的变化（新流程版本：跟随 spec-guard 新流程；PR 由模块协调凭「合并」原话合并；autonomyTier 读取路径删除；CI 与测试提速）
+
+覆盖 0.24.2（8bb543d）之后 main 上的全部改动：模块 crew-flow-v2（合并批准 C740）、crew-merge 第 2 轮（规范 v1.5 F3，C754）与轻任务 T682、T720、T750、T760、T761、T764、T782、T793、T799、T800、T802、T827。`interface.json` 的 `interface` 仍是 1.1，契约改钉 session-protocol v2.10（`contract` 2.10，bf0b973）。状态库不用迁移。
+
+- **跟随 spec-guard 新流程**（crew-flow-v2，S110）：spec-guard interface 1.18 起 `/map --json` 里 `tier` 不为 null 的模块按新流程走，`tier` 为 null 的老模块逐字照旧。
+  - 交审节点改为「Spec」（需求文档）→「技术方案」（技术方案 `tasks/<id>/design.md` 与回归 `tasks/<id>/regression.md` 一起交）→「最终验收」；bug、小改动只有「Spec」与「最终验收」。新模块的 Plan 交审被拒并说明原因，模块会话写完 Plan、todo 提交后直接构建。
+  - 需求永远人批；技术方案按 spec-guard 的生效档位人批或交第二审查者（`/delegate:review --profile design`，审一轮、改一轮，两轮上限，同厂商标注，读不到时人批），重要需求的技术方案永远人批。
+  - 开工通知在需求（bug、小改动）或技术方案（普通、重要）批准后发，写明「写 Plan、todo，不交审，提交后按它构建」；放行通知、`start plan`、`status` 与钩子注入的阶段文字同样按新流程写下一步。
+  - 新模块最终验收的「验收结果」按回归用例编号 `R<n>` 逐条核对。
+  - 契约钉 session-protocol v2.10：认【交审】节点「技术方案」及其要点、放行通知的「技术方案」节点、【等待用户】类型「技术方案」。原定的多模块布局已取消（用户 C715「B」），留给 spec-guard。
+  - 四份 skill、README 中英与使用手册补了新流程模块的写法。
+- **regressionView 现状**：`flow.py` 调 spec-guard 的 `regressionView`（`regression_view --json`）读回归用例，不自己解析 Markdown；spec-guard 0.97.0 实测可用。用例只认 `method` 字段，旧的 `execution` 字段名兼容已去掉（T827）。装的 spec-guard 没有这个读取入口时，最终验收只查「验收结果」里写了 `R<n>`，不逐条对照。
+- **远端合并由模块协调做**（crew-merge 第 2 轮，规范 v1.5 F3）：`merge push` 开 PR 后，模块协调问你「可以合并吗」，你回「合并」，它运行 `merge pr-merge`：先只读核对 PR 开着、目标分支与头提交对得上、仓库开了 Allow auto-merge、目标分支有必需检查（经典保护或规则集），任一不满足退出码 3、不下令；都过就执行 `gh pr merge --auto --merge --match-head-commit`。PR 已是 CLEAN（必需检查全过）时改为直接 `gh pr merge --merge --match-head-commit`（规范 v1.5.1，T761），`mergeRequest` 记下 `mode`。`merge pr-check` 核实结果：已合并记 merged；还排着退出码 6；自动合并被撤或 PR 被关退出码 4；`--wait` 等到合并就提前返回。`merge push` 的推送记录加了 `head`。
+- **两种远端合并各归其位**：勾了「合并：自动」的模块，推送、PR、最终验收记录与远端合并仍归 autopilot，module-crew 不调 autopilot；人批的远端合并用 `merge pr-merge`。
+- **Codex 代批已冻结**（S113 Q3 定案）：`review codex` 系列（`review codex`、`review codex-note`、`review codex-fallback`）（由 Codex 放行 Spec、Plan）已冻结，本版不再改动它。
+- **重开模块只交 Plan 也会发开工通知**（T750）：Plan 交审带着 `spec/<模块>.md` 时把它算作 Spec 也已批；重开模块第 2 轮只交这份 Plan，`review approve` 不再因本轮没有单独的 Spec 批准而静默跳过开工通知，仍不发时打出原因。
+- **autonomyTier 读取路径删除**（T827，用户 C829 选 B）：删掉 `autonomyTier.readFrom` 读取路径、只经它用得上的那层与退役提示；`tier`、`status` 只报收尾汇总与最近一次收窄。
+- **CI 与检查入口**（T720、T782）：按插件开发规范补名为 `CI` 的 workflow（PR 与推送 main 时 Python 3.9、3.13 各跑一次全量，系统 Python 一行，跑完 `git diff --exit-code`）、`claude plugin validate --strict`（对 `git archive` 导出的副本跑，去掉根目录 CLAUDE.md、AGENTS.md）、skill／command／agent frontmatter 校验与汇总任务「CI required」；新增 `scripts/validate.sh`（`--quick` 调快检查）、AGENTS.md（与 CLAUDE.md 共享段逐字一致）、dependabot（只开 github-actions）、marketplace.json 顶层 description；S109 升钉 hub b34560f，新加 autopilot-admission、autopilot-degrade、release-tag 三个 workflow。补插件图标 `.claude-plugin/icon.png`（T764，`validate --strict` 2.1.321 起要求）。
+- **测试修复与提速**：测试代码兼容 Python 3.9（T720、C734）；UTC 时区与 `/usr/bin/git` 输出 `+00:00` 时的时间比较修好，快检查不再把 `__pycache__`、`*.pyc` 算作改动（T760、T793）；去掉测试里的真等待，改为放行文件与可注入时钟（T799）；ReviewCase 每个测试类只搭一次 worktree、之后复制快照（T800）；全量检查按测试文件并行，默认 CPU 核数、`--jobs N` 指定，跑完列最慢 10 个文件、超过 15 分钟提醒（T802）；本机路径检查也拦编码写法 `-Users-<名字>-`（T682）。
+- 升级后：只升级 module-crew 时，原会话 /clear 一次即可；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`。
+
 ## 0.24.2 的变化（接管批准部分第 3 轮返工：返工后复审能跑通、轮次上限与 spec-guard 一致、Codex 能看到引用的已有文件）
 
 S101 自动接管 crew-takeover-approve 第 3 轮返工（M1、M2 停点不通过，合并批准 C691）。`interface.json` 的 `interface` 仍是 1.1，契约仍钉 session-protocol v2.9。状态库不用迁移。
