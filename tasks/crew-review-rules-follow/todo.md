@@ -9,4 +9,4 @@
 - [x] Task 4：文档与 crew-flow-v2 变更记录（公共变更请求；AC6）——发【公共变更请求】#23494，模块协调记为 C871、在集成分支 636b842 落地（两份 crew-coordinator skill 的「技术方案谁批」与「里程碑停点」带 `blocking`、Codex 版补上停点一条，`spec/crew-flow-v2.md` 变更记录一行，`CHANGELOG.md`「未发版的变化」两行）；`module-crew sync` 合入（HEAD fcadc02），核对四个文件内容与请求一致
 - [x] Task 5：同步、检查与本机实测（AC7）——同步后（HEAD fcadc02）`scripts/validate.sh --quick` 因 `module_crew/__main__.py` 对不上号退回全量，树 fc5dbab 上 1477 个用例全部通过（墙钟约 1741 秒）；本机实测（spec-guard 0.99.0 真装的 `hooks/map_view.py --json`，临时项目：用法草案 M1 含已完成的 a、b，另有新流程 important 模块 d）：`takeover: autopilot` 时 `milestoneStop.blocking` 为 false，`start.milestone_stop` 返回提示「按 autopilot 预设不挡开工…」、不阻塞；d 的 `takeover.design` 为 reviewer、`designForcedBy` 为 null、`designApproval` 为 not-required，`_design` 给 skip（不再强制人批）；默认档位时 `blocking` 为 true、照旧阻塞，d 的 design 为 human、`_design` 给 human；本仓库真 `/map` 的 `designForcedBy` 为 null
 - [x] Checkpoint 2（gate）：最终验收
-- [ ] 回告：Q1～Q3 经模块协调转告 ecosystem-lead 与 sg-coord
+- [x] 回告：Q1～Q3 经模块协调转告 ecosystem-lead（#23517）与 sg-coord（Q3，#23518）；sg-coord #23521 回复随 spec-guard 模块 7 改 takeover.notes，ecosystem-lead #23522 转用户决定 Q1、Q2 合成一项，用户在 mc-coord 原话「合成一项，发版后排」
