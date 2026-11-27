@@ -395,6 +395,26 @@ class SecondReviewerTest(FlowReviewMixin, ReviewCase):
         self.assertIn("未审：本机没有可用的第二审查者，由回归测试兜底", out)
         self.assertTrue((self.repo / "tasks" / "b" / "design.md").exists())
 
+    def test_no_reviewer_important_goes_to_user(self):
+        """crew-review-rules-follow decision 5: an important requirement's design is not let through unreviewed."""
+        from module_crew import protocol, takeover
+        self.set_flow({"b": "important"}, {"b": flow_row(design="reviewer")})
+        doc = {"schema_version": 1, "execution_status": "conditions_missing", "backend": None,
+               "diagnostics": ["no_reviewer_available"], "reviewer": {"vendor": None, "backend": None,
+                                                                       "same_vendor": None, "selection": "none"}}
+        code, out = self.note(doc)
+        self.assertEqual(code, 5, out)
+        self.assertNotIn(takeover.UNREVIEWED, out)
+        self.assertIn(takeover.IMPORTANT_NO_REVIEWER, out)
+        rec = store.get(self.db(), "item", str(self.n))
+        self.assertEqual(rec["state"], "open")
+        self.assertFalse((self.repo / "tasks" / "b" / "design.md").exists())
+        draft = out[out.index("\n【等待用户】\n") + 1:]
+        msg = protocol.parse(draft)
+        self.assertEqual(msg.kind, "wait-user", msg)
+        self.assertFalse(msg.problems, msg.problems)
+        self.assertIn(f"review codex-fallback C{self.n}", draft)
+
     def test_author_host(self):
         from module_crew import takeover
         self.assertEqual(takeover.author_host({"host": "codex-desktop"}), "codex")

@@ -600,6 +600,7 @@ def _design_command(rec: dict, n: int, reports: list[str], path: Path, session: 
 
 
 UNREVIEWED = "未审：本机没有可用的第二审查者，由回归测试兜底"
+IMPORTANT_NO_REVIEWER = "本机没有可用的第二审查者，重要需求的技术方案由你批"
 
 
 def _report(path: str | os.PathLike, node: str = "spec") -> tuple[dict | None, str | None]:
@@ -735,6 +736,16 @@ def unavailable_draft(db: store.Store, rec: dict, n: int, why: str, repeats: boo
         [user, rerun] if repeats else [rerun, user])) + "\n"
 
 
+def no_reviewer_draft(db: store.Store, rec: dict, n: int) -> str:
+    """crew-review-rules-follow decision 5: no second reviewer for an important requirement's design."""
+    from module_crew import offload
+    return "\n".join(offload.draft(
+        _coordinator(db), rec["module"], f"{rec['module']} 的技术方案（交审 C{n}）没有第二审查者，下一步怎么办",
+        f"{IMPORTANT_NO_REVIEWER}：这是重要需求，不按普通需求那样未审放行",
+        [("A", "你来批这一版", f"review codex-fallback C{n} --original-file <答复>，再 review approve C{n}"),
+         ("B", "装好第二审查者后重跑", f"运行 review codex C{n}，照它给的命令重跑")])) + "\n"
+
+
 def over_limit_draft(db: store.Store, rec: dict, n: int, block: list[str]) -> str:
     from module_crew import offload
     what = WHAT[rec["node"]]
@@ -760,6 +771,13 @@ def codex_note(project: str | os.PathLike, n: int, report: str | os.PathLike) ->
     project = Path(project)
     db = store.open_store(project)
     rec = _codex_item(db, n)
+    if rec["node"] == "design" and _no_reviewer(report) and module(db, project, rec["module"]).tier == "important":
+        # crew-review-rules-follow decision 5: an important requirement's design is never let through unreviewed
+        with db.transaction(actor="coordinator") as tx:
+            tx.put("item", str(n), tx.get("item", str(n)), action="codex-unavailable",
+                   data={"reason": IMPORTANT_NO_REVIEWER, "report": str(report)})
+        return CodexResult(5, [f"C{n} 没有放行：{IMPORTANT_NO_REVIEWER}", "把下面这份【等待用户】自检后发给用户（照现有规则转）；不要自己审：", ""],
+                           draft=no_reviewer_draft(db, rec, n))
     if rec["node"] == "design" and _no_reviewer(report):        # crew-flow-v2 decision 7 (requirement 5.3, 5.4)
         landed = review._approve(project, [n], "", codex={"report": str(report), "unreviewed": UNREVIEWED, "rounds": 0,
                                                           "suggestions": 0})
