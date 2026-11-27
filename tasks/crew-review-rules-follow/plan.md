@@ -1,5 +1,7 @@
 # Implementation Plan: crew-review-rules-follow
 
+<!-- spec-guard: review approved -->
+
 > 依据：`spec/crew-review-rules-follow.md`（用户 2026-11-27 批准，事项 C854「C854 A」，落地于集成分支 d918ab6）。任务清单：`tasks/crew-review-rules-follow/todo.md`。
 
 ## Overview
