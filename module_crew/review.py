@@ -99,6 +99,9 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
         reasons.append(INVENTORY_PENDING)
     if not reasons and sub.get("disputes"):
         reasons = _disagree_reasons(db, worktree, sub)
+    gate_hints = []
+    if not reasons and sub["node"] in flow.SPEC_NODES:      # crew-review-gates-align decisions 3, 4
+        reasons, gate_hints = flow.requirement_gate(worktree, sub["module"])
     if reasons:
         return Outcome(msg.kind, 3, lines=["拒收，请退回："] + reasons)
     commit = _git(worktree, "rev-parse", "HEAD").stdout.strip()
@@ -176,6 +179,7 @@ def add(db: store.Store, text: str, sender: str, relay_id: int) -> Outcome:
             out.lines.append(f"{revised['path']} 在构建中改过（和集成分支上已批准的不同）：提请用户批准这次最终验收时附上 Spec 的改动差异"
                              f"（review show C{n} --spec-diff），写明一次批准同时批准修订后的 Spec；合入后由 merge run 记下它的批准")
         out.lines += _ledger_lines(ledger)
+        out.lines += gate_hints
         if transitional:                   # crew-flow-v2 decision 9: still taken for one release
             out.lines.append(f"这份技术方案按过渡写法「节点：Spec」交来，已记作技术方案；契约 v2.10 起请模块改写「节点：技术方案」")
     if skip:                               # crew-flow-v2 decision 6: no one reviews it, land it and start the build
