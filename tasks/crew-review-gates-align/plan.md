@@ -1,5 +1,7 @@
 # Implementation Plan: crew-review-gates-align
 
+<!-- spec-guard: review approved -->
+
 > 依据：`spec/crew-review-gates-align.md`（用户 2026-11-27 批准，事项 C881「C881 A」，落地于集成分支 2409189）。任务清单：`tasks/crew-review-gates-align/todo.md`。
 
 ## Overview

@@ -1,5 +1,7 @@
 # Spec: crew-review-gates-align
 
+<!-- spec-guard: review approved 5bbe1e91dceb -->
+
 > 能力图模块 `crew-review-gates-align`。需求来源：模块 crew-review-rules-follow 的未决问题 Q1、Q2（`spec/crew-review-rules-follow.md`），ecosystem-lead #23522（用户在其会话「合成一项，对齐 spec-guard」）；用户 2026-11-27 在 mc-coord 批准排期、插入与开工（「合成一项，发版后排」「现在开始」「确认插入」），开会话依据：用户批准事项 C879。
 > 上游：spec-guard 0.99.0／0.100.0（interface 1.27，模块 `sg-review-rules`，规则 1～5「需求文档先审一轮」、规则 12「没有审查者就交用户批」）。本机 2026-11-27 实测：spec-guard 已是 0.100.0，`interface.json` 为 `1.27`，构建不用等升级。
 > 依赖 `crew-review-batch`（`review add`／`review approve`／交审展示）、`crew-flow-v2`（新流程的节点与第二审查者）、`crew-review-rules-follow`（重要需求无审查者交用户批）。现状取自本分支源码。
