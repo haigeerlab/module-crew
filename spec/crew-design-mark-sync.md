@@ -1,6 +1,6 @@
 # Spec: crew-design-mark-sync
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved 2c042e35f51a -->
 
 > 能力图模块 `crew-design-mark-sync`。需求来源：模块 crew-review-gates-align 的未决问题 Q1（`spec/crew-review-gates-align.md`），ecosystem-lead #23580（用户在其会话「排，下一项做」）；用户 2026-11-27 在 mc-coord 批准排期、插入与开工（「排，下一项做」「现在开始」「确认插入」），开会话依据：用户批准事项 C896。
 > 上游：spec-guard 0.101.0（本机 2026-11-27 实测，`interface.json` 为 `1.28`）。技术方案标记 `reviewMark --target design` 自 interface 1.20 起有（`spec/design-review.md`），1.27 加了 `host-reviewed`、`no-reviewer`；1.28 对 design 目标没有改动（只加了 `skillLog`）。下面「现状」里 spec-guard 的行为都取自本机 0.101.0 的 `interface.json` 与 `hooks/review_mark.py`、`hooks/module_stage.py`。
