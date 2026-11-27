@@ -286,10 +286,27 @@ class ApproverTest(FlowReviewMixin, ReviewCase):
         self.assertEqual(self.who("b", "design"), ("human", takeover.DESIGN_UPSTREAM))
         self.assertIn("因上游未发版而人批", takeover.line(takeover.module(self.db(), self.repo, "b")))
 
-    def test_important_design_always_user(self):
+    def test_important_design_follows_takeover(self):
+        """crew-review-rules-follow decision 3 (spec-guard 1.27 sg-review-rules): overturns crew-flow-v2's
+        "an important requirement's design is always the user's"; important reads the same as normal."""
         from module_crew import takeover
-        self.set_flow({"b": "important"}, {"b": flow_row(design="reviewer", approval="not-required")})
+        cases = [(flow_row(design="reviewer"), ("codex", None)), (flow_row(design="human"), ("human", None)),
+                 (flow_row(design="reviewer", approval="not-required"), ("skip", None)),
+                 (takeover_row(source="default"), ("human", takeover.DESIGN_UPSTREAM))]
+        for row, want in cases:
+            with self.subTest(row=row.get("takeover"), approval=row.get("designApproval")):
+                self.set_flow({"b": "important", "c": "normal"}, {"b": row, "c": row})
+                self.assertEqual(self.who("b", "design"), want)
+                self.assertEqual(self.who("b", "design"), self.who("c", "design"))
+
+    def test_design_forced_by_important_on_older_spec_guard(self):
+        """crew-review-rules-follow decision 4: spec-guard 1.22-1.26 reports designForcedBy important."""
+        from module_crew import takeover
+        row = flow_row(design="human")
+        row["takeover"]["designForcedBy"] = "important"
+        self.set_flow({"b": "important"}, {"b": row})
         self.assertEqual(self.who("b", "design"), ("human", takeover.DESIGN_IMPORTANT))
+        self.assertIn("重要需求：技术方案由用户批", takeover.line(takeover.module(self.db(), self.repo, "b")))
 
     def test_skip_lands_and_starts(self):
         self.set_flow({"b": "normal"}, {"b": flow_row(design="reviewer", approval="not-required")})
@@ -377,6 +394,26 @@ class SecondReviewerTest(FlowReviewMixin, ReviewCase):
         self.assertEqual(code, 0, out)
         self.assertIn("未审：本机没有可用的第二审查者，由回归测试兜底", out)
         self.assertTrue((self.repo / "tasks" / "b" / "design.md").exists())
+
+    def test_no_reviewer_important_goes_to_user(self):
+        """crew-review-rules-follow decision 5: an important requirement's design is not let through unreviewed."""
+        from module_crew import protocol, takeover
+        self.set_flow({"b": "important"}, {"b": flow_row(design="reviewer")})
+        doc = {"schema_version": 1, "execution_status": "conditions_missing", "backend": None,
+               "diagnostics": ["no_reviewer_available"], "reviewer": {"vendor": None, "backend": None,
+                                                                       "same_vendor": None, "selection": "none"}}
+        code, out = self.note(doc)
+        self.assertEqual(code, 5, out)
+        self.assertNotIn(takeover.UNREVIEWED, out)
+        self.assertIn(takeover.IMPORTANT_NO_REVIEWER, out)
+        rec = store.get(self.db(), "item", str(self.n))
+        self.assertEqual(rec["state"], "open")
+        self.assertFalse((self.repo / "tasks" / "b" / "design.md").exists())
+        draft = out[out.index("\n【等待用户】\n") + 1:]
+        msg = protocol.parse(draft)
+        self.assertEqual(msg.kind, "wait-user", msg)
+        self.assertFalse(msg.problems, msg.problems)
+        self.assertIn(f"review codex-fallback C{self.n}", draft)
 
     def test_author_host(self):
         from module_crew import takeover

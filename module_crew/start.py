@@ -27,17 +27,23 @@ class Proposal:
     reopen: dict = field(default_factory=dict)              # module -> {"round", "branch", "review", "info"} (prepare only)
     spec_ahead: dict = field(default_factory=dict)          # module -> {"missing", "info"} (prepare only, crew-spec-ahead)
     warnings: list[str] = field(default_factory=list)        # S92: shown with the proposal; prepare refuses on them
+    notes: list[str] = field(default_factory=list)           # crew-review-rules-follow: shown, never refuse prepare
 
 
-def milestone_stop(map_doc: dict | None) -> tuple[str | None, str | None]:
-    """S92 (spec-guard interface 1.13): /map --json milestoneStop -> (blocker, warning). spec-guard opens no new module
-    while a stop stands, so neither the usage draft nor its `modules` (the finished ones) is read here."""
+def milestone_stop(map_doc: dict | None) -> tuple[str | None, str | None, str | None]:
+    """S92 (spec-guard interface 1.13): /map --json milestoneStop -> (blocker, warning, note). spec-guard opens no new
+    module while a stop stands, so neither the usage draft nor its `modules` (the finished ones) is read here.
+    crew-review-rules-follow decisions 1, 2 (interface 1.26): only `blocking` exactly false lets modules open, with a
+    note; absent (spec-guard below 1.26), true or any other value blocks as before."""
     stop = (map_doc or {}).get("milestoneStop")
     if not isinstance(stop, dict):
-        return None, None
+        return None, None, None
     if stop.get("error") == "unreadable":
-        return None, f"停点读不出（{stop.get('detail')}），先跑 /spec-guard:verify-artifacts"
-    return f"里程碑停点：{stop.get('milestone')} 还没确认（{stop.get('file')}），用户确认后再开", None
+        return None, f"停点读不出（{stop.get('detail')}），先跑 /spec-guard:verify-artifacts", None
+    if stop.get("blocking") is False:
+        return None, None, (f"里程碑停点：{stop.get('milestone')} 还没确认（{stop.get('file')}），按 autopilot 预设不挡开工；"
+                            "用户方便时用 /spec-guard:milestone-mark 确认")
+    return f"里程碑停点：{stop.get('milestone')} 还没确认（{stop.get('file')}），用户确认后再开", None, None
 
 
 def _open_store(project: Path) -> store.Store | None:
@@ -148,7 +154,7 @@ def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal
     if _config(db).get("mode") == "serial":
         from module_crew.failure import SERIAL_BLOCKER
         blockers.append(SERIAL_BLOCKER)
-    stop, warning = milestone_stop(report.map)
+    stop, warning, note = milestone_stop(report.map)
     blockers += [stop] if stop else []
     if blockers:
         return Proposal(slots, blockers=blockers, cadence=cadence)
@@ -168,7 +174,7 @@ def plan(project: str | os.PathLike, max_modules: int | None = None) -> Proposal
     else:
         reasons = [{"module": mid, "reason": why} for mid, why in held.items()]   # shown as 暂不提议
     return Proposal(slots, picked, list((report.startable or {}).get("conflicts", [])), reasons=reasons, cadence=cadence,
-                    warnings=[warning] if warning else [])
+                    warnings=[warning] if warning else [], notes=[note] if note else [])
 
 
 HOSTS = {"claude": "claude-desktop", "codex": "codex-desktop"}
@@ -517,6 +523,7 @@ def prepare(project: str | os.PathLike, modules: list[str], original: str, short
     unqueued.mark_integration(db, project, "start-prepare", only_if_unset=True)
     result = PrepareResult(0, approval=approval)
     result.lines.append(f"开工批准事项 C{approval}：{'、'.join(modules)}")
+    result.lines += proposal.notes                        # crew-review-rules-follow decision 2
     result.lines.append(launcher_line(db))
     for m in modules:
         path = Path(cfg["crewDir"]) / m

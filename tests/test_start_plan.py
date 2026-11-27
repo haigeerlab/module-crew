@@ -145,5 +145,41 @@ class MilestoneStopPlanTest(StartCase):
                 self.assertEqual([m["id"] for m in p.modules], ["b", "c"])
 
 
+NOTE = ("里程碑停点：M1 下单跑通 还没确认（docs/usage-draft.md），按 autopilot 预设不挡开工；"
+        "用户方便时用 /spec-guard:milestone-mark 确认")
+
+
+class MilestoneBlockingPlanTest(StartCase):
+    """crew-review-rules-follow decisions 1, 2: spec-guard 0.98.0 (interface 1.26) milestoneStop.blocking."""
+
+    def test_not_blocking_proposes_with_note(self):
+        from helpers import START_MAP
+        self.set_map(dict(START_MAP, milestoneStop=dict(STOP, blocking=False)))
+        p = start.plan(self.repo)
+        self.assertEqual((p.blockers, p.warnings), ([], []))
+        self.assertEqual([m["id"] for m in p.modules], ["b", "c"])
+        self.assertEqual(p.notes, [NOTE])
+        r = self.run_cli("start", "plan")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(NOTE, r.stdout)
+        self.assertIn("提议：", r.stdout)
+        import json
+        self.assertEqual(json.loads(self.run_cli("start", "plan", "--json").stdout)["notes"], [NOTE])
+
+    def test_blocking_true_absent_or_not_bool_stops(self):
+        from helpers import START_MAP
+        for value in (True, "absent", "false", 0, None):
+            with self.subTest(blocking=value):
+                stop = dict(STOP) if value == "absent" else dict(STOP, blocking=value)
+                self.set_map(dict(START_MAP, milestoneStop=stop))
+                p = start.plan(self.repo)
+                self.assertEqual(p.modules, [])
+                self.assertEqual(p.notes, [])
+                self.assertTrue(any("用户确认后再开" in b for b in p.blockers), p.blockers)
+
+    def test_no_stop_no_note(self):
+        self.assertEqual(start.plan(self.repo).notes, [])
+
+
 if __name__ == "__main__":
     unittest.main()
