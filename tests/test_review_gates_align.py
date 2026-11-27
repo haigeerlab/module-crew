@@ -206,3 +206,30 @@ class RequirementDisplayTest(PreviewMixin, ReviewCase):
         self.assertNotIn("需求审查", card)
         self.assertEqual(review.show(self.db(), out.number, review_diff=True),
                          [f"C{out.number} 不是新流程需求，或 spec-guard 没有它的审查记录：没有审查后的改动差异"])
+
+
+class ApproveRefusedTest(PreviewMixin, ReviewCase):
+    """Task 3, decision 6; AC5."""
+
+    def test_requirement_unreviewed_is_explained_and_restored(self):
+        self.gate("normal", None)
+        out = self.add(self.spec_review("b"))
+        self.assertEqual(out.code, 0, out.lines)
+        os.environ["FAKE_REVIEW_OUT"] = ("requirement-unreviewed: spec/b.md has no review record; review it once first "
+                                         "(delegate review recorded with --state codex-reviewed, ...), then confirm it")
+        res = review.approve(self.repo, [out.number], "b 的需求批准")
+        text = "\n".join(res.lines)
+        self.assertEqual(res.code, 4, text)
+        self.assertIn("写批准标记失败，已停下：requirement-unreviewed", text)
+        self.assertIn(f"spec-guard 拒绝：这份需求还没审过一轮（多半是交审之后记录被改掉了）；用 review answer C{out.number} "
+                      "退回模块先审一轮，不要绕过", text)
+        self.assertIn("状态库与集成分支都没有变化", text)          # today's restore, unchanged
+        self.assertEqual(store.get(self.db(), "item", str(out.number))["state"], "open")
+
+    def test_other_failures_unchanged(self):
+        self.gate("normal", None)
+        out = self.add(self.spec_review("b"))
+        os.environ["FAKE_REVIEW_OUT"] = "file-unwritable: spec/b.md could not be written"
+        res = review.approve(self.repo, [out.number], "b 的需求批准")
+        self.assertEqual(res.code, 4)
+        self.assertNotIn("还没审过一轮", "\n".join(res.lines))

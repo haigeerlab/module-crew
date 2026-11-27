@@ -1296,6 +1296,9 @@ def _mark_command(project: Path) -> tuple[Path, dict] | str:
 
 
 REVIEW_DIFF_HEAD = "Changes since the review"
+# crew-review-gates-align decision 6: spec-guard 1.27 refuses to confirm an unreviewed flow v2 requirement
+REQUIREMENT_UNREVIEWED = ("spec-guard 拒绝：这份需求还没审过一轮（多半是交审之后记录被改掉了）；用 review answer C{n} "
+                          "退回模块先审一轮，不要绕过")
 REVIEWER_WORDS = {"codex": "Codex（delegate）", "host": "宿主子会话"}
 
 
@@ -1528,8 +1531,10 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
         cmd = cmd + ["--confirm"]
         ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
         if ran.returncode != 0:
-            return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{(ran.stderr.strip() or ran.stdout.strip())[:200]}"]
-                                 + _restore(checkout, created, db.path / "codex" / f"leftover-C{n}"))
+            said = ran.stderr.strip() or ran.stdout.strip()
+            return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{said[:200]}"]
+                                 + _restore(checkout, created, db.path / "codex" / f"leftover-C{n}")
+                                 + ([REQUIREMENT_UNREVIEWED.format(n=n)] if said.startswith("requirement-unreviewed") else []))
     approval_no = _next_number(db)
     modules = list(dict.fromkeys(rec["module"] for _, rec in picked))
     nodes = "、".join(f"{rec['module']} 的 {NODE_NAME[rec['node']]}" for _, rec in picked)
