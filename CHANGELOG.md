@@ -2,6 +2,14 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.25.1 的变化（补丁：批准落地兼容 spec-guard 0.99.0）
+
+覆盖 0.25.0（f076a4f）之后 main 上的改动：轻任务 T855（合并批准 C858），以及 S113 职责边界落地（PR #27）与能力图插入模块 crew-review-rules-follow。`interface.json` 的 `interface` 仍是 1.1，契约仍钉 session-protocol v2.10。状态库不用迁移。
+
+- **批准落地兼容 spec-guard 0.99.0**（T855）：spec-guard 0.99.0（interface 1.27）的 `reviewMark.command` 多了可选项 `[--blocking <N>]`、`[--reason <one line>]`，0.25.0 遇到不认识的可选项就拒绝运行，`review approve` 落地 Spec、Plan 批准一律失败（退出码 3）。改为用不上的可选项跳过；`[--review]` 照旧只在带报告时展开；补认 1.27 的 `--target`（`design`、`overall`）与扩展后的 `--state` 占位符。
+- **职责边界**：CLAUDE.md、AGENTS.md 共享段加「职责边界」五小节，README 加简短版（S113，用户批准，PR #27）。
+- 升级后：只升级 module-crew 时，原会话 /clear 一次即可；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`。
+
 ## 0.25.0 的变化（新流程版本：跟随 spec-guard 新流程；PR 由模块协调凭「合并」原话合并；autonomyTier 读取路径删除；CI 与测试提速）
 
 覆盖 0.24.2（8bb543d）之后 main 上的全部改动：模块 crew-flow-v2（合并批准 C740）、crew-merge 第 2 轮（规范 v1.5 F3，C754）与轻任务 T682、T720、T750、T760、T761、T764、T782、T793、T799、T800、T802、T827。`interface.json` 的 `interface` 仍是 1.1，契约改钉 session-protocol v2.10（`contract` 2.10，bf0b973）。状态库不用迁移。
