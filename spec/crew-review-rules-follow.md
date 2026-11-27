@@ -1,5 +1,7 @@
 # Spec: crew-review-rules-follow
 
+<!-- spec-guard: review approved 1f1755fcf21f -->
+
 > 能力图模块 `crew-review-rules-follow`。需求来源：ecosystem-lead #23377、#23442（sg-coord #23440）；用户 2026-11-27 在 mc-coord 批准排期、插入与开工（「和 blocking 一起排」「需求齐了，开工」「确认插入」），开会话依据：用户批准事项 C852。
 > 上游：spec-guard 0.98.0（interface 1.26，`spec/sg-gate-flow.md`：`milestoneStop.blocking`）、0.99.0（interface 1.27，模块 5 `sg-review-rules`：重要需求的技术方案也按档位 `takeover.design` 放行）。
 > 本机 2026-11-27 实测：`~/.claude/plugins/installed_plugins.json` 里 spec-guard 已是 0.99.0，`interface.json` 为 `1.27`，构建不用再等升级。
