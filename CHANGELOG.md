@@ -2,6 +2,13 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.28.0 的变化（技术方案落地时写 spec-guard 的技术方案标记，/map 的 designApproval 随之更新）
+
+覆盖 0.27.0（b102228）之后 main 上的改动：模块 crew-design-mark-sync（合并批准 C908）与公共变更 C905。`interface.json` 的 `interface` 仍是 1.1，契约仍钉 session-protocol v2.10。状态库不用迁移。需要 spec-guard 1.20 及以上才写技术方案标记；更低版本照旧落地并提示一行。
+
+- **技术方案落地时写 spec-guard 的技术方案标记**（模块 crew-design-mark-sync）：`review approve` 落地用户批的技术方案时写 `reviewMark --target design --state approved`，第二审查者放行（`review codex-note` 无阻断）时写 `--state reviewer-approved --review <这一轮存下的报告>`，免审放行不写（spec-guard 自己显示 not-required）；集成分支上 `/map` 的 `designApproval` 因此显示 `approved`（`approvedBy` 为 user／reviewer），不再一直 `pending-review`。写标记失败照 Spec 的失败处理（停下还原，或记「已放行但落地失败」交用户）；装的 spec-guard 的 reviewMark 不认 `--target design` 时照旧落地并提示一行。本版之前已落地的技术方案不自动补标记，需要时在集成分支 checkout 上用 `/spec-guard:review-mark --target design --state approved` 手动补（等于用户再批一次）。
+- 升级后：只升级 module-crew 时，原会话 /clear 一次即可；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`。
+
 ## 0.27.0 的变化（交审关卡对齐 spec-guard：新流程需求先审一轮；技术方案没有第二审查者时一律交用户批）
 
 覆盖 0.26.0（14a8221）之后 main 上的改动：模块 crew-review-gates-align（合并批准 C891）与公共变更 C888。`interface.json` 的 `interface` 仍是 1.1，契约仍钉 session-protocol v2.10。状态库不用迁移。需要 spec-guard 1.27（0.99.0 及以上）才有需求审查关卡；更低版本照旧。
