@@ -161,12 +161,14 @@ DESIGN_NOT_REQUIRED = "not-required"
 
 
 def _design(row: dict, tier: str) -> tuple[str, str | None]:
-    """Who approves a flow v2 module's design: the effective takeover design item spec-guard gives (important
-    requirements already counted in), skip when spec-guard says this one needs no review, human when unreadable."""
+    """Who approves a flow v2 module's design: the effective takeover design item spec-guard gives, skip when
+    spec-guard says this one needs no review, human when unreadable. crew-review-rules-follow decisions 3, 4: an
+    important requirement follows the takeover like any other (spec-guard 1.27); module-crew no longer forces it,
+    and only spec-guard 1.22-1.26's designForcedBy important still reads as the user's."""
     from module_crew import flow
     if not flow.full_docs(tier):
         return "none", None
-    if tier == "important":
+    if (row.get("takeover") or {}).get("designForcedBy") == "important":
         return "human", DESIGN_IMPORTANT
     approval = row.get("designApproval")
     if isinstance(approval, dict) and approval.get("status") == DESIGN_NOT_REQUIRED:

@@ -286,10 +286,27 @@ class ApproverTest(FlowReviewMixin, ReviewCase):
         self.assertEqual(self.who("b", "design"), ("human", takeover.DESIGN_UPSTREAM))
         self.assertIn("因上游未发版而人批", takeover.line(takeover.module(self.db(), self.repo, "b")))
 
-    def test_important_design_always_user(self):
+    def test_important_design_follows_takeover(self):
+        """crew-review-rules-follow decision 3 (spec-guard 1.27 sg-review-rules): overturns crew-flow-v2's
+        "an important requirement's design is always the user's"; important reads the same as normal."""
         from module_crew import takeover
-        self.set_flow({"b": "important"}, {"b": flow_row(design="reviewer", approval="not-required")})
+        cases = [(flow_row(design="reviewer"), ("codex", None)), (flow_row(design="human"), ("human", None)),
+                 (flow_row(design="reviewer", approval="not-required"), ("skip", None)),
+                 (takeover_row(source="default"), ("human", takeover.DESIGN_UPSTREAM))]
+        for row, want in cases:
+            with self.subTest(row=row.get("takeover"), approval=row.get("designApproval")):
+                self.set_flow({"b": "important", "c": "normal"}, {"b": row, "c": row})
+                self.assertEqual(self.who("b", "design"), want)
+                self.assertEqual(self.who("b", "design"), self.who("c", "design"))
+
+    def test_design_forced_by_important_on_older_spec_guard(self):
+        """crew-review-rules-follow decision 4: spec-guard 1.22-1.26 reports designForcedBy important."""
+        from module_crew import takeover
+        row = flow_row(design="human")
+        row["takeover"]["designForcedBy"] = "important"
+        self.set_flow({"b": "important"}, {"b": row})
         self.assertEqual(self.who("b", "design"), ("human", takeover.DESIGN_IMPORTANT))
+        self.assertIn("重要需求：技术方案由用户批", takeover.line(takeover.module(self.db(), self.repo, "b")))
 
     def test_skip_lands_and_starts(self):
         self.set_flow({"b": "normal"}, {"b": flow_row(design="reviewer", approval="not-required")})
