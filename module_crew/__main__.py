@@ -423,7 +423,7 @@ def _start_plan(as_json: bool) -> int:
     p = start.plan(".")
     if as_json:
         print(json.dumps({"slots": p.slots, "modules": p.modules, "conflicts": p.conflicts, "blockers": p.blockers,
-                          "reasons": p.reasons, "warnings": p.warnings},
+                          "reasons": p.reasons, "warnings": p.warnings, "notes": p.notes},
                          ensure_ascii=False, indent=2))
     else:
         print(f"空位：{p.slots}")
@@ -431,6 +431,8 @@ def _start_plan(as_json: bool) -> int:
             print(f"❌ {b}")
         for w in p.warnings:
             print(f"⚠️ {w}")
+        for n in p.notes:
+            print(f"ℹ️ {n}")
         for m in p.modules:
             print(f"  {m['id']}（{m['responsibility']}）")
         for c in p.conflicts:
