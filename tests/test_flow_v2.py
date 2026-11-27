@@ -386,14 +386,26 @@ class SecondReviewerTest(FlowReviewMixin, ReviewCase):
         rec = store.get(self.db(), "item", str(self.n))
         self.assertEqual(rec["closedReason"], "codex-approved")
 
-    def test_no_reviewer_releases_unreviewed(self):
+    def test_no_reviewer_normal_goes_to_user(self):
+        """crew-review-gates-align decision 7 (spec-guard 1.27 sg-review-rules rule 12, designApproval unreviewed):
+        overturns crew-flow-v2 assumption A3's "a normal requirement is let through unreviewed"."""
+        from module_crew import protocol, takeover
         doc = {"schema_version": 1, "execution_status": "conditions_missing", "backend": None,
                "diagnostics": ["no_reviewer_available"], "reviewer": {"vendor": None, "backend": None,
                                                                        "same_vendor": None, "selection": "none"}}
         code, out = self.note(doc)
-        self.assertEqual(code, 0, out)
-        self.assertIn("未审：本机没有可用的第二审查者，由回归测试兜底", out)
-        self.assertTrue((self.repo / "tasks" / "b" / "design.md").exists())
+        self.assertEqual(code, 5, out)
+        self.assertNotIn(takeover.UNREVIEWED, out)
+        self.assertIn(takeover.NORMAL_NO_REVIEWER, out)
+        self.assertIn("spec-guard 记为未审（unreviewed），由你批", out)
+        self.assertEqual(store.get(self.db(), "item", str(self.n))["state"], "open")
+        self.assertFalse((self.repo / "tasks" / "b" / "design.md").exists())
+        draft = out[out.index("\n【等待用户】\n") + 1:]
+        msg = protocol.parse(draft)
+        self.assertEqual(msg.kind, "wait-user", msg)
+        self.assertFalse(msg.problems, msg.problems)
+        self.assertNotIn("这是重要需求", draft)
+        self.assertIn(f"review codex-fallback C{self.n}", draft)
 
     def test_no_reviewer_important_goes_to_user(self):
         """crew-review-rules-follow decision 5: an important requirement's design is not let through unreviewed."""

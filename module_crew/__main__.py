@@ -716,7 +716,7 @@ def _review(args) -> int:
         return _review_codex(args, db)
     if args.action == "show":
         try:
-            print("\n".join(review.show(db, args.number, args.submission, args.spec_diff)))
+            print("\n".join(review.show(db, args.number, args.submission, args.spec_diff, args.review_diff)))
         except review.ShowRefused as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 3
@@ -778,6 +778,8 @@ def _review(args) -> int:
                 print(f"C{i['number']} {i['module']} 的 {review.NODE_NAME.get(i['node'], i['node'])}（{i['from']}）："
                       + "、".join(f["path"] for f in i["files"]))
                 print("  要点：" + i["points"].replace("\n", "\n        "))
+                if i.get("requirement"):        # crew-review-gates-align decision 5
+                    print("\n".join("  " + x for x in i["requirement"]))
                 if i.get("humanReason"):        # crew-takeover-approve, M1 note 1
                     print(f"  批准方式：人批（{i['humanReason']}）")
                 if i.get("checks"):             # crew-check-ledger
@@ -1466,6 +1468,8 @@ def _main(argv: list[str] | None = None) -> int:
     rsh.add_argument("number", type=refs.parse)
     rsh.add_argument("--submission", action="store_true", help="另外输出交审原文")
     rsh.add_argument("--spec-diff", action="store_true", help="只输出最终验收时 Spec 相对集成分支的改动差异")
+    rsh.add_argument("--review-diff", action="store_true",
+                     help="只输出新流程需求审查之后的改动差异（spec-guard 原话）")
     rcx = rvs.add_parser("codex", help="只读：给出这一轮交 Codex 审的 /delegate:review 命令（crew-takeover-approve）")
     rcx.add_argument("number", type=refs.parse)
     rcn = rvs.add_parser("codex-note", help="记下 Codex 的审查报告：返工、放行或交用户")
