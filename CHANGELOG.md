@@ -2,6 +2,11 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 未发版的变化
+
+- 开工停点只在 `milestoneStop.blocking` 为 false 时放行并提示（跟随 spec-guard 0.98.0）。
+- 重要需求的技术方案按 `takeover.design` 决定批准人，没有第二审查者时送用户批（跟随 spec-guard 0.99.0，推翻 crew-flow-v2 的「重要需求永远人批」）。
+
 ## 0.25.1 的变化（补丁：批准落地兼容 spec-guard 0.99.0）
 
 覆盖 0.25.0（f076a4f）之后 main 上的改动：轻任务 T855（合并批准 C858），以及 S113 职责边界落地（PR #27）与能力图插入模块 crew-review-rules-follow。`interface.json` 的 `interface` 仍是 1.1，契约仍钉 session-protocol v2.10。状态库不用迁移。
