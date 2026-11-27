@@ -89,6 +89,7 @@ module-crew protocol check <消息文件>
 
 - **怎么认**：`spec/<模块>.md` 里有 `<!-- spec-guard: flow v2 tier=… -->` 一行（`/map --json` 的 `tier` 不为空）。没有这一行的模块照上面的老规则，一字不变。
 - **需求先单独交**：先只写需求文档 `spec/<模块>.md` 交审（节点 Spec），项目是 `combined` 也分开交；需求永远由用户确认。
+- **需求交审前先审一轮**（spec-guard 1.27 起，普通、重要需求；bug、小改动不审）：在你的 worktree 里按顺序选一条，只审一轮：有 Codex 就 `/delegate:review --backend codex` 审 `spec/<模块>.md`、报告存成文件，再 `/spec-guard:review-mark --target spec --state codex-reviewed --review <报告> --confirm`；没有就开一个全新子会话审（不带本会话上下文），结论写进「外部审查意见」一节，再 `--state host-reviewed --blocking <阻断条数> --confirm`；都不行就 `--state no-reviewer --reason "<一行原因>" --confirm`。按意见改完提交后再发【交审】，「要点」写一行「需求审查：<谁审的>，阻断 N 条；采纳与没采纳的及原因」。这一步是 spec-guard 的硬关卡，不单独问用户；没有审查记录的需求 `review add` 会拒收。
 - **技术方案与回归一起交**：普通、重要需求在需求批准后写 `tasks/<模块>/design.md`、`tasks/<模块>/regression.md`，一起发【交审】「节点：技术方案」（契约 v2.10），「文件」两份都列，
   「要点」按七项写：现状调研、影响面、实现方案、风险与回滚、回归用例、受影响的老功能、未决问题（后两项可写「无」）。bug、小改动只写一份文档，没有这一步。
 - **Plan 不交审**：开工通知到了才写 `tasks/<模块>/plan.md`（只留任务与检查点）、`todo.md`，提交后按它构建；交 Plan 节点会被拒收。

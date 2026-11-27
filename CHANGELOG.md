@@ -2,6 +2,15 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
+## 0.27.0 的变化（交审关卡对齐 spec-guard：新流程需求先审一轮；技术方案没有第二审查者时一律交用户批）
+
+覆盖 0.26.0（14a8221）之后 main 上的改动：模块 crew-review-gates-align（合并批准 C891）与公共变更 C888。`interface.json` 的 `interface` 仍是 1.1，契约仍钉 session-protocol v2.10。状态库不用迁移。需要 spec-guard 1.27（0.99.0 及以上）才有需求审查关卡；更低版本照旧。
+
+- **新流程需求先审一轮**（跟随 spec-guard 1.27，模块 sg-review-rules）：普通、重要需求没有审查记录时 `review add` 拒收并给出三条审法；提请批准时附「需求审查」一行与 spec-guard 给的审查后改动差异，`review show C<n> --review-diff` 单独看；`review approve` 被 `requirement-unreviewed` 拒绝时说明怎么退回。
+- **普通需求的技术方案没有第二审查者时交用户批**：不再「未审放行」，与重要需求同一条路（推翻 crew-flow-v2 假设 A3 前半句，该 Spec 变更记录已记）。
+- 两份 crew-dev skill 加「需求交审前先审一轮」，两份 crew-coordinator skill 去掉「未审放行」。
+- 升级后：只升级 module-crew 时，原会话 /clear 一次即可；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`。
+
 ## 0.26.0 的变化（跟随 spec-guard 0.98.0／0.99.0：开工停点读 blocking；重要需求的技术方案按接管档位决定批准人）
 
 覆盖 0.25.1（d9d3cd4）之后 main 上的改动：模块 crew-review-rules-follow（合并批准 C874）与公共变更 C871。`interface.json` 的 `interface` 仍是 1.1，契约仍钉 session-protocol v2.10。状态库不用迁移。

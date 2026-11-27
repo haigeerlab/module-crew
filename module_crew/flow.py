@@ -171,3 +171,45 @@ def final_reasons(evidence: list[str], cases: list[dict] | None, module_id: str)
     missing = [str(c.get("id")) for c in cases
                if c.get("id") and str(c.get("id")) not in have and c.get("method") != "manual"]
     return [f"「验收结果」缺这些回归用例：{'、'.join(missing)}（执行方式为 manual 的写「待用户测」即可）"] if missing else []
+
+
+# crew-review-gates-align: spec-guard 1.27 (sg-review-rules rules 1-5) reviews a flow v2 requirement once before the
+# user confirms it; module-crew reads the verdict, never the record lines or the tier
+REQUIREMENT_SINCE = (1, 27)
+REQUIREMENT_UNREADABLE = "读不到 spec-guard 的需求审查状态：{why}，照收；批准时由 spec-guard 判"
+REQUIREMENT_MISSING = ("{m} 的需求文档还没有审查记录（spec-guard requirementReview: missing），用户确认前要先审一轮。"
+                       "在你的 worktree 里按顺序选一条（只审一轮）：\n"
+                       "  1. 有 Codex：/delegate:review --backend codex 审 spec/{m}.md，报告存成文件，再 "
+                       "/spec-guard:review-mark --target spec --state codex-reviewed --review <报告> --confirm\n"
+                       "  2. 没有 Codex：开一个全新子会话审（不带本会话上下文），结论写进「外部审查意见」一节，再 "
+                       "/spec-guard:review-mark --target spec --state host-reviewed --blocking <阻断条数> --confirm\n"
+                       "  3. 都不行：/spec-guard:review-mark --target spec --state no-reviewer --reason \"<一行原因>\" --confirm\n"
+                       "先审一轮，按意见改完提交后重新发【交审】，「要点」里写一行「需求审查：<谁审的>，阻断 N 条；采纳与没采纳的及原因」")
+
+
+def requirement_review(worktree: Path, module_id: str) -> dict | str | None:
+    """Decision 3: the module's requirementReview from /map --json run on the module's worktree (the record is on the
+    module branch until approval), never cached; None for an old module or a spec-guard below 1.27 (or none), str when /map is unreadable."""
+    from module_crew import probe, takeover
+    found = probe.find_plugin("spec-guard", worktree)
+    if isinstance(found, str):
+        return None                    # no spec-guard here: nothing to follow (the probe reports it elsewhere)
+    doc = probe.read_interface(found.root, probe.SPEC_GUARD_MAJOR)
+    if isinstance(doc, str) or (takeover._version(doc.get("interface")) or (0,)) < REQUIREMENT_SINCE:
+        return None
+    got = probe.run_map(found.root, doc, Path(worktree))
+    if isinstance(got, str):
+        return got
+    row = row_of(got, module_id)
+    value = row.get("requirementReview") if isinstance(row, dict) else None
+    return value if isinstance(value, dict) else None
+
+
+def requirement_gate(worktree: Path, module_id: str) -> tuple[list[str], list[str]]:
+    """Decisions 3, 4: (refusal reasons, hints) for a requirement (Spec or interface proposal) submission."""
+    got = requirement_review(worktree, module_id)
+    if isinstance(got, str):
+        return [], [REQUIREMENT_UNREADABLE.format(why=got)]
+    if isinstance(got, dict) and got.get("status") == "missing":
+        return [REQUIREMENT_MISSING.format(m=module_id)], []
+    return [], []
