@@ -73,6 +73,27 @@ class DesignMarkMixin(FlowReviewMixin):
         self.assertEqual(out.code, 0, out.lines)
         return out.number
 
+    def files(self):
+        import hashlib
+        import subprocess
+        rec = store.get(self.db(), "item", str(self.n))
+        return {f["path"]: hashlib.sha256(subprocess.run(["git", "-C", str(self.wt["b"]), "show",
+                                                          f"{rec['commit']}:{f['path']}"], capture_output=True,
+                                                         check=True).stdout).hexdigest() for f in rec["files"]}
+
+    def design_report(self, findings=(), same=False, **kw):
+        doc = report(self.files(), findings, backend="claude-code", **kw)
+        doc["reviewer"] = {"vendor": "anthropic" if same else "openai", "backend": "claude-code" if same else "codex",
+                           "same_vendor": same, "selection": "same-vendor" if same else "other-vendor"}
+        doc["criteria"] = "design-v1"
+        return doc
+
+    def note(self, doc):
+        path = self.tmp / f"report-{len(list(self.tmp.glob('report-*')))}.json"
+        path.write_text(json.dumps(doc))
+        res = self.run_cli("review", "codex-note", f"C{self.n}", "--report", str(path), cwd=self.repo)
+        return res.returncode, res.stdout + res.stderr
+
 
 class UserApprovesDesignTest(DesignMarkMixin, ReviewCase):
     """Decisions 1, 8; AC1, AC6: the user's approval of a design writes approved, without a report."""
@@ -124,27 +145,6 @@ class SecondReviewerMarkTest(DesignMarkMixin, ReviewCase):
         assert review.approve(self.repo, [s], "b 的需求批准").code == 0
         self.n = self.ok(self.design_review("b"), rid=2)
 
-    def files(self):
-        import hashlib
-        import subprocess
-        rec = store.get(self.db(), "item", str(self.n))
-        return {f["path"]: hashlib.sha256(subprocess.run(["git", "-C", str(self.wt["b"]), "show",
-                                                          f"{rec['commit']}:{f['path']}"], capture_output=True,
-                                                         check=True).stdout).hexdigest() for f in rec["files"]}
-
-    def design_report(self, findings=(), same=False, **kw):
-        doc = report(self.files(), findings, backend="claude-code", **kw)
-        doc["reviewer"] = {"vendor": "anthropic" if same else "openai", "backend": "claude-code" if same else "codex",
-                           "same_vendor": same, "selection": "same-vendor" if same else "other-vendor"}
-        doc["criteria"] = "design-v1"
-        return doc
-
-    def note(self, doc):
-        path = self.tmp / f"report-{len(list(self.tmp.glob('report-*')))}.json"
-        path.write_text(json.dumps(doc))
-        res = self.run_cli("review", "codex-note", f"C{self.n}", "--report", str(path), cwd=self.repo)
-        return res.returncode, res.stdout + res.stderr
-
     def test_pass_writes_reviewer_approved_with_saved_report(self):
         code, out = self.note(self.design_report([finding("命名", severity="suggestion")], same=True))
         self.assertEqual(code, 0, out)
@@ -170,6 +170,67 @@ class SecondReviewerMarkTest(DesignMarkMixin, ReviewCase):
         [call] = self.calls("design")
         self.assertEqual(self.arg(call, "--state"), "approved")
         self.assertNotIn("--review", call)
+
+
+class DesignMarkFailureTest(DesignMarkMixin, ReviewCase):
+    """Decisions 5, 6; AC4, AC5: a refused design mark stops and restores; no design target lands as before."""
+
+    def setUp(self):
+        super().setUp()
+        self.with_flow()
+        self.write_design("b")
+
+    def approved_spec(self, design="human"):
+        self.set_flow({"b": "normal"}, {"b": flow_row(design=design)})
+        s = self.ok(self.spec_review("b"))
+        self.assertEqual(review.approve(self.repo, [s], "b 的需求批准").code, 0)
+
+    def fail_design(self):
+        os.environ["FAKE_DESIGN_FAIL"] = "1"
+        self.addCleanup(lambda: os.environ.pop("FAKE_DESIGN_FAIL", None))
+
+    def test_user_approval_refused_stops_and_restores(self):
+        self.use_127_marks()
+        self.approved_spec()
+        d = self.ok(self.design_review("b"), rid=2)
+        before = git(self.repo, "rev-parse", "HEAD").strip()
+        self.fail_design()
+        res = review.approve(self.repo, [d], "b 的技术方案批准")
+        self.assertEqual(res.code, 4, res.lines)
+        self.assertIn("写批准标记失败，已停下：design-blocking", res.lines[0])
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD").strip(), before)
+        # today's restore for a user's approval: tracked files back, new files left for the user (unchanged here)
+        self.assertEqual(git(self.repo, "status", "--porcelain", "--untracked-files=no").strip(), "")
+        self.assertEqual(store.get(self.db(), "item", str(d))["state"], "open")
+
+    def test_reviewer_pass_refused_goes_to_the_user(self):
+        self.use_127_marks()
+        self.approved_spec(design="reviewer")
+        self.n = self.ok(self.design_review("b"), rid=2)
+        self.fail_design()
+        code, out = self.note(self.design_report())
+        self.assertEqual(code, 4, out)
+        self.assertIn("review codex-fallback", out)
+        self.assertTrue(store.get(self.db(), "item", str(self.n)).get("landFailed"))
+        self.assertFalse((self.repo / "tasks" / "b" / "design.md").exists())
+
+    def test_old_command_lands_without_mark_and_says_so(self):
+        old = ["python3", "-B", "hooks/review_mark.py", "--project", "<project-root>", "--module", "<module-id>",
+               "--target", "<spec|plan|both|acceptance>", "--state", "<pending|approved|codex-approved|codex-reviewed>",
+               "[--review <report file>]"]
+        self.use_127_marks(command=old)
+        self.approved_spec()
+        d = self.ok(self.design_review("b"), rid=2)
+        res = review.approve(self.repo, [d], "b 的技术方案批准")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertEqual(self.calls("design"), [])
+        self.assertIn(review.DESIGN_MARK_UNSUPPORTED, res.lines)
+        self.assertTrue((self.repo / "tasks" / "b" / "design.md").exists())
+
+    def test_supported_reads_the_target_placeholder(self):
+        self.assertTrue(review._design_mark_supported({"reviewMark": {"command": REVIEW_MARK_127}}))
+        self.assertFalse(review._design_mark_supported({"reviewMark": {"command": ["x", "<spec|plan|both>"]}}))
+        self.assertFalse(review._design_mark_supported({}))
 
 
 class SkipNoMarkTest(DesignMarkMixin, ReviewCase):
