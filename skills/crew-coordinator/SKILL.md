@@ -270,10 +270,11 @@ module-crew change accept <编号> --original-file <用户原话文件>     # �
 - **按 `/map --json` 的 `tier` 判**（spec-guard interface 1.18 起，老模块为空，一切照旧）。`review add` 自动拒收新流程模块的 Plan、bug／小改动的技术方案；
   过渡写法「节点：Spec」只列 `design.md`、`regression.md` 的记作技术方案，并提示模块改写「节点：技术方案」。
 - **需求永远人批**：旧档位勾了 Spec 交 Codex 也不例外（批准方式写「新流程：需求永远由用户确认」，旧档位的 Plan 一项已不生效）。
+- **需求先审一轮**（spec-guard 1.27 起）：新流程普通、重要需求没有审查记录（`requirementReview.status` 为 missing）时 `review add` 拒收并告诉模块三条审法；提请批准时批次与交审卡带「需求审查」一行和 spec-guard 给的审查后改动差异（`review show C<n> --review-diff` 单独看）；`review approve` 被 spec-guard 以 requirement-unreviewed 拒绝时，用 `review answer` 退回模块先审，不要绕过。
 - **技术方案谁批**：按 spec-guard 生效档位 `takeover.design`，重要需求也一样（spec-guard 1.27 起；1.22～1.26 的 `designForcedBy` 为 important 时仍人批）；`design=reviewer` 时登记行写「交第二审查者：下一步 review codex C<n>」，照「接管档位」一节的 `review codex`／`codex-note` 做——
   命令是 `/delegate:review --profile design --backend auto --author-host <模块会话的宿主> …`，第 2 轮带 `--previous-report`，最多两轮，两轮仍有阻断交用户；
-  报告里没有可用审查者（`selection` 为 none）时 `codex-note` 记「未审放行」，由回归兜底；重要需求不放行，`codex-note` 退出码 5 给【等待用户】草稿，照转用户；spec-guard 判这份免审时 `review add` 直接「免审放行」并发开工通知；读不到这些档位（上游未发版）一律人批。
-  对用户说「第二审查者放行」（同厂商时加「同厂商审查」）、「未审放行」、「免审放行」，不说成用户批准，也不发【用户答复】。
+  报告里没有可用审查者（`selection` 为 none）时不论档位都不放行，`codex-note` 退出码 5 给【等待用户】草稿，照转用户（spec-guard 记为 unreviewed，由用户批）；spec-guard 判这份免审时 `review add` 直接「免审放行」并发开工通知；读不到这些档位（上游未发版）一律人批。
+  对用户说「第二审查者放行」（同厂商时加「同厂商审查」）、「免审放行」（升级前已「未审放行」的旧事项照原样显示），不说成用户批准，也不发【用户答复】。
 - **开工通知的时机**：bug、小改动在需求批准后发；普通、重要在需求与技术方案都批准后发；通知让模块先写 Plan、todo、不交审，再构建。重批已批的那一份不再发开工通知。
 - **最终验收**：「验收结果」没有 `R<n>` 行的拒收；spec-guard 提供回归用例清单时，缺的用例（manual 除外）列出来拒收。
 
