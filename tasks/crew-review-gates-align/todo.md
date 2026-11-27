@@ -7,7 +7,7 @@
 - [x] Task 3：`review approve` 认出 `requirement-unreviewed`（Spec 决策 6；AC5）——测试先红后绿；`_approve` 写标记失败、spec-guard 输出以 `requirement-unreviewed` 开头时，在今天的失败行与还原说明之后加「spec-guard 拒绝：这份需求还没审过一轮…用 review answer C<n> 退回模块先审一轮，不要绕过」；还原逻辑不动（新建的文件照今天留给用户决定，测试按今天的行为断言）；其他失败输出不变；批准测试全部通过
 - [x] Task 4：普通需求没有第二审查者交用户批（Spec 决策 7；AC6）——测试先红后绿；`codex_note` 删掉未审放行分支，技术方案报告 `reviewer.selection = none` 时不分档位都记 `codex-unavailable`、退出码 5、给【等待用户】草稿；普通需求写 `NORMAL_NO_REVIEWER`「本机没有可用的第二审查者，spec-guard 记为未审（unreviewed），由你批」，重要需求照旧「这是重要需求」；`test_no_reviewer_releases_unreviewed`（钉被推翻的决定）改为 `test_no_reviewer_normal_goes_to_user`；`UNREVIEWED` 只留给升级前的旧事项展示；新流程、接管与本模块测试全部通过；变异即改动前的代码（普通需求放行），新用例在改动前为红
 - [x] Checkpoint 1（report）：代码就位，相关测试通过——`scripts/validate.sh --quick` 因 `module_crew/__main__.py` 对不上号退回全量，树 4c37906（提交 87d7061）上 1490 个用例全部通过，墙钟约 2488 秒
-- [ ] Task 5：文档与 crew-flow-v2 变更记录（公共变更请求；AC7）
+- [x] Task 5：文档与 crew-flow-v2 变更记录（公共变更请求；AC7）——发【公共变更请求】#23552，模块协调记为 C888、在集成分支 5321e52 落地（两份 crew-dev skill 加「需求交审前先审一轮」，两份 crew-coordinator skill 加「需求先审一轮」、无审查者「不论档位都不放行」、「未审放行」只留给升级前的旧事项，`spec/crew-flow-v2.md` 变更记录一行，`CHANGELOG.md`「未发版的变化」三行）；`module-crew sync` 合入（HEAD 3f3607b），逐句核对六个文件与请求原文一致
 - [ ] Task 6：同步、检查与本机实测（AC8；Spec 未决 Q2）
 - [ ] Checkpoint 2（gate）：最终验收
 - [ ] 回告：Spec 未决 Q1 经模块协调转告 ecosystem-lead；结果记在本项
