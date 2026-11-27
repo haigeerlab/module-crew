@@ -1391,6 +1391,29 @@ def mark_args(root: Path, doc: dict, checkout: Path, module: str, target: str, s
     return out
 
 
+DESIGN_MARK_UNSUPPORTED = ("装的 spec-guard 不支持技术方案标记（reviewMark 的 --target 没有 design，要 interface 1.20），"
+                           "/map 的 designApproval 不会更新")
+
+
+def _design_mark_supported(doc: dict) -> bool:
+    """crew-design-mark-sync decision 6: whether reviewMark.command's --target placeholder offers design."""
+    cmd = (doc.get("reviewMark") or {}).get("command") or []
+    return any(isinstance(x, str) and x.startswith("<spec|") and "design" in x[1:-1].split("|") for x in cmd)
+
+
+def _design_mark(doc: dict, codex: dict | None) -> tuple[str, str, str | None] | str | None:
+    """crew-design-mark-sync decisions 1-3, 6: (target, state, report) of a landed design's mark; a str (a note) when
+    spec-guard has no design mark. The user's approval (human takeover, or the user approving after a fallback) is
+    approved; the second reviewer's pass (codex["design"]) is reviewer-approved with the report it was judged on; any
+    other release -- a design spec-guard says needs no review (it shows not-required itself), or an item released
+    unreviewed before crew-review-gates-align -- gets no mark (None)."""
+    if not _design_mark_supported(doc):
+        return DESIGN_MARK_UNSUPPORTED
+    if codex is None:
+        return "design", "approved", None
+    return ("design", "reviewer-approved", codex["report"]) if codex.get("design") else None
+
+
 def _record_lead(db: store.Store, picked: list, original: str, reasons: list[str]) -> ApproveResult:
     """A designated lead's relayed approval of a Spec/Plan is only recorded: spec-guard (0.70.0) does not accept it
     as a source for review marks, so nothing lands on the baseline and the reviews stay open for the user."""
@@ -1520,12 +1543,23 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         written.append(path)
-    for n, rec in picked:
-        if rec["node"] not in MARK_TARGET:        # crew-flow-v2: spec-guard records no mark for a design (yet)
+    mark_notes: list[str] = []
+    # crew-design-mark-sync decision 8: the requirement's mark first, spec-guard reads its flow line for a design
+    for n, rec in sorted(picked, key=lambda kv: NODE_RANK.get(kv[1]["node"], 9)):
+        if rec["node"] == "design":
+            got = _design_mark(doc, codex)
+            if got is None:
+                continue
+            if isinstance(got, str):
+                mark_notes.append(got)
+                continue
+            target, state, report = got
+        elif rec["node"] not in MARK_TARGET:
             continue
-        target = "both" if rec["node"] == "plan" and rec.get("specRevised") else MARK_TARGET[rec["node"]]   # decision 7
-        cmd = mark_args(root, doc, checkout, rec["module"], target, "codex-approved" if codex else "approved",
-                        codex["report"] if codex else None)
+        else:
+            target = "both" if rec["node"] == "plan" and rec.get("specRevised") else MARK_TARGET[rec["node"]]   # decision 7
+            state, report = ("codex-approved" if codex else "approved"), (codex["report"] if codex else None)
+        cmd = mark_args(root, doc, checkout, rec["module"], target, state, report)
         if isinstance(cmd, str):
             return ApproveResult(4, [f"C{n}（{rec['module']}）写批准标记失败，已停下：{cmd}"] + _restore(checkout, created, db.path / "codex" / f"leftover-C{n}"))
         cmd = cmd + ["--confirm"]
@@ -1559,6 +1593,7 @@ def _approve(project: Path, numbers: list[int], original: str, codex: dict | Non
     from module_crew import unqueued
     unqueued.mark(db, checkout, "review-approve")    # crew-unqueued-commits: module-crew's own commit
     result = ApproveResult(0, commit=commit)
+    result.lines += mark_notes
     answered_at = store.now()
     approved_before = _approved_nodes(db)
     mapped = None                                 # crew-spec-ahead: the capability map, read only when a module needs it
