@@ -98,3 +98,111 @@ class RequirementGateTest(GateMixin, ReviewCase):
         self.gate("normal", "missing")
         flow.requirement_review(self.wt["b"], "b")
         self.assertEqual(seen, [os.path.realpath(self.wt["b"])])
+
+
+PREVIEW_PREAMBLE = '''import os as _os, sys as _sys
+if "--confirm" not in _sys.argv and _os.environ.get("FAKE_REVIEW_PREVIEW"):
+    print(open(_os.environ["FAKE_REVIEW_PREVIEW"], encoding="utf-8").read())
+    _sys.exit(0)
+if "--confirm" in _sys.argv and _os.environ.get("FAKE_REVIEW_OUT"):
+    print(_os.environ["FAKE_REVIEW_OUT"])
+    _sys.exit(2)
+'''
+
+DIFF_OUT = """Changes since the review (show this diff to the user verbatim):
+--- spec/b.md (reviewed, abc1234)
++++ spec/b.md (now)
+@@ -1,2 +1,2 @@
+ # Spec: b
+-旧的一句
++新的一句
+
+--- spec/b.md (current)
++++ spec/b.md (proposed)
+@@ -1 +1,2 @@
++<!-- spec-guard: review approved x -->
+Spec digest: x (text of spec/b.md without the marker line)
+review state after: spec/b.md approved
+"""
+
+
+class PreviewMixin(GateMixin):
+    def setUp(self):
+        super().setUp()
+        root = probe.find_plugin("spec-guard", self.repo).root
+        script = root / "hooks" / "review_mark.py"
+        script.write_text(PREVIEW_PREAMBLE + script.read_text(encoding="utf-8"), encoding="utf-8")
+        self.preview_file = self.repo.parent / "preview.txt"
+        for key in ("FAKE_REVIEW_PREVIEW", "FAKE_REVIEW_OUT"):
+            self.addCleanup(lambda k=key: os.environ.pop(k, None))
+
+    def preview(self, text: str):
+        self.preview_file.write_text(text, encoding="utf-8")
+        os.environ["FAKE_REVIEW_PREVIEW"] = str(self.preview_file)
+
+
+class RequirementDisplayTest(PreviewMixin, ReviewCase):
+    """Task 2, decision 5; AC4."""
+
+    def reviewed(self, record):
+        self.gate("normal", "reviewed", [record])
+
+    def test_summary_line_per_reviewer(self):
+        cases = [({"reviewer": "codex", "blocking": 2, "reason": None}, "需求审查：Codex（delegate），阻断 2 条"),
+                 ({"reviewer": "host", "blocking": 0, "reason": None}, "需求审查：宿主子会话，阻断 0 条"),
+                 ({"reviewer": "none", "blocking": None, "reason": "本机没有审查者"},
+                  "需求审查：没有审查者（原因：本机没有审查者）")]
+        self.preview("spec/b.md: nothing changed since the review.\n")
+        for record, want in cases:
+            with self.subTest(reviewer=record["reviewer"]):
+                self.reviewed(record)
+                self.assertEqual(review.requirement_lines(self.wt["b"], "b")[0], want)
+
+    def test_diff_is_spec_guards_text(self):
+        self.reviewed({"reviewer": "codex", "blocking": 1, "reason": None})
+        self.preview(DIFF_OUT)
+        got = review.requirement_diff(self.wt["b"], "b")
+        self.assertEqual(got[0], "Changes since the review (show this diff to the user verbatim):")
+        self.assertIn("+新的一句", got)
+        self.assertNotIn("--- spec/b.md (current)", got)       # the marker preview is not the review diff
+        self.assertNotIn("Spec digest", "\n".join(got))
+        self.assertEqual(got[-1], "+新的一句")
+
+    def test_unchanged_and_unavailable(self):
+        self.reviewed({"reviewer": "host", "blocking": 0, "reason": None})
+        for line in ("spec/b.md: nothing changed since the review.",
+                     "spec/b.md: the changes since the review cannot be shown (git log failed); give the user the whole requirement."):
+            with self.subTest(line=line):
+                self.preview(line + "\nreview state after: spec/b.md approved\n")
+                self.assertEqual(review.requirement_diff(self.wt["b"], "b"), [line])
+
+    def test_batch_card_and_show(self):
+        self.reviewed({"reviewer": "codex", "blocking": 1, "reason": None})
+        self.preview(DIFF_OUT)
+        out = self.add(self.spec_review("b"))
+        self.assertEqual(out.code, 0, out.lines)
+        b = review.batch(self.repo)
+        [item] = b["items"]
+        self.assertEqual(item["requirement"][0], "需求审查：Codex（delegate），阻断 1 条")
+        self.assertIn("+新的一句", item["requirement"])
+        [(_, _, card)] = review.for_hub(self.repo)
+        self.assertIn("需求审查：Codex（delegate），阻断 1 条", card)
+        self.assertIn("+新的一句", card)
+        code, text = self.cli("review", "batch")
+        self.assertIn("需求审查：Codex（delegate），阻断 1 条", text)
+        self.assertEqual(review.show(self.db(), out.number, review_diff=True),
+                         review.requirement_diff(self.wt["b"], "b"))
+        code, text = self.cli("review", "show", f"C{out.number}", "--review-diff")
+        self.assertEqual(code, 0, text)
+        self.assertIn("+新的一句", text)
+
+    def test_old_module_display_unchanged(self):
+        self.set_flow({}, {"b": gate_row(None)})
+        self.preview(DIFF_OUT)
+        out = self.add(self.spec_review("b"))
+        [item] = review.batch(self.repo)["items"]
+        self.assertNotIn("requirement", item)
+        [(_, _, card)] = review.for_hub(self.repo)
+        self.assertNotIn("需求审查", card)
+        self.assertEqual(review.show(self.db(), out.number, review_diff=True),
+                         [f"C{out.number} 不是新流程需求，或 spec-guard 没有它的审查记录：没有审查后的改动差异"])

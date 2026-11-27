@@ -552,13 +552,22 @@ def batch(project: str | os.PathLike) -> dict:
                       "reworked": _reworked(db, v["module"], v["node"]), "decisions": _item_decisions(n, v, state, db),
                       **({"checks": v["checks"]} if "checks" in v else {}),
                       **({"display": present.final_tables(project, db, v)} if v["node"] == "final" and v.get("module")
-                         and not v.get("task") else {})})
+                         and not v.get("task") else {}),
+                      **({"requirement": req} if (req := _requirement_of(db, v)) else {})})
     codex = [f"C{i['number']} {i['module']} 的 "
              + (auto_progress(db, i["number"], store.get(db, "item", str(i["number"])) or {}) if i["node"] == "final"
                 else f"{NODE_NAME.get(i['node'], i['node'])}（{_codex_state(db, i)}）")
              for i in items if i.get("reviewer") == "codex" and not i["ready"]]
     return {"items": items, "groups": groups, "dependencyIssues": issues, "conflicts": conflicts, "overlap": over,
             "codex": codex}
+
+
+def _requirement_of(db: store.Store, v: dict) -> list[str]:
+    """Decision 5: requirement_lines for a Spec or interface proposal submission, read on the sender's worktree."""
+    if v.get("node") not in flow.SPEC_NODES or not v.get("module") or v.get("task"):
+        return []
+    wt = (store.get(db, "session", v.get("from")) or {}).get("worktree")
+    return requirement_lines(Path(wt), v["module"]) if wt else []
 
 
 def codex_node(db: store.Store, module: str, node: str, worktree: Path, commit: str) -> tuple[bool, str | None]:
@@ -771,11 +780,17 @@ class ShowRefused(Exception):
     pass
 
 
-def show(db: store.Store, number: int, submission: bool = False, spec_diff: bool = False) -> list[str]:
+def show(db: store.Store, number: int, submission: bool = False, spec_diff: bool = False,
+         review_diff: bool = False) -> list[str]:
     """Review originals of submission C<number>, oldest round first, each with its sha256 (MC-4); read-only."""
     rec = store.get(db, "item", str(number))
     if rec is None or rec.get("kind") != "review":
         raise ShowRefused(f"C{number} 不是交审事项")
+    if review_diff:                     # crew-review-gates-align decision 5
+        wt = (store.get(db, "session", rec.get("from")) or {}).get("worktree")
+        got = (requirement_diff(Path(wt), rec["module"]) if wt and rec.get("node") in flow.SPEC_NODES
+               and isinstance(flow.requirement_review(Path(wt), rec["module"]), dict) else None)
+        return got or [f"C{number} 不是新流程需求，或 spec-guard 没有它的审查记录：没有审查后的改动差异"]
     if spec_diff:
         revised = rec.get("specRevised")
         return [revised["diff"].rstrip("\n")] if revised else [f"C{number} 交审时 Spec 和集成分支上的一样，没有改动差异"]
@@ -895,6 +910,7 @@ def _hub_item(project: Path, db: store.Store, b: dict, g: dict, part: list[dict]
             revs.append(_original_line(db, g["module"], f"C{i['number']}-review-{last['ref']}.txt", last["text"]))
         points.append(f"C{i['number']} {g['module']} 的 {NODE_NAME.get(i['node'], i['node'])}（审查：{_review_text(i)}）：")
         points += [_safe(line) for line in i["points"].splitlines()]   # 做了什么, 验收结果 (crew-review-display)
+        points += [_safe(line) for line in i.get("requirement") or []]   # crew-review-gates-align decision 5
         if i.get("display"):                             # then 改了哪些文件 and Spec 中途改过吗, from git
             from module_crew import present
             points += [_safe(line) for line in present.table_lines(i["display"])]
@@ -1277,6 +1293,64 @@ def _mark_command(project: Path) -> tuple[Path, dict] | str:
     if isinstance(probe_cmd, str):
         return probe_cmd
     return found.root, doc
+
+
+REVIEW_DIFF_HEAD = "Changes since the review"
+REVIEWER_WORDS = {"codex": "Codex（delegate）", "host": "宿主子会话"}
+
+
+def requirement_diff(worktree: Path, module: str) -> list[str] | None:
+    """crew-review-gates-align decision 5: what spec-guard says changed in spec/<module>.md since its review, word for
+    word, from reviewMark's preview on the module's worktree (no --confirm, nothing written); None when the preview
+    gives no such text (no record, refused, not runnable)."""
+    got = _mark_command(Path(worktree))
+    if isinstance(got, str):
+        return None
+    root, doc = got
+    cmd = mark_args(root, doc, Path(worktree), module, "spec", "approved")
+    if isinstance(cmd, str):
+        return None
+    try:
+        ran = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=probe.MAP_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if ran.returncode != 0:
+        return None
+    rel = f"spec/{module}.md"
+    stops = ("Spec changes since it was approved", f"--- {rel} (current)", f"{rel}: already", "Spec digest:",
+             "review state after:")
+    lines = ran.stdout.splitlines()
+    for k, line in enumerate(lines):
+        if line.startswith(REVIEW_DIFF_HEAD):
+            out = [line]
+            for x in lines[k + 1:]:
+                if x.startswith(stops):
+                    break
+                out.append(x)
+            while len(out) > 1 and not out[-1].strip():
+                out.pop()
+            return out
+        if line.startswith((f"{rel}: nothing changed since the review", f"{rel}: the changes since the review")):
+            return [line]
+    return None
+
+
+def requirement_lines(worktree: Path, module: str) -> list[str]:
+    """Decision 5: the 需求审查 line and the diff since the review for a reviewed flow v2 requirement; [] otherwise
+    (an old module, not required, or spec-guard below 1.27), so old displays stay word for word."""
+    got = flow.requirement_review(Path(worktree), module)
+    if not isinstance(got, dict) or got.get("status") != "reviewed":
+        return []
+    rec = (got.get("records") or [{}])[-1]
+    rec = rec if isinstance(rec, dict) else {}
+    if rec.get("reviewer") == "none":
+        head = f"需求审查：没有审查者（原因：{rec.get('reason') or '未写'}）"
+    else:
+        head = (f"需求审查：{REVIEWER_WORDS.get(rec.get('reviewer'), rec.get('reviewer'))}，"
+                f"阻断 {rec.get('blocking')} 条")
+    diff = requirement_diff(Path(worktree), module)
+    return [head] + (["审查后的改动差异（spec-guard 原话）："] + diff if diff else
+                     ["审查后的改动差异：spec-guard 没有给出（预览没跑成），请把整份需求给用户看"])
 
 
 def _mark_fill(checkout: Path, module: str, target: str, state: str = "approved") -> dict[str, str]:
