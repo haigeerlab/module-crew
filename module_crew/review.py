@@ -1276,16 +1276,20 @@ def _mark_command(project: Path) -> tuple[Path, dict] | str:
 
 
 def _mark_fill(checkout: Path, module: str, target: str, state: str = "approved") -> dict[str, str]:
-    """Placeholders of reviewMark.command: interface 1.1, and 1.15 (crew-takeover-approve: Codex states, acceptance)."""
+    """Placeholders of reviewMark.command: interface 1.1, 1.15 (crew-takeover-approve: Codex states, acceptance),
+    and 1.27 (T855: design/overall targets, reviewer and host states)."""
     return {"<project-root>": str(checkout), "<module-id>": module,
             "<spec|plan|both>": target, "<pending|approved>": state,
-            "<spec|plan|both|acceptance>": target, "<pending|approved|codex-approved|codex-reviewed>": state}
+            "<spec|plan|both|acceptance>": target, "<pending|approved|codex-approved|codex-reviewed>": state,
+            "<spec|plan|both|acceptance|design|overall>": target,
+            "<pending|approved|codex-approved|codex-reviewed|reviewer-approved|reviewer-reviewed|host-reviewed"
+            "|no-reviewer>": state}
 
 
 def mark_args(root: Path, doc: dict, checkout: Path, module: str, target: str, state: str = "approved",
               review_file: str | os.PathLike | None = None) -> list[str] | str:
-    """reviewMark.command filled in; 1.15's optional `[--review <report file>]` is expanded only with a report.
-    A str says why it cannot run (an unknown placeholder or optional part)."""
+    """reviewMark.command filled in; 1.15's optional `[--review <report file>]` is expanded only with a report, and
+    other optional parts are left out (T855). A str says why it cannot run (an unknown placeholder)."""
     cmd = probe.safe_command(root, doc, "reviewMark", _mark_fill(checkout, module, target, state))
     if isinstance(cmd, str):
         return cmd
@@ -1293,14 +1297,14 @@ def mark_args(root: Path, doc: dict, checkout: Path, module: str, target: str, s
     for x in cmd:
         if x.startswith("[") and x.endswith("]"):
             inner = x[1:-1].split()
-            if inner[:1] != ["--review"]:
-                return f"reviewMark.command 有不认识的可选项 {x}，没有运行"
-            out += ["--review", str(review_file)] if review_file else []
+            if inner[:1] == ["--review"] and review_file:
+                out += ["--review", str(review_file)]
+            # any other optional part (1.27's [--blocking <N>], [--reason <one line>]) is not needed here: skipped
         else:
             out.append(x)
     left = [x for x in out if x.startswith("<") and x.endswith(">")]
     if left:
-        return (f"reviewMark.command 有不认识的占位符 {'、'.join(left)}（认得 interface 1.1 与 1.15 的写法），没有运行")
+        return (f"reviewMark.command 有不认识的占位符 {'、'.join(left)}（认得 interface 1.1、1.15 与 1.27 的写法），没有运行")
     if review_file and "--review" not in out:
         return "装的 spec-guard 的 reviewMark 不收 --review（Codex 放行要 interface 1.15），没有运行"
     return out
