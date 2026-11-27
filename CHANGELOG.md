@@ -2,10 +2,15 @@
 
 各版本的变化，最新的在前。README 与 `docs/` 下的文档只写当前功能。
 
-## 未发版的变化
+## 0.26.0 的变化（跟随 spec-guard 0.98.0／0.99.0：开工停点读 blocking；重要需求的技术方案按接管档位决定批准人）
 
-- 开工停点只在 `milestoneStop.blocking` 为 false 时放行并提示（跟随 spec-guard 0.98.0）。
-- 重要需求的技术方案按 `takeover.design` 决定批准人，没有第二审查者时送用户批（跟随 spec-guard 0.99.0，推翻 crew-flow-v2 的「重要需求永远人批」）。
+覆盖 0.25.1（d9d3cd4）之后 main 上的改动：模块 crew-review-rules-follow（合并批准 C874）与公共变更 C871。`interface.json` 的 `interface` 仍是 1.1，契约仍钉 session-protocol v2.10。状态库不用迁移。
+
+- **开工停点读 `blocking`**（跟随 spec-guard 0.98.0，接口 1.26）：`milestoneStop.blocking` 为 false（里程碑的模块都用 autopilot 预设）时不挡开工，`start plan` 照常提议并带一行「ℹ️ 里程碑停点：…按 autopilot 预设不挡开工；用户方便时用 /spec-guard:milestone-mark 确认」，`--json` 带 `notes`，`start prepare` 照常开工；缺这个字段、为 true 或不是布尔值时照旧阻塞。
+- **重要需求的技术方案按档位决定批准人**（跟随 spec-guard 0.99.0，接口 1.27，模块 sg-review-rules）：不再一律人批，按 `takeover.design` 走，与普通需求同一条判断；旧版 spec-guard（1.22～1.26）的 `designForcedBy` 为 important 时仍人批。推翻 crew-flow-v2 的「重要需求的技术方案永远人批」（该 Spec 变更记录已记）。
+- **重要需求没有第二审查者时交用户批**：`review codex-note` 遇到审查报告没有可用审查者时，重要需求不放行、退出码 5 给【等待用户】草稿；普通需求照旧未审放行。
+- 两份 crew-coordinator skill 的「技术方案谁批」「里程碑停点」随之改写，Codex 版补上停点一条。
+- 升级后：只升级 module-crew 时，原会话 /clear 一次即可；Codex 侧重新装本插件并完全退出 ChatGPT 再打开。动 Codex 侧插件前先备份 `~/.codex/config.toml`。
 
 ## 0.25.1 的变化（补丁：批准落地兼容 spec-guard 0.99.0）
 
