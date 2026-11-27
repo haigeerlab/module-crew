@@ -2,7 +2,7 @@
 
 > 依据 `tasks/crew-review-rules-follow/plan.md`。
 
-- [ ] Task 1：里程碑停点按 `blocking`（Spec 决策 1、2；AC1、AC2）
+- [x] Task 1：里程碑停点按 `blocking`（Spec 决策 1、2；AC1、AC2）——测试先红（8 个）后绿；`milestone_stop` 返回（阻塞项、警告、提示）三项，只有 `blocking is False` 给提示；`Proposal.notes` 进 `start plan` 文字（ℹ️）、`--json` 与 `prepare` 结果行，不进 `warnings`；true、缺字段、`"false"`、0、null 照旧阻塞；开工计划与准备 42 个通过；变异（改成真值判断）6 个转红
 - [ ] Task 2：重要需求的技术方案按档位（Spec 决策 3、4；AC3、AC4）
 - [ ] Task 3：重要需求没有可用审查者时送用户（Spec 决策 5；AC5）
 - [ ] Checkpoint 1（report）：代码就位，相关测试通过

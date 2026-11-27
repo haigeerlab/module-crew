@@ -129,6 +129,19 @@ class MilestoneStopPrepareTest(StartCase):
         self.set_map(dict(START_MAP, milestoneStop={"error": "unreadable", "detail": "草案缺表头"}))
         self.refused(["b"], "停点读不出（草案缺表头），先跑 /spec-guard:verify-artifacts")
 
+    def test_not_blocking_prepares_with_note(self):
+        """crew-review-rules-follow decision 2: a stop that does not block opens modules and says so."""
+        self.set_map(dict(START_MAP, milestoneStop=dict(STOP, blocking=False)))
+        res = start.prepare(self.repo, ["b"], "开 b", short="shop")
+        self.assertEqual(res.code, 0, res.lines)
+        self.assertTrue(any("按 autopilot 预设不挡开工" in line for line in res.lines), res.lines)
+
+    def test_blocking_true_or_absent_refuses(self):
+        self.set_map(dict(START_MAP, milestoneStop=dict(STOP, blocking=True)))
+        self.refused(["b"], STOP_WORDS)
+        self.set_map(dict(START_MAP, milestoneStop=dict(STOP, blocking="false")))
+        self.refused(["b"], STOP_WORDS)
+
     def test_null_or_absent_unchanged(self):
         self.set_map(dict(START_MAP, milestoneStop=None))
         self.assertEqual(start.prepare(self.repo, ["b"], "开 b", short="shop").code, 0)
