@@ -1402,12 +1402,11 @@ def _design_mark_supported(doc: dict) -> bool:
 
 
 def _design_mark(doc: dict, codex: dict | None) -> tuple[str, str, str | None] | str | None:
-    """crew-design-mark-sync decisions 1-3, 6: (target, state, report) of a landed design's mark; None for a design
-    spec-guard says needs no review (it shows not-required itself); a str (a note) when spec-guard has no design mark.
-    The second reviewer's pass is reviewer-approved with the report it was judged on; every other landing is the
-    user's approval (human takeover, or the user approving after a fallback), written as approved."""
-    if (codex or {}).get("skip"):
-        return None
+    """crew-design-mark-sync decisions 1-3, 6: (target, state, report) of a landed design's mark; a str (a note) when
+    spec-guard has no design mark. The user's approval (human takeover, or the user approving after a fallback) is
+    approved; the second reviewer's pass (codex["design"]) is reviewer-approved with the report it was judged on; any
+    other release -- a design spec-guard says needs no review (it shows not-required itself), or an item released
+    unreviewed before crew-review-gates-align -- gets no mark (None)."""
     if not _design_mark_supported(doc):
         return DESIGN_MARK_UNSUPPORTED
     if codex is None:

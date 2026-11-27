@@ -125,7 +125,7 @@ class UserApprovesDesignTest(DesignMarkMixin, ReviewCase):
 
     def test_requirement_mark_before_design_mark(self):
         d_first = [self.ok(self.design_review("b"), rid=2), self.ok(self.spec_review("b"), rid=3)]
-        res = review.approve(self.repo, d_first, "都批准")
+        res = review._approve(self.repo, d_first, "都批准")     # the landing itself, not the batch's ordering
         self.assertEqual(res.code, 0, res.lines)
         targets = [self.arg(c, "--target") for c in self.calls()]
         self.assertEqual(targets, ["spec", "design"])

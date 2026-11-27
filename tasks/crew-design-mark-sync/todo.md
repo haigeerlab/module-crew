@@ -6,7 +6,7 @@
 - [x] Task 2：实现标记循环（同上）——`review._approve` 的标记循环按 `NODE_RANK` 排序；技术方案走 `_design_mark`：免审（`codex.skip`）不写，第二审查者放行（`codex.design`）写 `reviewer-approved --review <codex-note 存下的报告>`，用户批写 `approved`，升级前的旧放行事项（codex 里没有 design）不写；新用例全绿；`test_flow_v2`（39）、`test_review_approve`（10）、`test_review_mark_compat`（4）、`test_takeover_approve`（53）、`test_approve_restore`（2）、`test_reapprove_original`（2）、`test_review_gates_align`（13）全部通过，现有测试一个没改（50f47a3）
 - [x] Task 3：失败与低版本兜底（Spec 决策 5、6；AC4、AC5）——补 4 个用例，不用改代码：用户批时 spec-guard 拒绝技术方案标记 → 退出码 4、首行「写批准标记失败，已停下：design-blocking…」、HEAD 不动、已跟踪文件还原、交审仍未答（新建的文件按现在的还原做法留给用户，和上一模块一样）；第二审查者放行时被拒 → codex-note 退出码 4、记 `landFailed`、提示 `review codex-fallback`、集成分支上没有 design.md；interface 1.15 写法的命令 → 不写技术方案标记、照常落地、结果里有 `DESIGN_MARK_UNSUPPORTED` 一行；`_design_mark_supported` 只认 `--target` 占位符里的 design。本模块 9 个用例全部通过
 - [x] Checkpoint 1（report）：代码就位，本模块与相关测试通过——见 Task 2、3 的测试结果
-- [ ] Task 4：变异检查（AC8）
+- [x] Task 4：变异检查（AC8）——四处临时改动各跑 `test_design_mark` 再还原：落地循环对技术方案恢复 `continue` → 7 个红；放行改写 approved → `test_pass_writes_reviewer_approved_with_saved_report` 红；免审也写标记 → `test_skip_writes_no_design_mark` 红；去掉排序 → `test_requirement_mark_before_design_mark` 红。头一轮有两处没抓到，已经补上：免审那条是 `_design_mark` 里多余的 skip 判断（非放行的 codex 记录本来就返回 None），已删；排序那条是 `review approve` 先按交审批次排过序，用例改为直接调 `_approve`，传入「先技术方案、后需求」
 - [ ] Task 5：本机 spec-guard 0.101.0 实跑（AC1、AC2 的真 designApproval）
 - [ ] Task 6：文档与 crew-flow-v2 变更记录（公共变更请求；AC7）
 - [ ] Task 7：同步与检查（AC8）
