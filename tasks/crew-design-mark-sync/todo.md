@@ -11,4 +11,4 @@
 - [x] Task 6：文档与 crew-flow-v2 变更记录（公共变更请求；AC7）——发【公共变更请求】#23607，模块协调记为 C905，在集成分支 bf35a60 落地：`CHANGELOG.md` 新加「未发版的变化」一节；`spec/crew-flow-v2.md` 变更记录追加一行（兑现「接口约定·写」，不推翻已批决定）；两份 crew-coordinator skill 的「技术方案谁批」后各加一行（落地写标记、失败照 Spec 处理、不要手写标记绕过）。`module-crew sync` 合入（HEAD fc86d74），四个文件新增的行逐行比对，和请求原文一致
 - [x] Task 7：同步与检查（AC8）——同步到集成分支 bf35a60 后（HEAD 34c5d78，树 7e1548f），`scripts/validate.sh --quick` 只跑受影响的测试：845 个全部通过，墙钟约 1323 秒；改代码前同步完 Spec 批准时跑的那一轮是全量，1490 个全部通过，约 2028 秒。检查记账开关没开，`module-crew check quick` 拒绝运行，改用快检查脚本
 - [x] Checkpoint 2（gate）：最终验收
-- [ ] 回告：经模块协调告诉 ecosystem-lead 本模块已做（来源 #23580），并转告 Spec 未决 Q1、Q2；结果记在本项
+- [x] 回告：经模块协调告诉 ecosystem-lead 本模块已做（来源 #23580），并转告 Spec 未决 Q1、Q2；结果记在本项——已发 ecosystem-lead #23627（知会，不用回；对方会话当时未运行，消息在其信箱）
