@@ -289,6 +289,7 @@ module-crew change accept <编号> --original-file <用户原话文件>     # �
   命令是 `/delegate:review --profile design --backend auto --author-host <模块会话的宿主> …`，第 2 轮带 `--previous-report`，最多两轮，两轮仍有阻断交用户；
   报告里没有可用审查者（`selection` 为 none）时不论档位都不放行，`codex-note` 退出码 5 给【等待用户】草稿，照转用户（spec-guard 记为 unreviewed，由用户批）；spec-guard 判这份免审时 `review add` 直接「免审放行」并发开工通知；读不到这些档位（上游未发版）一律人批。
   对用户说「第二审查者放行」（同厂商时加「同厂商审查」）、「免审放行」（升级前已「未审放行」的旧事项照原样显示），不说成用户批准，也不发【用户答复】。
+  落地技术方案时 module-crew 照 spec-guard 写技术方案标记（用户批 approved、第二审查者放行 reviewer-approved、免审不写），`/map` 的 `designApproval` 随之更新；spec-guard 拒绝写标记时照 Spec 的失败处理（用户批停下还原，放行记「已放行但落地失败」交用户），不要手写标记绕过。
 - **开工通知的时机**：bug、小改动在需求批准后发；普通、重要在需求与技术方案都批准后发；通知让模块先写 Plan、todo、不交审，再构建。重批已批的那一份不再发开工通知。
 - **最终验收**：「验收结果」没有 `R<n>` 行的拒收；spec-guard 提供回归用例清单时，缺的用例（manual 除外）列出来拒收。
 
