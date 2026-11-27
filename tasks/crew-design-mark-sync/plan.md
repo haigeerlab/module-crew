@@ -1,6 +1,6 @@
 # Implementation Plan: crew-design-mark-sync
 
-<!-- spec-guard: review pending -->
+<!-- spec-guard: review approved -->
 
 > 依据：`spec/crew-design-mark-sync.md`（用户 2026-11-27 批准，答复「C898 A」，批准事项 C899 落地于集成分支 685dc7e）。任务清单：`tasks/crew-design-mark-sync/todo.md`。
 
